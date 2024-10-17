@@ -11,7 +11,9 @@ if os_name == "nt":
 @pytest.fixture(name="resolver")
 def fixture_resolver_posix():
     # Skip the call to winepath by using a patch, although this is not strictly necessary.
-    with patch("reccmp.isledecomp.dir.winepath_unix_to_win", return_value="Z:\\usr\\isle"):
+    with patch(
+        "reccmp.isledecomp.dir.winepath_unix_to_win", return_value="Z:\\usr\\isle"
+    ):
         yield PathResolver("/usr/isle")
 
 

@@ -1,5 +1,4 @@
 import os
-import sys
 from datetime import datetime
 import logging
 import colorama
@@ -302,7 +301,3 @@ def diff_json(
             print(get_diff_str(addr, saved, new))
 
         print()
-
-
-def get_file_in_script_dir(fn):
-    return os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), fn)

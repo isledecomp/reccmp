@@ -2,12 +2,21 @@
 
 import argparse
 import difflib
+import logging
 import subprocess
 import os
 
 import reccmp
 from reccmp.bin import lib_path_join
 from reccmp.isledecomp.utils import print_diff
+from reccmp.project.detect import (
+    RecCmpProjectException,
+    argparse_add_built_project_target_args,
+    argparse_parse_built_project_target,
+)
+from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
+
+logger = logging.getLogger(__name__)
 
 
 def main():
@@ -18,23 +27,21 @@ def main():
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {reccmp.VERSION}"
     )
-    parser.add_argument(
-        "original", metavar="original-binary", help="The original binary"
-    )
-    parser.add_argument(
-        "recompiled", metavar="recompiled-binary", help="The recompiled binary"
-    )
+    argparse_add_built_project_target_args(parser)
     parser.add_argument(
         "--no-color", "-n", action="store_true", help="Do not color the output"
     )
+    argparse_add_logging_args(parser)
 
     args = parser.parse_args()
 
-    if not os.path.isfile(args.original):
-        parser.error(f"Original binary file {args.original} does not exist")
+    argparse_parse_logging(args)
 
-    if not os.path.isfile(args.recompiled):
-        parser.error(f"Recompiled binary {args.recompiled} does not exist")
+    try:
+        target = argparse_parse_built_project_target(args)
+    except RecCmpProjectException as e:
+        logger.error("%s", e.args[0])
+        return 1
 
     def get_exports(file):
         call = [lib_path_join("DUMPBIN.EXE"), "/EXPORTS"]
@@ -66,8 +73,8 @@ def main():
 
         return exports
 
-    og_exp = get_exports(args.original)
-    re_exp = get_exports(args.recompiled)
+    og_exp = get_exports(target.original_path)
+    re_exp = get_exports(target.recompiled_path)
 
     udiff = difflib.unified_diff(og_exp, re_exp)
     has_diff = print_diff(udiff, args.no_color)

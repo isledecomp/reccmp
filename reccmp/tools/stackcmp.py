@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 import re
 import logging
-import os
 import argparse
 import struct
 from typing import Dict, List, NamedTuple, Optional, Set, Tuple
@@ -12,8 +11,16 @@ from reccmp.isledecomp import Bin
 from reccmp.isledecomp.compare import Compare as IsleCompare
 from reccmp.isledecomp.compare.diff import CombinedDiffOutput
 from reccmp.isledecomp.cvdump.symbols import SymbolsEntry
+from reccmp.project.detect import (
+    argparse_add_built_project_target_args,
+    argparse_parse_built_project_target,
+    RecCmpProjectException,
+)
+from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
 
 # pylint: disable=duplicate-code # misdetects a code duplication with reccmp
+
+logger = logging.getLogger(__name__)
 
 colorama.just_fix_windows_console()
 
@@ -277,18 +284,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {reccmp.VERSION}"
     )
-    parser.add_argument(
-        "original", metavar="original-binary", help="The original binary"
-    )
-    parser.add_argument(
-        "recompiled", metavar="recompiled-binary", help="The recompiled binary"
-    )
-    parser.add_argument(
-        "pdb", metavar="recompiled-pdb", help="The PDB of the recompiled binary"
-    )
-    parser.add_argument(
-        "decomp_dir", metavar="decomp-dir", help="The decompiled source tree"
-    )
+    argparse_add_built_project_target_args(parser)
 
     parser.add_argument(
         "address",
@@ -296,47 +292,35 @@ def parse_args() -> argparse.Namespace:
         type=virtual_address,
         help="The original file's offset of the function to be analyzed",
     )
-
-    parser.set_defaults(loglevel=logging.INFO)
-    parser.add_argument(
-        "--debug",
-        action="store_const",
-        const=logging.DEBUG,
-        dest="loglevel",
-        help="Print script debug information",
-    )
+    argparse_add_logging_args(parser)
 
     args = parser.parse_args()
 
-    if not os.path.isfile(args.original):
-        parser.error(f"Original binary {args.original} does not exist")
-
-    if not os.path.isfile(args.recompiled):
-        parser.error(f"Recompiled binary {args.recompiled} does not exist")
-
-    if not os.path.isfile(args.pdb):
-        parser.error(f"Symbols PDB {args.pdb} does not exist")
-
-    if not os.path.isdir(args.decomp_dir):
-        parser.error(f"Source directory {args.decomp_dir} does not exist")
+    argparse_parse_logging(args=args)
+    if args.loglevel != logging.DEBUG:
+        # Mute logger events from compare engine
+        logging.getLogger("isledecomp.compare.core").setLevel(logging.CRITICAL)
+        logging.getLogger("isledecomp.compare.db").setLevel(logging.CRITICAL)
+        logging.getLogger("isledecomp.compare.lines").setLevel(logging.CRITICAL)
 
     return args
 
 
 def main():
     args = parse_args()
-    logging.basicConfig(level=args.loglevel, format="[%(levelname)s] %(message)s")
 
-    with Bin(args.original, find_str=True) as origfile, Bin(
-        args.recompiled
+    try:
+        target = argparse_parse_built_project_target(args=args)
+    except RecCmpProjectException as e:
+        logger.error(e.args[0])
+        return 1
+
+    with Bin(target.original_path, find_str=True) as origfile, Bin(
+        target.recompiled_path
     ) as recompfile:
-        if args.loglevel != logging.DEBUG:
-            # Mute logger events from compare engine
-            logging.getLogger("isledecomp.compare.core").setLevel(logging.CRITICAL)
-            logging.getLogger("isledecomp.compare.db").setLevel(logging.CRITICAL)
-            logging.getLogger("isledecomp.compare.lines").setLevel(logging.CRITICAL)
-
-        isle_compare = IsleCompare(origfile, recompfile, args.pdb, args.decomp_dir)
+        isle_compare = IsleCompare(
+            origfile, recompfile, target.pdb_path, target.source_root
+        )
 
         if args.loglevel == logging.DEBUG:
             isle_compare.debug = True
@@ -346,7 +330,7 @@ def main():
         match = isle_compare.compare_address(args.address)
         if match is None:
             print(f"Failed to find a match at address 0x{args.address:x}")
-            return
+            return 1
 
         assert match.udiff is not None
 
@@ -362,6 +346,7 @@ def main():
         assert function_data.symbol_entry is not None
 
         compare_function_stacks(match.udiff, function_data.symbol_entry)
+    return 0
 
 
 if __name__ == "__main__":

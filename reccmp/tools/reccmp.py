@@ -12,14 +12,22 @@ import colorama
 import reccmp
 from reccmp.isledecomp import (
     Bin,
-    get_file_in_script_dir,
     print_combined_diff,
     diff_json,
     percent_string,
 )
 from reccmp.isledecomp.compare import Compare as IsleCompare
 from reccmp.isledecomp.types import SymbolType
+from reccmp.assets import get_asset_file
+from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
+from reccmp.project.detect import (
+    RecCmpProjectException,
+    argparse_add_built_project_target_args,
+    argparse_parse_built_project_target,
+)
 
+
+logger = logging.getLogger()
 colorama.just_fix_windows_console()
 
 
@@ -49,12 +57,13 @@ def gen_json(json_file: str, orig_file: str, data):
 
 
 def gen_html(html_file, data):
-    js_path = get_file_in_script_dir("reccmp.js")
+    js_path = get_asset_file("../assets/reccmp.js")
     with open(js_path, "r", encoding="utf-8") as f:
         reccmp_js = f.read()
 
     output_data = Renderer().render_path(
-        get_file_in_script_dir("template.html"), {"data": data, "reccmp_js": reccmp_js}
+        get_asset_file("../assets/template.html"),
+        {"data": data, "reccmp_js": reccmp_js},
     )
 
     with open(html_file, "w", encoding="utf-8") as htmlfile:
@@ -70,7 +79,7 @@ def gen_svg(svg_file, name_svg, icon, svg_implemented_funcs, total_funcs, raw_ac
     total_statistic = raw_accuracy / total_funcs
     full_percentbar_width = 127.18422
     output_data = Renderer().render_path(
-        get_file_in_script_dir("template.svg"),
+        get_asset_file("../assets/template.svg"),
         {
             "name": name_svg,
             "icon": icon_data,
@@ -146,18 +155,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {reccmp.VERSION}"
     )
-    parser.add_argument(
-        "original", metavar="original-binary", help="The original binary"
-    )
-    parser.add_argument(
-        "recompiled", metavar="recompiled-binary", help="The recompiled binary"
-    )
-    parser.add_argument(
-        "pdb", metavar="recompiled-pdb", help="The PDB of the recompiled binary"
-    )
-    parser.add_argument(
-        "decomp_dir", metavar="decomp-dir", help="The decompiled source tree"
-    )
+    argparse_add_built_project_target_args(parser)
     parser.add_argument(
         "--total",
         "-T",
@@ -204,46 +202,36 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Don't display text summary of matches",
     )
-
-    parser.set_defaults(loglevel=logging.INFO)
-    parser.add_argument(
-        "--debug",
-        action="store_const",
-        const=logging.DEBUG,
-        dest="loglevel",
-        help="Print script debug information",
-    )
+    argparse_add_logging_args(parser)
 
     args = parser.parse_args()
-
-    if not os.path.isfile(args.original):
-        parser.error(f"Original binary {args.original} does not exist")
-
-    if not os.path.isfile(args.recompiled):
-        parser.error(f"Recompiled binary {args.recompiled} does not exist")
-
-    if not os.path.isfile(args.pdb):
-        parser.error(f"Symbols PDB {args.pdb} does not exist")
-
-    if not os.path.isdir(args.decomp_dir):
-        parser.error(f"Source directory {args.decomp_dir} does not exist")
+    argparse_parse_logging(args)
 
     return args
 
 
 def main():
     args = parse_args()
+
+    try:
+        target = argparse_parse_built_project_target(args)
+    except RecCmpProjectException as e:
+        logger.error("%s", e.args[0])
+        return 1
+
     logging.basicConfig(level=args.loglevel, format="[%(levelname)s] %(message)s")
 
-    with Bin(args.original, find_str=True) as origfile, Bin(
-        args.recompiled
+    with Bin(target.original_path, find_str=True) as origfile, Bin(
+        target.recompiled_path
     ) as recompfile:
         if args.verbose is not None:
             # Mute logger events from compare engine
             logging.getLogger("isledecomp.compare.db").setLevel(logging.CRITICAL)
             logging.getLogger("isledecomp.compare.lines").setLevel(logging.CRITICAL)
 
-        isle_compare = IsleCompare(origfile, recompfile, args.pdb, args.decomp_dir)
+        isle_compare = IsleCompare(
+            origfile, recompfile, target.recompiled_pdb, target.source_root
+        )
 
         if args.loglevel == logging.DEBUG:
             isle_compare.debug = True
@@ -255,13 +243,13 @@ def main():
         if args.verbose is not None:
             match = isle_compare.compare_address(args.verbose)
             if match is None:
-                print(f"Failed to find a match at address 0x{args.verbose:x}")
-                return
+                logger.error("Failed to find a match at address 0x%x", args.verbose)
+                return 1
 
             print_match_verbose(
                 match, show_both_addrs=args.print_rec_addr, is_plain=args.no_color
             )
-            return
+            return 0
 
         ### Compare everything.
 
@@ -308,7 +296,7 @@ def main():
                 diff_json(
                     saved_data,
                     htmlinsert,
-                    args.original,
+                    target.original_path,
                     show_both_addrs=args.print_rec_addr,
                     is_plain=args.no_color,
                 )
@@ -316,7 +304,7 @@ def main():
         ## Generate files and show summary.
 
         if args.json is not None:
-            gen_json(args.json, args.original, htmlinsert)
+            gen_json(args.json, target.original_path, htmlinsert)
 
         if args.html is not None:
             gen_html(args.html, json.dumps(htmlinsert))
@@ -336,12 +324,13 @@ def main():
             if args.svg is not None:
                 gen_svg(
                     args.svg,
-                    os.path.basename(args.original),
+                    os.path.basename(target.original_path),
                     args.svg_icon,
                     implemented_funcs,
                     function_count,
                     total_effective_accuracy,
                 )
+    return 0
 
 
 if __name__ == "__main__":

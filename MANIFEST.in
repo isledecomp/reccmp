@@ -2,3 +2,7 @@ include reccmp/bin/cvdump.exe
 include reccmp/bin/DUMPBIN.EXE
 include reccmp/bin/LINK.EXE
 include reccmp/bin/MSPDB41.DLL
+include reccmp/assets/cmake/reccmp.cmake
+include reccmp/assets/reccmp.js
+include reccmp/assets/template.html
+include reccmp/assets/template.svg

@@ -1,8 +1,7 @@
 capstone
-clang==16.*
 colorama>=0.4.6
 pystache
-pyyaml
+ruamel.yaml
 pydemangler @ git+https://github.com/wbenny/pydemangler.git
 # requirement of capstone due to python dropping distutils.
 # see: https://github.com/capstone-engine/capstone/issues/2223
