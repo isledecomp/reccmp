@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import argparse
 import enum
+import hashlib
 import itertools
 import logging
 from pathlib import Path
@@ -34,25 +35,42 @@ def path_to_id(path: Path) -> str:
     return re.sub("[^0-9a-zA-Z_]", "", path.stem.lower())
 
 
+def get_path_sha256(p: Path) -> dict[str, str]:
+    sha256_hasher = hashlib.sha256()
+    sha256_hasher.update(p.read_bytes())
+    return sha256_hasher.hexdigest()
+
+
 def create_project(
     project_directory: Path, original_paths: list[Path], cmake: bool
 ) -> int:
     if not original_paths:
         print("Need at least one original binary", file=sys.stderr)
         return 1
-    targets: dict[str, Path] = {}
+    id_path = {}
+    project_config = {
+        "targets": {}
+    }
     for original_path in original_paths:
         if not original_path.is_file():
-            print(f"Original binary ({original_path}) is not a file", file=sys.stderr)
+            logger.error(f"Original binary (%s) is not a file", original_path)
             return 1
         target_id = path_to_id(original_path)
-        if target_id in targets:
+        hash_sha256 = get_path_sha256(original_path)
+        target_data = {
+            "filename": original_path.name,
+            "hash": {
+                "sha256": hash_sha256,
+            },
+        }
+        if target_id in project_config["targets"]:
             for suffix_nb in itertools.count(start=0, step=1):
                 new_target_id = f"{target_id}_{suffix_nb}"
                 if new_target_id not in targets:
                     target_id = new_target_id
                     break
-        targets[target_id] = original_path
+        project_config["targets"][target_id] = target_data
+        id_path[target_id] = original_path
     project_file = project_directory / RECCMP_PROJECT_CONFIG
     project_user_file = project_directory / RECCMP_USER_CONFIG
 
@@ -64,13 +82,16 @@ def create_project(
         return 1
 
     project_name = path_to_id(original_paths[0])
-    project_config = get_default_project_config(targets=targets)
     logger.debug("Creating %s...", project_config)
     with project_file.open("w") as f:
         yaml = ruamel.yaml.YAML()
         yaml.dump(data=project_config, stream=f)
 
-    user_config = get_default_user_config(targets=targets)
+    user_config = {
+        "targets": {
+            uid: str(path.resolve()) for uid, path in id_path.items()
+        }
+    }
     logger.debug("Creating %s...", user_config)
     with project_user_file.open("w") as f:
         yaml = ruamel.yaml.YAML()
@@ -119,6 +140,9 @@ class DetectWhat(enum.Enum):
     ORIGINAL = "original"
     RECOMPILED = "recompiled"
 
+    def __str_(self):
+        return self.value
+
 
 def detect_project(
     project_directory: Path,
@@ -140,10 +164,16 @@ def detect_project(
         else:
             user_data = {"targets": {}}
         for target_id, target_data in project_data.get("targets", {}).items():
+            ref_sha256 = project_data.get("targets", {}).get(target_id, {}).get("hash", {}).get("sha256", None)
             filename = target_data["filename"]
             for search_path_folder in search_path:
                 p = search_path_folder / filename
                 if p.is_file():
+                    if ref_sha256:
+                        p_sha256 = get_path_sha256(p)
+                        if ref_sha256.lower() != p_sha256.lower():
+                            logger.info("sha256 of '%s' (%s) does NOT match expected hash (%s)", p, p_sha256, ref_sha256)
+                            continue
                     user_data.setdefault("targets", {}).setdefault(
                         target_id, {}
                     ).setdefault("path", str(p))
@@ -314,24 +344,6 @@ def get_default_main_cpp(target_id: str, original_path: Path, hpp_path: Path) ->
         {entry_function}
     """
     )
-
-
-def get_default_project_config(targets: dict[str, Path]):
-    return {
-        "targets": {
-            target_id: {"filename": path.name, "source-root": "."}
-            for target_id, path in targets.items()
-        },
-    }
-
-
-def get_default_user_config(targets: dict[str, Path]):
-    return {
-        "targets": {
-            target_id: {"path": str(path.resolve())}
-            for target_id, path in targets.items()
-        }
-    }
 
 
 def main():
