@@ -86,7 +86,7 @@ def create_project(
         yaml.dump(data=project_config, stream=f)
 
     user_config = {
-        "targets": {uid: str(path.resolve()) for uid, path in id_path.items()}
+        "targets": {uid: {"path": str(path.resolve())} for uid, path in id_path.items()}
     }
     logger.debug("Creating %s...", user_config)
     with project_user_file.open("w") as f:
