@@ -32,7 +32,7 @@ GITIGNORE_RULES = f"""\
 
 
 def path_to_id(path: Path) -> str:
-    return re.sub("[^0-9a-zA-Z_]", "", path.stem.lower())
+    return re.sub("[^0-9a-zA-Z_]", "", path.stem.upper())
 
 
 def get_path_sha256(p: Path) -> dict[str, str]:
@@ -48,12 +48,10 @@ def create_project(
         print("Need at least one original binary", file=sys.stderr)
         return 1
     id_path = {}
-    project_config = {
-        "targets": {}
-    }
+    project_config = {"targets": {}}
     for original_path in original_paths:
         if not original_path.is_file():
-            logger.error(f"Original binary (%s) is not a file", original_path)
+            logger.error("Original binary (%s) is not a file", original_path)
             return 1
         target_id = path_to_id(original_path)
         hash_sha256 = get_path_sha256(original_path)
@@ -66,7 +64,7 @@ def create_project(
         if target_id in project_config["targets"]:
             for suffix_nb in itertools.count(start=0, step=1):
                 new_target_id = f"{target_id}_{suffix_nb}"
-                if new_target_id not in targets:
+                if new_target_id not in project_config["targets"]:
                     target_id = new_target_id
                     break
         project_config["targets"][target_id] = target_data
@@ -88,9 +86,7 @@ def create_project(
         yaml.dump(data=project_config, stream=f)
 
     user_config = {
-        "targets": {
-            uid: str(path.resolve()) for uid, path in id_path.items()
-        }
+        "targets": {uid: str(path.resolve()) for uid, path in id_path.items()}
     }
     logger.debug("Creating %s...", user_config)
     with project_user_file.open("w") as f:
@@ -112,14 +108,14 @@ def create_project(
         )
 
         cmakelists_txt = get_default_cmakelists_txt(
-            project_name=project_name, targets=targets
+            project_name=project_name, targets=id_path
         )
         cmakelists_path = project_directory / "CMakeLists.txt"
         logger.debug("Creating %s...", cmakelists_path)
         with cmakelists_path.open("w") as f:
             f.write(cmakelists_txt)
 
-        for target_id, original_path in targets.items():
+        for target_id, original_path in id_path.items():
             main_cpp_path = project_directory / f"main_{target_id}.cpp"
             main_hpp_path = project_directory / f"main_{target_id}.hpp"
             main_cpp = get_default_main_cpp(
@@ -140,7 +136,7 @@ class DetectWhat(enum.Enum):
     ORIGINAL = "original"
     RECOMPILED = "recompiled"
 
-    def __str_(self):
+    def __str__(self):
         return self.value
 
 
@@ -164,21 +160,32 @@ def detect_project(
         else:
             user_data = {"targets": {}}
         for target_id, target_data in project_data.get("targets", {}).items():
-            ref_sha256 = project_data.get("targets", {}).get(target_id, {}).get("hash", {}).get("sha256", None)
+            ref_sha256 = (
+                project_data.get("targets", {})
+                .get(target_id, {})
+                .get("hash", {})
+                .get("sha256", None)
+            )
             filename = target_data["filename"]
             for search_path_folder in search_path:
                 p = search_path_folder / filename
-                if p.is_file():
-                    if ref_sha256:
-                        p_sha256 = get_path_sha256(p)
-                        if ref_sha256.lower() != p_sha256.lower():
-                            logger.info("sha256 of '%s' (%s) does NOT match expected hash (%s)", p, p_sha256, ref_sha256)
-                            continue
-                    user_data.setdefault("targets", {}).setdefault(
-                        target_id, {}
-                    ).setdefault("path", str(p))
-                    logger.info("Found %s -> %s", target_id, p)
-                    break
+                if not p.is_file():
+                    continue
+                if ref_sha256:
+                    p_sha256 = get_path_sha256(p)
+                    if ref_sha256.lower() != p_sha256.lower():
+                        logger.info(
+                            "sha256 of '%s' (%s) does NOT match expected hash (%s)",
+                            p,
+                            p_sha256,
+                            ref_sha256,
+                        )
+                        continue
+                user_data.setdefault("targets", {}).setdefault(
+                    target_id, {}
+                ).setdefault("path", str(p))
+                logger.info("Found %s -> %s", target_id, p)
+                break
             else:
                 logger.warning("Could not find %s", filename)
 
