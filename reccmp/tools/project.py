@@ -433,7 +433,7 @@ def main():
     if args.action == "DETECT":  # FIXME: use enum or callback function
         project = RecCmpProject.from_directory(Path.cwd())
         if not project:
-            parser.error("Cannot find reccmp project. Run %(prog)s create first.")
+            parser.error(f"Cannot find reccmp project. Run '{parser.prog} create' first.")
         return detect_project(
             project_directory=project.project_config.parent,
             search_path=args.detect_search_path,
