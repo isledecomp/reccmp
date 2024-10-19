@@ -11,6 +11,7 @@ import textwrap
 
 import ruamel.yaml
 import reccmp
+from reccmp.assets import get_asset_file
 from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
 from reccmp.project.detect import (
     RECCMP_BUILD_CONFIG,
@@ -20,7 +21,6 @@ from reccmp.project.detect import (
 )
 
 
-TOOLS_DIR = Path(__file__).resolve().parent
 logger = logging.getLogger(__name__)
 
 
@@ -86,7 +86,8 @@ def create_project(
         project_cmake_dir.mkdir(exist_ok=True)
         logger.debug("Copying %s...", "cmake/reccmp.py")
         shutil.copy(
-            TOOLS_DIR / "cmake/reccmp.cmake", project_directory / "cmake/reccmp.cmake"
+            get_asset_file("cmake/reccmp.cmake"),
+            project_directory / "cmake/reccmp.cmake",
         )
 
         cmakelists_txt = get_default_cmakelists_txt(
@@ -180,16 +181,6 @@ def detect_project(
 
         with build_config_path.open("w") as f:
             yaml.dump(data=build_data, stream=f)
-    return 0
-
-
-def update_project(project_directory: Path):
-    project_cmake_dir = project_directory / "cmake"
-    project_cmake_dir.mkdir(exist_ok=True)
-    logger.debug("Copying cmake/reccmp.cmake...")
-    shutil.copy(
-        TOOLS_DIR / "cmake/reccmp.cmake", project_directory / "cmake/reccmp.cmake"
-    )
     return 0
 
 
@@ -368,6 +359,7 @@ def main():
         type=Path,
         nargs="+",
         metavar="ORIGINAL",
+        dest="create_originals",
         required=True,
         help="Path(s) of original executable(s)",
     )
@@ -382,7 +374,7 @@ def main():
     create_parser.add_argument(
         "--cmake-project",
         action="store_true",
-        dest="detect_cmake",
+        dest="create_cmake",
         help="Create minimal CMake project",
     )
 
@@ -415,7 +407,7 @@ def main():
     if args.action == "CREATE":  # FIXME: use enum or callback function
         return create_project(
             project_directory=args.create_directory,
-            original_paths=args.originals,
+            original_paths=args.create_originals,
             cmake=args.create_cmake,
         )
 
