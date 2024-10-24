@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 
-import os
-import sys
 import argparse
+import logging
+from pathlib import Path
 import colorama
 import reccmp
 from reccmp.isledecomp.dir import walk_source_dir, is_file_cpp
 from reccmp.isledecomp.parser import DecompLinter
+from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
+from reccmp.project.detect import RecCmpProject
+
+logger = logging.getLogger(__name__)
 
 colorama.just_fix_windows_console()
 
@@ -37,25 +41,37 @@ def display_errors(alerts, filename):
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(
+    parser = argparse.ArgumentParser(
         description="Syntax checking and linting for decomp annotation markers."
     )
-    p.add_argument("--version", action="version", version=f"%(prog)s {reccmp.VERSION}")
-    p.add_argument("target", help="The file or directory to check.")
-    p.add_argument(
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {reccmp.VERSION}"
+    )
+    parser.add_argument(
+        "paths",
+        metavar="<path>",
+        nargs="*",
+        type=Path,
+        help="The file or directory to check.",
+    )
+    parser.add_argument(
         "--module",
         required=False,
         type=str,
         help="If present, run targeted checks for markers from the given module.",
     )
-    p.add_argument(
+    parser.add_argument(
         "--warnfail",
         action=argparse.BooleanOptionalAction,
         default=False,
         help="Fail if syntax warnings are found.",
     )
+    argparse_add_logging_args(parser)
 
-    (args, _) = p.parse_known_args()
+    args = parser.parse_args()
+
+    argparse_parse_logging(args)
+
     return args
 
 
@@ -83,13 +99,24 @@ def process_files(files, module=None):
 def main():
     args = parse_args()
 
+    if not args.paths:
+        project = RecCmpProject.from_directory(directory=Path.cwd())
+        if not project:
+            logger.error("Cannot find reccmp project")
+            return 1
+        print(project.targets)
+        args.paths = list(
+            set(target.source_root for target in project.targets.values())
+        )
+
     files_to_check = []
-    if os.path.isdir(args.target):
-        files_to_check = list(walk_source_dir(args.target))
-    elif os.path.isfile(args.target) and is_file_cpp(args.target):
-        files_to_check = [args.target]
-    else:
-        sys.exit("Invalid target")
+    for path in args.paths:
+        if path.is_dir():
+            files_to_check.extend(walk_source_dir(path))
+        elif path.is_file() and is_file_cpp(path):
+            files_to_check.append(path)
+        else:
+            logger.error("Invalid path: %s", path)
 
     (warning_count, error_count) = process_files(files_to_check, module=args.module)
 

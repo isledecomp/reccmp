@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import os
 import argparse
 import logging
 from typing import List
@@ -9,6 +8,15 @@ import reccmp
 from reccmp.isledecomp.bin import Bin as IsleBin
 from reccmp.isledecomp.compare import Compare as IsleCompare
 from reccmp.isledecomp.utils import print_combined_diff
+from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
+from reccmp.project.detect import (
+    argparse_add_built_project_target_args,
+    argparse_parse_built_project_target,
+    RecCmpProjectException,
+)
+
+
+logger = logging.getLogger(__name__)
 
 # Ignore all compare-db messages.
 logging.getLogger("isledecomp.compare").addHandler(logging.NullHandler())
@@ -21,38 +29,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {reccmp.VERSION}"
     )
-    parser.add_argument(
-        "original", metavar="original-binary", help="The original binary"
-    )
-    parser.add_argument(
-        "recompiled", metavar="recompiled-binary", help="The recompiled binary"
-    )
-    parser.add_argument(
-        "pdb", metavar="recompiled-pdb", help="The PDB of the recompiled binary"
-    )
-    parser.add_argument(
-        "decomp_dir", metavar="decomp-dir", help="The decompiled source tree"
-    )
+    argparse_add_built_project_target_args(parser)
     parser.add_argument(
         "--verbose", "-v", action="store_true", help="Show more detailed information"
     )
     parser.add_argument(
         "--no-color", "-n", action="store_true", help="Do not color the output"
     )
+    argparse_add_logging_args(parser)
 
-    (args, _) = parser.parse_known_args()
+    args = parser.parse_args()
 
-    if not os.path.isfile(args.original):
-        parser.error(f"Original binary {args.original} does not exist")
-
-    if not os.path.isfile(args.recompiled):
-        parser.error(f"Recompiled binary {args.recompiled} does not exist")
-
-    if not os.path.isfile(args.pdb):
-        parser.error(f"Symbols PDB {args.pdb} does not exist")
-
-    if not os.path.isdir(args.decomp_dir):
-        parser.error(f"Source directory {args.decomp_dir} does not exist")
+    argparse_parse_logging(args)
 
     return args
 
@@ -74,8 +62,18 @@ def main():
     vtable_count = 0
     problem_count = 0
 
-    with IsleBin(args.original) as orig_bin, IsleBin(args.recompiled) as recomp_bin:
-        engine = IsleCompare(orig_bin, recomp_bin, args.pdb, args.decomp_dir)
+    try:
+        target = argparse_parse_built_project_target(args)
+    except RecCmpProjectException as e:
+        logger.error(e.args[0])
+        return 1
+
+    with IsleBin(target.original_path) as orig_bin, IsleBin(
+        target.recompiled_path
+    ) as recomp_bin:
+        engine = IsleCompare(
+            orig_bin, recomp_bin, target.recompiled_pdb, target.source_root
+        )
 
         for tbl_match in engine.compare_vtables():
             vtable_count += 1

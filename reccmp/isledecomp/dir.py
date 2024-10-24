@@ -1,6 +1,5 @@
 import os
 import subprocess
-import sys
 import pathlib
 from typing import Iterator
 
@@ -97,7 +96,3 @@ def walk_source_dir(source: str, recursive: bool = True) -> Iterator[str]:
 
         if not recursive:
             break
-
-
-def get_file_in_script_dir(fn):
-    return os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), fn)

@@ -16,6 +16,16 @@ from reccmp.isledecomp.cvdump.types import (
     CvdumpIntegrityError,
 )
 from reccmp.isledecomp.bin import Bin as IsleBin
+from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
+from reccmp.project.detect import (
+    RecCmpProjectException,
+    RecCmpBuiltTarget,
+    argparse_add_built_project_target_args,
+    argparse_parse_built_project_target,
+)
+
+
+logger = logging.getLogger(__name__)
 
 colorama.just_fix_windows_console()
 
@@ -29,18 +39,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {reccmp.VERSION}"
     )
-    parser.add_argument(
-        "original", metavar="original-binary", help="The original binary"
-    )
-    parser.add_argument(
-        "recompiled", metavar="recompiled-binary", help="The recompiled binary"
-    )
-    parser.add_argument(
-        "pdb", metavar="recompiled-pdb", help="The PDB of the recompiled binary"
-    )
-    parser.add_argument(
-        "decomp_dir", metavar="decomp-dir", help="The decompiled source tree"
-    )
+    argparse_add_built_project_target_args(parser)
     parser.add_argument(
         "-v",
         "--verbose",
@@ -63,21 +62,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Print addresses of recompiled functions too",
     )
+    argparse_add_logging_args(parser)
 
-    (args, _) = parser.parse_known_args()
+    args = parser.parse_args()
 
-    if not os.path.isfile(args.original):
-        parser.error(f"Original binary {args.original} does not exist")
-
-    if not os.path.isfile(args.recompiled):
-        parser.error(f"Recompiled binary {args.recompiled} does not exist")
-
-    if not os.path.isfile(args.pdb):
-        parser.error(f"Symbols PDB {args.pdb} does not exist")
-
-    if not os.path.isdir(args.decomp_dir):
-        parser.error(f"Source directory {args.decomp_dir} does not exist")
-
+    argparse_parse_logging(args)
     return args
 
 
@@ -151,20 +140,25 @@ def create_comparison_item(
     )
 
 
-def do_the_comparison(args: argparse.Namespace) -> Iterable[ComparisonItem]:
+def do_the_comparison(target: RecCmpBuiltTarget) -> Iterable[ComparisonItem]:
     """Run through each variable in our compare DB, then do the comparison
     according to the variable's type. Emit the result."""
-    with IsleBin(args.original, find_str=True) as origfile, IsleBin(
-        args.recompiled
+    with IsleBin(target.original_path, find_str=True) as origfile, IsleBin(
+        target.recompiled_path
     ) as recompfile:
-        isle_compare = IsleCompare(origfile, recompfile, args.pdb, args.decomp_dir)
+        isle_compare = IsleCompare(
+            origfile,
+            recompfile,
+            target.recompiled_pdb,
+            target.source_root,
+        )
 
         # TODO: We don't currently retain the type information of each variable
         # in our compare DB. To get those, we build this mini-lookup table that
         # maps recomp addresses to their type.
         # We still need to build the full compare DB though, because we may
         # need the matched symbols to compare pointers (e.g. on strings)
-        mini_cvdump = Cvdump(args.pdb).globals().types().run()
+        mini_cvdump = Cvdump(target.recompiled_pdb).globals().types().run()
 
         recomp_type_reference = {
             recompfile.get_abs_addr(g.section, g.offset): g.type
@@ -313,6 +307,12 @@ def value_get(value: Optional[str], default: str):
 def main():
     args = parse_args()
 
+    try:
+        target = argparse_parse_built_project_target(args=args)
+    except RecCmpProjectException as e:
+        logger.error(e.args[0])
+        return 1
+
     def display_match(result: CompareResult) -> str:
         """Helper to return color string or not, depending on user preference"""
         if args.no_color:
@@ -332,7 +332,7 @@ def main():
     var_count = 0
     problems = 0
 
-    for item in do_the_comparison(args):
+    for item in do_the_comparison(target):
         var_count += 1
         if item.result in (CompareResult.DIFF, CompareResult.ERROR):
             problems += 1
@@ -366,7 +366,7 @@ def main():
             print()
 
     print(
-        f"{os.path.basename(args.original)} - Variables: {var_count}. Issues: {problems}"
+        f"{os.path.basename(target.original_path)} - Variables: {var_count}. Issues: {problems}"
     )
     return 0 if problems == 0 else 1
 

@@ -3,9 +3,14 @@ name: Test
 on: [push, pull_request]
 
 jobs:
+  fetch-deps:
+    name: Download original binaries
+    uses: ./.github/workflows/legobin.yml
+
   pytest-win:
     name: 'pytest ${{ matrix.platform.name }}'
     runs-on: ${{ matrix.platform.os }}
+    needs: fetch-deps
 
     strategy:
       fail-fast: false
@@ -17,6 +22,18 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Restore cached original binaries
+      id: cache-original-binaries
+      uses: actions/cache/restore@v3
+      with:
+        enableCrossOsArchive: true
+        path: legobin
+        key: legobin
+
     - name: Install python libraries
       shell: bash
       run: |
@@ -25,4 +42,4 @@ jobs:
     - name: Run python unit tests (Windows)
       shell: bash
       run: |
-        pytest .
+        pytest . --lego1=legobin/LEGO1.DLL
