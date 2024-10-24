@@ -113,8 +113,7 @@ def main():
                 f"Cannot find reccmp project. Run '{parser.prog} create' first."
             )
         try:
-            # pylint: disable=unused-argument
-            project = detect_project(
+            detect_project(
                 project_directory=project.project_config_path.parent,
                 search_path=args.detect_search_path,
                 detect_what=args.detect_what,
