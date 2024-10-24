@@ -1,38 +1,24 @@
 import argparse
 import dataclasses
+import enum
 import logging
 from pathlib import Path
 import typing
 
 import ruamel.yaml
 
+from .common import RECCMP_USER_CONFIG, RECCMP_BUILD_CONFIG, RECCMP_PROJECT_CONFIG
+from .error import (
+    RecCmpProjectException,
+    RecCmpProjectNotFoundException,
+    InvalidRecCmpProjectException,
+    InvalidRecCmpArgumentException,
+    UnknownRecCmpTargetException,
+)
+from .util import get_path_sha256
+
 
 logger = logging.getLogger(__file__)
-
-
-class RecCmpProjectException(Exception):
-    pass
-
-
-class RecCmpProjectNotFoundException(RecCmpProjectException):
-    pass
-
-
-class InvalidRecCmpProjectException(RecCmpProjectException):
-    pass
-
-
-class InvalidRecCmpArgumentException(RecCmpProjectException):
-    pass
-
-
-class UnknownRecCmpTargetException(RecCmpProjectException):
-    pass
-
-
-RECCMP_PROJECT_CONFIG = "reccmp-project.yml"
-RECCMP_USER_CONFIG = "reccmp-user.yml"
-RECCMP_BUILD_CONFIG = "reccmp-build.yml"
 
 
 @dataclasses.dataclass
@@ -86,9 +72,9 @@ def find_filename_recursively(directory: Path, filename: str) -> typing.Optional
 class RecCmpProject:
     def __init__(
         self,
-        project_config: typing.Optional[Path],
+        project_config_path: typing.Optional[Path],
     ):
-        self.project_config = project_config
+        self.project_config_path = project_config_path
         self.targets: dict[str, RecCmpTarget] = {}
 
     @classmethod
@@ -109,18 +95,18 @@ class RecCmpProject:
             )
             if not project_directory:
                 return None
-        project_config = project_directory / RECCMP_PROJECT_CONFIG
+        project_config_path = project_directory / RECCMP_PROJECT_CONFIG
 
         project = cls(
-            project_config=project_config,
+            project_config_path=project_config_path,
         )
-        project_data = yaml_loader.load(project_config.open())
+        project_data = yaml_loader.load(project_config_path.open())
         for target_id, project_target_data in project_data.get("targets").items():
             source_root = project_directory / project_target_data.get("source-root", "")
             filename = project_target_data.get("filename")
             if not filename:
                 raise InvalidRecCmpProjectException(
-                    f"{project_config}: targets.{target_id}.filename is missing"
+                    f"{project_config_path}: targets.{target_id}.filename is missing"
                 )
 
             project.targets[target_id] = RecCmpTarget(
@@ -132,11 +118,11 @@ class RecCmpProject:
 class RecCmpBuiltProject:
     def __init__(
         self,
-        project_config: typing.Optional[Path],
+        project_config_path: typing.Optional[Path],
         user_config: typing.Optional[Path],
         build_config: typing.Optional[Path],
     ):
-        self.project_config = project_config
+        self.project_config_path = project_config_path
         self.user_config = user_config
         self.build_config = build_config
         self.targets: dict[str, RecCmpBuiltTarget] = {}
@@ -154,13 +140,13 @@ class RecCmpBuiltProject:
         build_data = yaml_loader.load(build_config.open())
 
         project_directory = Path(build_data["project"])
-        project_config = project_directory / RECCMP_PROJECT_CONFIG
-        if not project_config.is_file():
+        project_config_path = project_directory / RECCMP_PROJECT_CONFIG
+        if not project_config_path.is_file():
             raise InvalidRecCmpProjectException(
-                f"{build_config}: .project is invalid ({project_config} does not exist)"
+                f"{build_config}: .project is invalid ({project_config_path} does not exist)"
             )
-        logger.debug("Using project config: %s", project_config)
-        project_data = yaml_loader.load(project_config.open())
+        logger.debug("Using project config: %s", project_config_path)
+        project_data = yaml_loader.load(project_config_path.open())
 
         user_config = project_directory / RECCMP_USER_CONFIG
         if not user_config.is_file():
@@ -177,7 +163,7 @@ class RecCmpBuiltProject:
         )
 
         project = cls(
-            project_config=project_config,
+            project_config_path=project_config_path,
             user_config=user_config,
             build_config=build_config,
         )
@@ -188,7 +174,7 @@ class RecCmpBuiltProject:
             filename = project_target_data.get("filename")
             if not filename:
                 raise InvalidRecCmpProjectException(
-                    f"{project_config}: targets.{target_id}.filename is missing"
+                    f"{project_config_path}: targets.{target_id}.filename is missing"
                 )
 
             original_path_str = user_target_data.get("path")
@@ -354,3 +340,96 @@ def argparse_parse_built_project_target(
             f"Source directory {target.source_root} does not exist"
         )
     return target
+
+
+class DetectWhat(enum.Enum):
+    ORIGINAL = "original"
+    RECOMPILED = "recompiled"
+
+    def __str__(self):
+        return self.value
+
+
+def detect_project(
+    project_directory: Path,
+    search_path: list[Path],
+    detect_what: DetectWhat,
+    build_directory: typing.Optional[Path] = None,
+) -> RecCmpProject:
+    yaml = ruamel.yaml.YAML()
+
+    project_config_path = project_directory / RECCMP_PROJECT_CONFIG
+    with project_config_path.open() as f:
+        project_data = yaml.load(stream=f)
+
+    if detect_what == DetectWhat.ORIGINAL:
+        user_config_path = project_directory / RECCMP_USER_CONFIG
+        if user_config_path.is_file():
+            with user_config_path.open() as f:
+                user_data = yaml.load(stream=f)
+        else:
+            user_data = {"targets": {}}
+        for target_id, target_data in project_data.get("targets", {}).items():
+            ref_sha256 = (
+                project_data.get("targets", {})
+                .get(target_id, {})
+                .get("hash", {})
+                .get("sha256", None)
+            )
+            filename = target_data["filename"]
+            for search_path_folder in search_path:
+                p = search_path_folder / filename
+                if not p.is_file():
+                    continue
+                if ref_sha256:
+                    p_sha256 = get_path_sha256(p)
+                    if ref_sha256.lower() != p_sha256.lower():
+                        logger.info(
+                            "sha256 of '%s' (%s) does NOT match expected hash (%s)",
+                            p,
+                            p_sha256,
+                            ref_sha256,
+                        )
+                        continue
+                user_data.setdefault("targets", {}).setdefault(
+                    target_id, {}
+                ).setdefault("path", str(p))
+                logger.info("Found %s -> %s", target_id, p)
+                break
+            else:
+                logger.warning("Could not find %s", filename)
+
+        logger.info("Updating %s", user_config_path)
+        with user_config_path.open("w") as f:
+            yaml.dump(data=user_data, stream=f)
+    elif detect_what == DetectWhat.RECOMPILED:
+        if not build_directory:
+            raise RecCmpProjectException(
+                "Detecting recompiled binaries requires build directory"
+            )
+        build_config_path = build_directory / RECCMP_BUILD_CONFIG
+        build_data = {
+            "project": str(project_directory.resolve()),
+        }
+        for target_id, target_data in project_data.get("targets", {}).items():
+            filename = target_data["filename"]
+            for search_path_folder in search_path:
+                p = search_path_folder / filename
+                pdb = p.with_suffix(".pdb")
+                if p.is_file() and pdb.is_file():
+                    build_data.setdefault("targets", {}).setdefault(
+                        target_id, {}
+                    ).setdefault("path", str(p))
+                    logger.info("Found %s -> %s", target_id, p)
+                    logger.info("Found %s -> %s", target_id, pdb)
+                    build_data.setdefault("targets", {}).setdefault(
+                        target_id, {}
+                    ).setdefault("pdb", str(p))
+                    break
+            else:
+                logger.warning("Could not find %s", filename)
+        logger.info("Updating %s", build_config_path)
+
+        with build_config_path.open("w") as f:
+            yaml.dump(data=build_data, stream=f)
+    return 0
