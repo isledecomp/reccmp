@@ -64,10 +64,10 @@ def verify_target_names(
             "User config %s contains too many target ids", RECCMP_USER_CONFIG
         )
     if project_keys - build_keys:
-        logger.warning("Build config %s is missing target ids", RECCMP_USER_CONFIG)
+        logger.warning("Build config %s is missing target ids", RECCMP_BUILD_CONFIG)
     if build_keys - project_keys:
         logger.warning(
-            "Build config %s contains too many target ids", RECCMP_USER_CONFIG
+            "Build config %s contains too many target ids", RECCMP_BUILD_CONFIG
         )
 
 
@@ -117,14 +117,14 @@ class RecCmpProject:
         project_data = yaml_loader.load(project_config.open())
         for target_id, project_target_data in project_data.get("targets").items():
             source_root = project_directory / project_target_data.get("source-root", "")
-            original_filename = project_directory / project_target_data.get("filename")
-            if not original_filename:
+            filename = project_target_data.get("filename")
+            if not filename:
                 raise InvalidRecCmpProjectException(
                     f"{project_config}: targets.{target_id}.filename is missing"
                 )
 
             project.targets[target_id] = RecCmpTarget(
-                target_id=target_id, filename=original_filename, source_root=source_root
+                target_id=target_id, filename=filename, source_root=source_root
             )
         return project
 
@@ -142,7 +142,7 @@ class RecCmpBuiltProject:
         self.targets: dict[str, RecCmpBuiltTarget] = {}
 
     @classmethod
-    def from_directory(cls, directory: Path) -> typing.Optional["RecCmpBuiltTarget"]:
+    def from_directory(cls, directory: Path) -> "RecCmpBuiltProject":
         build_directory = find_filename_recursively(
             directory=directory, filename=RECCMP_BUILD_CONFIG
         )
@@ -185,8 +185,8 @@ class RecCmpBuiltProject:
             user_target_data = user_data.get("targets", {}).get(target_id, {})
 
             source_root = project_directory / project_target_data.get("source-root", "")
-            original_filename = project_directory / project_target_data.get("filename")
-            if not original_filename:
+            filename = project_target_data.get("filename")
+            if not filename:
                 raise InvalidRecCmpProjectException(
                     f"{project_config}: targets.{target_id}.filename is missing"
                 )
@@ -215,7 +215,7 @@ class RecCmpBuiltProject:
 
             project.targets[target_id] = RecCmpBuiltTarget(
                 target_id=target_id,
-                filename=original_filename,
+                filename=filename,
                 original_path=original_path,
                 recompiled_path=recompiled_path,
                 recompiled_pdb=recompiled_pdb,

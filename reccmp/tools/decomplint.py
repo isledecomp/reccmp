@@ -105,7 +105,7 @@ def main():
             logger.error("Cannot find reccmp project")
             return 1
         print(project.targets)
-        args.paths = list(target.source_root for target in project.targets.values())
+        args.paths = list(set(target.source_root for target in project.targets.values()))
 
     files_to_check = []
     for path in args.paths:

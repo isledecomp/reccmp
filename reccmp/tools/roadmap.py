@@ -1,6 +1,10 @@
-"""For all addresses matched by code annotations or recomp pdb,
+#!/usr/bin/env python
+
+"""
+For all addresses matched by code annotations or recomp pdb,
 report how "far off" the recomp symbol is from its proper place
-in the original binary."""
+in the original binary.
+"""
 
 import os
 import argparse

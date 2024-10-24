@@ -307,37 +307,38 @@ def get_default_main_cpp(target_id: str, original_path: Path, hpp_path: Path) ->
     match target_type:
         case TargetType.EXECUTABLE:
             entry_function = textwrap.dedent(
-                """\
+                f"""\
                 #ifdef _WIN32
                 #include <windows.h>
 
-                // FUNCTION: {original_id} 0x10000020
-                int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine, int nCmdShow) {
+                // FUNCTION: {target_id} 0x10000020
+                int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine, int nCmdShow) {{
                     return 0;
-                }
+                }}
                 #else
-                // FUNCTION: {original_id} 0x10000020
-                int main(int argc, char *argv[]) {
+                // FUNCTION: {target_id} 0x10000020
+                int main(int argc, char *argv[]) {{
                     return 0;
-                }
+                }}
                 #endif
             """
             )
         case TargetType.SHARED_LIBRARY:
             entry_function = textwrap.dedent(
-                """\
+                f"""\
                 #ifdef _WIN32
                 #include <windows.h>
 
-                // FUNCTION: {original_id} 0x10000020
-                BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved ) {
+                // FUNCTION: {target_id} 0x10000020
+                BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved ) {{
                     return TRUE;
-                }
+                }}
                 #endif
             """
             )
-    return textwrap.dedent(
-        f"""\
+    return (
+        textwrap.dedent(
+            f"""\
         #include "{hpp_path.name}"
 
         // FUNCTION: {target_id} 0x10000000
@@ -347,9 +348,10 @@ def get_default_main_cpp(target_id: str, original_path: Path, hpp_path: Path) ->
         // GLOBAL: {target_id} 0x10102000
         // STRING: {target_id} 0x10101f00
         const char* g_globalString = "A global string";
-
-        {entry_function}
     """
+        )
+        + "\n"
+        + entry_function
     )
 
 
@@ -374,7 +376,7 @@ def main():
     create_parser = subparsers.add_parser("create")
     create_parser.set_defaults(action="CREATE")
     create_parser.add_argument(
-        "--originals",
+        "originals",
         type=Path,
         nargs="+",
         metavar="ORIGINAL",
