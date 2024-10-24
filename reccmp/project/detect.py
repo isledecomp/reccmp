@@ -179,24 +179,33 @@ class RecCmpBuiltProject:
 
             original_path_str = user_target_data.get("path")
             if not original_path_str:
-                raise InvalidRecCmpProjectException(
-                    f"{user_config}: targets.{target_id}.path is missing"
+                logger.warning(
+                    "%s: targets.%s.path is missing. Target will not be available.",
+                    user_config,
+                    target_id,
                 )
+                continue
             original_path = Path(original_path_str.strip())
 
             build_target_data = build_data.get("targets", {}).get(target_id, {})
 
             recompiled_path_str = build_target_data.get("path")
             if not recompiled_path_str:
-                raise InvalidRecCmpProjectException(
-                    f"{build_config}: targets.{target_id}.path is missing."
+                logger.warning(
+                    "%s: targets.%s.path is missing. Target will not be available.",
+                    build_config,
+                    target_id,
                 )
+                continue
             recompiled_path = Path(recompiled_path_str)
             recompiled_pdb_str = build_target_data.get("pdb")
             if not recompiled_path_str:
-                raise InvalidRecCmpProjectException(
-                    f"{build_config}: targets.{target_id}.pdb is missing."
+                logger.warning(
+                    "%s: targets.%s.pdb is missing. Target will not be available.",
+                    build_config,
+                    target_id,
                 )
+                continue
             recompiled_pdb = Path(recompiled_pdb_str)
 
             project.targets[target_id] = RecCmpBuiltTarget(
@@ -355,7 +364,7 @@ def detect_project(
     search_path: list[Path],
     detect_what: DetectWhat,
     build_directory: typing.Optional[Path] = None,
-) -> RecCmpProject:
+) -> None:
     yaml = ruamel.yaml.YAML()
 
     project_config_path = project_directory / RECCMP_PROJECT_CONFIG
@@ -432,4 +441,3 @@ def detect_project(
 
         with build_config_path.open("w") as f:
             yaml.dump(data=build_data, stream=f)
-    return 0
