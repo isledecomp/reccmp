@@ -72,7 +72,7 @@ def find_filename_recursively(directory: Path, filename: str) -> typing.Optional
 class RecCmpProject:
     def __init__(
         self,
-        project_config_path: typing.Optional[Path],
+        project_config_path: Path,
     ):
         self.project_config_path = project_config_path
         self.targets: dict[str, RecCmpTarget] = {}
@@ -118,9 +118,9 @@ class RecCmpProject:
 class RecCmpBuiltProject:
     def __init__(
         self,
-        project_config_path: typing.Optional[Path],
-        user_config: typing.Optional[Path],
-        build_config: typing.Optional[Path],
+        project_config_path: Path,
+        user_config: Path,
+        build_config: Path,
     ):
         self.project_config_path = project_config_path
         self.user_config = user_config

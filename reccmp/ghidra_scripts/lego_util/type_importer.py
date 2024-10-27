@@ -7,7 +7,6 @@ from typing import Any, Callable, Iterator, Optional, TypeVar
 # pylint: disable=too-many-return-statements # a `match` would be better, but for now we are stuck with Python 3.9
 # pylint: disable=no-else-return # Not sure why this rule even is a thing, this is great for checking exhaustiveness
 
-from reccmp.isledecomp.cvdump.types import VirtualBasePointer
 from lego_util.exceptions import (
     ClassOrNamespaceNotFoundInGhidraError,
     TypeNotFoundError,
@@ -40,6 +39,7 @@ from ghidra.program.model.data import (
 )
 from ghidra.util.task import ConsoleTaskMonitor
 
+from reccmp.isledecomp.cvdump.types import VirtualBasePointer
 
 logger = logging.getLogger(__name__)
 
