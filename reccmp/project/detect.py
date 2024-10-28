@@ -433,7 +433,7 @@ def detect_project(
                     logger.info("Found %s -> %s", target_id, pdb)
                     build_data.setdefault("targets", {}).setdefault(
                         target_id, {}
-                    ).setdefault("pdb", str(p))
+                    ).setdefault("pdb", str(pdb))
                     break
             else:
                 logger.warning("Could not find %s", filename)
