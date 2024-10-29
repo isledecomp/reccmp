@@ -21,6 +21,7 @@ This step differs slightly depending on your setup.
 - In Ghidra, _Open Window -> Script Manager_.
 - Click the _Manage Script Directories_ button on the top right.
 - Click the _Add_ (Plus icon) button.
+- You may have to select _File Chooser Options -> Show '.' Files_.
     - Case 1: Select `Lib/site-packages/reccmp/ghidra_scripts` inside your _project's_ virtual environment.
     - Case 2: Select `<this repository's root>/reccmp/ghidra_scripts`. (Don't select anything within this repository's venv, especially if you have installed this project in editable mode).
 - Close the window and click the _Refresh_ button.
