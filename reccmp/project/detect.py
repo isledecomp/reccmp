@@ -198,7 +198,7 @@ class RecCmpBuiltProject:
                     target_id,
                 )
                 continue
-            recompiled_path = Path(recompiled_path_str)
+            recompiled_path = build_directory.joinpath(Path(recompiled_path_str))
             recompiled_pdb_str = build_target_data.get("pdb")
             if not recompiled_path_str:
                 logger.warning(
@@ -207,7 +207,7 @@ class RecCmpBuiltProject:
                     target_id,
                 )
                 continue
-            recompiled_pdb = Path(recompiled_pdb_str)
+            recompiled_pdb = build_directory.joinpath(Path(recompiled_pdb_str))
 
             project.targets[target_id] = RecCmpBuiltTarget(
                 target_id=target_id,
