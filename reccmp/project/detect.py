@@ -139,7 +139,8 @@ class RecCmpBuiltProject:
         yaml_loader = ruamel.yaml.YAML()
         build_data = yaml_loader.load(build_config.open())
 
-        project_directory = Path(build_data["project"])
+        # note that Path.joinpath() will ignore the first path if the second path is absolute
+        project_directory = build_directory.joinpath(Path(build_data["project"]))
         project_config_path = project_directory / RECCMP_PROJECT_CONFIG
         if not project_config_path.is_file():
             raise InvalidRecCmpProjectException(

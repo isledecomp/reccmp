@@ -304,6 +304,7 @@ try:
     import setuptools  # pylint: disable=unused-import # required to fix a distutils issue in Python 3.12
 
     # Packages are imported down here because reccmp's dependencies are only available after the venv was added to the pythonpath
+    reload_module("reccmp.project.detect")
     from reccmp.project.common import RECCMP_BUILD_CONFIG, RECCMP_PROJECT_CONFIG
     from reccmp.project.detect import RecCmpBuiltProject, RecCmpBuiltTarget
     from reccmp.project.error import RecCmpProjectNotFoundException
