@@ -2,11 +2,11 @@
 #
 # This script uses Python 3 and therefore requires Ghidrathon to be installed in Ghidra (see https://github.com/mandiant/Ghidrathon).
 # Furthermore, the virtual environment must be set up beforehand under $REPOSITORY_ROOT/.venv, and all required packages must be installed
-# (see $REPOSITORY_ROOT/tools/README.md).
+# (see README.md).
 # Also, the Python version of the virtual environment must probably match the Python version used for Ghidrathon.
 
 # @author J. Schulz
-# @category LEGO1
+# @category reccmp
 # @keybinding
 # @menupath
 # @toolbar
