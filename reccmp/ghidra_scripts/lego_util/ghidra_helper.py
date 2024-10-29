@@ -60,26 +60,44 @@ def add_data_type_or_reuse_existing(
     return result_data_type
 
 
-def get_ghidra_namespace(
+def _get_ghidra_namespace(
     api: FlatProgramAPI, namespace_hierachy: list[str]
 ) -> Namespace:
     namespace = api.getCurrentProgram().getGlobalNamespace()
     for part in namespace_hierachy:
+        if len(part) == 0:
+            continue
         namespace = api.getNamespace(namespace, part)
         if namespace is None:
             raise ClassOrNamespaceNotFoundInGhidraError(namespace_hierachy)
     return namespace
 
 
-def create_ghidra_namespace(
+def _create_ghidra_namespace(
     api: FlatProgramAPI, namespace_hierachy: list[str]
 ) -> Namespace:
     namespace = api.getCurrentProgram().getGlobalNamespace()
     for part in namespace_hierachy:
+        if len(part) == 0:
+            continue
         namespace = api.getNamespace(namespace, part)
         if namespace is None:
             namespace = api.createNamespace(namespace, part)
     return namespace
+
+def get_or_create_namespace(api: FlatProgramAPI, class_name_with_namespace: str) -> Namespace:
+    colon_split = class_name_with_namespace.split("::")
+    class_name = colon_split[-1]
+    logger.info("Looking for namespace: '%s'", class_name_with_namespace)
+    try:
+        result = _get_ghidra_namespace(api, colon_split)
+        logger.debug("Found existing class/namespace %s", class_name_with_namespace)
+        return result
+    except ClassOrNamespaceNotFoundInGhidraError:
+        logger.info("Creating class/namespace %s", class_name_with_namespace)
+        class_name = colon_split.pop()
+        parent_namespace = _create_ghidra_namespace(api, colon_split)
+        return api.createClass(parent_namespace, class_name)
 
 
 # These appear in debug builds

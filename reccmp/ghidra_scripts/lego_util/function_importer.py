@@ -25,9 +25,8 @@ from lego_util.pdb_extraction import (
 )
 from lego_util.ghidra_helper import (
     add_data_type_or_reuse_existing,
-    create_ghidra_namespace,
+    get_or_create_namespace,
     get_or_add_pointer_type,
-    get_ghidra_namespace,
     sanitize_name,
 )
 
@@ -55,10 +54,7 @@ class PdbFunctionImporter(ABC):
         colon_split = sanitize_name(self.match_info.name).split("::")
         self.name = colon_split.pop()
         namespace_hierachy = colon_split
-        self.namespace = self._do_get_namespace(namespace_hierachy)
-
-    def _do_get_namespace(self, namespace_hierarchy: list[str]):
-        return get_ghidra_namespace(self.api, namespace_hierarchy)
+        self.namespace = get_or_create_namespace(self.api, "::".join(namespace_hierachy))
 
     def get_full_name(self) -> str:
         return f"{self.namespace.getName()}::{self.name}"
@@ -83,10 +79,6 @@ class PdbFunctionImporter(ABC):
 class ThunkPdbFunctionImport(PdbFunctionImporter):
     """For importing thunk functions (like vtordisp or debug build thunks) into Ghidra.
     Only the name of the function will be imported."""
-
-    def _do_get_namespace(self, namespace_hierarchy: list[str]):
-        """We need to create the namespace because we don't import the return type here"""
-        return create_ghidra_namespace(self.api, namespace_hierarchy)
 
     def matches_ghidra_function(self, ghidra_function: Function) -> bool:
         name_match = self.name == ghidra_function.getName(False)
