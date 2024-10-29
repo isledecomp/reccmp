@@ -85,7 +85,10 @@ def _create_ghidra_namespace(
             namespace = api.createNamespace(namespace, part)
     return namespace
 
-def get_or_create_namespace(api: FlatProgramAPI, class_name_with_namespace: str) -> Namespace:
+
+def get_or_create_namespace(
+    api: FlatProgramAPI, class_name_with_namespace: str
+) -> Namespace:
     colon_split = class_name_with_namespace.split("::")
     class_name = colon_split[-1]
     logger.info("Looking for namespace: '%s'", class_name_with_namespace)

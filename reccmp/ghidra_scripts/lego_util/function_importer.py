@@ -54,7 +54,9 @@ class PdbFunctionImporter(ABC):
         colon_split = sanitize_name(self.match_info.name).split("::")
         self.name = colon_split.pop()
         namespace_hierachy = colon_split
-        self.namespace = get_or_create_namespace(self.api, "::".join(namespace_hierachy))
+        self.namespace = get_or_create_namespace(
+            self.api, "::".join(namespace_hierachy)
+        )
 
     def get_full_name(self) -> str:
         return f"{self.namespace.getName()}::{self.name}"
