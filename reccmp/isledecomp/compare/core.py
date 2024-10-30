@@ -8,7 +8,6 @@ from typing import Any, Callable, Iterable, List, Optional
 from reccmp.isledecomp.bin import Bin as IsleBin, InvalidVirtualAddressError
 from reccmp.isledecomp.cvdump.demangler import demangle_string_const
 from reccmp.isledecomp.cvdump import Cvdump, CvdumpAnalysis
-from reccmp.isledecomp.cvdump.types import scalar_type_pointer
 from reccmp.isledecomp.parser import DecompCodebase
 from reccmp.isledecomp.dir import walk_source_dir
 from reccmp.isledecomp.types import SymbolType
@@ -82,6 +81,7 @@ class Compare:
 
         self._load_cvdump()
         self._load_markers()
+        self._match_array_elements()
         # Detect floats first to eliminate potential overlap with string data
         self._find_float_const()
         self._find_original_strings()
@@ -222,8 +222,7 @@ class Compare:
                     var.offset, var.name, var.parent_function
                 )
             else:
-                if self._db.match_variable(var.offset, var.name):
-                    self._check_if_array_and_match_elements(var.offset, var.name)
+                self._db.match_variable(var.offset, var.name)
 
         for tbl in codebase.iter_vtables():
             self._db.match_vtable(tbl.offset, tbl.name, tbl.base_class)
@@ -248,68 +247,68 @@ class Compare:
 
             self._db.match_string(string.offset, string.name)
 
-    def _check_if_array_and_match_elements(self, orig_addr: int, name: str):
+    def _match_array_elements(self):
         """
-        Checks if the global variable at `orig_addr` is an array.
+        For each matched variable, check whether it is an array.
         If yes, adds a match for all its elements. If it is an array of structs, all fields in that struct are also matched.
         Note that there is no recursion, so an array of arrays would not be handled entirely.
         This step is necessary e.g. for `0x100f0a20` (LegoRacers.cpp).
         """
 
+        # Helper function
         def _add_match_in_array(
             name: str, type_id: str, orig_addr: int, recomp_addr: int
         ):
+            # pylint: disable=unused-argument
+            # TODO: Previously used scalar_type_pointer(type_id) to set whether this is a pointer
             self._db.set_recomp_symbol(
                 recomp_addr,
-                SymbolType.POINTER if scalar_type_pointer(type_id) else SymbolType.DATA,
-                name,
-                name,
+                # No type so we don't try to compare in datacmp
+                compare_type=None,
+                name=name,
+                decorated_name=None,
                 # we only need the matches when they are referenced elsewhere, hence we don't need the size
                 size=None,
             )
             self._db.set_pair(orig_addr, recomp_addr)
 
-        matchinfo = self._db.get_by_orig(orig_addr)
-        if matchinfo is None or matchinfo.recomp_addr is None:
-            return
-        recomp_addr = matchinfo.recomp_addr
+        # Indexed by recomp addr. Need to preload this data because it is not stored alongside the db rows.
+        cvdump_lookup = {x.addr: x for x in self.cvdump_analysis.nodes}
 
-        node = next(
-            (x for x in self.cvdump_analysis.nodes if x.addr == recomp_addr),
-            None,
-        )
-        if node is None or node.data_type is None:
-            return
+        for match in self._db.get_matches_by_type(SymbolType.DATA):
+            node = cvdump_lookup.get(match.recomp_addr)
+            if node is None or node.data_type is None:
+                continue
 
-        if not node.data_type.key.startswith("0x"):
-            # scalar type, so clearly not an array
-            return
+            if not node.data_type.key.startswith("0x"):
+                # scalar type, so clearly not an array
+                continue
 
-        data_type = self.cv.types.keys[node.data_type.key.lower()]
+            data_type = self.cv.types.keys[node.data_type.key.lower()]
 
-        if data_type["type"] == "LF_ARRAY":
-            array_element_type = self.cv.types.get(data_type["array_type"])
+            if data_type["type"] == "LF_ARRAY":
+                array_element_type = self.cv.types.get(data_type["array_type"])
 
-            assert node.data_type.members is not None
+                assert node.data_type.members is not None
 
-            for array_element in node.data_type.members:
-                orig_element_base_addr = orig_addr + array_element.offset
-                recomp_element_base_addr = recomp_addr + array_element.offset
-                if array_element_type.members is None:
-                    _add_match_in_array(
-                        f"{name}{array_element.name}",
-                        array_element_type.key,
-                        orig_element_base_addr,
-                        recomp_element_base_addr,
-                    )
-                else:
-                    for member in array_element_type.members:
+                for array_element in node.data_type.members:
+                    orig_element_base_addr = match.orig_addr + array_element.offset
+                    recomp_element_base_addr = match.recomp_addr + array_element.offset
+                    if array_element_type.members is None:
                         _add_match_in_array(
-                            f"{name}{array_element.name}.{member.name}",
+                            f"{match.name}{array_element.name}",
                             array_element_type.key,
-                            orig_element_base_addr + member.offset,
-                            recomp_element_base_addr + member.offset,
+                            orig_element_base_addr,
+                            recomp_element_base_addr,
                         )
+                    else:
+                        for member in array_element_type.members:
+                            _add_match_in_array(
+                                f"{match.name}{array_element.name}.{member.name}",
+                                array_element_type.key,
+                                orig_element_base_addr + member.offset,
+                                recomp_element_base_addr + member.offset,
+                            )
 
     def _find_original_strings(self):
         """Go to the original binary and look for the specified string constants
