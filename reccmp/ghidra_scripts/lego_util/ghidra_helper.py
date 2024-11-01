@@ -8,7 +8,7 @@ from lego_util.exceptions import (
     TypeNotFoundInGhidraError,
     MultipleTypesFoundInGhidraError,
 )
-from lego_util.globals import GLOBALS, SupportedModules
+from lego_util.globals import GLOBALS
 
 # Disable spurious warnings in vscode / pylance
 # pyright: reportMissingModuleSource=false
@@ -60,26 +60,47 @@ def add_data_type_or_reuse_existing(
     return result_data_type
 
 
-def get_ghidra_namespace(
+def _get_ghidra_namespace(
     api: FlatProgramAPI, namespace_hierachy: list[str]
 ) -> Namespace:
     namespace = api.getCurrentProgram().getGlobalNamespace()
     for part in namespace_hierachy:
+        if len(part) == 0:
+            continue
         namespace = api.getNamespace(namespace, part)
         if namespace is None:
             raise ClassOrNamespaceNotFoundInGhidraError(namespace_hierachy)
     return namespace
 
 
-def create_ghidra_namespace(
+def _create_ghidra_namespace(
     api: FlatProgramAPI, namespace_hierachy: list[str]
 ) -> Namespace:
     namespace = api.getCurrentProgram().getGlobalNamespace()
     for part in namespace_hierachy:
+        if len(part) == 0:
+            continue
         namespace = api.getNamespace(namespace, part)
         if namespace is None:
             namespace = api.createNamespace(namespace, part)
     return namespace
+
+
+def get_or_create_namespace(
+    api: FlatProgramAPI, class_name_with_namespace: str
+) -> Namespace:
+    colon_split = class_name_with_namespace.split("::")
+    class_name = colon_split[-1]
+    logger.info("Looking for namespace: '%s'", class_name_with_namespace)
+    try:
+        result = _get_ghidra_namespace(api, colon_split)
+        logger.debug("Found existing class/namespace %s", class_name_with_namespace)
+        return result
+    except ClassOrNamespaceNotFoundInGhidraError:
+        logger.info("Creating class/namespace %s", class_name_with_namespace)
+        class_name = colon_split.pop()
+        parent_namespace = _create_ghidra_namespace(api, colon_split)
+        return api.createClass(parent_namespace, class_name)
 
 
 # These appear in debug builds
@@ -109,7 +130,9 @@ def sanitize_name(name: str) -> str:
     # Importing function names like `FUN_10001234` into BETA10 can be confusing
     # because Ghidra's auto-generated functions look exactly the same.
     # Therefore, such function names are replaced by `LEGO_10001234` in the BETA10 import.
-    if GLOBALS.module == SupportedModules.BETA10:
+
+    # FIXME: The identification here is a crutch - we need a more reusable solution for this scenario
+    if GLOBALS.target_name.upper() == "BETA10.DLL":
         new_name = re.sub(r"FUN_([0-9a-f]{8})", r"LEGO1_\1", new_name)
 
     if "<" in name:

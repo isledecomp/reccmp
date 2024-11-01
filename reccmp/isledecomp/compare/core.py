@@ -1,6 +1,7 @@
 import os
 import logging
 import difflib
+from pathlib import Path
 import struct
 import uuid
 from dataclasses import dataclass
@@ -66,12 +67,16 @@ def create_bin_lookup(bin_file: IsleBin) -> Callable[[int, int], Optional[str]]:
 class Compare:
     # pylint: disable=too-many-instance-attributes
     def __init__(
-        self, orig_bin: IsleBin, recomp_bin: IsleBin, pdb_file: str, code_dir: str
+        self,
+        orig_bin: IsleBin,
+        recomp_bin: IsleBin,
+        pdb_file: Path | str,
+        code_dir: Path | str,
     ):
         self.orig_bin = orig_bin
         self.recomp_bin = recomp_bin
-        self.pdb_file = pdb_file
-        self.code_dir = code_dir
+        self.pdb_file = str(pdb_file)
+        self.code_dir = str(code_dir)
         # Controls whether we dump the asm output to a file
         self.debug: bool = False
         self.runid: str = uuid.uuid4().hex[:8]

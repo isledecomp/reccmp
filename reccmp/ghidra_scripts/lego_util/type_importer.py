@@ -7,9 +7,7 @@ from typing import Any, Callable, Iterator, Optional, TypeVar
 # pylint: disable=too-many-return-statements # a `match` would be better, but for now we are stuck with Python 3.9
 # pylint: disable=no-else-return # Not sure why this rule even is a thing, this is great for checking exhaustiveness
 
-from reccmp.isledecomp.cvdump.types import VirtualBasePointer
 from lego_util.exceptions import (
-    ClassOrNamespaceNotFoundInGhidraError,
     TypeNotFoundError,
     TypeNotFoundInGhidraError,
     TypeNotImplementedError,
@@ -18,9 +16,8 @@ from lego_util.exceptions import (
 from lego_util.ghidra_helper import (
     add_data_type_or_reuse_existing,
     get_or_add_pointer_type,
-    create_ghidra_namespace,
-    get_ghidra_namespace,
     get_ghidra_type,
+    get_or_create_namespace,
     sanitize_name,
 )
 from lego_util.pdb_extraction import PdbFunctionExtractor
@@ -40,6 +37,7 @@ from ghidra.program.model.data import (
 )
 from ghidra.util.task import ConsoleTaskMonitor
 
+from reccmp.isledecomp.cvdump.types import VirtualBasePointer
 
 logger = logging.getLogger(__name__)
 
@@ -230,7 +228,7 @@ class PdbTypeImporter:
         # Add as soon as we start to avoid infinite recursion
         self.handled_structs.add(class_name_with_namespace)
 
-        self._get_or_create_namespace(class_name_with_namespace)
+        get_or_create_namespace(self.api, class_name_with_namespace)
 
         new_ghidra_struct = self._get_or_create_struct_data_type(
             class_name_with_namespace, class_size
@@ -430,18 +428,6 @@ class PdbTypeImporter:
                 )
             except Exception as e:
                 raise StructModificationError(class_name_with_namespace) from e
-
-    def _get_or_create_namespace(self, class_name_with_namespace: str):
-        colon_split = class_name_with_namespace.split("::")
-        class_name = colon_split[-1]
-        try:
-            get_ghidra_namespace(self.api, colon_split)
-            logger.debug("Found existing class/namespace %s", class_name_with_namespace)
-        except ClassOrNamespaceNotFoundInGhidraError:
-            logger.info("Creating class/namespace %s", class_name_with_namespace)
-            class_name = colon_split.pop()
-            parent_namespace = create_ghidra_namespace(self.api, colon_split)
-            self.api.createClass(parent_namespace, class_name)
 
     def _get_or_create_enum_data_type(
         self, enum_type_name: str, enum_type_size: int

@@ -2,11 +2,11 @@
 #
 # This script uses Python 3 and therefore requires Ghidrathon to be installed in Ghidra (see https://github.com/mandiant/Ghidrathon).
 # Furthermore, the virtual environment must be set up beforehand under $REPOSITORY_ROOT/.venv, and all required packages must be installed
-# (see $REPOSITORY_ROOT/tools/README.md).
+# (see README.md).
 # Also, the Python version of the virtual environment must probably match the Python version used for Ghidrathon.
 
 # @author J. Schulz
-# @category LEGO1
+# @category reccmp
 # @keybinding
 # @menupath
 # @toolbar
@@ -22,6 +22,7 @@
 # pyright: reportMissingModuleSource=false
 
 import importlib
+import json
 import logging.handlers
 import sys
 import logging
@@ -52,7 +53,7 @@ def reload_module(module: str):
 
 reload_module("lego_util.statistics")
 reload_module("lego_util.globals")
-from lego_util.globals import GLOBALS, SupportedModules
+from lego_util.globals import GLOBALS
 
 
 def setup_logging():
@@ -61,13 +62,9 @@ def setup_logging():
     # formatter = logging.Formatter("%(name)s %(levelname)-8s %(message)s") # use this to identify loggers
     stdout_handler = logging.StreamHandler(sys.stdout)
     stdout_handler.setFormatter(formatter)
-    file_handler = logging.FileHandler(
-        Path(__file__).absolute().parent.joinpath("import.log"), mode="w"
-    )
-    file_handler.setFormatter(formatter)
     logging.root.setLevel(GLOBALS.loglevel)
     logging.root.addHandler(stdout_handler)
-    logging.root.addHandler(file_handler)
+
     logger.info("Starting import...")
 
 
@@ -94,15 +91,14 @@ def get_repository_root():
     return Path(__file__).absolute().parent.parent.parent
 
 
-def add_python_path(path: str):
+def add_python_path(path: Path):
     """
     Scripts in Ghidra are executed from the tools/ghidra_scripts directory. We need to add
     a few more paths to the Python path so we can import the other libraries.
     """
-    venv_path = get_repository_root().joinpath(path)
-    logger.info("Adding %s to Python Path", venv_path)
-    assert venv_path.exists()
-    sys.path.insert(1, str(venv_path))
+    logger.info("Adding %s to Python Path", path)
+    assert path.exists()
+    sys.path.insert(1, str(path))
 
 
 # We need to quote the types here because they might not exist when running without Ghidra
@@ -190,30 +186,87 @@ def log_and_track_failure(
         )
 
 
-def main():
-    if GLOBALS.running_from_ghidra:
-        origfile_name = getProgramFile().getName()
+def find_and_add_venv_to_pythonpath():
+    path = Path(__file__)
 
-        if origfile_name == "LEGO1.DLL":
-            GLOBALS.module = SupportedModules.LEGO1
-        elif origfile_name in ["LEGO1D.DLL", "BETA10.DLL"]:
-            GLOBALS.module = SupportedModules.BETA10
-        else:
-            raise Lego1Exception(
-                f"Unsupported file name in import script: {origfile_name}"
-            )
+    # Add the virtual environment if we are in one, e.g. `.venv/Lib/site-packages/reccmp/ghidra_scripts/import_[...].py`
+    while not path.is_mount():
+        if path.name == "site-packages":
+            add_python_path(path)
+            return
+        path = path.parent
 
-    logger.info("Importing file: %s", GLOBALS.module.orig_filename())
+    # Development setup: Running from the reccmp repository. The dependencies must be installed in a venv with name `.venv`.
 
-    repo_root = get_repository_root()
-    origfile_path = repo_root.joinpath("legobin").joinpath(
-        GLOBALS.module.orig_filename()
+    # This one is needed when the reccmp project is installed in editable mode and we are running directly from the source
+    add_python_path(Path(__file__).parent.parent.parent)
+
+    # Now we add the virtual environment where the dependencies need to be installed
+    path = Path(__file__)
+    while not path.is_mount():
+        venv_candidate = path / ".venv"
+        if venv_candidate.exists():
+            add_python_path(venv_candidate / "Lib" / "site-packages")
+            return
+        path = path.parent
+
+    logger.warning(
+        "No virtual environment was found. This script might fail to find dependencies."
     )
-    build_directory = repo_root.joinpath(GLOBALS.module.build_dir_name())
-    recompiledfile_name = f"{GLOBALS.module.recomp_filename_without_extension()}.DLL"
-    recompiledfile_path = build_directory.joinpath(recompiledfile_name)
-    pdbfile_name = f"{GLOBALS.module.recomp_filename_without_extension()}.PDB"
-    pdbfile_path = build_directory.joinpath(pdbfile_name)
+
+
+def find_build_target() -> "RecCmpBuiltTarget":
+    """
+    Known issue: In order to use this script, `reccmp-build.yml` must be located in the same directory as `reccmp-project.yml`.
+    """
+
+    project_search_path = Path(__file__).parent
+
+    try:
+        project = RecCmpBuiltProject.from_directory(project_search_path)
+    except RecCmpProjectNotFoundException as e:
+        # Figure out if we are in a debugging scenario
+        debug_config_file = Path(__file__).parent / "dev_config.json"
+        if not debug_config_file.exists():
+            raise RecCmpProjectNotFoundException(
+                f"Cannot find a reccmp project under {project_search_path} (missing {RECCMP_PROJECT_CONFIG}/{RECCMP_BUILD_CONFIG})"
+            ) from e
+
+        with debug_config_file.open() as infile:
+            debug_config = json.load(infile)
+
+        project = RecCmpBuiltProject.from_directory(Path(debug_config["projectDir"]))
+
+    # Set up logfile next to the project config file
+    file_handler = logging.FileHandler(
+        project.project_config_path.parent.joinpath("ghidra_import.log"), mode="w"
+    )
+    file_handler.setFormatter(logging.root.handlers[0].formatter)
+    logging.root.addHandler(file_handler)
+
+    if GLOBALS.running_from_ghidra:
+        GLOBALS.target_name = getProgramFile().getName()
+
+    matching_targets = [
+        t for t in project.targets.values() if t.filename == GLOBALS.target_name
+    ]
+
+    if not matching_targets:
+        logger.error("No target with file name '%s' is configured", GLOBALS.target_name)
+        sys.exit(1)
+    elif len(matching_targets) > 1:
+        logger.warning(
+            "Found multiple targets for file name '%s'. Using the first one.",
+            GLOBALS.target_name,
+        )
+
+    return matching_targets[0]
+
+
+def main():
+    target = find_build_target()
+
+    logger.info("Importing file: %s", target.original_path)
 
     if not GLOBALS.verbose:
         logging.getLogger("isledecomp.bin").setLevel(logging.WARNING)
@@ -223,11 +276,11 @@ def main():
         logging.getLogger("isledecomp.cvdump.symbols").setLevel(logging.WARNING)
 
     logger.info("Starting comparison")
-    with Bin(str(origfile_path), find_str=True) as origfile, Bin(
-        str(recompiledfile_path)
+    with Bin(target.original_path, find_str=True) as origfile, Bin(
+        target.recompiled_path
     ) as recompfile:
         isle_compare = IsleCompare(
-            origfile, recompfile, str(pdbfile_path), str(repo_root)
+            origfile, recompfile, target.recompiled_pdb, target.source_root
         )
 
     logger.info("Comparison complete.")
@@ -246,20 +299,23 @@ def main():
 # sys.path is not reset after running the script, so we should restore it
 sys_path_backup = sys.path.copy()
 try:
-    # make modules installed in the venv available in Ghidra
-    add_python_path(".venv/Lib/site-packages")
-    # This one is needed when isledecomp is installed in editable mode in the venv
-    add_python_path("tools/isledecomp")
+    find_and_add_venv_to_pythonpath()
 
     import setuptools  # pylint: disable=unused-import # required to fix a distutils issue in Python 3.12
 
-    reload_module("isledecomp")
+    # Packages are imported down here because reccmp's dependencies are only available after the venv was added to the pythonpath
+    reload_module("reccmp.project.detect")
+    from reccmp.project.common import RECCMP_BUILD_CONFIG, RECCMP_PROJECT_CONFIG
+    from reccmp.project.detect import RecCmpBuiltProject, RecCmpBuiltTarget
+    from reccmp.project.error import RecCmpProjectNotFoundException
+
+    reload_module("reccmp.isledecomp")
     from reccmp.isledecomp import Bin
 
-    reload_module("isledecomp.compare")
+    reload_module("reccmp.isledecomp.compare")
     from reccmp.isledecomp.compare import Compare as IsleCompare
 
-    reload_module("isledecomp.compare.db")
+    reload_module("reccmp.isledecomp.compare.db")
 
     reload_module("lego_util.exceptions")
     from lego_util.exceptions import Lego1Exception

@@ -72,7 +72,7 @@ def find_filename_recursively(directory: Path, filename: str) -> typing.Optional
 class RecCmpProject:
     def __init__(
         self,
-        project_config_path: typing.Optional[Path],
+        project_config_path: Path,
     ):
         self.project_config_path = project_config_path
         self.targets: dict[str, RecCmpTarget] = {}
@@ -118,9 +118,9 @@ class RecCmpProject:
 class RecCmpBuiltProject:
     def __init__(
         self,
-        project_config_path: typing.Optional[Path],
-        user_config: typing.Optional[Path],
-        build_config: typing.Optional[Path],
+        project_config_path: Path,
+        user_config: Path,
+        build_config: Path,
     ):
         self.project_config_path = project_config_path
         self.user_config = user_config
@@ -139,7 +139,8 @@ class RecCmpBuiltProject:
         yaml_loader = ruamel.yaml.YAML()
         build_data = yaml_loader.load(build_config.open())
 
-        project_directory = Path(build_data["project"])
+        # note that Path.joinpath() will ignore the first path if the second path is absolute
+        project_directory = build_directory.joinpath(Path(build_data["project"]))
         project_config_path = project_directory / RECCMP_PROJECT_CONFIG
         if not project_config_path.is_file():
             raise InvalidRecCmpProjectException(
@@ -197,7 +198,7 @@ class RecCmpBuiltProject:
                     target_id,
                 )
                 continue
-            recompiled_path = Path(recompiled_path_str)
+            recompiled_path = build_directory.joinpath(Path(recompiled_path_str))
             recompiled_pdb_str = build_target_data.get("pdb")
             if not recompiled_path_str:
                 logger.warning(
@@ -206,7 +207,7 @@ class RecCmpBuiltProject:
                     target_id,
                 )
                 continue
-            recompiled_pdb = Path(recompiled_pdb_str)
+            recompiled_pdb = build_directory.joinpath(Path(recompiled_pdb_str))
 
             project.targets[target_id] = RecCmpBuiltTarget(
                 target_id=target_id,

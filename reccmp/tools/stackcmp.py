@@ -319,7 +319,7 @@ def main():
         target.recompiled_path
     ) as recompfile:
         isle_compare = IsleCompare(
-            origfile, recompfile, target.pdb_path, target.source_root
+            origfile, recompfile, target.recompiled_pdb, target.source_root
         )
 
         if args.loglevel == logging.DEBUG:

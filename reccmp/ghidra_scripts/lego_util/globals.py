@@ -27,7 +27,9 @@ class SupportedModules(Enum):
 class Globals:
     verbose: bool
     loglevel: int
-    module: SupportedModules
+    # TODO: Add a more permanent solution here.
+    # For example: A custom function prefix per target that defaults to `FUN`
+    target_name: str = "LEGO1.DLL"
     running_from_ghidra: bool = False
     # statistics
     statistics: Statistics = field(default_factory=Statistics)
@@ -38,5 +40,4 @@ GLOBALS = Globals(
     verbose=False,
     # loglevel=logging.INFO,
     loglevel=logging.DEBUG,
-    module=SupportedModules.LEGO1,  # this default value will be used when run outside of Ghidra
 )

@@ -1,6 +1,15 @@
+# Python
 build
 *.egg-info/
 *.pyc
 *.pyo
 __pycache__/
 dist
+.venv/
+
+# VS Code
+.vscode/
+
+# General
+dev_config.json
+ghidra_import.log

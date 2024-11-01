@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 import struct
 import bisect
 from functools import cached_property
@@ -111,9 +112,9 @@ class Bin:
 
     # pylint: disable=too-many-instance-attributes
 
-    def __init__(self, filename: str, find_str: bool = False) -> None:
+    def __init__(self, filename: Path | str, find_str: bool = False) -> None:
         logger.debug('Parsing headers of "%s"... ', filename)
-        self.filename = filename
+        self.filename = str(filename)
         self.view: memoryview = None
         self.imagebase = None
         self.entry = None
