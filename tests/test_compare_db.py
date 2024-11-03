@@ -13,7 +13,7 @@ def test_ignore_recomp_collision(db):
     """Duplicate recomp addresses are ignored"""
     db.set_recomp_symbol(0x1234, None, "hello", None, 100)
     db.set_recomp_symbol(0x1234, None, "alias_for_hello", None, 100)
-    syms = db.get_all()
+    syms = [*db.get_all()]
     assert len(syms) == 1
 
 
@@ -52,7 +52,7 @@ def test_duplicate_name(db):
     db.set_recomp_symbol(0x200, None, "_Construct", None, 100)
     db.set_recomp_symbol(0x300, None, "_Construct", None, 100)
     db.match_function(0x5555, "_Construct")
-    matches = db.get_matches()
+    matches = [*db.get_matches()]
     # We aren't testing _which_ one would be matched, just that only one _was_ matched
     assert len(matches) == 1
 
