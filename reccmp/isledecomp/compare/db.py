@@ -3,18 +3,16 @@ addresses/symbols that we want to compare between the original and recompiled bi
 
 import sqlite3
 import logging
-from typing import Any, List, Optional
+from dataclasses import dataclass
+from typing import Any, Iterable, Iterator, List, Optional
 from reccmp.isledecomp.types import SymbolType
 from reccmp.isledecomp.cvdump.demangler import get_vtordisp_name
 
 _SETUP_SQL = """
-    DROP TABLE IF EXISTS `symbols`;
-    DROP TABLE IF EXISTS `match_options`;
-
     CREATE TABLE `symbols` (
         compare_type int,
-        orig_addr int,
-        recomp_addr int,
+        orig_addr int unique,
+        recomp_addr int unique,
         name text,
         decorated_name text,
         size int
@@ -33,26 +31,22 @@ _SETUP_SQL = """
         FROM `symbols`
         ORDER BY orig_addr NULLS LAST;
 
-    CREATE INDEX `symbols_or` ON `symbols` (orig_addr);
-    CREATE INDEX `symbols_re` ON `symbols` (recomp_addr);
     CREATE INDEX `symbols_na` ON `symbols` (name);
 """
 
 
+SymbolTypeLookup: dict[int, str] = {
+    value: name for name, value in SymbolType.__members__.items()
+}
+
+
+@dataclass
 class MatchInfo:
-    def __init__(
-        self,
-        ctype: Optional[int],
-        orig: Optional[int],
-        recomp: Optional[int],
-        name: Optional[str],
-        size: Optional[int],
-    ) -> None:
-        self.compare_type = SymbolType(ctype) if ctype is not None else None
-        self.orig_addr = orig
-        self.recomp_addr = recomp
-        self.name = name
-        self.size = size
+    compare_type: Optional[int]
+    orig_addr: Optional[int]
+    recomp_addr: Optional[int]
+    name: Optional[str]
+    size: Optional[int]
 
     def match_name(self) -> Optional[str]:
         """Combination of the name and compare type.
@@ -61,8 +55,8 @@ class MatchInfo:
         if self.name is None:
             return None
 
-        ctype = self.compare_type.name if self.compare_type is not None else "UNK"
-        name = repr(self.name) if ctype == "STRING" else self.name
+        ctype = SymbolTypeLookup.get(self.compare_type or -1, "UNK")
+        name = repr(self.name) if self.compare_type == SymbolType.STRING else self.name
         return f"{name} ({ctype})"
 
     def offset_name(self, ofs: int) -> Optional[str]:
@@ -93,13 +87,9 @@ class CompareDb:
         size: Optional[int],
     ):
         # Ignore collisions here.
-        if self._orig_used(addr):
-            return
-
-        compare_value = compare_type.value if compare_type is not None else None
         self._db.execute(
-            "INSERT INTO `symbols` (orig_addr, compare_type, name, size) VALUES (?,?,?,?)",
-            (addr, compare_value, name, size),
+            "INSERT or ignore INTO `symbols` (orig_addr, compare_type, name, size) VALUES (?,?,?,?)",
+            (addr, compare_type, name, size),
         )
 
     def set_recomp_symbol(
@@ -112,13 +102,24 @@ class CompareDb:
     ):
         # Ignore collisions here. The same recomp address can have
         # multiple names (e.g. _strlwr and __strlwr)
-        if self._recomp_used(addr):
-            return
 
-        compare_value = compare_type.value if compare_type is not None else None
         self._db.execute(
-            "INSERT INTO `symbols` (recomp_addr, compare_type, name, decorated_name, size) VALUES (?,?,?,?,?)",
-            (addr, compare_value, name, decorated_name, size),
+            "INSERT or ignore INTO `symbols` (recomp_addr, compare_type, name, decorated_name, size) VALUES (?,?,?,?,?)",
+            (addr, compare_type, name, decorated_name, size),
+        )
+
+    def bulk_cvdump_insert(self, rows: Iterable[dict[str, Any]]):
+        self._db.executemany(
+            """INSERT or ignore INTO `symbols` (recomp_addr, compare_type, name, decorated_name, size)
+            VALUES (:addr, :type, :name, :symbol, :size)""",
+            rows,
+        )
+
+    def bulk_array_insert(self, rows: Iterable[dict[str, Any]]):
+        self._db.executemany(
+            """INSERT or ignore INTO `symbols` (orig_addr, recomp_addr, name)
+            VALUES (:orig, :recomp, :name)""",
+            rows,
         )
 
     def get_unmatched_strings(self) -> List[str]:
@@ -126,18 +127,17 @@ class CompareDb:
 
         cur = self._db.execute(
             "SELECT name FROM `symbols` WHERE compare_type = ? AND orig_addr IS NULL",
-            (SymbolType.STRING.value,),
+            (SymbolType.STRING,),
         )
 
         return [string for (string,) in cur.fetchall()]
 
-    def get_all(self) -> List[MatchInfo]:
+    def get_all(self) -> Iterator[MatchInfo]:
         cur = self._db.execute("SELECT * FROM `match_info`")
         cur.row_factory = matchinfo_factory
+        yield from cur
 
-        return cur.fetchall()
-
-    def get_matches(self) -> Optional[MatchInfo]:
+    def get_matches(self) -> Iterator[MatchInfo]:
         cur = self._db.execute(
             """SELECT * FROM `match_info`
             WHERE orig_addr IS NOT NULL
@@ -145,8 +145,7 @@ class CompareDb:
             """,
         )
         cur.row_factory = matchinfo_factory
-
-        return cur.fetchall()
+        yield from cur
 
     def get_one_match(self, addr: int) -> Optional[MatchInfo]:
         cur = self._db.execute(
@@ -160,67 +159,58 @@ class CompareDb:
         return cur.fetchone()
 
     def _get_closest_orig(self, addr: int) -> Optional[int]:
-        value = self._db.execute(
-            """SELECT max(orig_addr) FROM `symbols`
-            WHERE ? >= orig_addr
-            LIMIT 1
-            """,
+        for (value,) in self._db.execute(
+            "SELECT orig_addr FROM symbols WHERE ? >= orig_addr ORDER BY orig_addr desc LIMIT 1",
             (addr,),
-        ).fetchone()
-        return value[0] if value is not None else None
+        ):
+            return value
+
+        return None
 
     def _get_closest_recomp(self, addr: int) -> Optional[int]:
-        value = self._db.execute(
-            """SELECT max(recomp_addr) FROM `symbols`
-            WHERE ? >= recomp_addr
-            LIMIT 1
-            """,
+        for (value,) in self._db.execute(
+            "SELECT recomp_addr FROM symbols WHERE ? >= recomp_addr ORDER BY recomp_addr desc LIMIT 1",
             (addr,),
-        ).fetchone()
-        return value[0] if value is not None else None
+        ):
+            return value
 
-    def get_by_orig(self, addr: int, exact: bool = True) -> Optional[MatchInfo]:
-        if not exact and not self._orig_used(addr):
-            addr = self._get_closest_orig(addr)
-            if addr is None:
-                return None
+        return None
+
+    def get_by_orig(self, orig: int, exact: bool = True) -> Optional[MatchInfo]:
+        addr = self._get_closest_orig(orig)
+        if addr is None or exact and orig != addr:
+            return None
 
         cur = self._db.execute(
-            """SELECT * FROM `match_info`
-            WHERE orig_addr = ?
-            """,
+            "SELECT * FROM `match_info` WHERE orig_addr = ?",
             (addr,),
         )
         cur.row_factory = matchinfo_factory
         return cur.fetchone()
 
-    def get_by_recomp(self, addr: int, exact: bool = True) -> Optional[MatchInfo]:
-        if not exact and not self._recomp_used(addr):
-            addr = self._get_closest_recomp(addr)
-            if addr is None:
-                return None
+    def get_by_recomp(self, recomp: int, exact: bool = True) -> Optional[MatchInfo]:
+        addr = self._get_closest_recomp(recomp)
+        if addr is None or exact and recomp != addr:
+            return None
 
         cur = self._db.execute(
-            """SELECT * FROM `match_info`
-            WHERE recomp_addr = ?
-            """,
+            "SELECT * FROM `match_info` WHERE recomp_addr = ?",
             (addr,),
         )
         cur.row_factory = matchinfo_factory
         return cur.fetchone()
 
-    def get_matches_by_type(self, compare_type: SymbolType) -> List[MatchInfo]:
+    def get_matches_by_type(self, compare_type: SymbolType) -> Iterator[MatchInfo]:
         cur = self._db.execute(
             """SELECT * FROM `match_info`
             WHERE compare_type = ?
             AND orig_addr IS NOT NULL
             AND recomp_addr IS NOT NULL
             """,
-            (compare_type.value,),
+            (compare_type,),
         )
         cur.row_factory = matchinfo_factory
-
-        return cur.fetchall()
+        yield from cur
 
     def _orig_used(self, addr: int) -> bool:
         cur = self._db.execute("SELECT 1 FROM symbols WHERE orig_addr = ?", (addr,))
@@ -237,10 +227,9 @@ class CompareDb:
             logger.debug("Original address %s not unique!", hex(orig))
             return False
 
-        compare_value = compare_type.value if compare_type is not None else None
         cur = self._db.execute(
             "UPDATE `symbols` SET orig_addr = ?, compare_type = ? WHERE recomp_addr = ?",
-            (orig, compare_value, recomp),
+            (orig, compare_type, recomp),
         )
 
         return cur.rowcount > 0
@@ -259,14 +248,12 @@ class CompareDb:
             # Probable and expected situation. Just ignore it.
             return False
 
-        compare_value = compare_type.value if compare_type is not None else None
-
         cur = self._db.execute(
             """UPDATE `symbols`
             SET orig_addr = ?, compare_type = coalesce(compare_type, ?)
             WHERE recomp_addr = ?
             AND orig_addr IS NULL""",
-            (orig, compare_value, recomp),
+            (orig, compare_type, recomp),
         )
 
         return cur.rowcount > 0
@@ -290,7 +277,7 @@ class CompareDb:
             """INSERT INTO `symbols`
             (orig_addr, compare_type, name, size)
             VALUES (?,?,?,?)""",
-            (addr, SymbolType.FUNCTION.value, thunk_name, 5),
+            (addr, SymbolType.FUNCTION, thunk_name, 5),
         )
 
         return cur.rowcount > 0
@@ -311,7 +298,7 @@ class CompareDb:
             """INSERT INTO `symbols`
             (recomp_addr, compare_type, name, size)
             VALUES (?,?,?,?)""",
-            (addr, SymbolType.FUNCTION.value, thunk_name, 5),
+            (addr, SymbolType.FUNCTION, thunk_name, 5),
         )
 
         return cur.rowcount > 0
@@ -386,11 +373,14 @@ class CompareDb:
     ) -> Optional[int]:
         """Name lookup"""
         match_decorate = compare_type != SymbolType.STRING and name.startswith("?")
+        # If the index on orig_addr is unique, sqlite will prefer to use it over the name index.
+        # But this index will not help if we are checking for NULL, so we exclude it
+        # by adding the plus sign (Reference: https://www.sqlite.org/optoverview.html#uplus)
         if match_decorate:
             sql = """
             SELECT recomp_addr
             FROM `symbols`
-            WHERE orig_addr IS NULL
+            WHERE +orig_addr IS NULL
             AND decorated_name = ?
             AND (compare_type IS NULL OR compare_type = ?)
             LIMIT 1
@@ -399,38 +389,13 @@ class CompareDb:
             sql = """
             SELECT recomp_addr
             FROM `symbols`
-            WHERE orig_addr IS NULL
+            WHERE +orig_addr IS NULL
             AND name = ?
             AND (compare_type IS NULL OR compare_type = ?)
             LIMIT 1
             """
 
-        row = self._db.execute(sql, (name, compare_type.value)).fetchone()
-        return row[0] if row is not None else None
-
-    def _find_static_variable(
-        self, variable_name: str, function_sym: str
-    ) -> Optional[int]:
-        """Get the recomp address of a static function variable.
-        Matches using a LIKE clause on the combination of:
-        1. The variable name read from decomp marker.
-        2. The decorated name of the enclosing function.
-        For example, the variable "g_startupDelay" from function "IsleApp::Tick"
-        has symbol: `?g_startupDelay@?1??Tick@IsleApp@@QAEXH@Z@4HA`
-        The function's decorated name is: `?Tick@IsleApp@@QAEXH@Z`"""
-
-        row = self._db.execute(
-            """SELECT recomp_addr FROM `symbols`
-            WHERE decorated_name LIKE '%' || ? || '%' || ? || '%'
-            AND orig_addr IS NULL
-            AND (compare_type = ? OR compare_type = ? OR compare_type IS NULL)""",
-            (
-                variable_name,
-                function_sym,
-                SymbolType.DATA.value,
-                SymbolType.POINTER.value,
-            ),
-        ).fetchone()
+        row = self._db.execute(sql, (name, compare_type)).fetchone()
         return row[0] if row is not None else None
 
     def _match_on(self, compare_type: SymbolType, addr: int, name: str) -> bool:
@@ -478,59 +443,55 @@ class CompareDb:
         for_name = base_class if base_class is not None else name
         for_vftable = f"{name}::`vftable'{{for `{for_name}'}}"
 
+        # Try to match on the "vftable for X first"
+        recomp_addr = self._find_potential_match(for_vftable, SymbolType.VTABLE)
+        if recomp_addr is not None:
+            return self.set_pair(addr, recomp_addr, SymbolType.VTABLE)
+
         # Only allow a match against "Class:`vftable'"
         # if this is the derived class.
         if base_class is None or base_class == name:
-            name_options = (for_vftable, bare_vftable)
-        else:
-            name_options = (for_vftable, for_vftable)
-
-        row = self._db.execute(
-            """
-            SELECT recomp_addr
-            FROM `symbols`
-            WHERE orig_addr IS NULL
-            AND (name = ? OR name = ?)
-            AND (compare_type = ?)
-            LIMIT 1
-            """,
-            (*name_options, SymbolType.VTABLE.value),
-        ).fetchone()
-
-        if row is not None and self.set_pair(addr, row[0], SymbolType.VTABLE):
-            return True
+            recomp_addr = self._find_potential_match(bare_vftable, SymbolType.VTABLE)
+            if recomp_addr is not None:
+                return self.set_pair(addr, recomp_addr, SymbolType.VTABLE)
 
         logger.error("Failed to find vtable for class: %s", name)
         return False
 
-    def match_static_variable(self, addr: int, name: str, function_addr: int) -> bool:
+    def match_static_variable(
+        self, addr: int, variable_name: str, function_addr: int
+    ) -> bool:
         """Matching a static function variable by combining the variable name
         with the decorated (mangled) name of its parent function."""
 
-        cur = self._db.execute(
-            """SELECT name, decorated_name
-            FROM `symbols`
-            WHERE orig_addr = ?""",
+        result = self._db.execute(
+            "SELECT name, decorated_name FROM `symbols` WHERE orig_addr = ?",
             (function_addr,),
-        )
+        ).fetchone()
 
-        if (result := cur.fetchone()) is None:
-            logger.error("No function for static variable: %s", name)
+        if result is None:
+            logger.error("No function for static variable: %s", variable_name)
             return False
 
         # Get the friendly name for the "failed to match" error message
-        (function_name, decorated_name) = result
+        (function_name, function_symbol) = result
 
-        recomp_addr = self._find_static_variable(name, decorated_name)
-        if recomp_addr is not None:
-            # TODO: This variable could be a pointer, but I don't think we
-            # have a way to tell that right now.
-            if self.set_pair(addr, recomp_addr, SymbolType.DATA):
-                return True
+        # If the static variable has a symbol, it will contain the parent function's symbol.
+        # e.g. Static variable "g_startupDelay" from function "IsleApp::Tick"
+        # The function symbol is:                    "?Tick@IsleApp@@QAEXH@Z"
+        # The variable symbol is: "?g_startupDelay@?1??Tick@IsleApp@@QAEXH@Z@4HA"
+        for (recomp_addr,) in self._db.execute(
+            """SELECT recomp_addr FROM symbols
+            WHERE orig_addr IS NULL
+            AND (compare_type = ? OR compare_type IS NULL)
+            AND decorated_name LIKE '%' || ? || '%' || ? || '%'""",
+            (SymbolType.DATA, variable_name, function_symbol),
+        ):
+            return self.set_pair(addr, recomp_addr, SymbolType.DATA)
 
         logger.error(
             "Failed to match static variable %s from function %s",
-            name,
+            variable_name,
             function_name,
         )
 
