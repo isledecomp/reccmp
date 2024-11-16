@@ -134,9 +134,11 @@ class RecCmpProject:
         if build_directory:
             build_config = build_directory / RECCMP_BUILD_CONFIG
             logger.debug("Using build config: %s", build_config)
-            build_data = yaml_loader.load(build_config.open())
+            with build_config.open() as buildfile:
+                build_data = BuildFile.model_validate(yaml_loader.load(buildfile))
 
-            project_directory = Path(build_data["project"])
+            # The project directory can be relative to the build config
+            project_directory = build_config.parent.joinpath(build_data.project)
         else:
             project_directory = find_filename_recursively(
                 directory=directory, filename=RECCMP_PROJECT_CONFIG
@@ -451,11 +453,11 @@ def detect_project(
                 logger.info("Found %s -> %s", target_id, p)
                 break
             else:
-                logger.warning("Could not find %s", filename)
+                logger.warning("Could not find %s under %s", filename, search_path_folder)
 
         logger.info("Updating %s", user_config_path)
         with user_config_path.open("w") as f:
-            yaml.dump(data=user_data.model_dump(), stream=f)
+            yaml.dump(data=user_data.model_dump(mode="json"), stream=f)
 
     elif detect_what == DetectWhat.RECOMPILED:
         if not build_directory:
@@ -482,4 +484,4 @@ def detect_project(
         logger.info("Updating %s", build_config_path)
 
         with build_config_path.open("w") as f:
-            yaml.dump(data=build_data.model_dump(), stream=f)
+            yaml.dump(data=build_data.model_dump(mode="json"), stream=f)
