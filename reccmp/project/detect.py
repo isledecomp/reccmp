@@ -6,7 +6,17 @@ import typing
 
 import ruamel.yaml
 
-from .config import BuildFile, BuildFileTarget, GhidraConfig, ProjectFile, ProjectFileTarget, RecCmpBuiltTarget, RecCmpTarget, UserFile, UserFileTarget
+from .config import (
+    BuildFile,
+    BuildFileTarget,
+    GhidraConfig,
+    ProjectFile,
+    ProjectFileTarget,
+    RecCmpBuiltTarget,
+    RecCmpTarget,
+    UserFile,
+    UserFileTarget,
+)
 
 from .common import RECCMP_USER_CONFIG, RECCMP_BUILD_CONFIG, RECCMP_PROJECT_CONFIG
 from .error import (
@@ -20,6 +30,7 @@ from .util import get_path_sha256
 
 
 logger = logging.getLogger(__file__)
+
 
 def verify_target_names(
     project_targets: dict[str, ProjectFileTarget],
@@ -123,7 +134,9 @@ class RecCmpBuiltProject:
             directory=directory, filename=RECCMP_BUILD_CONFIG
         )
         if not build_directory:
-            raise RecCmpProjectNotFoundException(f"Cannot find {RECCMP_BUILD_CONFIG}")
+            raise RecCmpProjectNotFoundException(
+                f"Cannot find {RECCMP_BUILD_CONFIG} under {build_directory}"
+            )
         build_config = build_directory / RECCMP_BUILD_CONFIG
         logger.debug("Using build config: %s", build_config)
         yaml_loader = ruamel.yaml.YAML()
@@ -183,11 +196,6 @@ class RecCmpBuiltProject:
 
             source_root = project_directory / project_target_data.source_root
             filename = project_target_data.filename
-            if not filename:
-                raise InvalidRecCmpProjectException(
-                    f"{project_config_path}: targets.{target_id}.filename is missing"
-                )
-
             original_path = user_target_data.path
 
             recompiled_path = build_directory.joinpath(build_target_data.path)
@@ -391,7 +399,9 @@ def detect_project(
                 logger.info("Found %s -> %s", target_id, p)
                 break
             else:
-                logger.warning("Could not find %s under %s", filename, search_path_folder)
+                logger.warning(
+                    "Could not find %s under %s", filename, search_path_folder
+                )
 
         logger.info("Updating %s", user_config_path)
         with user_config_path.open("w") as f:

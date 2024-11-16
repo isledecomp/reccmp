@@ -19,4 +19,5 @@ jobs:
       shell: bash
       run: |
         pylint reccmp
-        black --check reccmp
+        pylint tests
+        black --check .

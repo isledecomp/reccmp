@@ -1,9 +1,9 @@
 import hashlib
+import pytest
 
 from reccmp.isledecomp.bin import (
     Bin as IsleBin,
 )
-import pytest
 
 
 def pytest_addoption(parser):

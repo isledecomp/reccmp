@@ -1,9 +1,9 @@
 from pathlib import Path
 import textwrap
 
-from .conftest import LEGO1_SHA256
 from reccmp.project.create import create_project, RecCmpProject
 from reccmp.project.detect import detect_project, DetectWhat, RecCmpBuiltProject
+from .conftest import LEGO1_SHA256
 
 
 def test_project_loading(tmp_path_factory, binfile):
@@ -45,6 +45,7 @@ def test_project_loading(tmp_path_factory, binfile):
         )
     )
     project = RecCmpProject.from_directory(project_root)
+    assert project is not None
     assert len(project.targets) == 1
     assert "LEGO1" in project.targets
     assert project.targets["LEGO1"].target_id == "LEGO1"
@@ -75,12 +76,12 @@ def test_project_original_detection(tmp_path_factory, binfile):
         )
     )
     bin_path = Path(binfile.filename)
-    project = detect_project(
+    detect_project(
         project_directory=project_root,
         search_path=[bin_path.parent],
-        detect_what=DetectWhat.ORIGINAL)
+        detect_what=DetectWhat.ORIGINAL,
+    )
     assert (project_root / "reccmp-user.yml").is_file()
-
 
 
 def test_project_creation(tmp_path_factory, binfile):
@@ -88,7 +89,9 @@ def test_project_creation(tmp_path_factory, binfile):
     bin_path = Path(binfile.filename)
     project_config_path = project_root / "reccmp-project.yml"
     user_config_path = project_root / "reccmp-user.yml"
-    project = create_project(project_directory=project_root, original_paths=[bin_path], scm=True, cmake=True)
+    project = create_project(
+        project_directory=project_root, original_paths=[bin_path], scm=True, cmake=True
+    )
     assert project_config_path.is_file()
     assert user_config_path.is_file()
     target_name = bin_path.stem.upper()
