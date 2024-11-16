@@ -1,4 +1,5 @@
 import hashlib
+from typing import Iterator
 import pytest
 
 from reccmp.isledecomp.bin import (
@@ -16,7 +17,7 @@ LEGO1_SHA256 = "14645225bbe81212e9bc1919cd8a692b81b8622abb6561280d99b0fc4151ce17
 
 
 @pytest.fixture(name="binfile", scope="session")
-def fixture_binfile(pytestconfig) -> IsleBin:
+def fixture_binfile(pytestconfig) -> Iterator[IsleBin]:
     filename = pytestconfig.getoption("--lego1")
 
     # Skip this if we have not provided the path to LEGO1.dll.

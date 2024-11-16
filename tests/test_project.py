@@ -17,7 +17,7 @@ def test_project_loading(tmp_path_factory, binfile):
               LEGO1:
                 filename: LEGO1.dll
                 source-root: sources
-                hashes:
+                hash:
                   sha256: {LEGO1_SHA256}
             """
         )
@@ -70,7 +70,7 @@ def test_project_original_detection(tmp_path_factory, binfile):
               LEGO1:
                 filename: LEGO1.dll
                 source-root: sources
-                hashes:
+                hash:
                   sha256: {LEGO1_SHA256}
             """
         )
