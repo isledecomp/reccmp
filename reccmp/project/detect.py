@@ -22,11 +22,25 @@ from .util import get_path_sha256
 logger = logging.getLogger(__file__)
 
 
+class GhidraConfig(BaseModel):
+    ignore_types: list[str] = Field(
+        default_factory=list, validation_alias="ignore-types"
+    )
+    ignore_functions: list[int] = Field(
+        default_factory=list, validation_alias="ignore-functions"
+    )
+
+    @classmethod
+    def default(cls) -> "GhidraConfig":
+        return cls(ignore_types=[], ignore_functions=[])
+
+
 @dataclasses.dataclass
 class RecCmpTarget:
     target_id: str
     filename: str
     source_root: Path
+    ghidra_config: GhidraConfig
 
 
 @dataclasses.dataclass
@@ -41,12 +55,10 @@ class Hash(BaseModel):
 
 
 class ProjectFileTarget(BaseModel):
-    filename: str  # TODO: change to Path, see if this works
-    source_root: str = Field(
-        validation_alias="source-root"
-    )  # TODO: how to parse with hyphen
+    filename: str
+    source_root: Path = Field(validation_alias="source-root")
     hash: Hash
-    # ghidra: ... # TODO
+    ghidra: GhidraConfig = Field(default_factory=GhidraConfig.default)
 
 
 class ProjectFile(BaseModel):
@@ -54,7 +66,7 @@ class ProjectFile(BaseModel):
 
 
 class UserFileTarget(BaseModel):
-    path: str  # TODO: change to path if possible
+    path: Path
 
 
 class UserFile(BaseModel):
@@ -62,12 +74,12 @@ class UserFile(BaseModel):
 
 
 class BuildFileTarget(BaseModel):
-    path: str  # TODO: change to path if possible
-    pdb: str
+    path: Path
+    pdb: Path
 
 
 class BuildFile(BaseModel):
-    project: str
+    project: Path
     targets: dict[str, BuildFileTarget]
 
 
@@ -136,17 +148,19 @@ class RecCmpProject:
         project = cls(
             project_config_path=project_config_path,
         )
-        project_data = yaml_loader.load(project_config_path.open())
-        for target_id, project_target_data in project_data.get("targets").items():
-            source_root = project_directory / project_target_data.get("source-root", "")
-            filename = project_target_data.get("filename")
-            if not filename:
-                raise InvalidRecCmpProjectException(
-                    f"{project_config_path}: targets.{target_id}.filename is missing"
-                )
+        logger.debug("Using project config: %s", project_config_path)
+        with project_config_path.open() as projectfile:
+            project_data = ProjectFile.model_validate(yaml_loader.load(projectfile))
+
+        for target_id, project_target_data in project_data.targets.items():
+            source_root = project_directory / project_target_data.source_root
+            filename = project_target_data.filename
 
             project.targets[target_id] = RecCmpTarget(
-                target_id=target_id, filename=filename, source_root=source_root
+                target_id=target_id,
+                filename=filename,
+                source_root=source_root,
+                ghidra_config=project_target_data.ghidra,
             )
         return project
 
@@ -173,17 +187,19 @@ class RecCmpBuiltProject:
         build_config = build_directory / RECCMP_BUILD_CONFIG
         logger.debug("Using build config: %s", build_config)
         yaml_loader = ruamel.yaml.YAML()
-        build_data = yaml_loader.load(build_config.open())
+        with build_config.open() as buildfile:
+            build_data = BuildFile.model_validate(yaml_loader.load(buildfile))
 
         # note that Path.joinpath() will ignore the first path if the second path is absolute
-        project_directory = build_directory.joinpath(Path(build_data["project"]))
+        project_directory = build_directory.joinpath(build_data.project)
         project_config_path = project_directory / RECCMP_PROJECT_CONFIG
         if not project_config_path.is_file():
             raise InvalidRecCmpProjectException(
                 f"{build_config}: .project is invalid ({project_config_path} does not exist)"
             )
         logger.debug("Using project config: %s", project_config_path)
-        project_data = yaml_loader.load(project_config_path.open())
+        with project_config_path.open() as projectfile:
+            project_data = ProjectFile.model_validate(yaml_loader.load(projectfile))
 
         user_config = project_directory / RECCMP_USER_CONFIG
         if not user_config.is_file():
@@ -191,12 +207,13 @@ class RecCmpBuiltProject:
                 f"Missing {RECCMP_USER_CONFIG}. First run 'reccmp-project detect'."
             )
         logger.debug("Using user config: %s", user_config)
-        user_data = yaml_loader.load(user_config.open())
+        with user_config.open() as userfile:
+            user_data = UserFile.model_validate(yaml_loader.load(userfile))
 
         verify_target_names(
-            project_targets=project_data.get("targets"),
-            user_targets=user_data.get("targets"),
-            build_targets=build_data.get("targets"),
+            project_targets=project_data.targets,
+            user_targets=user_data.targets,
+            build_targets=build_data.targets,
         )
 
         project = cls(
@@ -204,46 +221,37 @@ class RecCmpBuiltProject:
             user_config=user_config,
             build_config=build_config,
         )
-        for target_id, project_target_data in project_data.get("targets").items():
-            user_target_data = user_data.get("targets", {}).get(target_id, {})
+        for target_id, project_target_data in project_data.targets.items():
+            user_target_data = user_data.targets.get(target_id, None)
+            build_target_data = build_data.targets.get(target_id, None)
 
-            source_root = project_directory / project_target_data.get("source-root", "")
-            filename = project_target_data.get("filename")
+            if not user_target_data:
+                logger.warning(
+                    "%s: targets.%s is missing. Target will not be available.",
+                    user_config,
+                    target_id,
+                )
+                continue
+
+            if not build_target_data:
+                logger.warning(
+                    "%s: targets.%s is missing. Target will not be available.",
+                    build_config,
+                    target_id,
+                )
+                continue
+
+            source_root = project_directory / project_target_data.source_root
+            filename = project_target_data.filename
             if not filename:
                 raise InvalidRecCmpProjectException(
                     f"{project_config_path}: targets.{target_id}.filename is missing"
                 )
 
-            original_path_str = user_target_data.get("path")
-            if not original_path_str:
-                logger.warning(
-                    "%s: targets.%s.path is missing. Target will not be available.",
-                    user_config,
-                    target_id,
-                )
-                continue
-            original_path = Path(original_path_str.strip())
+            original_path = user_target_data.path
 
-            build_target_data = build_data.get("targets", {}).get(target_id, {})
-
-            recompiled_path_str = build_target_data.get("path")
-            if not recompiled_path_str:
-                logger.warning(
-                    "%s: targets.%s.path is missing. Target will not be available.",
-                    build_config,
-                    target_id,
-                )
-                continue
-            recompiled_path = build_directory.joinpath(Path(recompiled_path_str))
-            recompiled_pdb_str = build_target_data.get("pdb")
-            if not recompiled_path_str:
-                logger.warning(
-                    "%s: targets.%s.pdb is missing. Target will not be available.",
-                    build_config,
-                    target_id,
-                )
-                continue
-            recompiled_pdb = build_directory.joinpath(Path(recompiled_pdb_str))
+            recompiled_path = build_directory.joinpath(build_target_data.path)
+            recompiled_pdb = build_directory.joinpath(build_target_data.pdb)
 
             project.targets[target_id] = RecCmpBuiltTarget(
                 target_id=target_id,
@@ -252,24 +260,28 @@ class RecCmpBuiltProject:
                 recompiled_path=recompiled_path,
                 recompiled_pdb=recompiled_pdb,
                 source_root=source_root,
+                ghidra_config=project_target_data.ghidra,
             )
         return project
 
 
 class RecCmpPathsAction(argparse.Action):
-    def __call__(self, parser, namespace, values, option_string=None):
+    def __call__(self, parser, namespace, values: tuple[str, str], option_string=None):
         target_id, source_root = values
         source_root = Path(source_root)
         target = RecCmpTarget(
             target_id=target_id,
             filename="???",
             source_root=source_root,
+            ghidra_config=GhidraConfig.default(),
         )
         setattr(namespace, self.dest, target)
 
 
 class RecCmpBuiltPathsAction(argparse.Action):
-    def __call__(self, parser, namespace, values, option_string=None):
+    def __call__(
+        self, parser, namespace, values: tuple[str, str, str, str], option_string=None
+    ):
         original, recompiled, pdb, source_root = list(Path(o) for o in values)
         target = RecCmpBuiltTarget(
             target_id="???",
@@ -278,6 +290,7 @@ class RecCmpBuiltPathsAction(argparse.Action):
             recompiled_path=recompiled,
             recompiled_pdb=pdb,
             source_root=source_root,
+            ghidra_config=GhidraConfig.default(),
         )
         setattr(namespace, self.dest, target)
 
@@ -406,40 +419,35 @@ def detect_project(
 
     project_config_path = project_directory / RECCMP_PROJECT_CONFIG
     with project_config_path.open() as f:
-        project_data = yaml.load(stream=f)
+        project_data = ProjectFile.model_validate(yaml.load(stream=f))
 
     if detect_what == DetectWhat.ORIGINAL:
         user_config_path = project_directory / RECCMP_USER_CONFIG
         if user_config_path.is_file():
             with user_config_path.open() as f:
-                user_data = yaml.load(stream=f)
+                user_data = UserFile.model_validate(yaml.load(stream=f))
         else:
-            user_data = {"targets": {}}
-        for target_id, target_data in project_data.get("targets", {}).items():
-            ref_sha256 = (
-                project_data.get("targets", {})
-                .get(target_id, {})
-                .get("hash", {})
-                .get("sha256", None)
-            )
-            filename = target_data["filename"]
+            user_data = UserFile(targets={})
+
+        for target_id, target_data in project_data.targets.items():
+            filename = target_data.filename
             for search_path_folder in search_path:
                 p = search_path_folder / filename
                 if not p.is_file():
                     continue
-                if ref_sha256:
-                    p_sha256 = get_path_sha256(p)
-                    if ref_sha256.lower() != p_sha256.lower():
-                        logger.info(
-                            "sha256 of '%s' (%s) does NOT match expected hash (%s)",
-                            p,
-                            p_sha256,
-                            ref_sha256,
-                        )
-                        continue
-                user_data.setdefault("targets", {}).setdefault(
-                    target_id, {}
-                ).setdefault("path", str(p))
+
+                p_sha256 = get_path_sha256(p)
+                ref_sha256 = target_data.hash.sha256
+                if ref_sha256.lower() != p_sha256.lower():
+                    logger.info(
+                        "sha256 of '%s' (%s) does NOT match expected hash (%s)",
+                        p,
+                        p_sha256,
+                        ref_sha256,
+                    )
+                    continue
+
+                user_data.targets.setdefault(target_id, UserFileTarget(path=p))
                 logger.info("Found %s -> %s", target_id, p)
                 break
             else:
@@ -447,34 +455,31 @@ def detect_project(
 
         logger.info("Updating %s", user_config_path)
         with user_config_path.open("w") as f:
-            yaml.dump(data=user_data, stream=f)
+            yaml.dump(data=user_data.model_dump(), stream=f)
+
     elif detect_what == DetectWhat.RECOMPILED:
         if not build_directory:
             raise RecCmpProjectException(
                 "Detecting recompiled binaries requires build directory"
             )
         build_config_path = build_directory / RECCMP_BUILD_CONFIG
-        build_data = {
-            "project": str(project_directory.resolve()),
-        }
-        for target_id, target_data in project_data.get("targets", {}).items():
-            filename = target_data["filename"]
+        build_data = BuildFile(project=project_directory.resolve(), targets={})
+
+        for target_id, target_data in project_data.targets.items():
+            filename = target_data.filename
             for search_path_folder in search_path:
                 p = search_path_folder / filename
                 pdb = p.with_suffix(".pdb")
                 if p.is_file() and pdb.is_file():
-                    build_data.setdefault("targets", {}).setdefault(
-                        target_id, {}
-                    ).setdefault("path", str(p))
+                    build_data.targets.setdefault(
+                        target_id, BuildFileTarget(path=p, pdb=pdb)
+                    )
                     logger.info("Found %s -> %s", target_id, p)
                     logger.info("Found %s -> %s", target_id, pdb)
-                    build_data.setdefault("targets", {}).setdefault(
-                        target_id, {}
-                    ).setdefault("pdb", str(pdb))
                     break
             else:
                 logger.warning("Could not find %s", filename)
         logger.info("Updating %s", build_config_path)
 
         with build_config_path.open("w") as f:
-            yaml.dump(data=build_data, stream=f)
+            yaml.dump(data=build_data.model_dump(), stream=f)
