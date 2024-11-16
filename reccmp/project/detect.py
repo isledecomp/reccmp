@@ -4,6 +4,7 @@ import enum
 import logging
 from pathlib import Path
 import typing
+from pydantic import BaseModel, Field
 
 import ruamel.yaml
 
@@ -35,10 +36,45 @@ class RecCmpBuiltTarget(RecCmpTarget):
     recompiled_pdb: Path
 
 
+class Hash(BaseModel):
+    sha256: str
+
+
+class ProjectFileTarget(BaseModel):
+    filename: str  # TODO: change to Path, see if this works
+    source_root: str = Field(
+        validation_alias="source-root"
+    )  # TODO: how to parse with hyphen
+    hash: Hash
+    # ghidra: ... # TODO
+
+
+class ProjectFile(BaseModel):
+    targets: dict[str, ProjectFileTarget]
+
+
+class UserFileTarget(BaseModel):
+    path: str  # TODO: change to path if possible
+
+
+class UserFile(BaseModel):
+    targets: dict[str, UserFileTarget]
+
+
+class BuildFileTarget(BaseModel):
+    path: str  # TODO: change to path if possible
+    pdb: str
+
+
+class BuildFile(BaseModel):
+    project: str
+    targets: dict[str, BuildFileTarget]
+
+
 def verify_target_names(
-    project_targets: dict[str, typing.Any],
-    user_targets: dict[str, typing.Any],
-    build_targets: dict[str, typing.Any],
+    project_targets: dict[str, ProjectFileTarget],
+    user_targets: dict[str, UserFileTarget],
+    build_targets: dict[str, BuildFileTarget],
 ):
     project_keys = set(project_targets.keys())
     user_keys = set(user_targets.keys())

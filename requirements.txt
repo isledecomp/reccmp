@@ -1,6 +1,7 @@
 capstone
 colorama>=0.4.6
 pystache
+pydantic==2.9.2
 ruamel.yaml
 pydemangler @ git+https://github.com/wbenny/pydemangler.git
 # requirement of capstone due to python dropping distutils.
