@@ -1,12 +1,12 @@
 import argparse
-import dataclasses
 import enum
 import logging
 from pathlib import Path
 import typing
-from pydantic import BaseModel, Field
 
 import ruamel.yaml
+
+from .config import BuildFile, BuildFileTarget, GhidraConfig, ProjectFile, ProjectFileTarget, RecCmpBuiltTarget, RecCmpTarget, UserFile, UserFileTarget
 
 from .common import RECCMP_USER_CONFIG, RECCMP_BUILD_CONFIG, RECCMP_PROJECT_CONFIG
 from .error import (
@@ -20,68 +20,6 @@ from .util import get_path_sha256
 
 
 logger = logging.getLogger(__file__)
-
-
-class GhidraConfig(BaseModel):
-    ignore_types: list[str] = Field(
-        default_factory=list, validation_alias="ignore-types"
-    )
-    ignore_functions: list[int] = Field(
-        default_factory=list, validation_alias="ignore-functions"
-    )
-
-    @classmethod
-    def default(cls) -> "GhidraConfig":
-        return cls(ignore_types=[], ignore_functions=[])
-
-
-@dataclasses.dataclass
-class RecCmpTarget:
-    target_id: str
-    filename: str
-    source_root: Path
-    ghidra_config: GhidraConfig
-
-
-@dataclasses.dataclass
-class RecCmpBuiltTarget(RecCmpTarget):
-    original_path: Path
-    recompiled_path: Path
-    recompiled_pdb: Path
-
-
-class Hash(BaseModel):
-    sha256: str
-
-
-class ProjectFileTarget(BaseModel):
-    filename: str
-    source_root: Path = Field(validation_alias="source-root")
-    hash: Hash
-    ghidra: GhidraConfig = Field(default_factory=GhidraConfig.default)
-
-
-class ProjectFile(BaseModel):
-    targets: dict[str, ProjectFileTarget]
-
-
-class UserFileTarget(BaseModel):
-    path: Path
-
-
-class UserFile(BaseModel):
-    targets: dict[str, UserFileTarget]
-
-
-class BuildFileTarget(BaseModel):
-    path: Path
-    pdb: Path
-
-
-class BuildFile(BaseModel):
-    project: Path
-    targets: dict[str, BuildFileTarget]
-
 
 def verify_target_names(
     project_targets: dict[str, ProjectFileTarget],
