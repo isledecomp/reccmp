@@ -30,7 +30,6 @@ from pathlib import Path
 import traceback
 from typing import TYPE_CHECKING, Optional
 
-
 if TYPE_CHECKING:
     import ghidra
     from lego_util.headers import *  # pylint: disable=wildcard-import # these are just for headers
@@ -142,7 +141,11 @@ def import_function_into_ghidra(
     GLOBALS.statistics.functions_changed += 1
 
 
-def process_functions(extraction: "PdbFunctionExtractor"):
+def process_functions(
+    extraction: "PdbFunctionExtractor",
+    ignore_types: set[str],
+    ignore_functions: set[int],
+):
     pdb_functions = extraction.get_function_list()
 
     if not GLOBALS.running_from_ghidra:
@@ -151,11 +154,20 @@ def process_functions(extraction: "PdbFunctionExtractor"):
 
     api = FlatProgramAPI(currentProgram())
     # pylint: disable=possibly-used-before-assignment
-    type_importer = PdbTypeImporter(api, extraction)
+    type_importer = PdbTypeImporter(api, extraction, ignore_types=ignore_types)
 
     for pdb_func in pdb_functions:
         func_name = pdb_func.match_info.name
+        orig_addr = pdb_func.match_info.orig_addr
         try:
+            if orig_addr in ignore_functions:
+                logger.info(
+                    "Skipping function '%s' at '%s' because it is on the ignore list",
+                    func_name,
+                    hex(orig_addr),
+                )
+                continue
+
             import_function_into_ghidra(api, pdb_func, type_importer)
             GLOBALS.statistics.successes += 1
         except Lego1Exception as e:
@@ -223,7 +235,7 @@ def find_build_target() -> "RecCmpBuiltTarget":
     project_search_path = Path(__file__).parent
 
     try:
-        project = RecCmpBuiltProject.from_directory(project_search_path)
+        built_project = RecCmpBuiltProject.from_directory(project_search_path)
     except RecCmpProjectNotFoundException as e:
         # Figure out if we are in a debugging scenario
         debug_config_file = Path(__file__).parent / "dev_config.json"
@@ -235,11 +247,13 @@ def find_build_target() -> "RecCmpBuiltTarget":
         with debug_config_file.open() as infile:
             debug_config = json.load(infile)
 
-        project = RecCmpBuiltProject.from_directory(Path(debug_config["projectDir"]))
+        built_project = RecCmpBuiltProject.from_directory(
+            Path(debug_config["projectDir"])
+        )
 
     # Set up logfile next to the project config file
     file_handler = logging.FileHandler(
-        project.project_config_path.parent.joinpath("ghidra_import.log"), mode="w"
+        built_project.project_config_path.parent.joinpath("ghidra_import.log"), mode="w"
     )
     file_handler.setFormatter(logging.root.handlers[0].formatter)
     logging.root.addHandler(file_handler)
@@ -248,7 +262,7 @@ def find_build_target() -> "RecCmpBuiltTarget":
         GLOBALS.target_name = getProgramFile().getName()
 
     matching_targets = [
-        t for t in project.targets.values() if t.filename == GLOBALS.target_name
+        t for t in built_project.targets.values() if t.filename == GLOBALS.target_name
     ]
 
     if not matching_targets:
@@ -288,7 +302,11 @@ def main():
     # try to acquire matched functions
     migration = PdbFunctionExtractor(isle_compare)
     try:
-        process_functions(migration)
+        process_functions(
+            migration,
+            set(target.ghidra_config.ignore_types),
+            set(target.ghidra_config.ignore_functions),
+        )
     finally:
         if GLOBALS.running_from_ghidra:
             GLOBALS.statistics.log()
