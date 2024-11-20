@@ -31,7 +31,7 @@ def fixture_parser():
 def test_sanity(parser):
     """Read a very basic file"""
     with sample_file("basic_file.cpp") as f:
-        parser.read_lines(f)
+        parser.read(f.read())
 
     assert len(parser.functions) == 3
     assert code_blocks_are_sorted(parser.functions) is True
@@ -45,7 +45,7 @@ def test_oneline(parser):
     """(Assuming clang-format permits this) This sample has a function
     on a single line. This will test the end-of-function detection"""
     with sample_file("oneline_function.cpp") as f:
-        parser.read_lines(f)
+        parser.read(f.read())
 
     assert len(parser.functions) == 2
     assert parser.functions[0].line_number == 5
@@ -55,7 +55,7 @@ def test_oneline(parser):
 def test_missing_offset(parser):
     """What if the function doesn't have an offset comment?"""
     with sample_file("missing_offset.cpp") as f:
-        parser.read_lines(f)
+        parser.read(f.read())
 
     # TODO: For now, the function without the offset will just be ignored.
     # Would be the same outcome if the comment was present but mangled and
@@ -68,7 +68,7 @@ def test_jumbled_case(parser):
     the downstream tools to do something about a jumbled file.
     Just verify that we are reading it correctly."""
     with sample_file("out_of_order.cpp") as f:
-        parser.read_lines(f)
+        parser.read(f.read())
 
     assert len(parser.functions) == 3
     assert code_blocks_are_sorted(parser.functions) is False
@@ -76,7 +76,7 @@ def test_jumbled_case(parser):
 
 def test_bad_file(parser):
     with sample_file("poorly_formatted.cpp") as f:
-        parser.read_lines(f)
+        parser.read(f.read())
 
     assert len(parser.functions) == 3
 
@@ -84,7 +84,7 @@ def test_bad_file(parser):
 def test_indented(parser):
     """Offsets for functions inside of a class will probably be indented."""
     with sample_file("basic_class.cpp") as f:
-        parser.read_lines(f)
+        parser.read(f.read())
 
     # TODO: We don't properly detect the end of these functions
     # because the closing brace is indented. However... knowing where each
@@ -103,7 +103,7 @@ def test_indented(parser):
 
 def test_inline(parser):
     with sample_file("inline.cpp") as f:
-        parser.read_lines(f)
+        parser.read(f.read())
 
     assert len(parser.functions) == 2
     for fun in parser.functions:
@@ -116,7 +116,7 @@ def test_multiple_offsets(parser):
     all but ensure module name (case-insensitive) is distinct.
     Use first module occurrence in case of duplicates."""
     with sample_file("multiple_offsets.cpp") as f:
-        parser.read_lines(f)
+        parser.read(f.read())
 
     assert len(parser.functions) == 4
     assert parser.functions[0].module == "TEST"
@@ -135,7 +135,7 @@ def test_multiple_offsets(parser):
 
 def test_variables(parser):
     with sample_file("global_variables.cpp") as f:
-        parser.read_lines(f)
+        parser.read(f.read())
 
     assert len(parser.functions) == 1
     assert len(parser.variables) == 2
