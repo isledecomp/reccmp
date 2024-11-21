@@ -45,9 +45,15 @@ logger = logging.getLogger(__name__)
 class PdbTypeImporter:
     """Allows PDB types to be imported into Ghidra."""
 
-    def __init__(self, api: FlatProgramAPI, extraction: PdbFunctionExtractor):
+    def __init__(
+        self,
+        api: FlatProgramAPI,
+        extraction: PdbFunctionExtractor,
+        ignore_types: set[str],
+    ):
         self.api = api
         self.extraction = extraction
+        self.ignore_types = ignore_types
         # tracks the structs/classes we have already started to import, otherwise we run into infinite recursion
         self.handled_structs: set[str] = set()
 
@@ -229,6 +235,21 @@ class PdbTypeImporter:
         self.handled_structs.add(class_name_with_namespace)
 
         get_or_create_namespace(self.api, class_name_with_namespace)
+
+        if class_name_with_namespace in self.ignore_types:
+            # Respect ignore-list
+            try:
+                result = get_ghidra_type(self.api, class_name_with_namespace)
+                logger.info(
+                    "Skipping import of class '%s' because it is on the ignore list",
+                    class_name_with_namespace,
+                )
+                return result
+            except TypeNotFoundInGhidraError:
+                logger.warning(
+                    "Importing class '%s' despite it being on the ignore list because it is not present in Ghidra.",
+                    class_name_with_namespace,
+                )
 
         new_ghidra_struct = self._get_or_create_struct_data_type(
             class_name_with_namespace, class_size
