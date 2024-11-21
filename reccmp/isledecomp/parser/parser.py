@@ -1,6 +1,7 @@
 # C++ file parser
 
-from typing import List, Iterable, Iterator, Optional
+import io
+from typing import List, Iterator, Optional
 from enum import Enum
 from .util import (
     get_class_name,
@@ -545,8 +546,8 @@ class DecompParser:
             if vtable_class is not None:
                 self._vtable_done(class_name=vtable_class)
 
-    def read_lines(self, lines: Iterable):
-        for line in lines:
+    def read(self, text: str):
+        for line in io.StringIO(text, newline=None):
             self.read_line(line)
 
     def finish(self):

@@ -115,15 +115,12 @@ class DecompLinter:
                     )
                 )
 
-    def check_lines(self, lines, filename, module=None):
-        """`lines` is a generic iterable to allow for testing with a list of strings.
-        We assume lines has the entire contents of the compilation unit."""
-
+    def read(self, code: str, filename: str, module=None) -> bool:
         self.reset(False)
         self._filename = filename
         self._module = module
 
-        self._parser.read_lines(lines)
+        self._parser.read(code)
 
         self._parser.finish()
         self.alerts = self._parser.alerts[::]
@@ -138,7 +135,7 @@ class DecompLinter:
 
         return len(self.alerts) == 0
 
-    def check_file(self, filename, module=None):
+    def check_file(self, filename: str, module=None):
         """Convenience method for decomplint cli tool"""
         with open(filename, "r", encoding="utf-8") as f:
-            return self.check_lines(f, filename, module)
+            return self.read(f.read(), filename, module)
