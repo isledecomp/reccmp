@@ -8,6 +8,14 @@ import textwrap
 import ruamel.yaml
 
 from reccmp.assets import get_asset_file
+from .config import (
+    GhidraConfig,
+    Hash,
+    ProjectFile,
+    ProjectFileTarget,
+    UserFile,
+    UserFileTarget,
+)
 from .common import RECCMP_PROJECT_CONFIG, RECCMP_USER_CONFIG, RECCMP_BUILD_CONFIG
 from .detect import RecCmpProject, RecCmpTarget
 from .error import RecCmpProjectException
@@ -156,8 +164,8 @@ def create_project(
 ) -> RecCmpProject:
     if not original_paths:
         raise RecCmpProjectException("Need at least one original binary")
-    id_path = {}
-    project_config_data = {"targets": {}}
+    id_path: dict[str, Path] = {}
+    project_config_data = ProjectFile(targets={})
     project_config_path = project_directory / RECCMP_PROJECT_CONFIG
     user_config_path = project_directory / RECCMP_USER_CONFIG
     project = RecCmpProject(project_config_path=project_config_path)
@@ -169,22 +177,24 @@ def create_project(
         target_id = path_to_id(original_path)
         hash_sha256 = get_path_sha256(original_path)
         target_filename = original_path.name
-        target_data = {
-            "filename": target_filename,
-            "hash": {
-                "sha256": hash_sha256,
-            },
-        }
-        if target_id in project_config_data["targets"]:
+        target_data = ProjectFileTarget(
+            filename=target_filename,
+            source_root=project_directory,
+            hash=Hash(sha256=hash_sha256),
+        )
+        if target_id in project_config_data.targets:
             for suffix_nb in itertools.count(start=0, step=1):
                 new_target_id = f"{target_id}_{suffix_nb}"
-                if new_target_id not in project_config_data["targets"]:
+                if new_target_id not in project_config_data.targets:
                     target_id = new_target_id
                     break
-        project_config_data["targets"][target_id] = target_data
+        project_config_data.targets[target_id] = target_data
         id_path[target_id] = original_path
         project.targets[target_id] = RecCmpTarget(
-            target_id=target_id, filename=target_filename, source_root=project_directory
+            target_id=target_id,
+            filename=target_filename,
+            source_root=project_directory,
+            ghidra_config=GhidraConfig.default(),
         )
 
     if project_config_path.exists():
@@ -196,15 +206,18 @@ def create_project(
     logger.debug("Creating %s...", project_config_path)
     with project_config_path.open("w") as f:
         yaml = ruamel.yaml.YAML()
-        yaml.dump(data=project_config_data, stream=f)
+        yaml.dump(data=project_config_data.model_dump(mode="json"), stream=f)
 
-    user_config_data = {
-        "targets": {uid: {"path": str(path.resolve())} for uid, path in id_path.items()}
-    }
+    user_config_data = UserFile(
+        targets={
+            uid: UserFileTarget(path=path.resolve()) for uid, path in id_path.items()
+        }
+    )
+
     logger.debug("Creating %s...", user_config_data)
     with user_config_path.open("w") as f:
         yaml = ruamel.yaml.YAML()
-        yaml.dump(data=user_config_data, stream=f)
+        yaml.dump(data=user_config_data.model_dump(mode="json"), stream=f)
 
     if scm:
         gitignore_path = project_directory / ".gitignore"

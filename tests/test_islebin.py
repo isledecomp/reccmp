@@ -3,7 +3,6 @@
 2. Provides an interface to read from the DLL or EXE using a virtual address.
 These are some basic smoke tests."""
 
-import hashlib
 from typing import Tuple
 import pytest
 from reccmp.isledecomp.bin import (
