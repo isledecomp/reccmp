@@ -525,7 +525,10 @@ class CompareDb:
                 logger.error(
                     "Failed to find string annotated with 0x%x: %s", addr, escaped
                 )
-            elif already_present.compare_type == SymbolType.STRING and already_present.name == value:
+            elif (
+                already_present.compare_type == SymbolType.STRING
+                and already_present.name == value
+            ):
                 logger.debug(
                     "String annotated with 0x%x is annotated multiple times: %s",
                     addr,
