@@ -431,7 +431,7 @@ class CompareDb:
     def match_function(self, addr: int, name: str) -> bool:
         did_match = self._match_on(SymbolType.FUNCTION, addr, name)
         if not did_match:
-            logger.error("Failed to find function symbol with name: %s", name)
+            logger.error("Failed to find function symbol with annotation 0x%x and name '%s'", addr, name)
 
         return did_match
 
@@ -455,7 +455,7 @@ class CompareDb:
             if recomp_addr is not None:
                 return self.set_pair(addr, recomp_addr, SymbolType.VTABLE)
 
-        logger.error("Failed to find vtable for class: %s", name)
+        logger.error("Failed to find vtable for class with annotation 0x%x and name '%s'", addr, name)
         return False
 
     def match_static_variable(
@@ -490,9 +490,10 @@ class CompareDb:
             return self.set_pair(addr, recomp_addr, SymbolType.DATA)
 
         logger.error(
-            "Failed to match static variable %s from function %s",
+            "Failed to match static variable %s from function %s annotated with 0x%x",
             variable_name,
             function_name,
+            addr
         )
 
         return False
@@ -502,7 +503,7 @@ class CompareDb:
             SymbolType.POINTER, addr, name
         )
         if not did_match:
-            logger.error("Failed to find variable: %s", name)
+            logger.error("Failed to find variable annotated with 0x%x: %s", addr, name)
 
         return did_match
 
@@ -510,6 +511,6 @@ class CompareDb:
         did_match = self._match_on(SymbolType.STRING, addr, value)
         if not did_match:
             escaped = repr(value)
-            logger.error("Failed to find string: %s", escaped)
+            logger.error("Failed to find string annotated with 0x%x: %s", addr, escaped)
 
         return did_match
