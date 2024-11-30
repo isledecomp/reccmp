@@ -518,7 +518,26 @@ class CompareDb:
     def match_string(self, addr: int, value: str) -> bool:
         did_match = self._match_on(SymbolType.STRING, addr, value)
         if not did_match:
+            already_present = self.get_by_orig(addr, exact=True)
             escaped = repr(value)
-            logger.error("Failed to find string annotated with 0x%x: %s", addr, escaped)
+
+            if already_present is None:
+                logger.error(
+                    "Failed to find string annotated with 0x%x: %s", addr, escaped
+                )
+            elif already_present.compare_type == SymbolType.STRING and already_present.name == value:
+                logger.debug(
+                    "String annotated with 0x%x is annotated multiple times: %s",
+                    addr,
+                    escaped,
+                )
+            else:
+                logger.error(
+                    "Multiple annotations of 0x%x disagree: %s (STRING) vs. %s (%s)",
+                    addr,
+                    escaped,
+                    repr(already_present.name),
+                    repr(SymbolType(already_present.compare_type)),
+                )
 
         return did_match
