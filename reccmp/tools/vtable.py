@@ -70,7 +70,6 @@ def main():
 
     orig_bin = detect_image(args.original)
     assert isinstance(orig_bin, PEImage)
-    orig_bin.prepare_string_search()
 
     recomp_bin = detect_image(args.recompiled)
     assert isinstance(recomp_bin, PEImage)

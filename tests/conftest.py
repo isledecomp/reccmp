@@ -31,5 +31,4 @@ def fixture_binfile(pytestconfig) -> Iterator[PEImage]:
 
     image = detect_image(filename)
     assert isinstance(image, PEImage)
-    image.prepare_string_search()
     yield image

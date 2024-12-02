@@ -319,7 +319,6 @@ def main():
     origfile = detect_image(filepath=target.original_path)
     if not isinstance(origfile, PEImage):
         raise ValueError(f"{target.original_path} is not a PE executable")
-    origfile.prepare_string_search()
 
     recompfile = detect_image(filepath=target.recompiled_path)
     if not isinstance(recompfile, PEImage):

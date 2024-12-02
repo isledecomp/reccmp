@@ -294,7 +294,6 @@ def main():
     origfile = detect_image(target.original_path)
     if not isinstance(origfile, PEImage):
         raise ValueError
-    origfile.prepare_string_search()
 
     recompfile = detect_image(target.recompiled_path)
     if not isinstance(recompfile, PEImage):

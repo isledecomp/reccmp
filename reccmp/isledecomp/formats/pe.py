@@ -469,7 +469,7 @@ class PEImage(Image):
     header: PEImageFileHeader
     optional_header: PEImageOptionalHeader
     section_headers: tuple[PEImageSectionHeader, ...]
-    sections: tuple[PESection]
+    sections: tuple[PESection, ...]
 
     # FIXME: do these belong to PEImage? Shouldn't the loade apply these to the data?
     _relocated_addrs: set[int] = dataclasses.field(default_factory=set, repr=False)
@@ -522,6 +522,7 @@ class PEImage(Image):
             sections=sections,
         )
         image.load()
+        image.prepare_string_search()
         return image
 
     def load(self):
