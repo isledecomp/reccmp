@@ -8,6 +8,8 @@ from typing import Iterable, List, NamedTuple, Optional, Tuple
 from struct import unpack
 import colorama
 import reccmp
+from reccmp.isledecomp.formats.detect import detect_image
+from reccmp.isledecomp.formats.pe import PEImage
 from reccmp.isledecomp.compare import Compare as IsleCompare
 from reccmp.isledecomp.compare.db import MatchInfo
 from reccmp.isledecomp.cvdump import Cvdump
@@ -15,7 +17,6 @@ from reccmp.isledecomp.cvdump.types import (
     CvdumpKeyError,
     CvdumpIntegrityError,
 )
-from reccmp.isledecomp.bin import Bin as IsleBin
 from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
 from reccmp.project.detect import (
     RecCmpProjectException,
@@ -143,9 +144,18 @@ def create_comparison_item(
 def do_the_comparison(target: RecCmpBuiltTarget) -> Iterable[ComparisonItem]:
     """Run through each variable in our compare DB, then do the comparison
     according to the variable's type. Emit the result."""
-    with IsleBin(target.original_path, find_str=True) as origfile, IsleBin(
-        target.recompiled_path
-    ) as recompfile:
+    origfile = detect_image(filepath=target.original_path)
+    if not isinstance(origfile, PEImage):
+        raise ValueError(f"{target.original_path} is not a PE executable")
+    origfile.prepare_string_search()
+
+    recompfile = detect_image(filepath=target.recompiled_path)
+    if not isinstance(recompfile, PEImage):
+        raise ValueError(f"{target.recompiled_path} is not a PE executable")
+
+    # FIXME: remove "if True"
+    # pylint: disable=using-constant-test
+    if True:
         isle_compare = IsleCompare(
             origfile,
             recompfile,

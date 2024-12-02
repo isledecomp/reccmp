@@ -6,7 +6,10 @@ import struct
 import uuid
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable, List, Optional
-from reccmp.isledecomp.bin import Bin as IsleBin, InvalidVirtualAddressError
+
+# from reccmp.isledecomp.bin import Bin as IsleBin, InvalidVirtualAddressError
+from reccmp.isledecomp.formats.exceptions import InvalidVirtualAddressError
+from reccmp.isledecomp.formats.pe import PEImage
 from reccmp.isledecomp.cvdump.demangler import demangle_string_const
 from reccmp.isledecomp.cvdump import Cvdump, CvdumpAnalysis
 from reccmp.isledecomp.parser import DecompCodebase
@@ -43,7 +46,7 @@ class DiffReport:
         return f"{self.name} (0x{self.orig_addr:x}) {self.ratio*100:.02f}%{'*' if self.is_effective_match else ''}"
 
 
-def create_reloc_lookup(bin_file: IsleBin) -> Callable[[int], bool]:
+def create_reloc_lookup(bin_file: PEImage) -> Callable[[int], bool]:
     """Function generator for relocation table lookup"""
 
     def lookup(addr: int) -> bool:
@@ -52,7 +55,7 @@ def create_reloc_lookup(bin_file: IsleBin) -> Callable[[int], bool]:
     return lookup
 
 
-def create_bin_lookup(bin_file: IsleBin) -> Callable[[int, int], Optional[str]]:
+def create_bin_lookup(bin_file: PEImage) -> Callable[[int, int], Optional[str]]:
     """Function generator for reading from the bin file"""
 
     def lookup(addr: int, size: int) -> Optional[bytes]:
@@ -68,8 +71,8 @@ class Compare:
     # pylint: disable=too-many-instance-attributes
     def __init__(
         self,
-        orig_bin: IsleBin,
-        recomp_bin: IsleBin,
+        orig_bin: PEImage,
+        recomp_bin: PEImage,
         pdb_file: Path | str,
         code_dir: Path | str,
     ):
@@ -200,7 +203,7 @@ class Compare:
 
     def _load_markers(self):
         # Assume module name is the base filename of the original binary.
-        (module, _) = os.path.splitext(os.path.basename(self.orig_bin.filename))
+        (module, _) = os.path.splitext(os.path.basename(self.orig_bin.filepath))
 
         codefiles = list(walk_source_dir(self.code_dir))
         codebase = DecompCodebase(codefiles, module.upper())

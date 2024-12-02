@@ -14,8 +14,8 @@ import bisect
 from typing import Iterator, List, Optional, Tuple
 from collections import namedtuple
 import reccmp
-from reccmp.isledecomp import Bin as IsleBin
-from reccmp.isledecomp.bin import InvalidVirtualAddressError
+from reccmp.isledecomp import PEImage, detect_image
+from reccmp.isledecomp.formats.exceptions import InvalidVirtualAddressError
 from reccmp.isledecomp.cvdump import Cvdump
 from reccmp.isledecomp.compare import Compare as IsleCompare
 from reccmp.isledecomp.types import SymbolType
@@ -393,9 +393,17 @@ def parse_args() -> argparse.Namespace:
 def main():
     args = parse_args()
 
-    with IsleBin(args.original, find_str=True) as orig_bin, IsleBin(
-        args.recompiled
-    ) as recomp_bin:
+    orig_bin = detect_image(args.original)
+    assert isinstance(orig_bin, PEImage)
+    orig_bin.prepare_string_search()
+
+    recomp_bin = detect_image(args.recompiled)
+    assert isinstance(recomp_bin, PEImage)
+    engine = IsleCompare(orig_bin, recomp_bin, args.pdb, args.decomp_dir)
+
+    # FIXME: remove "if True"
+    # pylint: disable=using-constant-test
+    if True:
         engine = IsleCompare(orig_bin, recomp_bin, args.pdb, args.decomp_dir)
 
         module_map = ModuleMap(args.pdb, recomp_bin)

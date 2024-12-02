@@ -11,12 +11,14 @@ from pystache import Renderer
 import colorama
 import reccmp
 from reccmp.isledecomp import (
-    Bin,
     print_combined_diff,
     diff_json,
     percent_string,
 )
+
 from reccmp.isledecomp.compare import Compare as IsleCompare
+from reccmp.isledecomp.formats.detect import detect_image
+from reccmp.isledecomp.formats.pe import PEImage
 from reccmp.isledecomp.types import SymbolType
 from reccmp.assets import get_asset_file
 from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
@@ -221,9 +223,18 @@ def main():
 
     logging.basicConfig(level=args.loglevel, format="[%(levelname)s] %(message)s")
 
-    with Bin(target.original_path, find_str=True) as origfile, Bin(
-        target.recompiled_path
-    ) as recompfile:
+    origfile = detect_image(filepath=target.original_path)
+    if not isinstance(origfile, PEImage):
+        raise ValueError(f"{target.original_path} is not a PE executable")
+    origfile.prepare_string_search()
+
+    recompfile = detect_image(filepath=target.recompiled_path)
+    if not isinstance(recompfile, PEImage):
+        raise ValueError(f"{target.recompiled_path} is not a PE executable")
+
+    # FIXME: remove "if True"
+    # pylint: disable=using-constant-test
+    if True:
         if args.verbose is not None:
             # Mute logger events from compare engine
             logging.getLogger("isledecomp.compare.db").setLevel(logging.CRITICAL)

@@ -7,7 +7,8 @@ from typing import Dict, List, NamedTuple, Optional, Set, Tuple
 
 import colorama
 import reccmp
-from reccmp.isledecomp import Bin
+from reccmp.isledecomp.formats.detect import detect_image
+from reccmp.isledecomp.formats.pe import PEImage
 from reccmp.isledecomp.compare import Compare as IsleCompare
 from reccmp.isledecomp.compare.diff import CombinedDiffOutput
 from reccmp.isledecomp.cvdump.symbols import SymbolsEntry
@@ -315,13 +316,21 @@ def main():
         logger.error(e.args[0])
         return 1
 
-    with Bin(target.original_path, find_str=True) as origfile, Bin(
-        target.recompiled_path
-    ) as recompfile:
+    origfile = detect_image(filepath=target.original_path)
+    if not isinstance(origfile, PEImage):
+        raise ValueError(f"{target.original_path} is not a PE executable")
+    origfile.prepare_string_search()
+
+    recompfile = detect_image(filepath=target.recompiled_path)
+    if not isinstance(recompfile, PEImage):
+        raise ValueError(f"{target.recompiled_path} is not a PE executable")
+
+    # FIXME: remove "if True"
+    # pylint: disable=using-constant-test
+    if True:
         isle_compare = IsleCompare(
             origfile, recompfile, target.recompiled_pdb, target.source_root
         )
-
         if args.loglevel == logging.DEBUG:
             isle_compare.debug = True
 

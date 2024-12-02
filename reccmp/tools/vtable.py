@@ -5,7 +5,7 @@ import logging
 from typing import List
 import colorama
 import reccmp
-from reccmp.isledecomp.bin import Bin as IsleBin
+from reccmp.isledecomp import PEImage, detect_image
 from reccmp.isledecomp.compare import Compare as IsleCompare
 from reccmp.isledecomp.utils import print_combined_diff
 from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
@@ -68,9 +68,17 @@ def main():
         logger.error(e.args[0])
         return 1
 
-    with IsleBin(target.original_path) as orig_bin, IsleBin(
-        target.recompiled_path
-    ) as recomp_bin:
+    orig_bin = detect_image(args.original)
+    assert isinstance(orig_bin, PEImage)
+    orig_bin.prepare_string_search()
+
+    recomp_bin = detect_image(args.recompiled)
+    assert isinstance(recomp_bin, PEImage)
+    engine = IsleCompare(orig_bin, recomp_bin, args.pdb, args.decomp_dir)
+
+    # FIXME: remove "if True"
+    # pylint: disable=using-constant-test
+    if True:
         engine = IsleCompare(
             orig_bin, recomp_bin, target.recompiled_pdb, target.source_root
         )

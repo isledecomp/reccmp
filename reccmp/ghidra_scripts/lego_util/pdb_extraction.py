@@ -3,7 +3,7 @@ import re
 from typing import Any, Optional
 import logging
 
-from reccmp.isledecomp.bin import InvalidVirtualAddressError
+from reccmp.isledecomp.formats.exceptions import InvalidVirtualAddressError
 from reccmp.isledecomp.cvdump.symbols import SymbolsEntry
 from reccmp.isledecomp.compare import Compare as IsleCompare
 from reccmp.isledecomp.compare.db import MatchInfo
