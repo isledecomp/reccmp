@@ -58,8 +58,8 @@ class MatchInfo:
     def matched(self) -> bool:
         return self.orig_addr is not None and self.recomp_addr is not None
 
-    def get(self, key: str) -> Any:
-        return self.options.get(key)
+    def get(self, key: str, default: Any = None) -> Any:
+        return self.options.get(key, default)
 
     def match_name(self) -> Optional[str]:
         """Combination of the name and compare type.
@@ -439,7 +439,25 @@ class CompareDb:
 
         for obj in self.search_name(name, compare_type):
             if obj.orig_addr is None and obj.recomp_addr is not None:
-                return self.set_pair(addr, obj.recomp_addr, compare_type)
+                matched = self.set_pair(addr, obj.recomp_addr, compare_type)
+
+                # Type field has been set by set_pair, so we can use it in our count query:
+                (count,) = self._sql.execute(
+                    """SELECT count(rowid) from symbols
+                    where json_extract(kvstore,'$.name') = ?
+                    AND json_extract(kvstore,'$.type') = ?""",
+                    (name, compare_type),
+                ).fetchone()
+
+                if matched and count > 1:
+                    logger.warning(
+                        "Ambiguous match 0x%x on name '%s' to '%s'",
+                        addr,
+                        name,
+                        obj.get("symbol", "__no_symbol__"),
+                    )
+
+                return matched
 
         return False
 
