@@ -24,8 +24,6 @@ _SETUP_SQL = """
         value text,
         primary key (addr, name)
     ) without rowid;
-
-    CREATE INDEX `symbols_na` ON `symbols` (json_extract(kvstore, '$.name'));
 """
 
 
@@ -93,6 +91,7 @@ class CompareDb:
     def __init__(self):
         self._sql = sqlite3.connect(":memory:")
         self._sql.executescript(_SETUP_SQL)
+        self._indexed = set()
 
     @property
     def sql(self) -> sqlite3.Connection:
@@ -388,52 +387,61 @@ class CompareDb:
 
         return True
 
-    def _find_potential_match(
-        self, name: str, compare_type: SymbolType
-    ) -> Optional[int]:
-        """Name lookup"""
-        match_decorate = compare_type != SymbolType.STRING and name.startswith("?")
-        # If the index on orig_addr is unique, sqlite will prefer to use it over the name index.
-        # But this index will not help if we are checking for NULL, so we exclude it
-        # by adding the plus sign (Reference: https://www.sqlite.org/optoverview.html#uplus)
-        if match_decorate:
-            # TODO: Change when/if decorated becomes a unique column
-            for (recomp_addr,) in self._sql.execute(
-                "SELECT recomp_addr FROM symbols WHERE json_extract(kvstore, '$.symbol') = ? AND +orig_addr IS NULL LIMIT 1",
-                (name,),
-            ):
-                return recomp_addr
+    def search_symbol(self, symbol: str) -> Iterator[MatchInfo]:
+        if "symbol" not in self._indexed:
+            self._sql.execute(
+                "CREATE index idx_symbol on symbols(json_extract(kvstore, '$.symbol'))"
+            )
+            self._indexed.add("symbol")
 
-            return None
+        cur = self._sql.execute(
+            """SELECT orig_addr, recomp_addr, kvstore FROM symbols
+            WHERE json_extract(kvstore, '$.symbol') = ?""",
+            (symbol,),
+        )
+        cur.row_factory = matchinfo_factory
+        yield from cur
 
-        for (reccmp_addr,) in self._sql.execute(
-            """
-            SELECT recomp_addr
-            FROM `symbols`
-            WHERE +orig_addr IS NULL
-            AND json_extract(kvstore, '$.name') = ?
-            AND (json_extract(kvstore, '$.type') IS NULL OR json_extract(kvstore, '$.type') = ?)
-            LIMIT 1""",
+    def search_name(self, name: str, compare_type: SymbolType) -> Iterator[MatchInfo]:
+        if "name" not in self._indexed:
+            self._sql.execute(
+                "CREATE index idx_name on symbols(json_extract(kvstore, '$.name'))"
+            )
+            self._indexed.add("name")
+
+        # n.b. If the name matches and the type is not set, we will return the row.
+        # Ideally we would have perfect information on the recomp side and not need to do this
+        cur = self._sql.execute(
+            """SELECT orig_addr, recomp_addr, kvstore FROM symbols
+            WHERE json_extract(kvstore, '$.name') = ?
+            AND (json_extract(kvstore, '$.type') IS NULL OR json_extract(kvstore, '$.type') = ?)""",
             (name, compare_type),
-        ):
-            return reccmp_addr
-
-        return None
+        )
+        cur.row_factory = matchinfo_factory
+        yield from cur
 
     def _match_on(self, compare_type: SymbolType, addr: int, name: str) -> bool:
-        # Update the compare_type here too since the marker tells us what we should do
+        """Search the program listing for the given name and type, then assign the
+        given address to the first unmatched result."""
+        # If we identify the name as a linker symbol, search for that instead.
+        # TODO: Will need a customizable "name_is_symbol" function for other platforms
+        if compare_type != SymbolType.STRING and name.startswith("?"):
+            for obj in self.search_symbol(name):
+                if obj.orig_addr is None and obj.recomp_addr is not None:
+                    return self.set_pair(addr, obj.recomp_addr, compare_type)
+
+            return False
 
         # Truncate the name to 255 characters. It will not be possible to match a name
-        # longer than that because MSVC truncates the debug symbols to this length.
+        # longer than that because MSVC truncates to this length.
         # See also: warning C4786.
         name = name[:255]
 
-        logger.debug("Looking for %s %s", compare_type.name.lower(), name)
-        recomp_addr = self._find_potential_match(name, compare_type)
-        if recomp_addr is None:
-            return False
+        for obj in self.search_name(name, compare_type):
+            if obj.orig_addr is None and obj.recomp_addr is not None:
+                return self.set_pair(addr, obj.recomp_addr, compare_type)
 
-        return self.set_pair(addr, recomp_addr, compare_type)
+        return False
 
     def get_next_orig_addr(self, addr: int) -> Optional[int]:
         """Return the original address (matched or not) that follows
@@ -470,16 +478,16 @@ class CompareDb:
         for_vftable = f"{name}::`vftable'{{for `{for_name}'}}"
 
         # Try to match on the "vftable for X first"
-        recomp_addr = self._find_potential_match(for_vftable, SymbolType.VTABLE)
-        if recomp_addr is not None:
-            return self.set_pair(addr, recomp_addr, SymbolType.VTABLE)
+        for obj in self.search_name(for_vftable, SymbolType.VTABLE):
+            if obj.orig_addr is None and obj.recomp_addr is not None:
+                return self.set_pair(addr, obj.recomp_addr, SymbolType.VTABLE)
 
         # Only allow a match against "Class:`vftable'"
         # if this is the derived class.
         if base_class is None or base_class == name:
-            recomp_addr = self._find_potential_match(bare_vftable, SymbolType.VTABLE)
-            if recomp_addr is not None:
-                return self.set_pair(addr, recomp_addr, SymbolType.VTABLE)
+            for obj in self.search_name(bare_vftable, SymbolType.VTABLE):
+                if obj.orig_addr is None and obj.recomp_addr is not None:
+                    return self.set_pair(addr, obj.recomp_addr, SymbolType.VTABLE)
 
         logger.error(
             "Failed to find vtable for class with annotation 0x%x and name '%s'",
