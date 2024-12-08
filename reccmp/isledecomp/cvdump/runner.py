@@ -74,7 +74,6 @@ class Cvdump:
     def run(self) -> CvdumpParser:
         parser = CvdumpParser()
         call = self.cmd_line()
-        print(f"{call=}")
         with subprocess.Popen(call, stdout=subprocess.PIPE) as proc:
             for line in io.TextIOWrapper(
                 proc.stdout, encoding="utf-8", errors="ignore"
