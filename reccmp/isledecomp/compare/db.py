@@ -488,29 +488,48 @@ class CompareDb:
         return did_match
 
     def match_vtable(
-        self, addr: int, name: str, base_class: Optional[str] = None
+        self, addr: int, class_name: str, base_class: Optional[str] = None
     ) -> bool:
-        # Set up our potential match names
-        bare_vftable = f"{name}::`vftable'"
-        for_name = base_class if base_class is not None else name
-        for_vftable = f"{name}::`vftable'{{for `{for_name}'}}"
+        """Match the vtable for the given class name. If a base class is provided,
+        we will match the multiple inheritance vtable instead.
 
-        # Try to match on the "vftable for X first"
-        for obj in self.search_name(for_vftable, SymbolType.VTABLE):
-            if obj.orig_addr is None and obj.recomp_addr is not None:
-                return self.set_pair(addr, obj.recomp_addr, SymbolType.VTABLE)
+        As with other name-based searches, set the given address on the first unmatched result.
 
-        # Only allow a match against "Class:`vftable'"
-        # if this is the derived class.
-        if base_class is None or base_class == name:
+        Our search here depends on having already demangled the vtable symbol before
+        loading the data. For example: we want to search for "Pizza::`vftable'"
+        so we extract the class name from its symbol "??_7Pizza@@6B@".
+
+        For multiple inheritance, the vtable name references the base class like this:
+
+            - X::`vftable'{for `Y'}
+
+        The vtable for the derived class will take one of these forms:
+
+            - X::`vftable'{for `X'}
+            - X::`vftable'
+
+        We assume only one of the above will appear for a given class."""
+        # Most classes will not use multiple inheritance, so try the regular vtable
+        # first, unless a base class is provided.
+        if base_class is None or base_class == class_name:
+            bare_vftable = f"{class_name}::`vftable'"
+
             for obj in self.search_name(bare_vftable, SymbolType.VTABLE):
                 if obj.orig_addr is None and obj.recomp_addr is not None:
                     return self.set_pair(addr, obj.recomp_addr, SymbolType.VTABLE)
 
+        # If we didn't find a match above, search for the multiple inheritance vtable.
+        for_name = base_class if base_class is not None else class_name
+        for_vftable = f"{class_name}::`vftable'{{for `{for_name}'}}"
+
+        for obj in self.search_name(for_vftable, SymbolType.VTABLE):
+            if obj.orig_addr is None and obj.recomp_addr is not None:
+                return self.set_pair(addr, obj.recomp_addr, SymbolType.VTABLE)
+
         logger.error(
             "Failed to find vtable for class with annotation 0x%x and name '%s'",
             addr,
-            name,
+            class_name,
         )
         return False
 
