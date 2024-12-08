@@ -454,7 +454,7 @@ class CompareDb:
                         "Ambiguous match 0x%x on name '%s' to '%s'",
                         addr,
                         name,
-                        obj.get("symbol", "__no_symbol__"),
+                        obj.get("symbol"),
                     )
 
                 return matched
