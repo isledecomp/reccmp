@@ -173,13 +173,16 @@ class Compare:
                     # reported length: 3 (does NOT include terminator)
                     # This will handle the case where the entire string contains "\x00"
                     # because those are distinct from the empty string of length 0.
-                    rstrip_raw = raw.rstrip(b"\x00")
-                    decoded_string = rstrip_raw.decode("latin1")
+                    decoded_string = raw.decode("latin1")
+                    rstrip_string = decoded_string.rstrip("\x00")
 
-                    if rstrip_raw != b"" and decoded_string != "":
-                        sym.friendly_name = decoded_string
-                    else:
-                        sym.friendly_name = decoded_string
+                    # TODO: Hack to exclude a string that contains \x00 bytes
+                    # The proper solution is to escape the text for JSON or use
+                    # base64 encoding for comparing binary values.
+                    # Kicking the can down the road for now.
+                    if "\x00" in decoded_string and rstrip_string == "":
+                        continue
+                    sym.friendly_name = decoded_string
 
                 except UnicodeDecodeError:
                     pass
@@ -192,9 +195,7 @@ class Compare:
             }
 
         # Convert dict of dicts (keyed by addr) to list of dicts (that contains the addr)
-        self._db.bulk_cvdump_insert(
-            ({"addr": key, **values} for key, values in dataset.items())
-        )
+        self._db.bulk_recomp_insert(dataset.items())
 
         for (section, offset), (
             filename,
@@ -332,8 +333,13 @@ class Compare:
                                 recomp_element_base_addr + member.offset,
                             )
 
-        self._db.bulk_array_insert(
-            ({"recomp": key, **values} for key, values in dataset.items())
+        # Upsert here to update the starting address of variables already in the db.
+        self._db.bulk_recomp_insert(
+            ((addr, {"name": values["name"]}) for addr, values in dataset.items()),
+            upsert=True,
+        )
+        self._db.bulk_match(
+            ((values["orig"], addr) for addr, values in dataset.items())
         )
 
     def _find_original_strings(self):
@@ -375,13 +381,13 @@ class Compare:
             for addr, string in self.orig_bin.iter_string("latin1"):
                 if is_real_string(string):
                     self._db.set_orig_symbol(
-                        addr, SymbolType.STRING, string, len(string)
+                        addr, type=SymbolType.STRING, name=string, size=len(string)
                     )
 
             for addr, string in self.recomp_bin.iter_string("latin1"):
                 if is_real_string(string):
                     self._db.set_recomp_symbol(
-                        addr, SymbolType.STRING, string, None, len(string)
+                        addr, type=SymbolType.STRING, name=string, size=len(string)
                     )
 
     def _find_float_const(self):
@@ -389,11 +395,13 @@ class Compare:
         We are not matching anything right now because these values are not
         deduped like strings."""
         for addr, size, float_value in self.orig_bin.find_float_consts():
-            self._db.set_orig_symbol(addr, SymbolType.FLOAT, str(float_value), size)
+            self._db.set_orig_symbol(
+                addr, type=SymbolType.FLOAT, name=str(float_value), size=size
+            )
 
         for addr, size, float_value in self.recomp_bin.find_float_consts():
             self._db.set_recomp_symbol(
-                addr, SymbolType.FLOAT, str(float_value), None, size
+                addr, type=SymbolType.FLOAT, name=str(float_value), size=size
             )
 
     def _match_imports(self):
@@ -443,7 +451,7 @@ class Compare:
             (dll_name, func_name) = orig_byaddr[orig]
             fullname = dll_name + ":" + func_name
             self._db.set_recomp_symbol(
-                recomp_rva, SymbolType.FUNCTION, fullname, None, 4
+                recomp_rva, type=SymbolType.FUNCTION, name=fullname, size=4
             )
             self._db.set_pair(orig_rva, recomp_rva, SymbolType.FUNCTION)
             self._db.skip_compare(orig_rva)
