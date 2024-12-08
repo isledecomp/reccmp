@@ -7,7 +7,6 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable, List, Optional
 
-# from reccmp.isledecomp.bin import Bin as IsleBin, InvalidVirtualAddressError
 from reccmp.isledecomp.formats.exceptions import InvalidVirtualAddressError
 from reccmp.isledecomp.formats.pe import PEImage
 from reccmp.isledecomp.cvdump.demangler import demangle_string_const

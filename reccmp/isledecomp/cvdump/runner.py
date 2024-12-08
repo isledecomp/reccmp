@@ -76,7 +76,9 @@ class Cvdump:
         call = self.cmd_line()
         print(f"{call=}")
         with subprocess.Popen(call, stdout=subprocess.PIPE) as proc:
-            for line in io.TextIOWrapper(proc.stdout, encoding="utf-8", errors="ignore"):
+            for line in io.TextIOWrapper(
+                proc.stdout, encoding="utf-8", errors="ignore"
+            ):
                 # Blank lines are there to help the reader; they have no context significance
                 if line != "\n":
                     parser.read_line(line)

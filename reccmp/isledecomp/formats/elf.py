@@ -219,6 +219,7 @@ class ElfMachine(IntEnum):
 
 @dataclass(frozen=True)
 class ElfFileHeader:
+    # Based on elf.h from glibc (https://sourceware.org/git/?p=glibc.git;a=blob;f=elf/elf.h)
     e_ident: bytes  # Magic number and other info
     e_type: int  # Object file type
     e_machine: ElfMachine  # Architecture

@@ -13,7 +13,7 @@ class MZHeaderNotFoundError(ValueError):
 @dataclass(frozen=True)
 class ImageDosHeader:
     # Order is significant!
-    e_magic: int
+    e_magic: bytes
     e_cblp: int
     e_cp: int
     e_crlc: int
@@ -33,11 +33,11 @@ class ImageDosHeader:
     e_res2: tuple[int, int, int, int, int, int, int, int, int, int]
     e_lfanew: int
 
-    MAGIC = 0x5A4D  # "MZ"
-
     @classmethod
     def from_memory(cls, data: bytes, offset: int) -> tuple["ImageDosHeader", int]:
-        struct_fmt = "<30HI"
+        if not cls.taste(data, offset):
+            raise ValueError
+        struct_fmt = "<2s29HI"
         struct_size = struct.calcsize(struct_fmt)
         items = struct.unpack_from(struct_fmt, data, offset)
         result = cls(
@@ -47,14 +47,12 @@ class ImageDosHeader:
             tuple[20:30],
             items[30],
         )
-        if result.e_magic != cls.MAGIC:
-            raise MZHeaderNotFoundError
         return result, offset + struct_size
 
     @classmethod
     def taste(cls, data: bytes, offset: int) -> bool:
-        (magic,) = struct.unpack_from("<H", data, offset)
-        return magic == cls.MAGIC
+        (magic,) = struct.unpack_from("<2s", data, offset)
+        return magic == b"MZ"
 
 
 @dataclass

@@ -2,7 +2,6 @@ import bisect
 import dataclasses
 from enum import IntEnum, IntFlag
 from functools import cached_property
-import logging
 from pathlib import Path
 import struct
 from typing import Iterator, Optional
@@ -11,8 +10,6 @@ from .exceptions import InvalidVirtualAddressError, SectionNotFoundError
 from .image import Image
 from .mz import ImageDosHeader
 
-
-logger = logging.getLogger(__name__)
 # pylint: disable=too-many-lines
 
 
@@ -342,11 +339,11 @@ class CodeViewHeaderNB10:
             raise ValueError
         items = struct.unpack_from(struct_fmt, data, offset)
         offset_pdb_filename = offset + struct.calcsize(struct_fmt)
-        pos_null = data.index(0, offset_pdb_filename)
-        if pos_null == -1:
-            pdb_file_name = b""
-        else:
+        try:
+            pos_null = data.index(0, offset_pdb_filename)
             pdb_file_name = data[offset_pdb_filename:pos_null]
+        except ValueError:
+            pdb_file_name = b""
         return cls(*items, pdb_file_name=pdb_file_name)
 
     @classmethod
@@ -369,11 +366,11 @@ class CodeViewHeaderRSDS:
             raise ValueError
         items = struct.unpack_from(struct_fmt, data, offset)
         offset_pdb_filename = offset + struct.calcsize(struct_fmt)
-        pos_null = data.index(0, offset_pdb_filename)
-        if pos_null == -1:
-            pdb_file_name = b""
-        else:
+        try:
+            pos_null = data.index(0, offset_pdb_filename)
             pdb_file_name = data[offset_pdb_filename:pos_null]
+        except ValueError:
+            pdb_file_name = b""
         return cls(*items, pdb_file_name=pdb_file_name)
 
     @classmethod
@@ -546,7 +543,6 @@ class PEImage(Image):
         # if self.find_str:
         #     self._prepare_string_search()
 
-        logger.debug("... Parsing finished")
         return self
 
     def get_data_directory_region(
