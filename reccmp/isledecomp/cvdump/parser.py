@@ -1,6 +1,5 @@
 import re
-from typing import Iterable, Tuple
-from collections import namedtuple
+from typing import Iterable, NamedTuple, Tuple
 from .types import CvdumpTypesParser
 from .symbols import CvdumpSymbolsParser
 
@@ -40,21 +39,52 @@ _gdata32_regex = re.compile(
 # e.g. 0004 "C:\work\lego-island\isle\3rdparty\smartheap\SHLW32MT.LIB" "check.obj"
 _module_regex = re.compile(r"(?P<id>\w{4})(?: \"(?P<lib>.+?)\")?(?: \"(?P<obj>.+?)\")")
 
-# User functions only
-LinesEntry = namedtuple("LinesEntry", "filename line_no section offset")
 
-# Strings, vtables, functions
-# superset of everything else
-# only place you can find the C symbols (library functions, smacker, etc)
-PublicsEntry = namedtuple("PublicsEntry", "type section offset flags name")
+class LinesEntry(NamedTuple):
+    """User functions only"""
 
-# (Estimated) size of any symbol
-SizeRefEntry = namedtuple("SizeRefEntry", "module section offset size")
+    filename: str
+    line_no: int
+    section: int
+    offset: int
 
-# global variables
-GdataEntry = namedtuple("GdataEntry", "section offset type name")
 
-ModuleEntry = namedtuple("ModuleEntry", "id lib obj")
+class PublicsEntry(NamedTuple):
+    """
+    - Strings, vtables, functions
+    - superset of everything else
+    - only place you can find the C symbols (library functions, smacker, etc)
+    """
+
+    type: str
+    section: int
+    offset: int
+    flags: int
+    name: str
+
+
+class SizeRefEntry(NamedTuple):
+    """(Estimated) size of any symbol"""
+
+    module: int
+    section: int
+    offset: int
+    size: int
+
+
+class GdataEntry(NamedTuple):
+    """global variables"""
+
+    section: int
+    offset: int
+    type: str
+    name: str
+
+
+class ModuleEntry(NamedTuple):
+    id: int
+    lib: str
+    obj: str
 
 
 class CvdumpParser:
@@ -64,10 +94,10 @@ class CvdumpParser:
         self._lines_function: Tuple[str, int] = ("", 0)
 
         self.lines = {}
-        self.publics = []
-        self.sizerefs = []
-        self.globals = []
-        self.modules = []
+        self.publics: list[PublicsEntry] = []
+        self.sizerefs: list[SizeRefEntry] = []
+        self.globals: list[GdataEntry] = []
+        self.modules: list[ModuleEntry] = []
 
         self.types = CvdumpTypesParser()
         self.symbols_parser = CvdumpSymbolsParser()
