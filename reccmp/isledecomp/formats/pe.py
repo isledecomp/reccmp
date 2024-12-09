@@ -92,8 +92,6 @@ class PEImageFileHeader:
     size_of_optional_header: int
     characteristics: PECharacteristics
 
-    SIGNATURE = b"PE\x00\x00"
-
     @classmethod
     def from_memory(cls, data: bytes, offset: int) -> tuple["PEImageFileHeader", int]:
         if not cls.taste(data, offset):
@@ -110,7 +108,7 @@ class PEImageFileHeader:
 
     @classmethod
     def taste(cls, data: bytes, offset: int) -> bool:
-        return data[offset : offset + 4] == cls.SIGNATURE
+        return data[offset : offset + 4] == b"PE\x00\x00"
 
 
 class WindowsSubsystem(IntEnum):
@@ -337,8 +335,6 @@ class CodeViewHeaderNB10:
     age: int  # incrementing value
     pdb_file_name: bytes  # zero terminated string with the name of the PDB file
 
-    CV_SIGNATURE = b"NB10"
-
     @classmethod
     def from_memory(cls, data: bytes, offset: int) -> Optional["CodeViewHeaderNB10"]:
         struct_fmt = "<4sIII"
@@ -355,7 +351,7 @@ class CodeViewHeaderNB10:
 
     @classmethod
     def taste(cls, data: bytes, offset: int) -> bool:
-        return data[offset : offset + 4] == cls.CV_SIGNATURE
+        return data[offset : offset + 4] == b"NB10"
 
 
 @dataclasses.dataclass
@@ -363,8 +359,6 @@ class CodeViewHeaderRSDS:
     cv_signature: bytes  # "RSDS"
     signature: bytes  # GUID
     pdb_file_name: bytes  # zero terminated string with the name of the PDB file
-
-    CV_SIGNATURE = b"RSDS"
 
     @classmethod
     def from_memory(cls, data: bytes, offset: int) -> Optional["CodeViewHeaderRSDS"]:
@@ -382,7 +376,7 @@ class CodeViewHeaderRSDS:
 
     @classmethod
     def taste(cls, data: bytes, offset: int) -> bool:
-        return data[offset : offset + 4] == cls.CV_SIGNATURE
+        return data[offset : offset + 4] == b"RSDS"
 
 
 @dataclasses.dataclass(frozen=True)

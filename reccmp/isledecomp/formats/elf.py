@@ -239,8 +239,6 @@ class ElfFileHeader:
     e_shnum: int  # Section header table entry count
     e_shstrndx: int  # Section header string table index
 
-    SIGNATURE = b"\x7fELF"
-
     @property
     def bitness(self) -> int:
         if self.e_ident[4] == 1:
@@ -288,7 +286,7 @@ class ElfFileHeader:
 
     @classmethod
     def taste(cls, data: bytes, offset: int) -> bool:
-        return bytes(data[offset : offset + 4]) == cls.SIGNATURE
+        return bytes(data[offset : offset + 4]) == b"\x7fELF"
 
 
 @dataclass

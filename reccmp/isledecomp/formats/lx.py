@@ -65,8 +65,6 @@ class LXImageHeader:
     nb_instance_demand: int
     heap_size: int
 
-    SIGNATURE = b"LE"
-
     @classmethod
     def from_memory(cls, data: bytes, offset: int) -> tuple["LXImageHeader", int]:
         if not cls.taste(data, offset):
@@ -79,7 +77,7 @@ class LXImageHeader:
 
     @classmethod
     def taste(cls, data: bytes, offset: int) -> bool:
-        return data[offset : offset + 2] == cls.SIGNATURE
+        return data[offset : offset + 2] == b"LE"
 
 
 @dataclass
