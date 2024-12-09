@@ -4,6 +4,11 @@ import struct
 
 from .image import Image
 
+"""
+Based on the following resources:
+- Windows SDK Headers
+"""
+
 
 class MZHeaderNotFoundError(ValueError):
     """MZ magic string not found"""

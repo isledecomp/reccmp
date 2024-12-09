@@ -5,6 +5,11 @@ import struct
 
 from .image import Image
 
+"""
+Based on the following resources:
+- elf.h from glibc (https://sourceware.org/git/?p=glibc.git;a=blob;f=elf/elf.h)
+"""
+
 
 class ElfHeaderNotFoundError(ValueError):
     """Elf magic string not found."""
@@ -219,7 +224,6 @@ class ElfMachine(IntEnum):
 
 @dataclass(frozen=True)
 class ElfFileHeader:
-    # Based on elf.h from glibc (https://sourceware.org/git/?p=glibc.git;a=blob;f=elf/elf.h)
     e_ident: bytes  # Magic number and other info
     e_type: int  # Object file type
     e_machine: ElfMachine  # Architecture

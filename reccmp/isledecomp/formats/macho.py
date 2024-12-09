@@ -5,6 +5,12 @@ from pathlib import Path
 from .image import Image
 
 
+"""
+Based on the following resources:
+- https://en.wikipedia.org/wiki/Mach-O
+"""
+
+
 # pylint: disable=too-many-instance-attributes
 @dataclass(frozen=True)
 class MachOHeader:
