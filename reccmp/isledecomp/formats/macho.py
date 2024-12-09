@@ -1,14 +1,13 @@
+"""
+Based on the following resources:
+- https://en.wikipedia.org/wiki/Mach-O
+"""
+
 import struct
 from dataclasses import dataclass
 from pathlib import Path
 
 from .image import Image
-
-
-"""
-Based on the following resources:
-- https://en.wikipedia.org/wiki/Mach-O
-"""
 
 
 # pylint: disable=too-many-instance-attributes

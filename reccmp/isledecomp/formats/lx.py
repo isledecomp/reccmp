@@ -1,15 +1,14 @@
+""""
+Based on the following resources:
+- LX - Linear eXecutable Module Format Description (http://www.edm2.com/index.php/LX_-_Linear_eXecutable_Module_Format_Description)
+"""
+
 import struct
 from dataclasses import dataclass
 from pathlib import Path
 
 from .image import Image
 from .mz import ImageDosHeader
-
-
-"""
-Based on the following resources:
-- LX - Linear eXecutable Module Format Description (http://www.edm2.com/index.php/LX_-_Linear_eXecutable_Module_Format_Description)
-"""
 
 
 class LXHeaderNotFoundError(ValueError):

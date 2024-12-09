@@ -1,13 +1,13 @@
+"""
+Based on the following resources:
+- Windows SDK Headers
+"""
+
 from dataclasses import dataclass
 from pathlib import Path
 import struct
 
 from .image import Image
-
-"""
-Based on the following resources:
-- Windows SDK Headers
-"""
 
 
 class MZHeaderNotFoundError(ValueError):

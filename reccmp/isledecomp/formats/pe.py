@@ -1,3 +1,10 @@
+"""
+Based on the following resources:
+- Windows SDK Headers
+- PE: https://learn.microsoft.com/en-us/windows/win32/debug/pe-format
+- Debug information: https://www.debuginfo.com/examples/src/DebugDir.cpp
+"""
+
 import bisect
 import dataclasses
 from enum import IntEnum, IntFlag
@@ -11,14 +18,6 @@ from .image import Image
 from .mz import ImageDosHeader
 
 # pylint: disable=too-many-lines
-
-
-"""
-Based on the following resources:
-- Windows SDK Headers
-- PE: https://learn.microsoft.com/en-us/windows/win32/debug/pe-format
-- Debug information: https://www.debuginfo.com/examples/src/DebugDir.cpp
-"""
 
 
 class PEHeaderNotFoundError(ValueError):

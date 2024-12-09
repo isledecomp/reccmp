@@ -1,14 +1,14 @@
+"""
+Based on the following resources:
+- elf.h from glibc (https://sourceware.org/git/?p=glibc.git;a=blob;f=elf/elf.h)
+"""
+
 from dataclasses import dataclass
 from enum import Enum, IntEnum
 from pathlib import Path
 import struct
 
 from .image import Image
-
-"""
-Based on the following resources:
-- elf.h from glibc (https://sourceware.org/git/?p=glibc.git;a=blob;f=elf/elf.h)
-"""
 
 
 class ElfHeaderNotFoundError(ValueError):
