@@ -16,7 +16,7 @@ from typing import Iterator, List, Optional, Tuple
 from collections import namedtuple
 import reccmp
 from reccmp.isledecomp import Bin as IsleBin
-from reccmp.isledecomp.bin import Bin, InvalidVirtualAddressError
+from reccmp.isledecomp.bin import InvalidVirtualAddressError
 from reccmp.isledecomp.compare.db import MatchInfo
 from reccmp.isledecomp.cvdump import Cvdump
 from reccmp.isledecomp.compare import Compare as IsleCompare
@@ -40,7 +40,7 @@ class ModuleMap:
     """Load a subset of sections from the pdb to allow you to look up the
     module number based on the recomp address."""
 
-    def __init__(self, pdb: Path, binfile: Bin) -> None:
+    def __init__(self, pdb: Path, binfile: IsleBin) -> None:
         cvdump = Cvdump(str(pdb)).section_contributions().modules().run()
         self.module_lookup: dict[int, tuple[str, str]] = {
             m.id: (m.lib, m.obj) for m in cvdump.modules
