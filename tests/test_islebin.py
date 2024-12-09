@@ -1,18 +1,18 @@
-"""Tests for the Bin (or IsleBin) module that:
+"""Tests for the pe module that:
 1. Parses relevant data from the PE header and other structures.
 2. Provides an interface to read from the DLL or EXE using a virtual address.
 These are some basic smoke tests."""
 
 from typing import Tuple
 import pytest
-from reccmp.isledecomp.bin import (
-    Bin as IsleBin,
+from reccmp.isledecomp.formats import PEImage
+from reccmp.isledecomp.formats.exceptions import (
     SectionNotFoundError,
     InvalidVirtualAddressError,
 )
 
 
-def test_basic(binfile: IsleBin):
+def test_basic(binfile: PEImage):
     assert binfile.entry == 0x1008C860
     assert len(binfile.sections) == 6
 
@@ -31,7 +31,7 @@ SECTION_INFO = (
 
 
 @pytest.mark.parametrize("name, v_addr, v_size, raw_size", SECTION_INFO)
-def test_sections(name: str, v_addr: int, v_size: int, raw_size: int, binfile: IsleBin):
+def test_sections(name: str, v_addr: int, v_size: int, raw_size: int, binfile: PEImage):
     section = binfile.get_section_by_name(name)
     assert section.virtual_address == v_addr
     assert section.virtual_size == v_size
@@ -51,11 +51,11 @@ PI_ADDRESSES = (
 
 
 @pytest.mark.parametrize("addr", PI_ADDRESSES)
-def test_read_pi(addr: int, binfile: IsleBin):
+def test_read_pi(addr: int, binfile: PEImage):
     assert binfile.read(addr, 8) == DOUBLE_PI_BYTES
 
 
-def test_unusual_reads(binfile: IsleBin):
+def test_unusual_reads(binfile: PEImage):
     """Reads that return an error or some specific value based on context"""
     # Reading an address earlier than the imagebase
     with pytest.raises(InvalidVirtualAddressError):
@@ -82,13 +82,13 @@ STRING_ADDRESSES = (
 
 
 @pytest.mark.parametrize("addr, string", STRING_ADDRESSES)
-def test_strings(addr: int, string: bytes, binfile: IsleBin):
+def test_strings(addr: int, string: bytes, binfile: PEImage):
     """Test string read utility function and the string search feature"""
     assert binfile.read_string(addr) == string
     assert binfile.find_string(string) == addr
 
 
-def test_relocation(binfile: IsleBin):
+def test_relocation(binfile: PEImage):
     # n.b. This is not the number of *relocations* read from .reloc.
     # It is the set of unique addresses in the binary that get relocated.
     assert len(binfile.get_relocated_addresses()) == 14066
@@ -108,7 +108,7 @@ IMPORT_REFS = (
 
 
 @pytest.mark.parametrize("import_ref", IMPORT_REFS)
-def test_imports(import_ref: Tuple[str, str, int], binfile: IsleBin):
+def test_imports(import_ref: Tuple[str, str, int], binfile: PEImage):
     assert import_ref in binfile.imports
 
 
@@ -120,11 +120,11 @@ THUNKS = (
 
 
 @pytest.mark.parametrize("thunk_ref", THUNKS)
-def test_thunks(thunk_ref: Tuple[int, int], binfile: IsleBin):
+def test_thunks(thunk_ref: Tuple[int, int], binfile: PEImage):
     assert thunk_ref in binfile.thunks
 
 
-def test_exports(binfile: IsleBin):
+def test_exports(binfile: PEImage):
     assert len(binfile.exports) == 130
     assert (0x1003BFB0, b"??0LegoBackgroundColor@@QAE@PBD0@Z") in binfile.exports
     assert (0x10091EE0, b"_DllMain@12") in binfile.exports
