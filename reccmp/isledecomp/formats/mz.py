@@ -44,7 +44,7 @@ class ImageDosHeader:
             *items[:14],
             items[14:18],
             *items[18:20],
-            tuple[20:30],
+            items[20:30],
             items[30],
         )
         return result, offset + struct_size
