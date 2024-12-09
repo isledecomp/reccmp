@@ -181,7 +181,7 @@ class Compare:
                     # Kicking the can down the road for now.
                     if "\x00" in decoded_string and rstrip_string == "":
                         continue
-                    sym.friendly_name = decoded_string
+                    sym.friendly_name = rstrip_string
 
                 except UnicodeDecodeError:
                     pass
