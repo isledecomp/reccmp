@@ -15,11 +15,11 @@ import bisect
 from typing import Iterator, List, Optional, Tuple
 from collections import namedtuple
 import reccmp
-from reccmp.isledecomp import Bin as IsleBin
-from reccmp.isledecomp.bin import InvalidVirtualAddressError
+from reccmp.isledecomp import PEImage, detect_image
 from reccmp.isledecomp.compare.db import MatchInfo
 from reccmp.isledecomp.cvdump import Cvdump
 from reccmp.isledecomp.compare import Compare as IsleCompare
+from reccmp.isledecomp.formats.exceptions import InvalidVirtualAddressError
 from reccmp.isledecomp.types import SymbolType
 from reccmp.project.detect import (
     argparse_add_built_project_target_args,
@@ -40,7 +40,7 @@ class ModuleMap:
     """Load a subset of sections from the pdb to allow you to look up the
     module number based on the recomp address."""
 
-    def __init__(self, pdb: Path, binfile: IsleBin) -> None:
+    def __init__(self, pdb: Path, binfile: PEImage) -> None:
         cvdump = Cvdump(str(pdb)).section_contributions().modules().run()
         self.module_lookup: dict[int, tuple[str, str]] = {
             m.id: (m.lib, m.obj) for m in cvdump.modules
@@ -394,9 +394,15 @@ def main() -> int:
         logger.error(e.args[0])
         return 1
 
-    with IsleBin(target.original_path, find_str=True) as orig_bin, IsleBin(
-        target.recompiled_path
-    ) as recomp_bin:
+    orig_bin = detect_image(target.original_path)
+    assert isinstance(orig_bin, PEImage)
+
+    recomp_bin = detect_image(target.recompiled_path)
+    assert isinstance(recomp_bin, PEImage)
+
+    # FIXME: remove "if True"
+    # pylint: disable=using-constant-test
+    if True:
         engine = IsleCompare(
             orig_bin, recomp_bin, target.recompiled_pdb, target.source_root
         )
@@ -502,7 +508,7 @@ def main() -> int:
         if args.csv is not None:
             export_to_csv(args.csv, results)
 
-        return 0
+    return 0
 
 
 if __name__ == "__main__":

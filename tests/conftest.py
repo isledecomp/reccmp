@@ -1,10 +1,9 @@
 import hashlib
+from pathlib import Path
 from typing import Iterator
 import pytest
 
-from reccmp.isledecomp.bin import (
-    Bin as IsleBin,
-)
+from reccmp.isledecomp import PEImage, detect_image
 
 
 def pytest_addoption(parser):
@@ -17,17 +16,19 @@ LEGO1_SHA256 = "14645225bbe81212e9bc1919cd8a692b81b8622abb6561280d99b0fc4151ce17
 
 
 @pytest.fixture(name="binfile", scope="session")
-def fixture_binfile(pytestconfig) -> Iterator[IsleBin]:
+def fixture_binfile(pytestconfig) -> Iterator[PEImage]:
     filename = pytestconfig.getoption("--lego1")
 
     # Skip this if we have not provided the path to LEGO1.dll.
     if filename is None:
         pytest.skip(allow_module_level=True, reason="No path to LEGO1")
 
-    with open(filename, "rb") as f:
+    filename = Path(filename)
+    with filename.open("rb") as f:
         digest = hashlib.sha256(f.read()).hexdigest()
         if digest != LEGO1_SHA256:
             pytest.fail(reason="Did not match expected LEGO1.DLL")
 
-    with IsleBin(filename, find_str=True) as islebin:
-        yield islebin
+    image = detect_image(filename)
+    assert isinstance(image, PEImage)
+    yield image
