@@ -9,19 +9,26 @@ in the original binary.
 import os
 import argparse
 import logging
+from pathlib import Path
 import statistics
 import bisect
 from typing import Iterator, List, Optional, Tuple
 from collections import namedtuple
 import reccmp
 from reccmp.isledecomp import PEImage, detect_image
-from reccmp.isledecomp.formats.exceptions import InvalidVirtualAddressError
+from reccmp.isledecomp.compare.db import MatchInfo
 from reccmp.isledecomp.cvdump import Cvdump
 from reccmp.isledecomp.compare import Compare as IsleCompare
+from reccmp.isledecomp.formats.exceptions import InvalidVirtualAddressError
 from reccmp.isledecomp.types import SymbolType
+from reccmp.project.detect import (
+    argparse_add_built_project_target_args,
+    argparse_parse_built_project_target,
+)
+from reccmp.project.error import RecCmpProjectException
+from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
 
-# Ignore all compare-db messages.
-logging.getLogger("isledecomp.compare").addHandler(logging.NullHandler())
+logger = logging.getLogger(__name__)
 
 
 def or_blank(value) -> str:
@@ -33,9 +40,11 @@ class ModuleMap:
     """Load a subset of sections from the pdb to allow you to look up the
     module number based on the recomp address."""
 
-    def __init__(self, pdb, binfile) -> None:
-        cvdump = Cvdump(pdb).section_contributions().modules().run()
-        self.module_lookup = {m.id: (m.lib, m.obj) for m in cvdump.modules}
+    def __init__(self, pdb: Path, binfile: PEImage) -> None:
+        cvdump = Cvdump(str(pdb)).section_contributions().modules().run()
+        self.module_lookup: dict[int, tuple[str, str]] = {
+            m.id: (m.lib, m.obj) for m in cvdump.modules
+        }
         self.library_lookup = {m.obj: m.lib for m in cvdump.modules}
         self.section_contrib = [
             (
@@ -96,12 +105,12 @@ def print_sections(sections):
 ALLOWED_TYPE_ABBREVIATIONS = ["fun", "dat", "poi", "str", "vta", "flo"]
 
 
-def match_type_abbreviation(mtype: Optional[SymbolType]) -> str:
+def match_type_abbreviation(mtype: Optional[int]) -> str:
     """Return abbreviation of the given SymbolType name"""
     if mtype is None:
         return ""
 
-    return mtype.name.lower()[:3]
+    return SymbolType(mtype).name.lower()[:3]
 
 
 def get_cmakefiles_prefix(module: str) -> str:
@@ -344,23 +353,14 @@ def export_to_csv(csv_file: str, results: List[RoadmapRow]):
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Show all addresses from original and recomp."
+        allow_abbrev=False,
+        description="Recompilation Compare: compare an original EXE with a recompiled EXE + PDB.",
     )
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {reccmp.VERSION}"
     )
-    parser.add_argument(
-        "original", metavar="original-binary", help="The original binary"
-    )
-    parser.add_argument(
-        "recompiled", metavar="recompiled-binary", help="The recompiled binary"
-    )
-    parser.add_argument(
-        "pdb", metavar="recompiled-pdb", help="The PDB of the recompiled binary"
-    )
-    parser.add_argument(
-        "decomp_dir", metavar="decomp-dir", help="The decompiled source tree"
-    )
+    argparse_add_built_project_target_args(parser)
+
     parser.add_argument("--csv", metavar="<file>", help="If set, export to CSV")
     parser.add_argument(
         "--verbose", "-v", action="store_true", help="Show recomp addresses in output"
@@ -373,39 +373,41 @@ def parse_args() -> argparse.Namespace:
         help="Show suggested order of modules (using the specified symbol type)",
     )
 
-    (args, _) = parser.parse_known_args()
-
-    if not os.path.isfile(args.original):
-        parser.error(f"Original binary {args.original} does not exist")
-
-    if not os.path.isfile(args.recompiled):
-        parser.error(f"Recompiled binary {args.recompiled} does not exist")
-
-    if not os.path.isfile(args.pdb):
-        parser.error(f"Symbols PDB {args.pdb} does not exist")
-
-    if not os.path.isdir(args.decomp_dir):
-        parser.error(f"Source directory {args.decomp_dir} does not exist")
+    argparse_add_logging_args(parser)
+    args = parser.parse_args()
+    argparse_parse_logging(args=args)
+    if args.loglevel != logging.DEBUG:
+        # Mute logger events from compare engine
+        logging.getLogger("isledecomp.compare.core").setLevel(logging.CRITICAL)
+        logging.getLogger("isledecomp.compare.db").setLevel(logging.CRITICAL)
+        logging.getLogger("isledecomp.compare.lines").setLevel(logging.CRITICAL)
 
     return args
 
 
-def main():
+def main() -> int:
     args = parse_args()
 
-    orig_bin = detect_image(args.original)
+    try:
+        target = argparse_parse_built_project_target(args=args)
+    except RecCmpProjectException as e:
+        logger.error(e.args[0])
+        return 1
+
+    orig_bin = detect_image(target.original_path)
     assert isinstance(orig_bin, PEImage)
 
-    recomp_bin = detect_image(args.recompiled)
+    recomp_bin = detect_image(target.recompiled_path)
     assert isinstance(recomp_bin, PEImage)
-    engine = IsleCompare(orig_bin, recomp_bin, args.pdb, args.decomp_dir)
 
     # FIXME: remove "if True"
     # pylint: disable=using-constant-test
     if True:
-        engine = IsleCompare(orig_bin, recomp_bin, args.pdb, args.decomp_dir)
+        engine = IsleCompare(
+            orig_bin, recomp_bin, target.recompiled_pdb, target.source_root
+        )
 
-        module_map = ModuleMap(args.pdb, recomp_bin)
+        module_map = ModuleMap(target.recompiled_pdb, recomp_bin)
 
         def is_same_section(orig: int, recomp: int) -> bool:
             """Compare the section name instead of the index.
@@ -418,7 +420,7 @@ def main():
             except IndexError:
                 return False
 
-        def to_roadmap_row(match):
+        def to_roadmap_row(match: MatchInfo):
             orig_sect = None
             orig_ofs = None
             orig_sect_ofs = None
@@ -460,6 +462,8 @@ def main():
                 and recomp_sect is not None
                 and is_same_section(orig_sect, recomp_sect)
             ):
+                assert recomp_ofs is not None
+                assert orig_ofs is not None
                 displacement = recomp_ofs - orig_ofs
 
             return RoadmapRow(
@@ -487,7 +491,7 @@ def main():
 
         if args.order is not None:
             suggest_order(results, module_map, args.order)
-            return
+            return 0
 
         if args.csv is None:
             if args.verbose:
@@ -503,6 +507,8 @@ def main():
 
         if args.csv is not None:
             export_to_csv(args.csv, results)
+
+    return 0
 
 
 if __name__ == "__main__":
