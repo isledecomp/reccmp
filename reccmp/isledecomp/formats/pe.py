@@ -82,7 +82,6 @@ class PECharacteristics(IntFlag):
 # pylint: disable=too-many-instance-attributes
 @dataclasses.dataclass(frozen=True)
 class PEImageFileHeader:
-    # Order is significant!
     signature: bytes
     machine: int
     number_of_sections: int
@@ -167,21 +166,18 @@ class PEDataDirectoryItemType(IntEnum):
 
 @dataclasses.dataclass
 class PEDataDirectoryItemHeader:
-    # Order is significant!
     rva: int
     virtual_size: int
 
 
 @dataclasses.dataclass
 class PEDataDirectoryItemRegion:
-    # Order is significant!
     virtual_address: int
     virtual_size: int
 
 
 @dataclasses.dataclass(frozen=True)
 class PEImageOptionalHeader:
-    # Order is significant!
     magic: int
     major_linker_version: int
     minor_linker_version: int
@@ -297,7 +293,6 @@ class PESectionFlags(IntFlag):
 
 @dataclasses.dataclass(frozen=True)
 class PEImageSectionHeader:
-    # Order is significant!
     name: str
     virtual_size: int
     virtual_address: int
@@ -446,7 +441,6 @@ class DebugDirectoryEntryHeader:
 
 @dataclasses.dataclass(frozen=True)
 class ExportDirectoryTable:
-    # Order is significant!
     export_flags: int
     time_date_stamp: int
     major_version: int
