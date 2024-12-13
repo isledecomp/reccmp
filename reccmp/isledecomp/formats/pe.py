@@ -301,13 +301,14 @@ class PEImageSectionHeader:
     pointer_to_relocations: int
     pointer_to_line_numbers: int
     number_of_relocations: int
-    number_of_line_numbers: PESectionFlags
+    number_of_line_numbers: int
+    characteristics: PESectionFlags
 
     @classmethod
     def from_memory(
         cls, data: bytes, offset: int, count: int
     ) -> tuple[tuple["PEImageSectionHeader", ...], int]:
-        struct_fmt = "<8s8I"
+        struct_fmt = "<8s6I2HI"
         s_size = struct.calcsize(struct_fmt)
         items = tuple(
             cls(
