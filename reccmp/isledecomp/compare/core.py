@@ -5,7 +5,7 @@ from pathlib import Path
 import struct
 import uuid
 from dataclasses import dataclass
-from typing import Any, Callable, Iterable, List, Optional
+from typing import Callable, Iterable, List, Optional
 from reccmp.isledecomp.bin import Bin as IsleBin, InvalidVirtualAddressError
 from reccmp.isledecomp.cvdump.demangler import demangle_string_const
 from reccmp.isledecomp.cvdump import Cvdump, CvdumpAnalysis
@@ -854,11 +854,10 @@ class Compare:
         if match.size is None or match.size == 0:
             return None
 
-        options = self._db.get_match_options(match.orig_addr)
-        if options.get("skip", False):
+        if match.get("skip", False):
             return None
 
-        if options.get("stub", False):
+        if match.get("stub", False):
             return DiffReport(
                 match_type=match.compare_type,
                 orig_addr=match.orig_addr,
@@ -907,9 +906,6 @@ class Compare:
 
     def get_variables(self) -> List[MatchInfo]:
         return self._db.get_matches_by_type(SymbolType.DATA)
-
-    def get_match_options(self, addr: int) -> Optional[dict[str, Any]]:
-        return self._db.get_match_options(addr)
 
     def compare_address(self, addr: int) -> Optional[DiffReport]:
         match = self._db.get_one_match(addr)

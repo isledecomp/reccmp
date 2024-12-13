@@ -17,13 +17,6 @@ _SETUP_SQL = """
         matched int as (orig_addr is not null and recomp_addr is not null),
         kvstore text default '{}'
     );
-
-    CREATE TABLE `match_options` (
-        addr int not null,
-        name text not null,
-        value text,
-        primary key (addr, name)
-    ) without rowid;
 """
 
 
@@ -323,34 +316,16 @@ class CompareDb:
         return cur.rowcount > 0
 
     def _set_opt_bool(self, addr: int, option: str, enabled: bool = True):
-        if enabled:
-            self._sql.execute(
-                """INSERT OR IGNORE INTO `match_options`
-                (addr, name)
-                VALUES (?, ?)""",
-                (addr, option),
-            )
-        else:
-            self._sql.execute(
-                """DELETE FROM `match_options` WHERE addr = ? AND name = ?""",
-                (addr, option),
-            )
+        self._sql.execute(
+            "UPDATE symbols SET kvstore = json_patch(kvstore,?) where orig_addr = ?",
+            (json.dumps({option: enabled}), addr),
+        )
 
     def mark_stub(self, orig: int):
         self._set_opt_bool(orig, "stub")
 
     def skip_compare(self, orig: int):
         self._set_opt_bool(orig, "skip")
-
-    def get_match_options(self, addr: int) -> Optional[dict[str, Any]]:
-        cur = self._sql.execute(
-            """SELECT name, value FROM `match_options` WHERE addr = ?""", (addr,)
-        )
-
-        return {
-            option: value if value is not None else True
-            for (option, value) in cur.fetchall()
-        }
 
     def is_vtordisp(self, recomp_addr: int) -> bool:
         """Check whether this function is a vtordisp based on its

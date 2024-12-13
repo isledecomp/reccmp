@@ -75,16 +75,6 @@ def test_static_variable_match(db):
     assert db.match_static_variable(0xBEEF, "g_startupDelay", 0x5555) is True
 
 
-def test_match_options_bool(db):
-    """Test handling of boolean match options"""
-
-    # You don't actually need an existing orig addr for this.
-    assert db.get_match_options(0x1234) == {}
-
-    db.mark_stub(0x1234)
-    assert "stub" in db.get_match_options(0x1234)
-
-
 def test_dynamic_metadata(db):
     """Using the API we have now"""
     db.set_recomp_symbol(1234, hello="abcdef", option=True)
