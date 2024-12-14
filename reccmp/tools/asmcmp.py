@@ -231,115 +231,112 @@ def main():
     if not isinstance(recompfile, PEImage):
         raise ValueError(f"{target.recompiled_path} is not a PE executable")
 
-    # FIXME: remove "if True"
-    # pylint: disable=using-constant-test
-    if True:
-        if args.verbose is not None:
-            # Mute logger events from compare engine
-            logging.getLogger("isledecomp.compare.db").setLevel(logging.CRITICAL)
-            logging.getLogger("isledecomp.compare.lines").setLevel(logging.CRITICAL)
+    if args.verbose is not None:
+        # Mute logger events from compare engine
+        logging.getLogger("isledecomp.compare.db").setLevel(logging.CRITICAL)
+        logging.getLogger("isledecomp.compare.lines").setLevel(logging.CRITICAL)
 
-        isle_compare = IsleCompare(
-            origfile, recompfile, target.recompiled_pdb, target.source_root
+    isle_compare = IsleCompare(
+        origfile, recompfile, target.recompiled_pdb, target.source_root
+    )
+
+    if args.loglevel == logging.DEBUG:
+        isle_compare.debug = True
+
+    print()
+
+    ### Compare one or none.
+
+    if args.verbose is not None:
+        match = isle_compare.compare_address(args.verbose)
+        if match is None:
+            logger.error("Failed to find a match at address 0x%x", args.verbose)
+            return 1
+
+        print_match_verbose(
+            match, show_both_addrs=args.print_rec_addr, is_plain=args.no_color
         )
+        return 0
 
-        if args.loglevel == logging.DEBUG:
-            isle_compare.debug = True
+    ### Compare everything.
 
-        print()
+    function_count = 0
+    total_accuracy = 0
+    total_effective_accuracy = 0
+    htmlinsert = []
 
-        ### Compare one or none.
-
-        if args.verbose is not None:
-            match = isle_compare.compare_address(args.verbose)
-            if match is None:
-                logger.error("Failed to find a match at address 0x%x", args.verbose)
-                return 1
-
-            print_match_verbose(
+    for match in isle_compare.compare_all():
+        if not args.silent and args.diff is None:
+            print_match_oneline(
                 match, show_both_addrs=args.print_rec_addr, is_plain=args.no_color
             )
-            return 0
 
-        ### Compare everything.
+        if match.match_type == SymbolType.FUNCTION and not match.is_stub:
+            function_count += 1
+            total_accuracy += match.ratio
+            total_effective_accuracy += match.effective_ratio
 
-        function_count = 0
-        total_accuracy = 0
-        total_effective_accuracy = 0
-        htmlinsert = []
+        # If html, record the diffs to an HTML file
+        html_obj = {
+            "address": f"0x{match.orig_addr:x}",
+            "recomp": f"0x{match.recomp_addr:x}",
+            "name": match.name,
+            "matching": match.effective_ratio,
+        }
 
-        for match in isle_compare.compare_all():
-            if not args.silent and args.diff is None:
-                print_match_oneline(
-                    match, show_both_addrs=args.print_rec_addr, is_plain=args.no_color
-                )
+        if match.is_effective_match:
+            html_obj["effective"] = True
 
-            if match.match_type == SymbolType.FUNCTION and not match.is_stub:
-                function_count += 1
-                total_accuracy += match.ratio
-                total_effective_accuracy += match.effective_ratio
+        if match.udiff is not None:
+            html_obj["diff"] = match.udiff
 
-            # If html, record the diffs to an HTML file
-            html_obj = {
-                "address": f"0x{match.orig_addr:x}",
-                "recomp": f"0x{match.recomp_addr:x}",
-                "name": match.name,
-                "matching": match.effective_ratio,
-            }
+        if match.is_stub:
+            html_obj["stub"] = True
 
-            if match.is_effective_match:
-                html_obj["effective"] = True
+        htmlinsert.append(html_obj)
 
-            if match.udiff is not None:
-                html_obj["diff"] = match.udiff
+    # Compare with saved diff report.
+    if args.diff is not None:
+        with open(args.diff, "r", encoding="utf-8") as f:
+            saved_data = json.load(f)
 
-            if match.is_stub:
-                html_obj["stub"] = True
-
-            htmlinsert.append(html_obj)
-
-        # Compare with saved diff report.
-        if args.diff is not None:
-            with open(args.diff, "r", encoding="utf-8") as f:
-                saved_data = json.load(f)
-
-                diff_json(
-                    saved_data,
-                    htmlinsert,
-                    target.original_path,
-                    show_both_addrs=args.print_rec_addr,
-                    is_plain=args.no_color,
-                )
-
-        ## Generate files and show summary.
-
-        if args.json is not None:
-            gen_json(args.json, target.original_path, htmlinsert)
-
-        if args.html is not None:
-            gen_html(args.html, json.dumps(htmlinsert))
-
-        implemented_funcs = function_count
-
-        if args.total:
-            function_count = int(args.total)
-
-        if function_count > 0:
-            effective_accuracy = total_effective_accuracy / function_count * 100
-            actual_accuracy = total_accuracy / function_count * 100
-            print(
-                f"\nTotal effective accuracy {effective_accuracy:.2f}% across {function_count} functions ({actual_accuracy:.2f}% actual accuracy)"
+            diff_json(
+                saved_data,
+                htmlinsert,
+                target.original_path,
+                show_both_addrs=args.print_rec_addr,
+                is_plain=args.no_color,
             )
 
-            if args.svg is not None:
-                gen_svg(
-                    args.svg,
-                    os.path.basename(target.original_path),
-                    args.svg_icon,
-                    implemented_funcs,
-                    function_count,
-                    total_effective_accuracy,
-                )
+    ## Generate files and show summary.
+
+    if args.json is not None:
+        gen_json(args.json, target.original_path, htmlinsert)
+
+    if args.html is not None:
+        gen_html(args.html, json.dumps(htmlinsert))
+
+    implemented_funcs = function_count
+
+    if args.total:
+        function_count = int(args.total)
+
+    if function_count > 0:
+        effective_accuracy = total_effective_accuracy / function_count * 100
+        actual_accuracy = total_accuracy / function_count * 100
+        print(
+            f"\nTotal effective accuracy {effective_accuracy:.2f}% across {function_count} functions ({actual_accuracy:.2f}% actual accuracy)"
+        )
+
+        if args.svg is not None:
+            gen_svg(
+                args.svg,
+                os.path.basename(target.original_path),
+                args.svg_icon,
+                implemented_funcs,
+                function_count,
+                total_effective_accuracy,
+            )
     return 0
 
 

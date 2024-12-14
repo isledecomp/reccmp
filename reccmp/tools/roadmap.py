@@ -400,113 +400,106 @@ def main() -> int:
     recomp_bin = detect_image(target.recompiled_path)
     assert isinstance(recomp_bin, PEImage)
 
-    # FIXME: remove "if True"
-    # pylint: disable=using-constant-test
-    if True:
-        engine = IsleCompare(
-            orig_bin, recomp_bin, target.recompiled_pdb, target.source_root
+    engine = IsleCompare(
+        orig_bin, recomp_bin, target.recompiled_pdb, target.source_root
+    )
+
+    module_map = ModuleMap(target.recompiled_pdb, recomp_bin)
+
+    def is_same_section(orig: int, recomp: int) -> bool:
+        """Compare the section name instead of the index.
+        LEGO1.dll adds extra sections for some reason. (Smacker library?)"""
+
+        try:
+            orig_name = orig_bin.sections[orig - 1].name
+            recomp_name = recomp_bin.sections[recomp - 1].name
+            return orig_name == recomp_name
+        except IndexError:
+            return False
+
+    def to_roadmap_row(match: MatchInfo):
+        orig_sect = None
+        orig_ofs = None
+        orig_sect_ofs = None
+        recomp_sect = None
+        recomp_ofs = None
+        recomp_sect_ofs = None
+        orig_addr = None
+        recomp_addr = None
+        displacement = None
+        module_name = None
+
+        if match.recomp_addr is not None and recomp_bin.is_valid_vaddr(
+            match.recomp_addr
+        ):
+            if (module_ref := module_map.get_module(match.recomp_addr)) is not None:
+                (_, module_name) = module_ref
+
+        row_type = match_type_abbreviation(match.compare_type)
+        name = (
+            repr(match.name) if match.compare_type == SymbolType.STRING else match.name
         )
 
-        module_map = ModuleMap(target.recompiled_pdb, recomp_bin)
+        if match.orig_addr is not None:
+            orig_addr = match.orig_addr
+            (orig_sect, orig_ofs) = orig_bin.get_relative_addr(match.orig_addr)
+            orig_sect_ofs = f"{orig_sect:04}:{orig_ofs:08x}"
 
-        def is_same_section(orig: int, recomp: int) -> bool:
-            """Compare the section name instead of the index.
-            LEGO1.dll adds extra sections for some reason. (Smacker library?)"""
+        if match.recomp_addr is not None:
+            recomp_addr = match.recomp_addr
+            (recomp_sect, recomp_ofs) = recomp_bin.get_relative_addr(match.recomp_addr)
+            recomp_sect_ofs = f"{recomp_sect:04}:{recomp_ofs:08x}"
 
+        if (
+            orig_sect is not None
+            and recomp_sect is not None
+            and is_same_section(orig_sect, recomp_sect)
+        ):
+            assert recomp_ofs is not None
+            assert orig_ofs is not None
+            displacement = recomp_ofs - orig_ofs
+
+        return RoadmapRow(
+            orig_sect_ofs,
+            recomp_sect_ofs,
+            orig_addr,
+            recomp_addr,
+            displacement,
+            row_type,
+            match.size,
+            name,
+            module_name,
+        )
+
+    def roadmap_row_generator(matches):
+        for match in matches:
             try:
-                orig_name = orig_bin.sections[orig - 1].name
-                recomp_name = recomp_bin.sections[recomp - 1].name
-                return orig_name == recomp_name
-            except IndexError:
-                return False
+                yield to_roadmap_row(match)
+            except InvalidVirtualAddressError:
+                # This is here to work around the fact that we have RVA
+                # values (i.e. not real virtual addrs) in our compare db.
+                pass
 
-        def to_roadmap_row(match: MatchInfo):
-            orig_sect = None
-            orig_ofs = None
-            orig_sect_ofs = None
-            recomp_sect = None
-            recomp_ofs = None
-            recomp_sect_ofs = None
-            orig_addr = None
-            recomp_addr = None
-            displacement = None
-            module_name = None
+    results = list(roadmap_row_generator(engine.get_all()))
 
-            if match.recomp_addr is not None and recomp_bin.is_valid_vaddr(
-                match.recomp_addr
-            ):
-                if (module_ref := module_map.get_module(match.recomp_addr)) is not None:
-                    (_, module_name) = module_ref
+    if args.order is not None:
+        suggest_order(results, module_map, args.order)
+        return 0
 
-            row_type = match_type_abbreviation(match.compare_type)
-            name = (
-                repr(match.name)
-                if match.compare_type == SymbolType.STRING
-                else match.name
-            )
+    if args.csv is None:
+        if args.verbose:
+            print("ORIG sections:")
+            print_sections(orig_bin.sections)
 
-            if match.orig_addr is not None:
-                orig_addr = match.orig_addr
-                (orig_sect, orig_ofs) = orig_bin.get_relative_addr(match.orig_addr)
-                orig_sect_ofs = f"{orig_sect:04}:{orig_ofs:08x}"
+            print("RECOMP sections:")
+            print_sections(recomp_bin.sections)
 
-            if match.recomp_addr is not None:
-                recomp_addr = match.recomp_addr
-                (recomp_sect, recomp_ofs) = recomp_bin.get_relative_addr(
-                    match.recomp_addr
-                )
-                recomp_sect_ofs = f"{recomp_sect:04}:{recomp_ofs:08x}"
+            print_text_report(results)
+        else:
+            print_diff_report(results)
 
-            if (
-                orig_sect is not None
-                and recomp_sect is not None
-                and is_same_section(orig_sect, recomp_sect)
-            ):
-                assert recomp_ofs is not None
-                assert orig_ofs is not None
-                displacement = recomp_ofs - orig_ofs
-
-            return RoadmapRow(
-                orig_sect_ofs,
-                recomp_sect_ofs,
-                orig_addr,
-                recomp_addr,
-                displacement,
-                row_type,
-                match.size,
-                name,
-                module_name,
-            )
-
-        def roadmap_row_generator(matches):
-            for match in matches:
-                try:
-                    yield to_roadmap_row(match)
-                except InvalidVirtualAddressError:
-                    # This is here to work around the fact that we have RVA
-                    # values (i.e. not real virtual addrs) in our compare db.
-                    pass
-
-        results = list(roadmap_row_generator(engine.get_all()))
-
-        if args.order is not None:
-            suggest_order(results, module_map, args.order)
-            return 0
-
-        if args.csv is None:
-            if args.verbose:
-                print("ORIG sections:")
-                print_sections(orig_bin.sections)
-
-                print("RECOMP sections:")
-                print_sections(recomp_bin.sections)
-
-                print_text_report(results)
-            else:
-                print_diff_report(results)
-
-        if args.csv is not None:
-            export_to_csv(args.csv, results)
+    if args.csv is not None:
+        export_to_csv(args.csv, results)
 
     return 0
 

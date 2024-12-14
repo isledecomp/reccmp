@@ -324,36 +324,29 @@ def main():
     if not isinstance(recompfile, PEImage):
         raise ValueError(f"{target.recompiled_path} is not a PE executable")
 
-    # FIXME: remove "if True"
-    # pylint: disable=using-constant-test
-    if True:
-        isle_compare = IsleCompare(
-            origfile, recompfile, target.recompiled_pdb, target.source_root
-        )
-        if args.loglevel == logging.DEBUG:
-            isle_compare.debug = True
+    isle_compare = IsleCompare(
+        origfile, recompfile, target.recompiled_pdb, target.source_root
+    )
+    if args.loglevel == logging.DEBUG:
+        isle_compare.debug = True
 
-        print()
+    print()
 
-        match = isle_compare.compare_address(args.address)
-        if match is None:
-            print(f"Failed to find a match at address 0x{args.address:x}")
-            return 1
+    match = isle_compare.compare_address(args.address)
+    if match is None:
+        print(f"Failed to find a match at address 0x{args.address:x}")
+        return 1
 
-        assert match.udiff is not None
+    assert match.udiff is not None
 
-        function_data = next(
-            (
-                y
-                for y in isle_compare.cvdump_analysis.nodes
-                if y.addr == match.recomp_addr
-            ),
-            None,
-        )
-        assert function_data is not None
-        assert function_data.symbol_entry is not None
+    function_data = next(
+        (y for y in isle_compare.cvdump_analysis.nodes if y.addr == match.recomp_addr),
+        None,
+    )
+    assert function_data is not None
+    assert function_data.symbol_entry is not None
 
-        compare_function_stacks(match.udiff, function_data.symbol_entry)
+    compare_function_stacks(match.udiff, function_data.symbol_entry)
     return 0
 
 

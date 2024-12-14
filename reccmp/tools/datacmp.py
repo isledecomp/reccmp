@@ -152,161 +152,156 @@ def do_the_comparison(target: RecCmpBuiltTarget) -> Iterable[ComparisonItem]:
     if not isinstance(recompfile, PEImage):
         raise ValueError(f"{target.recompiled_path} is not a PE executable")
 
-    # FIXME: remove "if True"
-    # pylint: disable=using-constant-test
-    if True:
-        isle_compare = IsleCompare(
-            origfile,
-            recompfile,
-            target.recompiled_pdb,
-            target.source_root,
-        )
+    isle_compare = IsleCompare(
+        origfile,
+        recompfile,
+        target.recompiled_pdb,
+        target.source_root,
+    )
 
-        # TODO: We don't currently retain the type information of each variable
-        # in our compare DB. To get those, we build this mini-lookup table that
-        # maps recomp addresses to their type.
-        # We still need to build the full compare DB though, because we may
-        # need the matched symbols to compare pointers (e.g. on strings)
-        mini_cvdump = Cvdump(target.recompiled_pdb).globals().types().run()
+    # TODO: We don't currently retain the type information of each variable
+    # in our compare DB. To get those, we build this mini-lookup table that
+    # maps recomp addresses to their type.
+    # We still need to build the full compare DB though, because we may
+    # need the matched symbols to compare pointers (e.g. on strings)
+    mini_cvdump = Cvdump(target.recompiled_pdb).globals().types().run()
 
-        recomp_type_reference = {
-            recompfile.get_abs_addr(g.section, g.offset): g.type
-            for g in mini_cvdump.globals
-            if recompfile.is_valid_section(g.section)
-        }
+    recomp_type_reference = {
+        recompfile.get_abs_addr(g.section, g.offset): g.type
+        for g in mini_cvdump.globals
+        if recompfile.is_valid_section(g.section)
+    }
 
-        for var in isle_compare.get_variables():
-            type_name = recomp_type_reference.get(var.recomp_addr)
+    for var in isle_compare.get_variables():
+        type_name = recomp_type_reference.get(var.recomp_addr)
 
-            # Start by assuming we can only compare the raw bytes
-            data_size = var.size
-            is_type_aware = type_name is not None
+        # Start by assuming we can only compare the raw bytes
+        data_size = var.size
+        is_type_aware = type_name is not None
 
-            if is_type_aware:
-                try:
-                    # If we are type-aware, we can get the precise
-                    # data size for the variable.
-                    data_type = mini_cvdump.types.get(type_name)
-                    data_size = data_type.size
-                except (CvdumpKeyError, CvdumpIntegrityError) as ex:
-                    yield create_comparison_item(var, error=repr(ex))
-                    continue
-
-            orig_raw = origfile.read(var.orig_addr, data_size)
-            recomp_raw = recompfile.read(var.recomp_addr, data_size)
-
-            # The IMAGE_SECTION_HEADER defines the SizeOfRawData and VirtualSize for the section.
-            # If VirtualSize > SizeOfRawData, the section is comprised of the initialized data
-            # corresponding to bytes in the file, and the rest is padded with zeroes when
-            # Windows loads the image.
-            # The linker might place variables initialized to zero on the threshold between
-            # physical data and the virtual (uninitialized) data.
-            # If this happens (i.e. we get an incomplete read) we just do the same padding
-            # to prepare for the comparison.
-            if orig_raw is not None and len(orig_raw) < data_size:
-                orig_raw = orig_raw.ljust(data_size, b"\x00")
-
-            if recomp_raw is not None and len(recomp_raw) < data_size:
-                recomp_raw = recomp_raw.ljust(data_size, b"\x00")
-
-            # If one or both variables are entirely uninitialized
-            if orig_raw is None or recomp_raw is None:
-                # If both variables are uninitialized, we consider them equal.
-                match = orig_raw is None and recomp_raw is None
-
-                # We can match a variable initialized to all zeroes with
-                # an uninitialized variable, but this may or may not actually
-                # be correct, so we flag it for the user.
-                uninit_force_match = not match and (
-                    (orig_raw is None and all(b == 0 for b in recomp_raw))
-                    or (recomp_raw is None and all(b == 0 for b in orig_raw))
-                )
-
-                orig_value = "(uninitialized)" if orig_raw is None else "(initialized)"
-                recomp_value = (
-                    "(uninitialized)" if recomp_raw is None else "(initialized)"
-                )
-                yield create_comparison_item(
-                    var,
-                    compared=[
-                        ComparedOffset(
-                            offset=0,
-                            name=None,
-                            match=match,
-                            values=(orig_value, recomp_value),
-                        )
-                    ],
-                    raw_only=uninit_force_match,
-                )
+        if is_type_aware:
+            try:
+                # If we are type-aware, we can get the precise
+                # data size for the variable.
+                data_type = mini_cvdump.types.get(type_name)
+                data_size = data_type.size
+            except (CvdumpKeyError, CvdumpIntegrityError) as ex:
+                yield create_comparison_item(var, error=repr(ex))
                 continue
 
-            if not is_type_aware:
-                # If there is no specific type information available
-                # (i.e. if this is a static or non-public variable)
-                # then we can only compare the raw bytes.
-                yield create_comparison_item(
-                    var,
-                    compared=[
-                        ComparedOffset(
-                            offset=0,
-                            name="(raw)",
-                            match=orig_raw == recomp_raw,
-                            values=(orig_raw, recomp_raw),
-                        )
-                    ],
-                    raw_only=True,
-                )
-                continue
+        orig_raw = origfile.read(var.orig_addr, data_size)
+        recomp_raw = recompfile.read(var.recomp_addr, data_size)
 
-            # If we are here, we can do the type-aware comparison.
-            compared = []
-            compare_items = mini_cvdump.types.get_scalars_gapless(type_name)
-            format_str = mini_cvdump.types.get_format_string(type_name)
+        # The IMAGE_SECTION_HEADER defines the SizeOfRawData and VirtualSize for the section.
+        # If VirtualSize > SizeOfRawData, the section is comprised of the initialized data
+        # corresponding to bytes in the file, and the rest is padded with zeroes when
+        # Windows loads the image.
+        # The linker might place variables initialized to zero on the threshold between
+        # physical data and the virtual (uninitialized) data.
+        # If this happens (i.e. we get an incomplete read) we just do the same padding
+        # to prepare for the comparison.
+        if orig_raw is not None and len(orig_raw) < data_size:
+            orig_raw = orig_raw.ljust(data_size, b"\x00")
 
-            orig_data = unpack(format_str, orig_raw)
-            recomp_data = unpack(format_str, recomp_raw)
+        if recomp_raw is not None and len(recomp_raw) < data_size:
+            recomp_raw = recomp_raw.ljust(data_size, b"\x00")
 
-            def pointer_display(addr: int, is_orig: bool) -> str:
-                """Helper to streamline pointer textual display."""
-                if addr == 0:
-                    return "nullptr"
+        # If one or both variables are entirely uninitialized
+        if orig_raw is None or recomp_raw is None:
+            # If both variables are uninitialized, we consider them equal.
+            match = orig_raw is None and recomp_raw is None
 
-                ptr_match = (
-                    isle_compare.get_by_orig(addr)
-                    if is_orig
-                    else isle_compare.get_by_recomp(addr)
-                )
+            # We can match a variable initialized to all zeroes with
+            # an uninitialized variable, but this may or may not actually
+            # be correct, so we flag it for the user.
+            uninit_force_match = not match and (
+                (orig_raw is None and all(b == 0 for b in recomp_raw))
+                or (recomp_raw is None and all(b == 0 for b in orig_raw))
+            )
 
-                if ptr_match is not None:
-                    return f"Pointer to {ptr_match.match_name()}"
-
-                # This variable did not match if we do not have
-                # the pointer target in our DB.
-                return f"Unknown pointer 0x{addr:x}"
-
-            # Could zip here
-            for i, member in enumerate(compare_items):
-                if member.is_pointer:
-                    match = isle_compare.is_pointer_match(orig_data[i], recomp_data[i])
-
-                    value_a = pointer_display(orig_data[i], True)
-                    value_b = pointer_display(recomp_data[i], False)
-
-                    values = (value_a, value_b)
-                else:
-                    match = orig_data[i] == recomp_data[i]
-                    values = (orig_data[i], recomp_data[i])
-
-                compared.append(
+            orig_value = "(uninitialized)" if orig_raw is None else "(initialized)"
+            recomp_value = "(uninitialized)" if recomp_raw is None else "(initialized)"
+            yield create_comparison_item(
+                var,
+                compared=[
                     ComparedOffset(
-                        offset=member.offset,
-                        name=member.name,
+                        offset=0,
+                        name=None,
                         match=match,
-                        values=values,
+                        values=(orig_value, recomp_value),
                     )
-                )
+                ],
+                raw_only=uninit_force_match,
+            )
+            continue
 
-            yield create_comparison_item(var, compared=compared)
+        if not is_type_aware:
+            # If there is no specific type information available
+            # (i.e. if this is a static or non-public variable)
+            # then we can only compare the raw bytes.
+            yield create_comparison_item(
+                var,
+                compared=[
+                    ComparedOffset(
+                        offset=0,
+                        name="(raw)",
+                        match=orig_raw == recomp_raw,
+                        values=(orig_raw, recomp_raw),
+                    )
+                ],
+                raw_only=True,
+            )
+            continue
+
+        # If we are here, we can do the type-aware comparison.
+        compared = []
+        compare_items = mini_cvdump.types.get_scalars_gapless(type_name)
+        format_str = mini_cvdump.types.get_format_string(type_name)
+
+        orig_data = unpack(format_str, orig_raw)
+        recomp_data = unpack(format_str, recomp_raw)
+
+        def pointer_display(addr: int, is_orig: bool) -> str:
+            """Helper to streamline pointer textual display."""
+            if addr == 0:
+                return "nullptr"
+
+            ptr_match = (
+                isle_compare.get_by_orig(addr)
+                if is_orig
+                else isle_compare.get_by_recomp(addr)
+            )
+
+            if ptr_match is not None:
+                return f"Pointer to {ptr_match.match_name()}"
+
+            # This variable did not match if we do not have
+            # the pointer target in our DB.
+            return f"Unknown pointer 0x{addr:x}"
+
+        # Could zip here
+        for i, member in enumerate(compare_items):
+            if member.is_pointer:
+                match = isle_compare.is_pointer_match(orig_data[i], recomp_data[i])
+
+                value_a = pointer_display(orig_data[i], True)
+                value_b = pointer_display(recomp_data[i], False)
+
+                values = (value_a, value_b)
+            else:
+                match = orig_data[i] == recomp_data[i]
+                values = (orig_data[i], recomp_data[i])
+
+            compared.append(
+                ComparedOffset(
+                    offset=member.offset,
+                    name=member.name,
+                    match=match,
+                    values=values,
+                )
+            )
+
+        yield create_comparison_item(var, compared=compared)
 
 
 def value_get(value: Optional[str], default: str):
