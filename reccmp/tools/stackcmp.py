@@ -7,7 +7,8 @@ from typing import Dict, List, NamedTuple, Optional, Set, Tuple
 
 import colorama
 import reccmp
-from reccmp.isledecomp import Bin
+from reccmp.isledecomp.formats.detect import detect_image
+from reccmp.isledecomp.formats.pe import PEImage
 from reccmp.isledecomp.compare import Compare as IsleCompare
 from reccmp.isledecomp.compare.diff import CombinedDiffOutput
 from reccmp.isledecomp.cvdump.symbols import SymbolsEntry
@@ -315,37 +316,37 @@ def main():
         logger.error(e.args[0])
         return 1
 
-    with Bin(target.original_path, find_str=True) as origfile, Bin(
-        target.recompiled_path
-    ) as recompfile:
-        isle_compare = IsleCompare(
-            origfile, recompfile, target.recompiled_pdb, target.source_root
-        )
+    origfile = detect_image(filepath=target.original_path)
+    if not isinstance(origfile, PEImage):
+        raise ValueError(f"{target.original_path} is not a PE executable")
 
-        if args.loglevel == logging.DEBUG:
-            isle_compare.debug = True
+    recompfile = detect_image(filepath=target.recompiled_path)
+    if not isinstance(recompfile, PEImage):
+        raise ValueError(f"{target.recompiled_path} is not a PE executable")
 
-        print()
+    isle_compare = IsleCompare(
+        origfile, recompfile, target.recompiled_pdb, target.source_root
+    )
+    if args.loglevel == logging.DEBUG:
+        isle_compare.debug = True
 
-        match = isle_compare.compare_address(args.address)
-        if match is None:
-            print(f"Failed to find a match at address 0x{args.address:x}")
-            return 1
+    print()
 
-        assert match.udiff is not None
+    match = isle_compare.compare_address(args.address)
+    if match is None:
+        print(f"Failed to find a match at address 0x{args.address:x}")
+        return 1
 
-        function_data = next(
-            (
-                y
-                for y in isle_compare.cvdump_analysis.nodes
-                if y.addr == match.recomp_addr
-            ),
-            None,
-        )
-        assert function_data is not None
-        assert function_data.symbol_entry is not None
+    assert match.udiff is not None
 
-        compare_function_stacks(match.udiff, function_data.symbol_entry)
+    function_data = next(
+        (y for y in isle_compare.cvdump_analysis.nodes if y.addr == match.recomp_addr),
+        None,
+    )
+    assert function_data is not None
+    assert function_data.symbol_entry is not None
+
+    compare_function_stacks(match.udiff, function_data.symbol_entry)
     return 0
 
 
