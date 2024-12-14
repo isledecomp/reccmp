@@ -68,13 +68,11 @@ def main():
         logger.error(e.args[0])
         return 1
 
-    orig_bin = detect_image(args.original)
+    orig_bin = detect_image(target.original_path)
     assert isinstance(orig_bin, PEImage)
 
-    recomp_bin = detect_image(args.recompiled)
+    recomp_bin = detect_image(target.recompiled_path)
     assert isinstance(recomp_bin, PEImage)
-    engine = IsleCompare(orig_bin, recomp_bin, args.pdb, args.decomp_dir)
-
     engine = IsleCompare(
         orig_bin, recomp_bin, target.recompiled_pdb, target.source_root
     )
