@@ -142,6 +142,7 @@ def create_comparison_item(
 
 
 def do_the_comparison(target: RecCmpBuiltTarget) -> Iterable[ComparisonItem]:
+    # pylint: disable=too-many-locals
     """Run through each variable in our compare DB, then do the comparison
     according to the variable's type. Emit the result."""
     origfile = detect_image(filepath=target.original_path)
@@ -192,48 +193,47 @@ def do_the_comparison(target: RecCmpBuiltTarget) -> Iterable[ComparisonItem]:
         orig_raw = origfile.read(var.orig_addr, data_size)
         recomp_raw = recompfile.read(var.recomp_addr, data_size)
 
-        # The IMAGE_SECTION_HEADER defines the SizeOfRawData and VirtualSize for the section.
-        # If VirtualSize > SizeOfRawData, the section is comprised of the initialized data
-        # corresponding to bytes in the file, and the rest is padded with zeroes when
-        # Windows loads the image.
-        # The linker might place variables initialized to zero on the threshold between
-        # physical data and the virtual (uninitialized) data.
-        # If this happens (i.e. we get an incomplete read) we just do the same padding
-        # to prepare for the comparison.
-        if orig_raw is not None and len(orig_raw) < data_size:
-            orig_raw = orig_raw.ljust(data_size, b"\x00")
+        orig_is_null = all(b == 0 for b in orig_raw)
+        recomp_is_null = all(b == 0 for b in recomp_raw)
 
-        if recomp_raw is not None and len(recomp_raw) < data_size:
-            recomp_raw = recomp_raw.ljust(data_size, b"\x00")
-
-        # If one or both variables are entirely uninitialized
-        if orig_raw is None or recomp_raw is None:
-            # If both variables are uninitialized, we consider them equal.
-            match = orig_raw is None and recomp_raw is None
-
-            # We can match a variable initialized to all zeroes with
-            # an uninitialized variable, but this may or may not actually
-            # be correct, so we flag it for the user.
-            uninit_force_match = not match and (
-                (orig_raw is None and all(b == 0 for b in recomp_raw))
-                or (recomp_raw is None and all(b == 0 for b in orig_raw))
+        # If all bytes are zero on either read, it's possible that the variable
+        # is uninitialized on one or both sides. Special handling for that situation:
+        if orig_is_null or recomp_is_null:
+            # Check the last address of the variable in each file to see if any of it is
+            # in the uninitialized area of the section.
+            orig_in_bss = origfile.addr_is_uninitialized(var.orig_addr + data_size - 1)
+            recomp_in_bss = recompfile.addr_is_uninitialized(
+                var.recomp_addr + data_size - 1
             )
 
-            orig_value = "(uninitialized)" if orig_raw is None else "(initialized)"
-            recomp_value = "(uninitialized)" if recomp_raw is None else "(initialized)"
-            yield create_comparison_item(
-                var,
-                compared=[
-                    ComparedOffset(
-                        offset=0,
-                        name=None,
-                        match=match,
-                        values=(orig_value, recomp_value),
-                    )
-                ],
-                raw_only=uninit_force_match,
-            )
-            continue
+            if orig_in_bss or recomp_in_bss:
+                # We record a match if both items are null and:
+                # 1. Both values are entirely initialized to zero
+                # 2. All or part of both values are in the uninitialized area
+                match = (
+                    orig_is_null and recomp_is_null and (orig_in_bss == recomp_in_bss)
+                )
+
+                # However... you may not have full control over where the variable sits in the
+                # section, so we will only warn (and not log a diff) if the variable is
+                # initialized in one file but not the other.
+                uninit_force_match = orig_is_null and recomp_is_null
+
+                orig_value = "(uninitialized)" if orig_in_bss else "(initialized)"
+                recomp_value = "(uninitialized)" if recomp_in_bss else "(initialized)"
+                yield create_comparison_item(
+                    var,
+                    compared=[
+                        ComparedOffset(
+                            offset=0,
+                            name=None,
+                            match=match,
+                            values=(orig_value, recomp_value),
+                        )
+                    ],
+                    raw_only=uninit_force_match,
+                )
+                continue
 
         if not is_type_aware:
             # If there is no specific type information available
