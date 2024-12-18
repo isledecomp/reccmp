@@ -3,10 +3,11 @@ import textwrap
 
 from reccmp.project.create import create_project, RecCmpProject
 from reccmp.project.detect import detect_project, DetectWhat, RecCmpBuiltProject
+from reccmp.isledecomp.formats import PEImage
 from .conftest import LEGO1_SHA256
 
 
-def test_project_loading(tmp_path_factory, binfile):
+def test_project_loading(tmp_path_factory, binfile: PEImage):
     project_root = tmp_path_factory.mktemp("project")
     build_path = project_root / "build"
     build_path.mkdir()
@@ -27,7 +28,7 @@ def test_project_loading(tmp_path_factory, binfile):
             f"""\
             targets:
               LEGO1:
-                path: {binfile.filename}
+                path: {binfile.filepath}
             """
         )
     )
@@ -56,12 +57,12 @@ def test_project_loading(tmp_path_factory, binfile):
     assert len(built_project.targets) == 1
     assert built_project.targets["LEGO1"].filename == "LEGO1.dll"
     assert built_project.targets["LEGO1"].source_root == project_root / "sources"
-    assert built_project.targets["LEGO1"].original_path == Path(binfile.filename)
+    assert built_project.targets["LEGO1"].original_path == binfile.filepath
     assert built_project.targets["LEGO1"].recompiled_path == recompiled_lib
     assert built_project.targets["LEGO1"].recompiled_pdb == recompiled_pdb
 
 
-def test_project_original_detection(tmp_path_factory, binfile):
+def test_project_original_detection(tmp_path_factory, binfile: PEImage):
     project_root = tmp_path_factory.mktemp("project")
     (project_root / "reccmp-project.yml").write_text(
         textwrap.dedent(
@@ -75,7 +76,7 @@ def test_project_original_detection(tmp_path_factory, binfile):
             """
         )
     )
-    bin_path = Path(binfile.filename)
+    bin_path = binfile.filepath
     detect_project(
         project_directory=project_root,
         search_path=[bin_path.parent],
@@ -84,9 +85,9 @@ def test_project_original_detection(tmp_path_factory, binfile):
     assert (project_root / "reccmp-user.yml").is_file()
 
 
-def test_project_creation(tmp_path_factory, binfile):
+def test_project_creation(tmp_path_factory, binfile: PEImage):
     project_root = tmp_path_factory.mktemp("project")
-    bin_path = Path(binfile.filename)
+    bin_path = Path(binfile.filepath)
     project_config_path = project_root / "reccmp-project.yml"
     user_config_path = project_root / "reccmp-user.yml"
     project = create_project(

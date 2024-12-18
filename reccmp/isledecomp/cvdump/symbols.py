@@ -75,6 +75,7 @@ class CvdumpSymbolsParser:
     # List the unhandled types so we can check exhaustiveness
     _unhandled_symbols = [
         "S_COMPILE",
+        "S_COMPILE2",
         "S_OBJNAME",
         "S_THUNK32",
         "S_LABEL32",

@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 def reload_module(module: str):
     """
-    Due to a a quirk in Jep (used by Ghidrathon), imported modules persist for the lifetime of the Ghidra process
+    Due to a quirk in Jep (used by Ghidrathon), imported modules persist for the lifetime of the Ghidra process
     and are not reloaded when relaunching the script. Therefore, in order to facilitate development
     we force reload all our own modules at startup. See also https://github.com/mandiant/Ghidrathon/issues/103.
 
@@ -290,12 +290,18 @@ def main():
         logging.getLogger("isledecomp.cvdump.symbols").setLevel(logging.WARNING)
 
     logger.info("Starting comparison")
-    with Bin(target.original_path, find_str=True) as origfile, Bin(
-        target.recompiled_path
-    ) as recompfile:
-        isle_compare = IsleCompare(
-            origfile, recompfile, target.recompiled_pdb, target.source_root
-        )
+
+    origfile = detect_image(target.original_path)
+    if not isinstance(origfile, PEImage):
+        raise ValueError
+
+    recompfile = detect_image(target.recompiled_path)
+    if not isinstance(recompfile, PEImage):
+        raise ValueError
+
+    isle_compare = IsleCompare(
+        origfile, recompfile, target.recompiled_pdb, target.source_root
+    )
 
     logger.info("Comparison complete.")
 
@@ -327,8 +333,10 @@ try:
     from reccmp.project.detect import RecCmpBuiltProject, RecCmpBuiltTarget
     from reccmp.project.error import RecCmpProjectNotFoundException
 
+    reload_module("reccmp.isledecomp.formats")
     reload_module("reccmp.isledecomp")
-    from reccmp.isledecomp import Bin
+    from reccmp.isledecomp import detect_image
+    from reccmp.isledecomp import PEImage
 
     reload_module("reccmp.isledecomp.compare")
     from reccmp.isledecomp.compare import Compare as IsleCompare
