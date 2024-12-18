@@ -53,7 +53,7 @@ def create_reloc_lookup(bin_file: PEImage) -> Callable[[int], bool]:
     return lookup
 
 
-def create_bin_lookup(bin_file: PEImage) -> Callable[[int, int], Optional[str]]:
+def create_bin_lookup(bin_file: PEImage) -> Callable[[int, int], Optional[bytes]]:
     """Function generator for reading from the bin file"""
 
     def lookup(addr: int, size: int) -> Optional[bytes]:
@@ -61,6 +61,28 @@ def create_bin_lookup(bin_file: PEImage) -> Callable[[int, int], Optional[str]]:
             return bin_file.read(addr, size)
         except InvalidVirtualAddressError:
             return None
+
+    return lookup
+
+
+def create_name_lookup(
+    db_getter: Callable[[int, bool], Optional[MatchInfo]], addr_attribute: str
+) -> Callable[[int, bool], Optional[str]]:
+    """Function generator for name replacement"""
+
+    def lookup(addr: int, exact: bool) -> Optional[str]:
+        m = db_getter(addr, exact)
+        if m is None:
+            return None
+
+        if getattr(m, addr_attribute) == addr:
+            return m.match_name()
+
+        offset = addr - getattr(m, addr_attribute)
+        if m.compare_type != SymbolType.DATA or offset >= m.size:
+            return None
+
+        return m.offset_name(offset)
 
     return lookup
 
@@ -95,6 +117,17 @@ class Compare:
         self._match_exports()
         self._match_thunks()
         self._find_vtordisp()
+
+        self.orig_sanitize = ParseAsm(
+            relocate_lookup=create_reloc_lookup(self.orig_bin),
+            name_lookup=create_name_lookup(self._db.get_by_orig, "orig_addr"),
+            bin_lookup=create_bin_lookup(self.orig_bin),
+        )
+        self.recomp_sanitize = ParseAsm(
+            relocate_lookup=create_reloc_lookup(self.recomp_bin),
+            name_lookup=create_name_lookup(self._db.get_by_recomp, "recomp_addr"),
+            bin_lookup=create_bin_lookup(self.recomp_bin),
+        )
 
     def _load_cvdump(self):
         logger.info("Parsing %s ...", self.pdb_file)
@@ -683,53 +716,8 @@ class Compare:
         except IndexError:
             pass
 
-        def orig_lookup(addr: int, exact: bool) -> Optional[str]:
-            m = self._db.get_by_orig(addr, exact)
-            if m is None:
-                return None
-
-            if m.orig_addr == addr:
-                return m.match_name()
-
-            offset = addr - m.orig_addr
-            if m.compare_type != SymbolType.DATA or offset >= m.size:
-                return None
-
-            return m.offset_name(offset)
-
-        def recomp_lookup(addr: int, exact: bool) -> Optional[str]:
-            m = self._db.get_by_recomp(addr, exact)
-            if m is None:
-                return None
-
-            if m.recomp_addr == addr:
-                return m.match_name()
-
-            offset = addr - m.recomp_addr
-            if m.compare_type != SymbolType.DATA or offset >= m.size:
-                return None
-
-            return m.offset_name(offset)
-
-        orig_should_replace = create_reloc_lookup(self.orig_bin)
-        recomp_should_replace = create_reloc_lookup(self.recomp_bin)
-
-        orig_bin_lookup = create_bin_lookup(self.orig_bin)
-        recomp_bin_lookup = create_bin_lookup(self.recomp_bin)
-
-        orig_parse = ParseAsm(
-            relocate_lookup=orig_should_replace,
-            name_lookup=orig_lookup,
-            bin_lookup=orig_bin_lookup,
-        )
-        recomp_parse = ParseAsm(
-            relocate_lookup=recomp_should_replace,
-            name_lookup=recomp_lookup,
-            bin_lookup=recomp_bin_lookup,
-        )
-
-        orig_combined = orig_parse.parse_asm(orig_raw, match.orig_addr)
-        recomp_combined = recomp_parse.parse_asm(recomp_raw, match.recomp_addr)
+        orig_combined = self.orig_sanitize.parse_asm(orig_raw, match.orig_addr)
+        recomp_combined = self.recomp_sanitize.parse_asm(recomp_raw, match.recomp_addr)
 
         if self.debug:
             self._dump_asm(orig_combined, recomp_combined)
