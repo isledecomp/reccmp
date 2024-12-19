@@ -401,7 +401,11 @@ def main() -> int:
     assert isinstance(recomp_bin, PEImage)
 
     engine = IsleCompare(
-        orig_bin, recomp_bin, target.recompiled_pdb, target.source_root
+        orig_bin,
+        recomp_bin,
+        target.recompiled_pdb,
+        target.source_root,
+        target_id=target.target_id,
     )
 
     module_map = ModuleMap(target.recompiled_pdb, recomp_bin)

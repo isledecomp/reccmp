@@ -73,11 +73,20 @@ class Compare:
         recomp_bin: PEImage,
         pdb_file: Path | str,
         code_dir: Path | str,
+        target_id: str = None,
     ):
         self.orig_bin = orig_bin
         self.recomp_bin = recomp_bin
         self.pdb_file = str(pdb_file)
         self.code_dir = str(code_dir)
+        self.target_id = target_id
+        if self.target_id is None:
+            # Assume module name is the base filename of the original binary.
+            self.target_id, _ = os.path.splitext(
+                os.path.basename(self.orig_bin.filepath)
+            )
+            self.target_id = self.target_id.upper()
+            logger.warning('Assuming id="%s"', self.target_id)
         # Controls whether we dump the asm output to a file
         self.debug: bool = False
         self.runid: str = uuid.uuid4().hex[:8]
@@ -206,11 +215,8 @@ class Compare:
         self._db.set_function_pair(self.orig_bin.entry, self.recomp_bin.entry)
 
     def _load_markers(self):
-        # Assume module name is the base filename of the original binary.
-        (module, _) = os.path.splitext(os.path.basename(self.orig_bin.filepath))
-
         codefiles = list(walk_source_dir(self.code_dir))
-        codebase = DecompCodebase(codefiles, module.upper())
+        codebase = DecompCodebase(codefiles, self.target_id)
 
         def orig_bin_checker(addr: int) -> bool:
             return self.orig_bin.is_valid_vaddr(addr)

@@ -237,7 +237,11 @@ def main():
         logging.getLogger("isledecomp.compare.lines").setLevel(logging.CRITICAL)
 
     isle_compare = IsleCompare(
-        origfile, recompfile, target.recompiled_pdb, target.source_root
+        origfile,
+        recompfile,
+        target.recompiled_pdb,
+        target.source_root,
+        target_id=target.target_id,
     )
 
     if args.loglevel == logging.DEBUG:
