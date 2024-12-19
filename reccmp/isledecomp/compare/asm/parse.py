@@ -46,12 +46,13 @@ class ParseAsm:
     def __init__(
         self,
         relocate_lookup: Optional[Callable[[int], bool]] = None,
-        name_lookup: Optional[Callable[[int, bool], str]] = None,
+        name_lookup: Optional[Callable[[int, bool], Optional[str]]] = None,
         bin_lookup: Optional[Callable[[int, int], Optional[bytes]]] = None,
     ) -> None:
         self.relocate_lookup = relocate_lookup
         self.name_lookup = name_lookup
         self.bin_lookup = bin_lookup
+        self.lookup_cache = {}
         self.replacements = {}
         self.number_placeholders = True
 
@@ -68,12 +69,18 @@ class ParseAsm:
         self, addr: int, use_cache: bool = True, exact: bool = False
     ) -> Optional[str]:
         """Return a replacement name for this address if we find one."""
-        if use_cache and (cached := self.replacements.get(addr, None)) is not None:
-            return cached
+        if use_cache:
+            if addr in self.lookup_cache:
+                self.replacements[addr] = self.lookup_cache[addr]
+                return self.replacements[addr]
+
+            if addr in self.replacements:
+                return self.replacements[addr]
 
         if callable(self.name_lookup):
             if (name := self.name_lookup(addr, exact)) is not None:
                 if use_cache:
+                    self.lookup_cache[addr] = name
                     self.replacements[addr] = name
 
                 return name
@@ -202,6 +209,7 @@ class ParseAsm:
         return (inst.mnemonic, op_str)
 
     def parse_asm(self, data: bytes, start_addr: Optional[int] = 0) -> List[str]:
+        self.reset()
         asm = []
 
         ig = InstructGen(data, start_addr)
