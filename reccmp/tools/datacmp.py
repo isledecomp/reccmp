@@ -157,6 +157,7 @@ def do_the_comparison(target: RecCmpBuiltTarget) -> Iterable[ComparisonItem]:
         recompfile,
         target.recompiled_pdb,
         target.source_root,
+        target_id=target.target_id,
     )
 
     # TODO: We don't currently retain the type information of each variable
