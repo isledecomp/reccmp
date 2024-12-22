@@ -325,7 +325,11 @@ def main():
         raise ValueError(f"{target.recompiled_path} is not a PE executable")
 
     isle_compare = IsleCompare(
-        origfile, recompfile, target.recompiled_pdb, target.source_root
+        origfile,
+        recompfile,
+        target.recompiled_pdb,
+        target.source_root,
+        target_id=target.target_id,
     )
     if args.loglevel == logging.DEBUG:
         isle_compare.debug = True
