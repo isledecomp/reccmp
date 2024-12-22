@@ -4,6 +4,7 @@ import difflib
 from pathlib import Path
 import struct
 import uuid
+from functools import cache
 from dataclasses import dataclass
 from typing import Callable, Iterable, List, Optional
 from reccmp.isledecomp.formats.exceptions import InvalidVirtualAddressError
@@ -70,6 +71,7 @@ def create_name_lookup(
 ) -> Callable[[int, bool], Optional[str]]:
     """Function generator for name replacement"""
 
+    @cache
     def lookup(addr: int, exact: bool) -> Optional[str]:
         m = db_getter(addr, exact)
         if m is None:
