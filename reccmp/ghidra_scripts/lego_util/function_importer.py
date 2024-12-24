@@ -25,9 +25,8 @@ from lego_util.pdb_extraction import (
 )
 from lego_util.ghidra_helper import (
     add_data_type_or_reuse_existing,
-    get_or_create_namespace,
+    get_namespace_and_name,
     get_or_add_pointer_type,
-    sanitize_name,
 )
 
 from lego_util.exceptions import StackOffsetMismatchError, Lego1Exception
@@ -51,11 +50,9 @@ class PdbFunctionImporter(ABC):
 
         assert self.match_info.name is not None
 
-        colon_split = sanitize_name(self.match_info.name).split("::")
-        self.name = colon_split.pop()
-        namespace_hierachy = colon_split
-        self.namespace = get_or_create_namespace(
-            self.api, "::".join(namespace_hierachy)
+        self.namespace, self.name = get_namespace_and_name(
+            self.api,
+            self.match_info.name,
         )
 
     def get_full_name(self) -> str:

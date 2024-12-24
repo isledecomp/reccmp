@@ -141,7 +141,7 @@ def import_function_into_ghidra(
     GLOBALS.statistics.functions_changed += 1
 
 
-def process_functions(
+def do_execute_import(
     extraction: "PdbFunctionExtractor",
     ignore_types: set[str],
     ignore_functions: set[int],
@@ -153,8 +153,11 @@ def process_functions(
         return
 
     api = FlatProgramAPI(currentProgram())
+
     # pylint: disable=possibly-used-before-assignment
     type_importer = PdbTypeImporter(api, extraction, ignore_types=ignore_types)
+
+    logger.info("Importing functions...")
 
     for pdb_func in pdb_functions:
         func_name = pdb_func.match_info.name
@@ -185,6 +188,12 @@ def process_functions(
             log_and_track_failure(func_name, e, unexpected=True)
             logger.error(traceback.format_exc())
 
+    logger.info("Finished importing functions.")
+
+    logger.info("Importing vftables...")
+    import_vftables_into_ghidra(api, extraction.compare.get_vtables())
+    logger.info("Finished importing vftables.")
+
 
 def log_and_track_failure(
     function_name: Optional[str], error: Exception, unexpected: bool = False
@@ -199,7 +208,7 @@ def log_and_track_failure(
 
 
 def find_and_add_venv_to_pythonpath():
-    path = Path(__file__)
+    path = Path(__file__).resolve()
 
     # Add the virtual environment if we are in one, e.g. `.venv/Lib/site-packages/reccmp/ghidra_scripts/import_[...].py`
     while not path.is_mount():
@@ -214,7 +223,7 @@ def find_and_add_venv_to_pythonpath():
     add_python_path(Path(__file__).parent.parent.parent)
 
     # Now we add the virtual environment where the dependencies need to be installed
-    path = Path(__file__)
+    path = Path(__file__).resolve()
     while not path.is_mount():
         venv_candidate = path / ".venv"
         if venv_candidate.exists():
@@ -310,10 +319,10 @@ def main():
     logger.info("Comparison complete.")
 
     # try to acquire matched functions
-    migration = PdbFunctionExtractor(isle_compare)
+    extractor = PdbFunctionExtractor(isle_compare)
     try:
-        process_functions(
-            migration,
+        do_execute_import(
+            extractor,
             set(target.ghidra_config.ignore_types),
             set(target.ghidra_config.ignore_functions),
         )
@@ -355,6 +364,9 @@ try:
         PdbFunctionExtractor,
         PdbFunction,
     )
+
+    reload_module("lego_util.vtable_importer")
+    from lego_util.vtable_importer import import_vftables_into_ghidra
 
     if GLOBALS.running_from_ghidra:
         reload_module("lego_util.ghidra_helper")
