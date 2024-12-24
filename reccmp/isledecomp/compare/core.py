@@ -6,7 +6,7 @@ import struct
 import uuid
 from functools import cache
 from dataclasses import dataclass
-from typing import Callable, Iterable, List, Optional
+from typing import Callable, Iterable, Iterator, Optional
 from reccmp.isledecomp.formats.exceptions import InvalidVirtualAddressError
 from reccmp.isledecomp.formats.pe import PEImage
 from reccmp.isledecomp.cvdump.demangler import demangle_string_const
@@ -897,16 +897,16 @@ class Compare:
     def get_by_recomp(self, addr: int) -> Optional[MatchInfo]:
         return self._db.get_by_recomp(addr)
 
-    def get_all(self) -> List[MatchInfo]:
+    def get_all(self) -> Iterator[MatchInfo]:
         return self._db.get_all()
 
-    def get_functions(self) -> List[MatchInfo]:
+    def get_functions(self) -> Iterator[MatchInfo]:
         return self._db.get_matches_by_type(SymbolType.FUNCTION)
 
-    def get_vtables(self) -> List[MatchInfo]:
+    def get_vtables(self) -> Iterator[MatchInfo]:
         return self._db.get_matches_by_type(SymbolType.VTABLE)
 
-    def get_variables(self) -> List[MatchInfo]:
+    def get_variables(self) -> Iterator[MatchInfo]:
         return self._db.get_matches_by_type(SymbolType.DATA)
 
     def compare_address(self, addr: int) -> Optional[DiffReport]:

@@ -150,3 +150,10 @@ def sanitize_name(name: str) -> str:
             new_name,
         )
     return new_name
+
+
+def get_namespace_and_name(api: FlatProgramAPI, name: str) -> tuple[Namespace, str]:
+    colon_split = sanitize_name(name).split("::")
+    name = colon_split.pop()
+    namespace = get_or_create_namespace(api, "::".join(colon_split))
+    return namespace, name
