@@ -1,6 +1,9 @@
 name: Test
 
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
 
 jobs:
   fetch-deps:
@@ -16,30 +19,32 @@ jobs:
       fail-fast: false
       matrix:
         platform:
-          - { name: 'Windows', os: 'ubuntu-latest' }
-          - { name: 'Linux',   os: 'windows-latest' }
+          - { name: 'Windows', os: 'windows-latest' }
+          - { name: 'Linux', os: 'ubuntu-latest' }
 
     steps:
-    - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
 
-    - name: Restore cached original binaries
-      id: cache-original-binaries
-      uses: actions/cache/restore@v3
-      with:
-        enableCrossOsArchive: true
-        path: legobin
-        key: legobin
+      - name: Restore cached original binaries
+        id: cache-original-binaries
+        uses: actions/cache/restore@v4
+        with:
+          enableCrossOsArchive: true
+          path: legobin
+          key: legobin
 
-    - name: Install python libraries
-      shell: bash
-      run: |
-        pip install -r requirements.txt -r requirements-tests.txt
+      - name: Setup Python modules
+        shell: bash
+        run: |
+          pip install -r requirements.txt -r requirements-tests.txt
 
-    - name: Run python unit tests (Windows)
-      shell: bash
-      run: |
-        pytest . --lego1=legobin/LEGO1.DLL
+      - name: Run Python unit tests
+        shell: bash
+        run: |
+          pytest . --lego1=legobin/LEGO1.DLL
