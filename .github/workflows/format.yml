@@ -1,23 +1,27 @@
 name: Format
 
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
 
 jobs:
   python-format:
-    name: 'Python Format'
+    name: Python format
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Install python libraries
-      shell: bash
-      run: |
-        pip install -r requirements.txt -r requirements-tests.txt
+      - name: Setup Python modules
+        shell: bash
+        run: |
+          pip install -r requirements.txt -r requirements-tests.txt
 
-    - name: Run pylint and black
-      shell: bash
-      run: |
-        pylint reccmp
-        pylint tests
-        black --check .
+      - name: Run pylint and black
+        shell: bash
+        run: |
+          pylint reccmp
+          pylint tests
+          black --check .
