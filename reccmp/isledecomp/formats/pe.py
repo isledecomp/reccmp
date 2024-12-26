@@ -438,7 +438,7 @@ class DebugDirectoryEntryHeader:
     pointer_to_raw_data: int  # The file pointer to the debug data.
 
     @classmethod
-    def from_memory(cls, data: bytes, offset: int) -> "DebugDirectoryEntryHeader":
+    def from_memory(cls, data: bytes, offset: int) -> "tuple[DebugDirectoryEntryHeader, int]":
         struct_fmt = "<2I2H4I"
         items = struct.unpack_from(struct_fmt, data, offset=offset)
         return cls(*items), offset + struct.calcsize(struct_fmt)
@@ -473,7 +473,7 @@ class PEImage(Image):
     _relocations: set[int] = dataclasses.field(default_factory=set, repr=False)
     _section_vaddr: list[int] = dataclasses.field(default_factory=list, repr=False)
     # find_str: bool = dataclasses.field(default=False, repr=False)
-    imports: list[tuple[int, str]] = dataclasses.field(default_factory=list, repr=False)
+    imports: list[tuple[str, str, int]] = dataclasses.field(default_factory=list, repr=False)
     exports: list[tuple[int, bytes]] = dataclasses.field(
         default_factory=list, repr=False
     )
@@ -589,6 +589,7 @@ class PEImage(Image):
                 cv = CodeViewHeaderNB10.from_memory(
                     data=self.data, offset=debug_entry.pointer_to_raw_data
                 )
+                assert cv is not None
                 return cv.pdb_file_name.decode("ascii")
             if CodeViewHeaderRSDS.taste(
                 data=self.data, offset=debug_entry.pointer_to_raw_data
@@ -596,6 +597,7 @@ class PEImage(Image):
                 cv = CodeViewHeaderRSDS.from_memory(
                     data=self.data, offset=debug_entry.pointer_to_raw_data
                 )
+                assert cv is not None
                 return cv.pdb_file_name.decode()
         return None
 
@@ -764,6 +766,7 @@ class PEImage(Image):
         import_directory = self.get_data_directory_region(
             PEDataDirectoryItemType.IMPORT_TABLE
         )
+        assert import_directory is not None
 
         def iter_image_import(offset: int):
             while True:

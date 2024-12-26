@@ -97,14 +97,15 @@ class Compare:
         recomp_bin: PEImage,
         pdb_file: Path | str,
         code_dir: Path | str,
-        target_id: str = None,
+        target_id: str | None = None,
     ):
         self.orig_bin = orig_bin
         self.recomp_bin = recomp_bin
         self.pdb_file = str(pdb_file)
         self.code_dir = str(code_dir)
-        self.target_id = target_id
-        if self.target_id is None:
+        if target_id is not None:
+            self.target_id = target_id
+        else:
             # Assume module name is the base filename of the original binary.
             self.target_id, _ = os.path.splitext(
                 os.path.basename(self.orig_bin.filepath)
@@ -188,6 +189,7 @@ class Compare:
                 )
 
             if sym.node_type == SymbolType.STRING:
+                assert sym.decorated_name is not None
                 string_info = demangle_string_const(sym.decorated_name)
                 if string_info is None:
                     logger.debug(
@@ -199,11 +201,11 @@ class Compare:
                 if string_info.is_utf16:
                     continue
 
-                raw = self.recomp_bin.read(addr, sym.size())
+                size = sym.size()
+                assert size is not None
 
-                # read returns None when reading 0 bytes
-                if sym.size() == 0 and raw is None:
-                    raw = b""
+                # Assume an empty string for uninitialized memory
+                raw = self.recomp_bin.read(addr, size) or b""
 
                 try:
                     # We use the string length reported in the mangled symbol as the
@@ -273,6 +275,7 @@ class Compare:
         # a lineref, we can match the nameref correctly because the lineref
         # was already removed from consideration.
         for fun in codebase.iter_line_functions():
+            assert fun.filename is not None
             recomp_addr = self._lines_db.search_line(fun.filename, fun.line_number)
             if recomp_addr is not None:
                 self._db.set_function_pair(fun.offset, recomp_addr)
@@ -338,6 +341,8 @@ class Compare:
         cvdump_lookup = {x.addr: x for x in self.cvdump_analysis.nodes}
 
         for match in self._db.get_matches_by_type(SymbolType.DATA):
+            assert match.orig_addr is not None
+            assert match.recomp_addr is not None
             node = cvdump_lookup.get(match.recomp_addr)
             if node is None or node.data_type is None:
                 continue
@@ -507,6 +512,7 @@ class Compare:
             if recomp_func is None:
                 continue
 
+            assert recomp_func.name is not None
             self._db.create_recomp_thunk(recomp_thunk, recomp_func.name)
 
         # Thunks may be non-unique, so use a list as dict value when
@@ -523,6 +529,7 @@ class Compare:
 
             # Check whether the thunk destination is a matched symbol
             if orig_func.recomp_addr not in recomp_thunks:
+                assert orig_func.name is not None
                 self._db.create_orig_thunk(orig_thunk, orig_func.name)
                 continue
 
@@ -702,6 +709,9 @@ class Compare:
         # Detect when the recomp function size would cause us to read
         # enough bytes from the original function that we cross into
         # the next annotated function.
+        assert match.orig_addr is not None
+        assert match.recomp_addr is not None
+        assert match.size is not None
         next_orig = self._db.get_next_orig_addr(match.orig_addr)
         if next_orig is not None:
             orig_size = min(next_orig - match.orig_addr, match.size)
@@ -754,6 +764,7 @@ class Compare:
             is_effective_match = False
             unified_diff = []
 
+        assert match.name is not None
         return DiffReport(
             match_type=SymbolType.FUNCTION,
             orig_addr=match.orig_addr,
@@ -765,6 +776,9 @@ class Compare:
         )
 
     def _compare_vtable(self, match: MatchInfo) -> DiffReport:
+        assert match.orig_addr is not None
+        assert match.recomp_addr is not None
+        assert match.size is not None
         vtable_size = match.size
 
         # The vtable size should always be a multiple of 4 because that
@@ -841,6 +855,7 @@ class Compare:
 
         unified_diff = combined_diff(sm, orig_text, recomp_text, context_size=100)
 
+        assert match.name is not None
         return DiffReport(
             match_type=SymbolType.VTABLE,
             orig_addr=match.orig_addr,
@@ -859,9 +874,13 @@ class Compare:
         if match.get("skip", False):
             return None
 
+        assert match.orig_addr is not None
+        assert match.recomp_addr is not None
+        assert match.compare_type is not None
+        assert match.name is not None
         if match.get("stub", False):
             return DiffReport(
-                match_type=match.compare_type,
+                match_type=SymbolType(match.compare_type),
                 orig_addr=match.orig_addr,
                 recomp_addr=match.recomp_addr,
                 name=match.name,
@@ -941,4 +960,4 @@ class Compare:
         for match in self.get_vtables():
             diff = self._compare_match(match)
             if diff is not None:
-                yield self._compare_match(match)
+                yield diff

@@ -201,9 +201,9 @@ class ParseAsm:
 
         return (inst.mnemonic, op_str)
 
-    def parse_asm(self, data: bytes, start_addr: Optional[int] = 0) -> List[str]:
+    def parse_asm(self, data: bytes, start_addr: int = 0) -> list[tuple[str, str]]:
         self.reset()
-        asm = []
+        asm: list[tuple[str, str]] = []
 
         ig = InstructGen(data, start_addr)
 

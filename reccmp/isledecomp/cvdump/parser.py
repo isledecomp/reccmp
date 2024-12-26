@@ -93,7 +93,7 @@ class CvdumpParser:
         self._section: str = ""
         self._lines_function: Tuple[str, int] = ("", 0)
 
-        self.lines = {}
+        self.lines: dict[tuple[int, int], tuple[str, int]] = {}
         self.publics: list[PublicsEntry] = []
         self.sizerefs: list[SizeRefEntry] = []
         self.globals: list[GdataEntry] = []

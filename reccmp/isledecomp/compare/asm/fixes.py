@@ -1,5 +1,5 @@
 import re
-from typing import List, Tuple, Set
+from typing import List, Sequence, Tuple, Set
 
 DiffOpcode = Tuple[str, int, int, int, int]
 
@@ -265,7 +265,7 @@ def naive_register_replacement(orig_asm: List[str], recomp_asm: List[str]) -> Se
 
 
 def find_effective_match(
-    codes: List[DiffOpcode], orig_asm: List[str], recomp_asm: List[str]
+    codes: Sequence[DiffOpcode], orig_asm: List[str], recomp_asm: List[str]
 ) -> bool:
     """Check whether the two sequences of instructions are an effective match.
     Meaning: do they differ only by instruction order or register selection?"""
