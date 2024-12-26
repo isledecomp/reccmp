@@ -10,6 +10,7 @@ from reccmp.isledecomp.formats.exceptions import (
     SectionNotFoundError,
     InvalidVirtualAddressError,
 )
+from reccmp.isledecomp.formats.pe import UninitializedDataReadError
 
 
 def test_basic(binfile: PEImage):
@@ -67,9 +68,14 @@ def test_unusual_reads(binfile: PEImage):
 
     # Uninitialized part of .data
     assert binfile.read(0x1010A600, 4) is None
+    with pytest.raises(UninitializedDataReadError):
+        binfile.read_initialized(0x1010A600, 4)
 
     # Past the end of virtual size in .text
     assert binfile.read(0x100D3A70, 4) == b"\x00\x00\x00\x00"
+
+    # Zero length
+    assert binfile.read(0x100D4000, 0) == b""
 
 
 STRING_ADDRESSES = (

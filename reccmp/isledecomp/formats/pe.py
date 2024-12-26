@@ -28,6 +28,10 @@ class UnknownPEMachine(ValueError):
     """The PE binary has an unknown machine architecture."""
 
 
+class UninitializedDataReadError(ValueError):
+    """Attempt to read from an uninitialized section."""
+
+
 class PEMachine(IntEnum):
     IMAGE_FILE_MACHINE_ALPHA = 0x184
     IMAGE_FILE_MACHINE_ALPHA64 = 0x284
@@ -470,7 +474,7 @@ class PEImage(Image):
     _section_vaddr: list[int] = dataclasses.field(default_factory=list, repr=False)
     # find_str: bool = dataclasses.field(default=False, repr=False)
     imports: list[tuple[int, str]] = dataclasses.field(default_factory=list, repr=False)
-    exports: list[tuple[str, str, int]] = dataclasses.field(
+    exports: list[tuple[int, bytes]] = dataclasses.field(
         default_factory=list, repr=False
     )
     thunks: list[tuple[int, int]] = dataclasses.field(default_factory=list, repr=False)
@@ -571,7 +575,7 @@ class PEImage(Image):
         debug_directory = self.get_data_directory_region(PEDataDirectoryItemType.DEBUG)
         if not debug_directory:
             return None
-        debug_entry_data = self.read(
+        debug_entry_data = self.read_initialized(
             debug_directory.virtual_address, debug_directory.virtual_size
         )
         offset = 0
@@ -743,12 +747,16 @@ class PEImage(Image):
             if opcode_ext in (0x5, 0xD, 0x15, 0x1D, 0x25, 0x2D, 0x35, 0x3D):
                 if opcode in (0xD8, 0xD9):
                     # dword ptr -- single precision
-                    (float_value,) = struct.unpack("<f", self.read(const_addr, 4))
+                    (float_value,) = struct.unpack(
+                        "<f", self.read_initialized(const_addr, 4)
+                    )
                     yield (const_addr, 4, float_value)
 
                 elif opcode in (0xDC, 0xDD):
                     # qword ptr -- double precision
-                    (float_value,) = struct.unpack("<d", self.read(const_addr, 8))
+                    (float_value,) = struct.unpack(
+                        "<d", self.read_initialized(const_addr, 8)
+                    )
                     yield (const_addr, 8, float_value)
 
     def _populate_imports(self):
@@ -760,7 +768,9 @@ class PEImage(Image):
         def iter_image_import(offset: int):
             while True:
                 # Read 5 dwords until all are zero.
-                image_import_descriptor = struct.unpack("<5I", self.read(offset, 20))
+                image_import_descriptor = struct.unpack(
+                    "<5I", self.read_initialized(offset, 20)
+                )
                 offset += 20
                 if all(x == 0 for x in image_import_descriptor):
                     break
@@ -790,8 +800,12 @@ class PEImage(Image):
                 # Address of "__imp__*" symbols.
                 ofs_iat = start_iat
                 while True:
-                    (lookup_addr,) = struct.unpack("<L", self.read(ofs_ilt, 4))
-                    (import_addr,) = struct.unpack("<L", self.read(ofs_iat, 4))
+                    (lookup_addr,) = struct.unpack(
+                        "<L", self.read_initialized(ofs_ilt, 4)
+                    )
+                    (import_addr,) = struct.unpack(
+                        "<L", self.read_initialized(ofs_iat, 4)
+                    )
                     if lookup_addr == 0 or import_addr == 0:
                         break
 
@@ -866,7 +880,7 @@ class PEImage(Image):
         export_start = export_directory.virtual_address
 
         export_table = ExportDirectoryTable(
-            *struct.unpack("<2L2H7L", self.read(export_start, 40))
+            *struct.unpack("<2L2H7L", self.read_initialized(export_start, 40))
         )
 
         # TODO: if the number of functions doesn't match the number of names,
@@ -874,15 +888,19 @@ class PEImage(Image):
         n_functions = export_table.address_table_entries
 
         func_start = export_start + 40
-        func_addrs = [
+        func_addrs: list[int] = [
             self.imagebase + rva
-            for rva, in struct.iter_unpack("<L", self.read(func_start, 4 * n_functions))
+            for rva, in struct.iter_unpack(
+                "<L", self.read_initialized(func_start, 4 * n_functions)
+            )
         ]
 
         name_start = func_start + 4 * n_functions
-        name_addrs = [
+        name_addrs: list[int] = [
             self.imagebase + rva
-            for rva, in struct.iter_unpack("<L", self.read(name_start, 4 * n_functions))
+            for rva, in struct.iter_unpack(
+                "<L", self.read_initialized(name_start, 4 * n_functions)
+            )
         ]
 
         combined = zip(func_addrs, name_addrs)
@@ -970,11 +988,17 @@ class PEImage(Image):
 
         return True
 
-    def read_string(self, offset: int, chunk_size: int = 1000) -> Optional[bytes]:
-        """Read until we find a zero byte."""
-        b = self.read(offset, chunk_size)
-        if b is None:
-            return None
+    def read_string(self, offset: int, chunk_size: int = 1000) -> bytes:
+        """
+        Read until we find a zero byte.
+
+        Raises:
+            UninitializedDataReadError: when attempting to read from an uninitialized section.
+        """
+
+        # Don't fail if the start is initialized but the end is not
+        # since the chunk size can be much larger than the actual string
+        b = self.read_initialized(offset, chunk_size, fail_if_end_is_uninitialized=False)
 
         try:
             return b[: b.index(b"\x00")]
@@ -995,3 +1019,31 @@ class PEImage(Image):
         # Reading off the end will most likely misrepresent the virtual addressing.
         _size = min(size, section.size_of_raw_data - offset)
         return bytes(section.view[offset : offset + _size])
+
+    def read_initialized(self, vaddr: int, size: int, *, fail_if_end_is_uninitialized: bool = True) -> bytes:
+        """
+        Read the given number of bytes at the given virtual address.
+
+        Raises:
+            UninitializedDataReadError: when the given range overlaps with an uninitialized section and `fail_if_end_is_uninitialized` is `True`.
+        """
+        (section_id, offset) = self.get_relative_addr(vaddr)
+        section = self.sections[section_id - 1]
+
+        if section.addr_is_uninitialized(vaddr):
+            raise UninitializedDataReadError(
+                f"Attempt to read uninitialized data at 0x${offset:x}"
+            )
+
+        # Clamp the read within the extent of the current section.
+        # Reading off the end will most likely misrepresent the virtual addressing.
+        available_initialized_data = section.size_of_raw_data - offset
+        if size > available_initialized_data:
+            if fail_if_end_is_uninitialized:
+                raise UninitializedDataReadError(
+                    f"Attempt to read {size} initialized bytes at 0x{offset:x}, only {available_initialized_data} available."
+                )
+
+            size = available_initialized_data
+
+        return bytes(section.view[offset : offset + size])
