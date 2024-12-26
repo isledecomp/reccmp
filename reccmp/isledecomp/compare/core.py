@@ -6,7 +6,7 @@ import struct
 import uuid
 from functools import cache
 from dataclasses import dataclass
-from typing import Callable, Iterable, Iterator, Optional
+from typing import Callable, Iterable, Iterator, Optional, TypedDict
 from reccmp.isledecomp.formats.exceptions import InvalidVirtualAddressError
 from reccmp.isledecomp.formats.pe import PEImage
 from reccmp.isledecomp.cvdump.demangler import demangle_string_const
@@ -22,6 +22,9 @@ from .lines import LinesDb
 
 
 logger = logging.getLogger(__name__)
+
+
+NamedOrigEntry = TypedDict("NamedOrigEntry", {"orig": int, "name": str})
 
 
 @dataclass
@@ -325,8 +328,7 @@ class Compare:
         Note that there is no recursion, so an array of arrays would not be handled entirely.
         This step is necessary e.g. for `0x100f0a20` (LegoRacers.cpp).
         """
-
-        dataset = {}
+        dataset: dict[int, NamedOrigEntry] = {}
 
         # Helper function
         def _add_match_in_array(
@@ -517,7 +519,7 @@ class Compare:
 
         # Thunks may be non-unique, so use a list as dict value when
         # inverting the list of tuples from self.recomp_bin.
-        recomp_thunks = {}
+        recomp_thunks: dict[int, list[int]] = {}
         for thunk_addr, func_addr in self.recomp_bin.thunks:
             recomp_thunks.setdefault(func_addr, []).append(thunk_addr)
 
@@ -564,6 +566,7 @@ class Compare:
                 # *is* the thunk, but it's more helpful to mark the actual function.
                 # It could be the case that only one side is a thunk, but we can
                 # deal with that.
+                rel_addr: int
                 (opcode, rel_addr) = struct.unpack(
                     "<Bl", self.recomp_bin.read_initialized(recomp_addr, 5)
                 )
@@ -822,7 +825,7 @@ class Compare:
 
         orig_text = []
         recomp_text = []
-        ratio = 0.
+        ratio = 0.0
         n_entries = 0
 
         # Now compare each pointer from the two vtables.
@@ -842,7 +845,7 @@ class Compare:
             orig_text.append((index, match_text(orig, raw_orig)))
             recomp_text.append((index, match_text(recomp)))
 
-        ratio = ratio / float(n_entries) if n_entries > 0 else 0.
+        ratio = ratio / float(n_entries) if n_entries > 0 else 0.0
 
         # n=100: Show the entire table if there is a diff to display.
         # Otherwise it would be confusing if the table got cut off.
