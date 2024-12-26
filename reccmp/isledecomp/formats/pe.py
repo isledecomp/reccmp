@@ -438,7 +438,9 @@ class DebugDirectoryEntryHeader:
     pointer_to_raw_data: int  # The file pointer to the debug data.
 
     @classmethod
-    def from_memory(cls, data: bytes, offset: int) -> "tuple[DebugDirectoryEntryHeader, int]":
+    def from_memory(
+        cls, data: bytes, offset: int
+    ) -> "tuple[DebugDirectoryEntryHeader, int]":
         struct_fmt = "<2I2H4I"
         items = struct.unpack_from(struct_fmt, data, offset=offset)
         return cls(*items), offset + struct.calcsize(struct_fmt)
@@ -473,7 +475,9 @@ class PEImage(Image):
     _relocations: set[int] = dataclasses.field(default_factory=set, repr=False)
     _section_vaddr: list[int] = dataclasses.field(default_factory=list, repr=False)
     # find_str: bool = dataclasses.field(default=False, repr=False)
-    imports: list[tuple[str, str, int]] = dataclasses.field(default_factory=list, repr=False)
+    imports: list[tuple[str, str, int]] = dataclasses.field(
+        default_factory=list, repr=False
+    )
     exports: list[tuple[int, bytes]] = dataclasses.field(
         default_factory=list, repr=False
     )
@@ -1001,7 +1005,9 @@ class PEImage(Image):
 
         # Don't fail if the start is initialized but the end is not
         # since the chunk size can be much larger than the actual string
-        b = self.read_initialized(offset, chunk_size, fail_if_end_is_uninitialized=False)
+        b = self.read_initialized(
+            offset, chunk_size, fail_if_end_is_uninitialized=False
+        )
 
         try:
             return b[: b.index(b"\x00")]
@@ -1023,7 +1029,9 @@ class PEImage(Image):
         _size = min(size, section.size_of_raw_data - offset)
         return bytes(section.view[offset : offset + _size])
 
-    def read_initialized(self, vaddr: int, size: int, *, fail_if_end_is_uninitialized: bool = True) -> bytes:
+    def read_initialized(
+        self, vaddr: int, size: int, *, fail_if_end_is_uninitialized: bool = True
+    ) -> bytes:
         """
         Read the given number of bytes at the given virtual address.
 

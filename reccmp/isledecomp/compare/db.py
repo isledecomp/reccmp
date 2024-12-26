@@ -582,7 +582,9 @@ class CompareDb:
                     addr,
                     escaped,
                     repr(already_present.name),
-                    repr(SymbolType(already_present.compare_type)) if already_present.compare_type is not None else "<None>",
+                    repr(SymbolType(already_present.compare_type))
+                    if already_present.compare_type is not None
+                    else "<None>",
                 )
 
         return did_match
