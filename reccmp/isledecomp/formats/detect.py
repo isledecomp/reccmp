@@ -8,7 +8,7 @@ from .mz import ImageDosHeader, MZImage
 from .pe import PEImage
 
 
-def detect_image(filepath: str | Path) -> Image:
+def detect_image(filepath: Path) -> Image:
     with open(filepath, "rb") as f:
         data = f.read()
     if MZImage.taste(data, offset=0):

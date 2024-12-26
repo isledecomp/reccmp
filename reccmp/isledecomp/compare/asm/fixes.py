@@ -72,7 +72,7 @@ def patch_jump(a: str, b: str) -> str:
 
 
 def patch_cmp_swaps(
-    codes: List[DiffOpcode], orig_asm: List[str], recomp_asm: List[str]
+    codes: Sequence[DiffOpcode], orig_asm: List[str], recomp_asm: List[str]
 ) -> Set[int]:
     """Can we resolve the diffs between orig and recomp by patching
     swapped cmp instructions?
@@ -188,7 +188,7 @@ def instruction_alters_regs(inst: str, regs: Set[str]) -> bool:
 
 
 def relocate_instructions(
-    codes: List[DiffOpcode], orig_asm: List[str], recomp_asm: List[str]
+    codes: Sequence[DiffOpcode], orig_asm: List[str], recomp_asm: List[str]
 ) -> Set[int]:
     """Collect the list of instructions deleted from orig and inserted
     into recomp, according to the diff opcodes. Using this list, match up

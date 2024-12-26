@@ -1,7 +1,7 @@
 import os
 import subprocess
-import pathlib
 from typing import Iterator
+from pathlib import Path, PurePath, PureWindowsPath
 
 
 def winepath_win_to_unix(path: str) -> str:
@@ -27,15 +27,15 @@ class PathResolver:
 
         # Memoize the converted paths. We will need to do this for each path
         # in the PDB, for each function in that file. (i.e. lots of repeated work)
-        self._memo = {}
+        self._memo: dict[str, str] = {}
 
         # Convert basedir to an absolute path if it is not already.
         # If it is not absolute, we cannot do the path swap on unix.
-        self._realdir = pathlib.Path(basedir).resolve()
+        self._realdir = Path(basedir).resolve()
 
         self._is_unix = os.name != "nt"
         if self._is_unix:
-            self._basedir = pathlib.PureWindowsPath(
+            self._basedir: PurePath = PureWindowsPath(
                 winepath_unix_to_win(str(self._realdir))
             )
         else:
@@ -43,7 +43,7 @@ class PathResolver:
 
     def _memo_wrapper(self, path_str: str) -> str:
         """Wrapper so we can memoize from the public caller method"""
-        path = pathlib.PureWindowsPath(path_str)
+        path: PurePath = PureWindowsPath(path_str)
         if not path.is_absolute():
             # pathlib syntactic sugar for path concat
             path = self._basedir / path
@@ -68,7 +68,7 @@ class PathResolver:
 
         # We must be on Windows. Convert back to WindowsPath.
         # The resolve() call will eliminate intermediate backdir references.
-        return str(pathlib.Path(path).resolve())
+        return str(Path(path).resolve())
 
     def resolve_cvdump(self, path_str: str) -> str:
         """path_str is in Windows/Wine path format.

@@ -822,7 +822,7 @@ class Compare:
 
         orig_text = []
         recomp_text = []
-        ratio = 0
+        ratio = 0.
         n_entries = 0
 
         # Now compare each pointer from the two vtables.
@@ -842,7 +842,7 @@ class Compare:
             orig_text.append((index, match_text(orig, raw_orig)))
             recomp_text.append((index, match_text(recomp)))
 
-        ratio = ratio / float(n_entries) if n_entries > 0 else 0
+        ratio = ratio / float(n_entries) if n_entries > 0 else 0.
 
         # n=100: Show the entire table if there is a diff to display.
         # Otherwise it would be confusing if the table got cut off.

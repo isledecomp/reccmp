@@ -5,7 +5,7 @@ https://en.wikiversity.org/wiki/Visual_C%2B%2B_name_mangling
 
 import re
 from typing import NamedTuple, Optional
-import pydemangler
+import pydemangler # type: ignore
 
 
 class InvalidEncodedNumberError(Exception):

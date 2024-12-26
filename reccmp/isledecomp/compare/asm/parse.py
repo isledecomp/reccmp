@@ -9,10 +9,10 @@ placeholder string."""
 import re
 import struct
 from functools import cache
-from typing import Callable, List, Optional, Tuple
-from collections import namedtuple
+from typing import Callable, Optional, Tuple
 from .const import JUMP_MNEMONICS, SINGLE_OPERAND_INSTS
 from .instgen import InstructGen, SectionType
+from .types import DisasmLiteInst
 
 ptr_replace_regex = re.compile(r"\[(0x[0-9a-f]+)\]")
 
@@ -21,8 +21,6 @@ displace_replace_regex = re.compile(r"\+ (0x[0-9a-f]+)\]")
 # For matching an immediate value on its own.
 # Preceded by start-of-string (first operand) or comma-space (second operand)
 immediate_replace_regex = re.compile(r"(?:^|, )(0x[0-9a-f]+)")
-
-DisasmLiteInst = namedtuple("DisasmLiteInst", "address, size, mnemonic, op_str")
 
 
 @cache
@@ -52,7 +50,7 @@ class ParseAsm:
         self.relocate_lookup = relocate_lookup
         self.name_lookup = name_lookup
         self.bin_lookup = bin_lookup
-        self.replacements = {}
+        self.replacements: dict[int, str] = {}
         self.number_placeholders = True
 
     def reset(self):
@@ -207,9 +205,9 @@ class ParseAsm:
 
         ig = InstructGen(data, start_addr)
 
-        for sect_type, sect_contents in ig.sections:
-            if sect_type == SectionType.CODE:
-                for inst in sect_contents:
+        for section in ig.sections:
+            if section.type == SectionType.CODE:
+                for inst in section.contents:
                     # Use heuristics to disregard some differences that aren't representative
                     # of the accuracy of a function (e.g. global offsets)
 
@@ -231,14 +229,14 @@ class ParseAsm:
 
                     # mnemonic + " " + op_str
                     asm.append((hex(inst.address), " ".join(result)))
-            elif sect_type == SectionType.ADDR_TAB:
+            elif section.type == SectionType.ADDR_TAB:
                 asm.append(("", "Jump table:"))
-                for i, (ofs, _) in enumerate(sect_contents):
+                for i, (ofs, _) in enumerate(section.contents):
                     asm.append((hex(ofs), f"Jump_dest_{i}"))
 
-            elif sect_type == SectionType.DATA_TAB:
+            elif section.type == SectionType.DATA_TAB:
                 asm.append(("", "Data table:"))
-                for ofs, b in sect_contents:
+                for ofs, b in section.contents:
                     asm.append((hex(ofs), hex(b)))
 
         return asm
