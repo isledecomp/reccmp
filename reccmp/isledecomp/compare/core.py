@@ -16,7 +16,7 @@ from reccmp.isledecomp.dir import walk_source_dir
 from reccmp.isledecomp.types import SymbolType
 from reccmp.isledecomp.compare.asm import ParseAsm
 from reccmp.isledecomp.compare.asm.fixes import assert_fixup, find_effective_match
-from .db import CompareDb, MatchInfo
+from .db import CompareDb, ReccmpThing, MatchedReccmpThing
 from .diff import combined_diff, CombinedDiffOutput
 from .lines import LinesDb
 
@@ -67,7 +67,7 @@ def create_bin_lookup(bin_file: PEImage) -> Callable[[int, int], Optional[bytes]
 
 
 def create_name_lookup(
-    db_getter: Callable[[int, bool], Optional[MatchInfo]], addr_attribute: str
+    db_getter: Callable[[int, bool], Optional[ReccmpThing]], addr_attribute: str
 ) -> Callable[[int, bool], Optional[str]]:
     """Function generator for name replacement"""
 
@@ -698,7 +698,7 @@ class Compare:
             for addr, line in recomp_combined:
                 f.write(f"{addr}: {line}\n")
 
-    def _compare_function(self, match: MatchInfo) -> DiffReport:
+    def _compare_function(self, match: MatchedReccmpThing) -> DiffReport:
         # Detect when the recomp function size would cause us to read
         # enough bytes from the original function that we cross into
         # the next annotated function.
@@ -764,7 +764,7 @@ class Compare:
             is_effective_match=is_effective_match,
         )
 
-    def _compare_vtable(self, match: MatchInfo) -> DiffReport:
+    def _compare_vtable(self, match: MatchedReccmpThing) -> DiffReport:
         vtable_size = match.size
 
         # The vtable size should always be a multiple of 4 because that
@@ -784,7 +784,7 @@ class Compare:
             [t for (t,) in struct.iter_unpack("<L", recomp_table)],
         )
 
-        def match_text(m: Optional[MatchInfo], raw_addr: Optional[int] = None) -> str:
+        def match_text(m: Optional[ReccmpThing], raw_addr: Optional[int] = None) -> str:
             """Format the function reference at this vtable index as text.
             If we have not identified this function, we have the option to
             display the raw address. This is only worth doing for the original addr
@@ -850,7 +850,7 @@ class Compare:
             ratio=ratio,
         )
 
-    def _compare_match(self, match: MatchInfo) -> Optional[DiffReport]:
+    def _compare_match(self, match: MatchedReccmpThing) -> Optional[DiffReport]:
         """Router for comparison type"""
 
         if match.size is None or match.size == 0:
@@ -891,22 +891,22 @@ class Compare:
 
         return match.recomp_addr == recomp_addr
 
-    def get_by_orig(self, addr: int) -> Optional[MatchInfo]:
+    def get_by_orig(self, addr: int) -> Optional[ReccmpThing]:
         return self._db.get_by_orig(addr)
 
-    def get_by_recomp(self, addr: int) -> Optional[MatchInfo]:
+    def get_by_recomp(self, addr: int) -> Optional[ReccmpThing]:
         return self._db.get_by_recomp(addr)
 
-    def get_all(self) -> Iterator[MatchInfo]:
+    def get_all(self) -> Iterator[ReccmpThing]:
         return self._db.get_all()
 
-    def get_functions(self) -> Iterator[MatchInfo]:
+    def get_functions(self) -> Iterator[MatchedReccmpThing]:
         return self._db.get_matches_by_type(SymbolType.FUNCTION)
 
-    def get_vtables(self) -> Iterator[MatchInfo]:
+    def get_vtables(self) -> Iterator[MatchedReccmpThing]:
         return self._db.get_matches_by_type(SymbolType.VTABLE)
 
-    def get_variables(self) -> Iterator[MatchInfo]:
+    def get_variables(self) -> Iterator[MatchedReccmpThing]:
         return self._db.get_matches_by_type(SymbolType.DATA)
 
     def compare_address(self, addr: int) -> Optional[DiffReport]:
