@@ -106,7 +106,7 @@ def main():
         except RecCmpProjectException as e:
             logger.error("Project creation failed: %s", e.args[0])
 
-    if args.action == "DETECT":  # FIXME: use enum or callback function
+    elif args.action == "DETECT":  # FIXME: use enum or callback function
         project = RecCmpProject.from_directory(Path.cwd())
         if not project:
             parser.error(
@@ -123,7 +123,8 @@ def main():
         except RecCmpProjectException as e:
             logger.error("Project detection failed: %s", e.args[0])
 
-    parser.error("Missing command: create/detect")
+    else:
+        parser.error("Missing command: create/detect")
 
     # try:
     #     project = RecCmpBuiltProject.from_directory(Path.cwd())
