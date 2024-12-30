@@ -4,7 +4,6 @@ import difflib
 from pathlib import Path
 import struct
 import uuid
-from functools import cache
 from dataclasses import dataclass
 from typing import Callable, Iterable, Iterator, Optional
 from reccmp.isledecomp.formats.exceptions import InvalidVirtualAddressError
@@ -15,6 +14,7 @@ from reccmp.isledecomp.parser import DecompCodebase
 from reccmp.isledecomp.dir import walk_source_dir
 from reccmp.isledecomp.types import SymbolType
 from reccmp.isledecomp.compare.asm import ParseAsm
+from reccmp.isledecomp.compare.asm.replacement import create_name_lookup
 from reccmp.isledecomp.compare.asm.fixes import assert_fixup, find_effective_match
 from .db import CompareDb, MatchInfo
 from .diff import combined_diff, CombinedDiffOutput
@@ -66,29 +66,6 @@ def create_bin_lookup(bin_file: PEImage) -> Callable[[int, int], Optional[bytes]
     return lookup
 
 
-def create_name_lookup(
-    db_getter: Callable[[int, bool], Optional[MatchInfo]], addr_attribute: str
-) -> Callable[[int, bool], Optional[str]]:
-    """Function generator for name replacement"""
-
-    @cache
-    def lookup(addr: int, exact: bool) -> Optional[str]:
-        m = db_getter(addr, exact)
-        if m is None:
-            return None
-
-        if getattr(m, addr_attribute) == addr:
-            return m.match_name()
-
-        offset = addr - getattr(m, addr_attribute)
-        if m.compare_type != SymbolType.DATA or offset >= m.size:
-            return None
-
-        return m.offset_name(offset)
-
-    return lookup
-
-
 class Compare:
     # pylint: disable=too-many-instance-attributes
     def __init__(
@@ -130,12 +107,12 @@ class Compare:
         self._find_vtordisp()
 
         self.orig_sanitize = ParseAsm(
-            relocate_lookup=create_reloc_lookup(self.orig_bin),
+            addr_test=create_reloc_lookup(self.orig_bin),
             name_lookup=create_name_lookup(self._db.get_by_orig, "orig_addr"),
             bin_lookup=create_bin_lookup(self.orig_bin),
         )
         self.recomp_sanitize = ParseAsm(
-            relocate_lookup=create_reloc_lookup(self.recomp_bin),
+            addr_test=create_reloc_lookup(self.recomp_bin),
             name_lookup=create_name_lookup(self._db.get_by_recomp, "recomp_addr"),
             bin_lookup=create_bin_lookup(self.recomp_bin),
         )

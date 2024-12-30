@@ -13,6 +13,7 @@ from typing import Callable, List, Optional, Tuple
 from collections import namedtuple
 from .const import JUMP_MNEMONICS, SINGLE_OPERAND_INSTS
 from .instgen import InstructGen, SectionType
+from .replacement import AddrTestProtocol, NameReplacementProtocol
 
 ptr_replace_regex = re.compile(r"\[(0x[0-9a-f]+)\]")
 
@@ -45,11 +46,11 @@ def bytes_to_dword(b: bytes) -> Optional[int]:
 class ParseAsm:
     def __init__(
         self,
-        relocate_lookup: Optional[Callable[[int], bool]] = None,
-        name_lookup: Optional[Callable[[int, bool], Optional[str]]] = None,
+        addr_test: Optional[AddrTestProtocol] = None,
+        name_lookup: Optional[NameReplacementProtocol] = None,
         bin_lookup: Optional[Callable[[int, int], Optional[bytes]]] = None,
     ) -> None:
-        self.relocate_lookup = relocate_lookup
+        self.addr_test = addr_test
         self.name_lookup = name_lookup
         self.bin_lookup = bin_lookup
         self.replacements = {}
@@ -58,32 +59,30 @@ class ParseAsm:
     def reset(self):
         self.replacements = {}
 
-    def is_relocated(self, addr: int) -> bool:
-        if callable(self.relocate_lookup):
-            return self.relocate_lookup(addr)
+    def is_addr(self, value: int) -> bool:
+        """Wrapper for user-provided address test"""
+        if callable(self.addr_test):
+            return self.addr_test(value)
 
         return False
 
-    def lookup(
-        self, addr: int, use_cache: bool = True, exact: bool = False
-    ) -> Optional[str]:
-        """Return a replacement name for this address if we find one."""
-        if use_cache and addr in self.replacements:
-            return self.replacements[addr]
-
+    def lookup(self, addr: int, exact: bool = False) -> Optional[str]:
+        """Wrapper for user-provided name lookup"""
         if callable(self.name_lookup):
-            if (name := self.name_lookup(addr, exact)) is not None:
-                if use_cache:
-                    self.replacements[addr] = name
-
-                return name
+            return self.name_lookup(addr, exact=exact)
 
         return None
 
-    def replace(self, addr: int) -> str:
-        """Same function as lookup above, but here we return a placeholder
-        if there is no better name to use."""
-        if (name := self.lookup(addr)) is not None:
+    def replace(self, value: int, exact: bool = False, test: bool = False) -> str:
+        """Provide a replacement name for the given address."""
+        if test and not self.is_addr(value):
+            return hex(value)  # TODO.
+
+        if value in self.replacements:
+            return self.replacements[value]
+
+        if (name := self.lookup(value, exact=exact)) is not None:
+            self.replacements[value] = name
             return name
 
         # The placeholder number corresponds to the number of addresses we have
@@ -91,7 +90,7 @@ class ParseAsm:
         # if we can replace some symbols with actual names in recomp but not orig.
         idx = len(self.replacements) + 1
         placeholder = f"<OFFSET{idx}>" if self.number_placeholders else "<OFFSET>"
-        self.replacements[addr] = placeholder
+        self.replacements[value] = placeholder
         return placeholder
 
     def hex_replace_always(self, match: re.Match) -> str:
@@ -104,16 +103,15 @@ class ParseAsm:
         use the placeholder if we are certain that this is a valid address.
         We can check the relocation table to find out."""
         value = int(match.group(1), 16)
-        if self.is_relocated(value):
-            return match.group(0).replace(match.group(1), self.replace(value))
-
-        return match.group(0)
+        return match.group(0).replace(
+            match.group(1), self.replace(value, exact=False, test=True)
+        )
 
     def hex_replace_annotated(self, match: re.Match) -> str:
         """For replacing immediate value operands. Here we replace the value
         only if the name lookup returns something. Do not use a placeholder."""
         value = int(match.group(1), 16)
-        placeholder = self.lookup(value, use_cache=False)
+        placeholder = self.lookup(value)
         if placeholder is not None:
             return match.group(0).replace(match.group(1), placeholder)
 
@@ -133,10 +131,7 @@ class ParseAsm:
 
         if indirect_value is not None:
             indirect_addr = bytes_to_dword(indirect_value)
-            if (
-                indirect_addr is not None
-                and self.lookup(indirect_addr, use_cache=False) is not None
-            ):
+            if indirect_addr is not None and self.lookup(indirect_addr) is not None:
                 return match.group(0).replace(
                     match.group(1), "->" + self.replace(indirect_addr)
                 )
@@ -157,14 +152,10 @@ class ParseAsm:
             and (op_str_address := from_hex(inst.op_str)) is not None
         ):
             if inst.mnemonic == "call":
-                return (inst.mnemonic, self.replace(op_str_address))
+                return (inst.mnemonic, self.replace(op_str_address, exact=True))
 
             if inst.mnemonic == "push":
-                if self.is_relocated(op_str_address):
-                    return (inst.mnemonic, self.replace(op_str_address))
-
-                # To avoid falling into jump handling
-                return (inst.mnemonic, inst.op_str)
+                return (inst.mnemonic, self.replace(op_str_address, test=True))
 
             if inst.mnemonic == "jmp":
                 # The unwind section contains JMPs to other functions.
