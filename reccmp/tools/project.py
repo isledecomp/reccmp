@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import argparse
 import logging
+import enum
 from pathlib import Path
 
 import reccmp
@@ -17,11 +18,16 @@ from reccmp.project.detect import (
 logger = logging.getLogger(__name__)
 
 
+class ProjectSubcommand(enum.Enum):
+    CREATE = enum.auto()
+    DETECT = enum.auto()
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Project management", allow_abbrev=False
     )
-    parser.set_defaults(action=None)
+    parser.set_defaults(subcommand=None)
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {reccmp.VERSION}"
     )
@@ -33,10 +39,10 @@ def main():
         default=Path.cwd(),
         help="Run as if %(prog)s was started in %(metavar)s",
     )
-    subparsers = parser.add_subparsers()
+    subparsers = parser.add_subparsers(required=True)
 
     create_parser = subparsers.add_parser("create")
-    create_parser.set_defaults(action="CREATE")
+    create_parser.set_defaults(subcommand=ProjectSubcommand.CREATE)
     create_parser.add_argument(
         "--originals",
         type=Path,
@@ -68,7 +74,7 @@ def main():
     )
 
     detect_parser = subparsers.add_parser("detect")
-    detect_parser.set_defaults(action="DETECT")
+    detect_parser.set_defaults(subcommand=ProjectSubcommand.DETECT)
     detect_parser.add_argument(
         "--search-path",
         nargs="+",
@@ -93,7 +99,7 @@ def main():
 
     argparse_parse_logging(args=args)
 
-    if args.action == "CREATE":  # FIXME: use enum or callback function
+    if args.subcommand == ProjectSubcommand.CREATE:
         try:
             # pylint: disable=unused-argument
             project = create_project(
@@ -106,7 +112,7 @@ def main():
         except RecCmpProjectException as e:
             logger.error("Project creation failed: %s", e.args[0])
 
-    elif args.action == "DETECT":  # FIXME: use enum or callback function
+    elif args.subcommand == ProjectSubcommand.DETECT:
         project = RecCmpProject.from_directory(Path.cwd())
         if not project:
             parser.error(
@@ -122,14 +128,6 @@ def main():
             return 0
         except RecCmpProjectException as e:
             logger.error("Project detection failed: %s", e.args[0])
-
-    else:
-        parser.error("Missing command: create/detect")
-
-    # try:
-    #     project = RecCmpBuiltProject.from_directory(Path.cwd())
-    # except RecCmpProjectException as e:
-    #     parser.error(e.args[0])
 
     return 1
 
