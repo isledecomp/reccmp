@@ -73,16 +73,13 @@ class ParseAsm:
 
         return None
 
-    def replace(self, value: int, exact: bool = False, test: bool = False) -> str:
+    def replace(self, addr: int, exact: bool = False) -> str:
         """Provide a replacement name for the given address."""
-        if test and not self.is_addr(value):
-            return hex(value)  # TODO.
+        if addr in self.replacements:
+            return self.replacements[addr]
 
-        if value in self.replacements:
-            return self.replacements[value]
-
-        if (name := self.lookup(value, exact=exact)) is not None:
-            self.replacements[value] = name
+        if (name := self.lookup(addr, exact=exact)) is not None:
+            self.replacements[addr] = name
             return name
 
         # The placeholder number corresponds to the number of addresses we have
@@ -90,7 +87,7 @@ class ParseAsm:
         # if we can replace some symbols with actual names in recomp but not orig.
         idx = len(self.replacements) + 1
         placeholder = f"<OFFSET{idx}>" if self.number_placeholders else "<OFFSET>"
-        self.replacements[value] = placeholder
+        self.replacements[addr] = placeholder
         return placeholder
 
     def hex_replace_always(self, match: re.Match) -> str:
@@ -103,9 +100,10 @@ class ParseAsm:
         use the placeholder if we are certain that this is a valid address.
         We can check the relocation table to find out."""
         value = int(match.group(1), 16)
-        return match.group(0).replace(
-            match.group(1), self.replace(value, exact=False, test=True)
-        )
+        if self.is_addr(value):
+            return match.group(0).replace(match.group(1), self.replace(value))
+
+        return match.group(0)
 
     def hex_replace_annotated(self, match: re.Match) -> str:
         """For replacing immediate value operands. Here we replace the value
@@ -155,7 +153,11 @@ class ParseAsm:
                 return (inst.mnemonic, self.replace(op_str_address, exact=True))
 
             if inst.mnemonic == "push":
-                return (inst.mnemonic, self.replace(op_str_address, test=True))
+                if self.is_addr(op_str_address):
+                    return (inst.mnemonic, self.replace(op_str_address))
+
+                # To avoid falling into jump handling
+                return (inst.mnemonic, inst.op_str)
 
             if inst.mnemonic == "jmp":
                 # The unwind section contains JMPs to other functions.
