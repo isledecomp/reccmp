@@ -479,12 +479,8 @@ class Compare:
 
             # Read the relative address from .idata
             try:
-                (recomp_rva,) = struct.unpack(
-                    "<L", self.recomp_bin.read(recomp, 4)
-                )
-                (orig_rva,) = struct.unpack(
-                    "<L", self.orig_bin.read(orig, 4)
-                )
+                (recomp_rva,) = struct.unpack("<L", self.recomp_bin.read(recomp, 4))
+                (orig_rva,) = struct.unpack("<L", self.orig_bin.read(orig, 4))
             except ValueError:
                 # Bail out if there's a problem with struct.unpack
                 continue
@@ -633,9 +629,7 @@ class Compare:
             # Any problem will be logged later when we compare the vtable.
             vtable_size = 4 * (min(match.size, orig_upper_size_limit) // 4)
             orig_table = self.orig_bin.read(match.orig_addr, vtable_size)
-            recomp_table = self.recomp_bin.read(
-                match.recomp_addr, vtable_size
-            )
+            recomp_table = self.recomp_bin.read(match.recomp_addr, vtable_size)
 
             raw_addrs = zip(
                 [t for (t,) in struct.iter_unpack("<L", orig_table)],
@@ -670,9 +664,9 @@ class Compare:
         # Strip off MSVC padding 0xcc bytes.
         # This should be safe to do; it is highly unlikely that
         # the MSB of the jump displacement would be 0xcc. (huge jump)
-        orig_thunk_bin = self.orig_bin.read(
-            orig_addr, thunk_presumed_size
-        ).rstrip(b"\xcc")
+        orig_thunk_bin = self.orig_bin.read(orig_addr, thunk_presumed_size).rstrip(
+            b"\xcc"
+        )
 
         recomp_thunk_bin = self.recomp_bin.read(
             recomp_addr, thunk_presumed_size

@@ -133,7 +133,7 @@ def find_regs_changed(a: str, b: str) -> List[Tuple[str, str]]:
     This is not a very precise way to compare the instructions, so it depends
     on the input being two instructions that would match *except* for
     the register choice."""
-    return zip(REG_FIND.findall(a), REG_FIND.findall(b))
+    return list(zip(REG_FIND.findall(a), REG_FIND.findall(b)))
 
 
 def bad_register_swaps(

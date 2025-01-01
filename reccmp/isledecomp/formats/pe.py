@@ -10,7 +10,7 @@ from enum import IntEnum, IntFlag
 from functools import cached_property
 from pathlib import Path
 import struct
-from typing import Iterator, Optional
+from typing import Iterator, Optional, cast
 
 from .exceptions import (
     InvalidVirtualAddressError,
@@ -234,11 +234,11 @@ class PEImageOptionalHeader:
         offset += struct.calcsize(struct_fmt2)
         if pe32_plus:
             struct_fmt3 = "<QII6H4I2H4Q2I"
-            part3 = struct.unpack_from(struct_fmt3, data, offset=offset)
+            part3_tuple = struct.unpack_from(struct_fmt3, data, offset=offset)
         else:
             struct_fmt3 = "<III6H4I2H4I2I"
-            part3 = struct.unpack_from(struct_fmt3, data, offset=offset)
-        part3 = list(part3)
+            part3_tuple = struct.unpack_from(struct_fmt3, data, offset=offset)
+        part3 = list(part3_tuple)
         part3[13] = WindowsSubsystem(part3[13])
         part3[14] = DllCharacteristics(part3[14])
         offset += struct.calcsize(struct_fmt3)
@@ -323,8 +323,9 @@ class PEImageSectionHeader:
                 *members[1:-1],
                 PESectionFlags(members[-1]),
             )
-            for members in struct.iter_unpack(
-                struct_fmt, data[offset : offset + count * s_size]
+            for members in cast(
+                Iterator[tuple[bytes, int, int, int, int, int, int, int, int, int]],
+                struct.iter_unpack(struct_fmt, data[offset : offset + count * s_size]),
             )
         )
         return items, offset + count * struct.calcsize(struct_fmt)
@@ -343,7 +344,9 @@ class CodeViewHeaderNB10:
         struct_fmt = "<4sIII"
         if not cls.taste(data, offset):
             raise ValueError
-        items = struct.unpack_from(struct_fmt, data, offset)
+        items: tuple[bytes, int, int, int] = struct.unpack_from(
+            struct_fmt, data, offset
+        )
         offset_pdb_filename = offset + struct.calcsize(struct_fmt)
         try:
             pos_null = data.index(0, offset_pdb_filename)
@@ -368,7 +371,7 @@ class CodeViewHeaderRSDS:
         struct_fmt = "<4s16s"
         if not cls.taste(data, offset):
             raise ValueError
-        items = struct.unpack_from(struct_fmt, data, offset)
+        items: tuple[bytes, bytes] = struct.unpack_from(struct_fmt, data, offset)
         offset_pdb_filename = offset + struct.calcsize(struct_fmt)
         try:
             pos_null = data.index(0, offset_pdb_filename)
@@ -589,19 +592,19 @@ class PEImage(Image):
             if CodeViewHeaderNB10.taste(
                 data=self.data, offset=debug_entry.pointer_to_raw_data
             ):
-                cv = CodeViewHeaderNB10.from_memory(
+                cv_nb10 = CodeViewHeaderNB10.from_memory(
                     data=self.data, offset=debug_entry.pointer_to_raw_data
                 )
-                assert cv is not None
-                return cv.pdb_file_name.decode("ascii")
+                assert cv_nb10 is not None
+                return cv_nb10.pdb_file_name.decode("ascii")
             if CodeViewHeaderRSDS.taste(
                 data=self.data, offset=debug_entry.pointer_to_raw_data
             ):
-                cv = CodeViewHeaderRSDS.from_memory(
+                cv_rsds = CodeViewHeaderRSDS.from_memory(
                     data=self.data, offset=debug_entry.pointer_to_raw_data
                 )
-                assert cv is not None
-                return cv.pdb_file_name.decode()
+                assert cv_rsds is not None
+                return cv_rsds.pdb_file_name.decode()
         return None
 
     @property
@@ -752,16 +755,12 @@ class PEImage(Image):
             if opcode_ext in (0x5, 0xD, 0x15, 0x1D, 0x25, 0x2D, 0x35, 0x3D):
                 if opcode in (0xD8, 0xD9):
                     # dword ptr -- single precision
-                    (float_value,) = struct.unpack(
-                        "<f", self.read(const_addr, 4)
-                    )
+                    (float_value,) = struct.unpack("<f", self.read(const_addr, 4))
                     yield (const_addr, 4, float_value)
 
                 elif opcode in (0xDC, 0xDD):
                     # qword ptr -- double precision
-                    (float_value,) = struct.unpack(
-                        "<d", self.read(const_addr, 8)
-                    )
+                    (float_value,) = struct.unpack("<d", self.read(const_addr, 8))
                     yield (const_addr, 8, float_value)
 
     def _populate_imports(self):
@@ -774,9 +773,7 @@ class PEImage(Image):
         def iter_image_import(offset: int):
             while True:
                 # Read 5 dwords until all are zero.
-                image_import_descriptor = struct.unpack(
-                    "<5I", self.read(offset, 20)
-                )
+                image_import_descriptor = struct.unpack("<5I", self.read(offset, 20))
                 offset += 20
                 if all(x == 0 for x in image_import_descriptor):
                     break
@@ -806,12 +803,8 @@ class PEImage(Image):
                 # Address of "__imp__*" symbols.
                 ofs_iat = start_iat
                 while True:
-                    (lookup_addr,) = struct.unpack(
-                        "<L", self.read(ofs_ilt, 4)
-                    )
-                    (import_addr,) = struct.unpack(
-                        "<L", self.read(ofs_iat, 4)
-                    )
+                    (lookup_addr,) = struct.unpack("<L", self.read(ofs_ilt, 4))
+                    (import_addr,) = struct.unpack("<L", self.read(ofs_iat, 4))
                     if lookup_addr == 0 or import_addr == 0:
                         break
 
@@ -896,17 +889,13 @@ class PEImage(Image):
         func_start = export_start + 40
         func_addrs: list[int] = [
             self.imagebase + rva
-            for rva, in struct.iter_unpack(
-                "<L", self.read(func_start, 4 * n_functions)
-            )
+            for rva, in struct.iter_unpack("<L", self.read(func_start, 4 * n_functions))
         ]
 
         name_start = func_start + 4 * n_functions
         name_addrs: list[int] = [
             self.imagebase + rva
-            for rva, in struct.iter_unpack(
-                "<L", self.read(name_start, 4 * n_functions)
-            )
+            for rva, in struct.iter_unpack("<L", self.read(name_start, 4 * n_functions))
         ]
 
         combined = zip(func_addrs, name_addrs)
