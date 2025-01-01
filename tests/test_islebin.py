@@ -11,7 +11,6 @@ from reccmp.isledecomp.formats.exceptions import (
     InvalidVirtualAddressError,
     InvalidVirtualReadError,
 )
-from reccmp.isledecomp.formats.pe import UninitializedDataReadError
 
 
 def test_basic(binfile: PEImage):
