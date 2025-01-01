@@ -5,7 +5,6 @@ Based on the following resources:
 - Debug information: https://www.debuginfo.com/examples/src/DebugDir.cpp
 """
 
-import bisect
 import dataclasses
 from enum import IntEnum, IntFlag
 from functools import cached_property
@@ -13,7 +12,11 @@ from pathlib import Path
 import struct
 from typing import Iterator, Optional
 
-from .exceptions import InvalidVirtualAddressError, SectionNotFoundError
+from .exceptions import (
+    InvalidVirtualAddressError,
+    InvalidVirtualReadError,
+    SectionNotFoundError,
+)
 from .image import Image
 from .mz import ImageDosHeader
 
@@ -467,7 +470,6 @@ class PEImage(Image):
     # FIXME: do these belong to PEImage? Shouldn't the loade apply these to the data?
     _relocated_addrs: set[int] = dataclasses.field(default_factory=set, repr=False)
     _relocations: set[int] = dataclasses.field(default_factory=set, repr=False)
-    _section_vaddr: list[int] = dataclasses.field(default_factory=list, repr=False)
     # find_str: bool = dataclasses.field(default=False, repr=False)
     imports: list[tuple[int, str]] = dataclasses.field(default_factory=list, repr=False)
     exports: list[tuple[str, str, int]] = dataclasses.field(
@@ -523,9 +525,6 @@ class PEImage(Image):
             raise ValueError(
                 f"reccmp only supports i386 binaries: {self.header.machine}."
             )
-
-        # bisect does not support key on the GitHub CI version of python
-        self._section_vaddr = [section.virtual_address for section in self.sections]
 
         self._populate_relocations()
         self._populate_imports()
@@ -941,16 +940,27 @@ class PEImage(Image):
         into an absolute vaddr."""
         return self.get_section_offset_by_index(section) + offset
 
+    @cached_property
+    def vaddr_ranges(self) -> list[tuple[int, int]]:
+        """Return the start and end virtual address of each section in the file."""
+        return list(
+            (
+                self.imagebase + section.virtual_address,
+                self.imagebase
+                + section.virtual_address
+                + max(section.size_of_raw_data, section.virtual_size),
+            )
+            for section in self.section_headers
+        )
+
     def get_relative_addr(self, addr: int) -> tuple[int, int]:
-        """Convert an absolute address back into a (section, offset) pair."""
-        i = bisect.bisect_right(self._section_vaddr, addr) - 1
-        i = max(0, i)
+        """Convert an absolute address back into a (section_id, offset) pair.
+        n.b. section_id is 1-based to match PDB output."""
+        for i, (start, end) in enumerate(self.vaddr_ranges):
+            if start <= addr < end:
+                return i + 1, addr - start
 
-        section = self.sections[i]
-        if section.contains_vaddr(addr):
-            return i + 1, addr - section.virtual_address
-
-        raise InvalidVirtualAddressError(f"{self.filepath} : 0x{addr:08x} {section=}")
+        raise InvalidVirtualAddressError(f"{self.filepath} : 0x{addr:x}")
 
     def is_valid_section(self, section_id: int) -> bool:
         """The PDB will refer to sections that are not listed in the headers
@@ -962,36 +972,64 @@ class PEImage(Image):
             return False
 
     def is_valid_vaddr(self, vaddr: int) -> bool:
-        """Does this virtual address point to anything in the exe?"""
-        try:
-            (_, __) = self.get_relative_addr(vaddr)
-        except InvalidVirtualAddressError:
-            return False
+        """Is this virtual address part of the image when loaded?"""
+        # Use max here just in case the section headers are not ordered by v.addr
+        (_, last_vaddr) = max(self.vaddr_ranges, key=lambda s: s[1])
+        return self.imagebase <= vaddr < last_vaddr
 
-        return True
+    @cached_property
+    def uninitialized_ranges(self) -> list[tuple[int, int]]:
+        """Return a start and end range of each region in the file that holds uninitialized data.
+        This can be an entire section (.bss) or the gap between the end of the physical data
+        and the virtual size. These ranges do not correspond to section ids."""
+        output = []
+        for section in self.section_headers:
+            if (
+                section.characteristics
+                & PESectionFlags.IMAGE_SCN_CNT_UNINITIALIZED_DATA
+            ):
+                output.append(
+                    (
+                        self.imagebase + section.virtual_address,
+                        self.imagebase + section.virtual_address + section.virtual_size,
+                    )
+                )
+            elif section.virtual_size > section.size_of_raw_data:
+                # Should also cover the case where size_of_raw_data = 0.
+                output.append(
+                    (
+                        self.imagebase
+                        + section.virtual_address
+                        + section.size_of_raw_data,
+                        self.imagebase + section.virtual_address + section.virtual_size,
+                    )
+                )
 
-    def read_string(self, offset: int, chunk_size: int = 1000) -> Optional[bytes]:
-        """Read until we find a zero byte."""
-        b = self.read(offset, chunk_size)
-        if b is None:
-            return None
+        return output
 
-        try:
-            return b[: b.index(b"\x00")]
-        except ValueError:
-            # No terminator found, just return what we have
-            return b
+    def addr_is_uninitialized(self, vaddr: int) -> bool:
+        return any(start <= vaddr < end for start, end in self.uninitialized_ranges)
 
-    def read(self, vaddr: int, size: int) -> Optional[bytes]:
-        """Read (at most) the given number of bytes at the given virtual address.
-        If we return None, the given address points to uninitialized data."""
+    def read_string(self, vaddr: int, chunk_size: int = 1000) -> bytes:
+        """Read up to chunk_size or until we find a zero byte."""
+        (section_id, offset) = self.get_relative_addr(vaddr)
+        section = self.sections[section_id - 1]
+        view = section.view[offset : offset + chunk_size]
+        # Don't call read() here because we might not get the entire chunk size.
+        # Use whatever we can get if we are at the end of the section.
+        return view.tobytes().partition(b"\x00")[0]
+
+    def read(self, vaddr: int, size: int) -> bytes:
         (section_id, offset) = self.get_relative_addr(vaddr)
         section = self.sections[section_id - 1]
 
-        if section.addr_is_uninitialized(vaddr):
-            return None
+        # If we try to read off the end of the section
+        if size < 0 or (offset + size) > section.extent:
+            raise InvalidVirtualReadError(
+                f"{self.filepath} : Cannot read {size} bytes from 0x{vaddr:x}"
+            )
 
-        # Clamp the read within the extent of the current section.
-        # Reading off the end will most likely misrepresent the virtual addressing.
-        _size = min(size, section.size_of_raw_data - offset)
-        return bytes(section.view[offset : offset + _size])
+        # Pad with zero bytes if reading uninitialized data.
+        # Assumes the section memoryview is cropped to the initialized bytes
+        view = section.view[offset : offset + size]
+        return bytes(view) + b"\x00" * (size - len(view))

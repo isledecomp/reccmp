@@ -9,6 +9,7 @@ from reccmp.isledecomp.formats import PEImage
 from reccmp.isledecomp.formats.exceptions import (
     SectionNotFoundError,
     InvalidVirtualAddressError,
+    InvalidVirtualReadError,
 )
 
 
@@ -65,11 +66,46 @@ def test_unusual_reads(binfile: PEImage):
     with pytest.raises(InvalidVirtualAddressError):
         binfile.read(0xFFFFFFFF, 1)
 
-    # Uninitialized part of .data
-    assert binfile.read(0x1010A600, 4) is None
+    # Initialized bytes for .data end at 0x10102c00. Read from the uninitialized section.
+    # Older versions of reccmp would return None for uninitialized data.
+    # We now return zeroes to emulate the behavior of the real program.
+    assert binfile.read(0x1010A600, 4) == b"\x00\x00\x00\x00"
 
-    # Past the end of virtual size in .text
+    # Read the last 16 initialized bytes of .data
+    assert len(binfile.read(0x10102BF0, 16)) == 16
+
+    # Keep reading into the uninitialized section without an exception.
+    assert len(binfile.read(0x10102BF0, 32)) == 32
+
+    # Read 8 initialized and 8 uninitialized bytes. Should pad with zeroes.
+    assert binfile.read(0x10102BF8, 16) == (b"\x00" * 16)
+
+    # Unlike .data, physical size for .text is larger than virtual size.
+    # This means the padding bytes are stored in the file.
+    # Read the unused but initialized bytes.
     assert binfile.read(0x100D3A70, 4) == b"\x00\x00\x00\x00"
+
+    # .text ends at 0x100d3c00. Even though .rdata does not begin until 0x100d4000,
+    # we still should not read past the end of virtual data.
+    with pytest.raises(InvalidVirtualReadError):
+        binfile.read(0x100D3BFF, 10)
+
+    # Read past the final virtual address in .reloc
+    with pytest.raises(InvalidVirtualReadError):
+        binfile.read(0x10120DF0, 32)
+
+    # Reading zero bytes is okay
+    assert binfile.read(0x100DB588, 0) == b""
+
+    # Cannot read with negative size
+    with pytest.raises(InvalidVirtualReadError):
+        binfile.read(0x100DB588, -1)
+
+    # There are fewer than 1000 bytes in .reloc at the location of this string.
+    # Chunk size is chosen arbitrarily for string reads. The reason is that we need
+    # to read until we hit a zero byte, so we don't use the memoryview directly.
+    # This should not fail.
+    assert binfile.read_string(0x1010BFFC, 1000) == b"d3drm.dll"
 
 
 STRING_ADDRESSES = (
