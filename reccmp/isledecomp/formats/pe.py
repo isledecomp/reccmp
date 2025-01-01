@@ -578,7 +578,7 @@ class PEImage(Image):
         debug_directory = self.get_data_directory_region(PEDataDirectoryItemType.DEBUG)
         if not debug_directory:
             return None
-        debug_entry_data = self.read_initialized(
+        debug_entry_data = self.read(
             debug_directory.virtual_address, debug_directory.virtual_size
         )
         offset = 0
@@ -753,14 +753,14 @@ class PEImage(Image):
                 if opcode in (0xD8, 0xD9):
                     # dword ptr -- single precision
                     (float_value,) = struct.unpack(
-                        "<f", self.read_initialized(const_addr, 4)
+                        "<f", self.read(const_addr, 4)
                     )
                     yield (const_addr, 4, float_value)
 
                 elif opcode in (0xDC, 0xDD):
                     # qword ptr -- double precision
                     (float_value,) = struct.unpack(
-                        "<d", self.read_initialized(const_addr, 8)
+                        "<d", self.read(const_addr, 8)
                     )
                     yield (const_addr, 8, float_value)
 
@@ -775,7 +775,7 @@ class PEImage(Image):
             while True:
                 # Read 5 dwords until all are zero.
                 image_import_descriptor = struct.unpack(
-                    "<5I", self.read_initialized(offset, 20)
+                    "<5I", self.read(offset, 20)
                 )
                 offset += 20
                 if all(x == 0 for x in image_import_descriptor):
@@ -807,10 +807,10 @@ class PEImage(Image):
                 ofs_iat = start_iat
                 while True:
                     (lookup_addr,) = struct.unpack(
-                        "<L", self.read_initialized(ofs_ilt, 4)
+                        "<L", self.read(ofs_ilt, 4)
                     )
                     (import_addr,) = struct.unpack(
-                        "<L", self.read_initialized(ofs_iat, 4)
+                        "<L", self.read(ofs_iat, 4)
                     )
                     if lookup_addr == 0 or import_addr == 0:
                         break
@@ -886,7 +886,7 @@ class PEImage(Image):
         export_start = export_directory.virtual_address
 
         export_table = ExportDirectoryTable(
-            *struct.unpack("<2L2H7L", self.read_initialized(export_start, 40))
+            *struct.unpack("<2L2H7L", self.read(export_start, 40))
         )
 
         # TODO: if the number of functions doesn't match the number of names,
@@ -897,7 +897,7 @@ class PEImage(Image):
         func_addrs: list[int] = [
             self.imagebase + rva
             for rva, in struct.iter_unpack(
-                "<L", self.read_initialized(func_start, 4 * n_functions)
+                "<L", self.read(func_start, 4 * n_functions)
             )
         ]
 
@@ -905,7 +905,7 @@ class PEImage(Image):
         name_addrs: list[int] = [
             self.imagebase + rva
             for rva, in struct.iter_unpack(
-                "<L", self.read_initialized(name_start, 4 * n_functions)
+                "<L", self.read(name_start, 4 * n_functions)
             )
         ]
 
