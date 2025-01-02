@@ -227,8 +227,10 @@ def find_and_add_venv_to_pythonpath():
     while not path.is_mount():
         venv_candidate = path / ".venv"
         if venv_candidate.exists():
-            add_python_path(venv_candidate / "Lib" / "site-packages")
-            return
+            site_packages = next(venv_candidate.glob("lib/**/site-packages/"), None)
+            if site_packages is not None:
+                add_python_path(site_packages)
+                return
         path = path.parent
 
     logger.warning(
