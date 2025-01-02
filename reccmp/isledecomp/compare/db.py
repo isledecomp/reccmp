@@ -34,7 +34,7 @@ class ReccmpEntity:
     def __init__(
         self, orig: Optional[int], recomp: Optional[int], kvstore: str = "{}"
     ) -> None:
-        """Requires one or both or the addresses to be not null"""
+        """Requires one or both of the addresses to be defined"""
         assert orig is not None or recomp is not None
         self._orig_addr = orig
         self._recomp_addr = recomp
@@ -62,6 +62,7 @@ class ReccmpEntity:
 
     @property
     def size(self) -> int:
+        """Assume null size means size is zero: there are no bytes to read for this entity."""
         return self.options.get("size", 0)
 
     @property
