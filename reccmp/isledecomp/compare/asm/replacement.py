@@ -1,6 +1,6 @@
 from functools import cache
 from typing import Callable, Protocol, Optional
-from reccmp.isledecomp.compare.db import MatchInfo
+from reccmp.isledecomp.compare.db import ReccmpEntity
 from reccmp.isledecomp.types import SymbolType
 
 
@@ -15,7 +15,7 @@ class NameReplacementProtocol(Protocol):
 
 
 def create_name_lookup(
-    db_getter: Callable[[int, bool], Optional[MatchInfo]], addr_attribute: str
+    db_getter: Callable[[int, bool], Optional[ReccmpEntity]], addr_attribute: str
 ) -> NameReplacementProtocol:
     """Function generator for name replacement"""
 

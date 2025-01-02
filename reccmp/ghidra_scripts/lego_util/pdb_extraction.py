@@ -6,7 +6,7 @@ import logging
 from reccmp.isledecomp.formats.exceptions import InvalidVirtualAddressError
 from reccmp.isledecomp.cvdump.symbols import SymbolsEntry
 from reccmp.isledecomp.compare import Compare as IsleCompare
-from reccmp.isledecomp.compare.db import ReccmpThing, MatchedReccmpThing
+from reccmp.isledecomp.compare.db import ReccmpMatch
 
 logger = logging.getLogger(__file__)
 
@@ -43,7 +43,7 @@ class FunctionSignature:
 
 @dataclass
 class PdbFunction:
-    match_info: ReccmpThing
+    match_info: ReccmpMatch
     signature: Optional[FunctionSignature]
     is_stub: bool
 
@@ -141,9 +141,7 @@ class PdbFunctionExtractor:
         )
         return [signature for signature in handled if signature is not None]
 
-    def handle_matched_function(
-        self, match_info: MatchedReccmpThing
-    ) -> Optional[PdbFunction]:
+    def handle_matched_function(self, match_info: ReccmpMatch) -> Optional[PdbFunction]:
         function_data = next(
             (
                 y

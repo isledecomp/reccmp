@@ -11,7 +11,7 @@ import reccmp
 from reccmp.isledecomp.formats.detect import detect_image
 from reccmp.isledecomp.formats.pe import PEImage
 from reccmp.isledecomp.compare import Compare as IsleCompare
-from reccmp.isledecomp.compare.db import MatchedReccmpThing
+from reccmp.isledecomp.compare.db import ReccmpMatch
 from reccmp.isledecomp.cvdump import Cvdump
 from reccmp.isledecomp.cvdump.types import (
     CvdumpKeyError,
@@ -122,7 +122,7 @@ class ComparisonItem(NamedTuple):
 
 
 def create_comparison_item(
-    var: MatchedReccmpThing,
+    var: ReccmpMatch,
     compared: Optional[List[ComparedOffset]] = None,
     error: Optional[str] = None,
     raw_only: bool = False,
