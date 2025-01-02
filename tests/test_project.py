@@ -1,8 +1,17 @@
 from pathlib import Path
 import textwrap
+import pytest
 
-from reccmp.project.create import create_project, RecCmpProject
+from reccmp.project.common import RECCMP_PROJECT_CONFIG
+from reccmp.project.create import (
+    create_project,
+    RecCmpProject,
+    RecCmpProjectAlreadyExistsError,
+)
 from reccmp.project.detect import detect_project, DetectWhat, RecCmpBuiltProject
+from reccmp.project.error import (
+    RecCmpProjectException,
+)
 from reccmp.isledecomp.formats import PEImage
 from .conftest import LEGO1_SHA256
 
@@ -104,3 +113,32 @@ def test_project_creation(tmp_path_factory, binfile: PEImage):
     assert not (project_root / ".gitignore").is_file()
     assert (project_root / "CMakeLists.txt").is_file()
     assert (project_root / "cmake/reccmp.cmake").is_file()
+
+
+def test_create_overwrite_project_file(tmp_path_factory):
+    """Do not overwrite an existing reccmp-project.yml file"""
+    project_root = tmp_path_factory.mktemp("project")
+    with (project_root / RECCMP_PROJECT_CONFIG).open("w+") as f:
+        f.write("test")
+
+    with pytest.raises(RecCmpProjectAlreadyExistsError):
+        create_project(project_directory=project_root, original_paths=[])
+
+
+def test_create_require_original_paths(tmp_path_factory):
+    """Cannot create reccmp project without at least one original binary."""
+    project_root = tmp_path_factory.mktemp("project")
+
+    with pytest.raises(RecCmpProjectException):
+        create_project(project_directory=project_root, original_paths=[])
+
+
+def test_create_original_path_must_exist(tmp_path_factory):
+    """Fail if any original binaries do not exist"""
+    project_root = tmp_path_factory.mktemp("project")
+    temp_dir = tmp_path_factory.mktemp("temp")
+
+    with pytest.raises(FileNotFoundError):
+        create_project(
+            project_directory=project_root, original_paths=[temp_dir / "nonexist.dll"]
+        )

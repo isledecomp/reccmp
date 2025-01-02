@@ -1,5 +1,4 @@
 import enum
-import itertools
 import logging
 from pathlib import Path
 import shutil
@@ -19,10 +18,15 @@ from .config import (
 from .common import RECCMP_PROJECT_CONFIG, RECCMP_USER_CONFIG, RECCMP_BUILD_CONFIG
 from .detect import RecCmpProject, RecCmpTarget
 from .error import RecCmpProjectException
-from .util import get_path_sha256, path_to_id
+from .util import get_path_sha256, unique_targets
 
 
 logger = logging.getLogger(__name__)
+
+
+class RecCmpProjectAlreadyExistsError(RecCmpProjectException):
+    def __init__(self, *_, path: Path | str | None = None, **__):
+        super().__init__(f"Cannot overwrite existing project {path or ''}")
 
 
 class TargetType(enum.Enum):
@@ -41,6 +45,7 @@ def executable_or_library(path: Path) -> TargetType:
 
 
 def get_default_cmakelists_txt(project_name: str, targets: dict[str, Path]) -> str:
+    """Generate template CMakeLists.txt file contents to build each target."""
     result = textwrap.dedent(
         f"""\
         cmake_minimum_required(VERSION 3.20)
@@ -89,6 +94,7 @@ def get_default_cmakelists_txt(project_name: str, targets: dict[str, Path]) -> s
 
 
 def get_default_main_hpp(target_id: str) -> str:
+    """Generate template C++ header for the given target."""
     return textwrap.dedent(
         f"""\
         #ifndef {target_id.upper()}_HPP
@@ -107,6 +113,8 @@ def get_default_main_hpp(target_id: str) -> str:
 
 
 def get_default_main_cpp(target_id: str, original_path: Path, hpp_path: Path) -> str:
+    """Generate a template C++ source file for the given target, depending on
+    whether its file path is DLL or EXE. Includes sample reccmp annotations."""
     target_type = executable_or_library(original_path)
     match target_type:
         case TargetType.EXECUTABLE:
@@ -160,36 +168,60 @@ def get_default_main_cpp(target_id: str, original_path: Path, hpp_path: Path) ->
 
 
 def create_project(
-    project_directory: Path, original_paths: list[Path], scm: bool, cmake: bool
+    project_directory: Path,
+    original_paths: list[Path],
+    scm: bool = False,
+    cmake: bool = False,
 ) -> RecCmpProject:
+    """Generates project.yml and user.yml files in the given project directory.
+    Requires a list of paths to original binaries that will be the focus of the decomp project.
+    If `scm` is enabled, update an existing .gitignore to skip user.yml and build.yml files.
+    If `cmake` is enabled, create CMakeLists.txt and generate sample source files to help get started.
+    """
+
+    # Intended reccmp-project.yml location
+    project_config_path = project_directory / RECCMP_PROJECT_CONFIG
+
+    # Don't overwrite an existing project
+    if project_config_path.exists():
+        raise RecCmpProjectAlreadyExistsError(path=project_config_path)
+
     if not original_paths:
         raise RecCmpProjectException("Need at least one original binary")
-    id_path: dict[str, Path] = {}
-    project_config_data = ProjectFile(targets={})
-    project_config_path = project_directory / RECCMP_PROJECT_CONFIG
-    user_config_path = project_directory / RECCMP_USER_CONFIG
-    project = RecCmpProject(project_config_path=project_config_path)
+
     for original_path in original_paths:
         if not original_path.is_file():
-            raise RecCmpProjectException(
-                f"Original binary ({original_path}) is not a file"
-            )
-        target_id = path_to_id(original_path)
+            raise FileNotFoundError(f"Original binary ({original_path}) is not a file")
+
+    # reccmp-user.yml location
+    user_config_path = project_directory / RECCMP_USER_CONFIG
+
+    # Use the base name for each original binary to create a unique ID.
+    # If any base names are non-unique, add a number.
+    targets = dict(unique_targets(original_paths))
+
+    # Object to serialize to YAML
+    project_config_data = ProjectFile(targets={})
+
+    # Return object for user
+    project = RecCmpProject(project_config_path=project_config_path)
+
+    # Populate targets for each project object
+    for target_id, original_path in targets.items():
+        # Calculate SHA256 checksum of the original binary. reccmp will verify this
+        # at startup to make sure each contributor is working with the same file.
         hash_sha256 = get_path_sha256(original_path)
+
+        # The project file uses the base filename only. The path to the binary file
+        # is in the user file because it is different for each contributor.
         target_filename = original_path.name
-        target_data = ProjectFileTarget(
+
+        project_config_data.targets[target_id] = ProjectFileTarget(
             filename=target_filename,
             source_root=project_directory,
             hash=Hash(sha256=hash_sha256),
         )
-        if target_id in project_config_data.targets:
-            for suffix_nb in itertools.count(start=0, step=1):
-                new_target_id = f"{target_id}_{suffix_nb}"
-                if new_target_id not in project_config_data.targets:
-                    target_id = new_target_id
-                    break
-        project_config_data.targets[target_id] = target_data
-        id_path[target_id] = original_path
+
         project.targets[target_id] = RecCmpTarget(
             target_id=target_id,
             filename=target_filename,
@@ -197,29 +229,27 @@ def create_project(
             ghidra_config=GhidraConfig.default(),
         )
 
-    if project_config_path.exists():
-        raise RecCmpProjectException(
-            f"Failed to create a new reccmp project: there already exists one: {project_config_path}"
-        )
-
-    project_name = path_to_id(original_paths[0])
+    # Write project YAML file
     logger.debug("Creating %s...", project_config_path)
     with project_config_path.open("w") as f:
         yaml = ruamel.yaml.YAML()
         yaml.dump(data=project_config_data.model_dump(mode="json"), stream=f)
 
+    # The user YAML file has the path to the original binary for each target
     user_config_data = UserFile(
         targets={
-            uid: UserFileTarget(path=path.resolve()) for uid, path in id_path.items()
+            uid: UserFileTarget(path=path.resolve()) for uid, path in targets.items()
         }
     )
 
+    # Write user YAML file
     logger.debug("Creating %s...", user_config_data)
     with user_config_path.open("w") as f:
         yaml = ruamel.yaml.YAML()
         yaml.dump(data=user_config_data.model_dump(mode="json"), stream=f)
 
     if scm:
+        # Update existing .gitignore to skip build.yml and user.yml.
         gitignore_path = project_directory / ".gitignore"
         if gitignore_path.exists():
             ignore_rules = gitignore_path.read_text().splitlines()
@@ -233,23 +263,31 @@ def create_project(
                     f.write(f"{RECCMP_BUILD_CONFIG}\n")
 
     if cmake:
+        # Generate tempalte files so you can start building each target with CMake.
         project_cmake_dir = project_directory / "cmake"
         project_cmake_dir.mkdir(exist_ok=True)
-        logger.debug("Copying %s...", "cmake/reccmp.py")
+
+        # Copy template CMake script that generates build.yml
+        logger.debug("Copying %s...", "cmake/reccmp.cmake")
         shutil.copy(
             get_asset_file("cmake/reccmp.cmake"),
             project_directory / "cmake/reccmp.cmake",
         )
 
+        # Use first target ID as cmake project name
+        project_name = next(iter(targets.keys()), "NEW_DECOMP_PROJECT")
         cmakelists_txt = get_default_cmakelists_txt(
-            project_name=project_name, targets=id_path
+            project_name=project_name, targets=targets
         )
+
+        # Create CMakeLists.txt
         cmakelists_path = project_directory / "CMakeLists.txt"
         logger.debug("Creating %s...", cmakelists_path)
         with cmakelists_path.open("w") as f:
             f.write(cmakelists_txt)
 
-        for target_id, original_path in id_path.items():
+        # Create template C++ source and header file for each target.
+        for target_id, original_path in targets.items():
             main_cpp_path = project_directory / f"main_{target_id}.cpp"
             main_hpp_path = project_directory / f"main_{target_id}.hpp"
             main_cpp = get_default_main_cpp(
@@ -263,4 +301,5 @@ def create_project(
             logger.debug("Creating %s...", main_hpp_path)
             with main_hpp_path.open("w") as f:
                 f.write(main_hpp)
+
     return project
