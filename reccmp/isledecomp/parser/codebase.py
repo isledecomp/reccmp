@@ -13,7 +13,7 @@ from .node import (
 
 class DecompCodebase:
     def __init__(self, filenames: Iterable[str], module: str) -> None:
-        self._symbols: List[ParserSymbol] = []
+        self._symbols: list[ParserSymbol] = []
 
         parser = DecompParser()
         for filename in filenames:
@@ -27,7 +27,7 @@ class DecompCodebase:
 
     def prune_invalid_addrs(
         self, is_valid: Callable[[int], bool]
-    ) -> List[ParserSymbol]:
+    ) -> list[ParserSymbol]:
         """Some decomp annotations might have an invalid address.
         Return the list of addresses where we fail the is_valid check,
         and remove those from our list of symbols."""

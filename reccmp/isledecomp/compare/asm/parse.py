@@ -25,7 +25,7 @@ immediate_replace_regex = re.compile(r"(?:^|, )(0x[0-9a-f]+)")
 
 
 @cache
-def from_hex(string: str) -> Optional[int]:
+def from_hex(string: str) -> int | None:
     try:
         return int(string, 16)
     except ValueError:
@@ -34,7 +34,7 @@ def from_hex(string: str) -> Optional[int]:
     return None
 
 
-def bytes_to_dword(b: bytes) -> Optional[int]:
+def bytes_to_dword(b: bytes) -> int | None:
     if len(b) == 4:
         return struct.unpack("<L", b)[0]
 
@@ -44,9 +44,9 @@ def bytes_to_dword(b: bytes) -> Optional[int]:
 class ParseAsm:
     def __init__(
         self,
-        addr_test: Optional[AddrTestProtocol] = None,
-        name_lookup: Optional[NameReplacementProtocol] = None,
-        bin_lookup: Optional[Callable[[int, int], Optional[bytes]]] = None,
+        addr_test: AddrTestProtocol | None = None,
+        name_lookup: NameReplacementProtocol | None = None,
+        bin_lookup: Callable[[int, int], bytes | None] | None = None,
     ) -> None:
         self.addr_test = addr_test
         self.name_lookup = name_lookup
@@ -64,7 +64,7 @@ class ParseAsm:
 
         return False
 
-    def lookup(self, addr: int, exact: bool = False) -> Optional[str]:
+    def lookup(self, addr: int, exact: bool = False) -> str | None:
         """Wrapper for user-provided name lookup"""
         if callable(self.name_lookup):
             return self.name_lookup(addr, exact=exact)

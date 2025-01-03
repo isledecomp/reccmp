@@ -16,7 +16,7 @@ class ParserSymbol:
 
     # The parser doesn't (currently) know about the code filename, but if you
     # wanted to set it here after the fact, here's the spot.
-    filename: Optional[str] = None
+    filename: str | None = None
 
     def should_skip(self) -> bool:
         """The default is to compare any symbols we have"""
@@ -31,7 +31,7 @@ class ParserSymbol:
 class ParserFunction(ParserSymbol):
     # We are able to detect the closing line of a function with some reliability.
     # This isn't used for anything right now, but perhaps later it will be.
-    end_line: Optional[int] = None
+    end_line: int | None = None
 
     # All marker types are referenced by name except FUNCTION/STUB. These can also be
     # referenced by name, but only if this flag is true.
@@ -50,12 +50,12 @@ class ParserFunction(ParserSymbol):
 @dataclass
 class ParserVariable(ParserSymbol):
     is_static: bool = False
-    parent_function: Optional[int] = None
+    parent_function: int | None = None
 
 
 @dataclass
 class ParserVtable(ParserSymbol):
-    base_class: Optional[str] = None
+    base_class: str | None = None
 
 
 @dataclass

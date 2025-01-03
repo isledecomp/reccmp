@@ -14,29 +14,29 @@ class CvdumpNode:
     section: int
     offset: int
     # aka the mangled name from the PUBLICS section
-    decorated_name: Optional[str] = None
+    decorated_name: str | None = None
     # optional "nicer" name (e.g. of a function from SYMBOLS section)
-    friendly_name: Optional[str] = None
+    friendly_name: str | None = None
     # To be determined by context after inserting data, unless the decorated
     # name makes this obvious. (i.e. string constants or vtables)
     # We choose not to assume that section 1 (probably ".text") contains only
     # functions. Smacker functions are linked to their own section "_UNSTEXT"
-    node_type: Optional[SymbolType] = None
+    node_type: SymbolType | None = None
     # Function size can be read from the LINES section so use this over any
     # other value if we have it.
     # TYPES section can tell us the size of structs and other complex types.
-    confirmed_size: Optional[int] = None
+    confirmed_size: int | None = None
     # Estimated by reading the distance between this symbol and the one that
     # follows in the same section.
     # If this is the last symbol in the section, we cannot estimate a size.
-    estimated_size: Optional[int] = None
+    estimated_size: int | None = None
     # Size as reported by SECTION CONTRIBUTIONS section. Not guaranteed to be
     # accurate.
-    section_contribution: Optional[int] = None
-    addr: Optional[int] = None
-    symbol_entry: Optional[SymbolsEntry] = None
+    section_contribution: int | None = None
+    addr: int | None = None
+    symbol_entry: SymbolsEntry | None = None
     # Preliminary - only used for non-static variables at the moment
-    data_type: Optional[TypeInfo] = None
+    data_type: TypeInfo | None = None
 
     def __init__(self, section: int, offset: int) -> None:
         self.section = section
@@ -69,7 +69,7 @@ class CvdumpNode:
             # https://learn.microsoft.com/en-us/cpp/build/reference/decorated-names?view=msvc-170#FormatC
             self.node_type = SymbolType.FUNCTION
 
-    def name(self) -> Optional[str]:
+    def name(self) -> str | None:
         """Prefer "friendly" name if we have it.
         This is what we have been using to match functions."""
         return (
@@ -78,7 +78,7 @@ class CvdumpNode:
             else self.decorated_name
         )
 
-    def size(self) -> Optional[int]:
+    def size(self) -> int | None:
         if self.confirmed_size is not None:
             return self.confirmed_size
 

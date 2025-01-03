@@ -28,7 +28,7 @@ class SymbolsEntry:
     name: str
     stack_symbols: list[StackOrRegisterSymbol] = field(default_factory=list)
     frame_pointer_present: bool = False
-    addr: Optional[int] = None  # Absolute address. Will be set later, if at all
+    addr: int | None = None  # Absolute address. Will be set later, if at all
 
 
 class CvdumpSymbolsParser:
@@ -87,7 +87,7 @@ class CvdumpSymbolsParser:
 
     def __init__(self):
         self.symbols: list[SymbolsEntry] = []
-        self.current_function: Optional[SymbolsEntry] = None
+        self.current_function: SymbolsEntry | None = None
         # If we read an S_BLOCK32 node, increment this level.
         # This is so we do not end the proc early by reading an S_END
         # that indicates the end of the block.
@@ -115,7 +115,7 @@ class CvdumpSymbolsParser:
 
     def _parse_generic_case(self, line, line_match: Match[str]):
         symbol_type: str = line_match.group("symbol_type")
-        second_part: Optional[str] = line_match.group("second_part")
+        second_part: str | None = line_match.group("second_part")
 
         if symbol_type in ["S_GPROC32", "S_LPROC32"]:
             assert second_part is not None

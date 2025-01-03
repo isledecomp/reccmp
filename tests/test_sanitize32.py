@@ -336,7 +336,7 @@ def test_replacement_numbering():
     """If we can use the name lookup for the first address but not the second,
     the second replacement should be <OFFSET2> not <OFFSET1>."""
 
-    def substitute_1234(addr: int, **_) -> Optional[str]:
+    def substitute_1234(addr: int, **_) -> str | None:
         return "Hello" if addr == 0x1234 else None
 
     p = ParseAsm(name_lookup=substitute_1234)
@@ -356,14 +356,14 @@ def test_absolute_indirect():
     we have it, but there are some circumstances where we want to replace
     with the pointer's name (i.e. an import function)."""
 
-    def name_lookup(addr: int, **_) -> Optional[str]:
+    def name_lookup(addr: int, **_) -> str | None:
         return {
             0x1234: "Hello",
             0x4321: "xyz",
             0x5555: "Test",
         }.get(addr)
 
-    def bin_lookup(addr: int, _: int) -> Optional[bytes]:
+    def bin_lookup(addr: int, _: int) -> bytes | None:
         return (
             {
                 0x1234: b"\x55\x55\x00\x00",
@@ -411,7 +411,7 @@ def test_consistent_numbering():
 
     # Assume only the JMP and CMP addresses are known so we can test
     # the placeholder string for the other values.
-    def name_lookup(addr: int, **_) -> Optional[str]:
+    def name_lookup(addr: int, **_) -> str | None:
         return {0x5555: "Test", 0x8000: "Hello"}.get(addr)
 
     # Must be empty before starting

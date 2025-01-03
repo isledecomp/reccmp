@@ -42,7 +42,7 @@ def is_operand_swap(a: str, b: str) -> bool:
     return a.partition(", ")[0] != b.partition(", ")[0] and sorted(a) == sorted(b)
 
 
-def can_cmp_swap(orig: List[str], recomp: List[str]) -> bool:
+def can_cmp_swap(orig: list[str], recomp: list[str]) -> bool:
     # Make sure we have 1 cmp and 1 jmp for both
     if len(orig) != 2 or len(recomp) != 2:
         return False
@@ -72,7 +72,7 @@ def patch_jump(a: str, b: str) -> str:
 
 
 def patch_cmp_swaps(
-    codes: Sequence[DiffOpcode], orig_asm: List[str], recomp_asm: List[str]
+    codes: Sequence[DiffOpcode], orig_asm: list[str], recomp_asm: list[str]
 ) -> Set[int]:
     """Can we resolve the diffs between orig and recomp by patching
     swapped cmp instructions?
@@ -107,7 +107,7 @@ def patch_cmp_swaps(
     return fixed_lines
 
 
-def effective_match_possible(orig_asm: List[str], recomp_asm: List[str]) -> bool:
+def effective_match_possible(orig_asm: list[str], recomp_asm: list[str]) -> bool:
     # We can only declare an effective match based on the text
     # so you need the same amount of "stuff" in each
     if len(orig_asm) != len(recomp_asm):
@@ -124,11 +124,11 @@ def effective_match_possible(orig_asm: List[str], recomp_asm: List[str]) -> bool
     return True
 
 
-def find_regs_used(inst: str) -> List[str]:
+def find_regs_used(inst: str) -> list[str]:
     return REG_FIND.findall(inst)
 
 
-def find_regs_changed(a: str, b: str) -> List[Tuple[str, str]]:
+def find_regs_changed(a: str, b: str) -> list[Tuple[str, str]]:
     """For instructions a, b, return the pairs of registers that were used.
     This is not a very precise way to compare the instructions, so it depends
     on the input being two instructions that would match *except* for
@@ -137,7 +137,7 @@ def find_regs_changed(a: str, b: str) -> List[Tuple[str, str]]:
 
 
 def bad_register_swaps(
-    swaps: Set[int], orig_asm: List[str], recomp_asm: List[str]
+    swaps: Set[int], orig_asm: list[str], recomp_asm: list[str]
 ) -> Set[int]:
     """The list of recomp indices in `swaps` tells which instructions are
     a match for orig except for the registers used. From that list, check
@@ -188,7 +188,7 @@ def instruction_alters_regs(inst: str, regs: Set[str]) -> bool:
 
 
 def relocate_instructions(
-    codes: Sequence[DiffOpcode], orig_asm: List[str], recomp_asm: List[str]
+    codes: Sequence[DiffOpcode], orig_asm: list[str], recomp_asm: list[str]
 ) -> Set[int]:
     """Collect the list of instructions deleted from orig and inserted
     into recomp, according to the diff opcodes. Using this list, match up
@@ -234,7 +234,7 @@ WORD_REGS = ("ax", "bx", "cx", "dx", "si", "di", "bp", "sp")
 BYTE_REGS = ("ah", "al", "bh", "bl", "ch", "cl", "dh", "dl")
 
 
-def naive_register_replacement(orig_asm: List[str], recomp_asm: List[str]) -> Set[int]:
+def naive_register_replacement(orig_asm: list[str], recomp_asm: list[str]) -> Set[int]:
     """Replace all registers of the same size with a placeholder string.
     After doing that, compare orig and recomp again.
     Return indices from recomp that are now equal to the same index in orig.
@@ -265,7 +265,7 @@ def naive_register_replacement(orig_asm: List[str], recomp_asm: List[str]) -> Se
 
 
 def find_effective_match(
-    codes: Sequence[DiffOpcode], orig_asm: List[str], recomp_asm: List[str]
+    codes: Sequence[DiffOpcode], orig_asm: list[str], recomp_asm: list[str]
 ) -> bool:
     """Check whether the two sequences of instructions are an effective match.
     Meaning: do they differ only by instruction order or register selection?"""
@@ -302,7 +302,7 @@ def find_effective_match(
     return corrections.issuperset(recomp_lines_disputed)
 
 
-def assert_fixup(asm: List[Tuple[str, str]]):
+def assert_fixup(asm: list[Tuple[str, str]]):
     """Detect assert calls and replace the code filename and line number
     values with macros (from assert.h)."""
     for i, (_, line) in enumerate(asm):

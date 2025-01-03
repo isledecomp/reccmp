@@ -59,17 +59,17 @@ class ModuleMap:
         # For bisect performance enhancement
         self.contrib_starts = [start for (start, _, __) in self.section_contrib]
 
-    def get_lib_for_module(self, module: str) -> Optional[str]:
+    def get_lib_for_module(self, module: str) -> str | None:
         return self.library_lookup.get(module)
 
-    def get_all_cmake_modules(self) -> List[str]:
+    def get_all_cmake_modules(self) -> list[str]:
         return [
             obj
             for (_, (__, obj)) in self.module_lookup.items()
             if obj.startswith("CMakeFiles")
         ]
 
-    def get_module(self, addr: int) -> Optional[str]:
+    def get_module(self, addr: int) -> str | None:
         i = bisect.bisect_left(self.contrib_starts, addr)
         # If the addr matches the section contribution start, we are in the
         # right spot. Otherwise, we need to subtract one here.
@@ -105,7 +105,7 @@ def print_sections(sections):
 ALLOWED_TYPE_ABBREVIATIONS = ["fun", "dat", "poi", "str", "vta", "flo"]
 
 
-def match_type_abbreviation(mtype: Optional[int]) -> str:
+def match_type_abbreviation(mtype: int | None) -> str:
     """Return abbreviation of the given SymbolType name"""
     if mtype is None:
         return ""
@@ -136,7 +136,7 @@ def truncate_module_name(prefix: str, module: str) -> str:
     return module
 
 
-def avg_remove_outliers(entries: List[int]) -> int:
+def avg_remove_outliers(entries: list[int]) -> int:
     """Compute the average from this list of entries (addresses)
     after removing outlier values."""
 
@@ -218,7 +218,7 @@ class DeltaCollector:
             yield (avg, mod)
 
 
-def suggest_order(results: List[RoadmapRow], module_map: ModuleMap, match_type: str):
+def suggest_order(results: list[RoadmapRow], module_map: ModuleMap, match_type: str):
     """Suggest the order of modules for CMakeLists.txt"""
 
     dc = DeltaCollector(match_type)
@@ -303,7 +303,7 @@ def suggest_order(results: List[RoadmapRow], module_map: ModuleMap, match_type: 
         print(f"{lib:40} {start:08x}")
 
 
-def print_text_report(results: List[RoadmapRow]):
+def print_text_report(results: list[RoadmapRow]):
     """Print the result with original and recomp addresses."""
     for row in results:
         print(
@@ -320,7 +320,7 @@ def print_text_report(results: List[RoadmapRow]):
         )
 
 
-def print_diff_report(results: List[RoadmapRow]):
+def print_diff_report(results: list[RoadmapRow]):
     """Print only entries where we have the recomp address.
     This is intended for generating a file to diff against.
     The recomp addresses are always changing so we hide those."""
@@ -341,7 +341,7 @@ def print_diff_report(results: List[RoadmapRow]):
         )
 
 
-def export_to_csv(csv_file: str, results: List[RoadmapRow]):
+def export_to_csv(csv_file: str, results: list[RoadmapRow]):
     with open(csv_file, "w+", encoding="utf-8") as f:
         f.write(
             "orig_sect_ofs,recomp_sect_ofs,orig_addr,recomp_addr,displacement,row_type,size,name,module\n"

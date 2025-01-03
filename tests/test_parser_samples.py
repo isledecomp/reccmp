@@ -14,7 +14,7 @@ def sample_file(filename: str) -> TextIO:
     return open(full_path, "r", encoding="utf-8")
 
 
-def code_blocks_are_sorted(blocks: List[ParserSymbol]) -> bool:
+def code_blocks_are_sorted(blocks: list[ParserSymbol]) -> bool:
     """Helper to make this more idiomatic"""
     just_offsets = [block.offset for block in blocks]
     return just_offsets == sorted(just_offsets)

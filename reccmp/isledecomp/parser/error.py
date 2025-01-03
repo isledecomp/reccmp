@@ -88,7 +88,7 @@ class ParserError(Enum):
 class ParserAlert:
     code: ParserError
     line_number: int
-    line: Optional[str] = None
+    line: str | None = None
 
     def is_warning(self) -> bool:
         return self.code.value < ParserError.DECOMP_ERROR_START.value

@@ -31,7 +31,7 @@ class DiffReport:
     orig_addr: int
     recomp_addr: int
     name: str
-    udiff: Optional[CombinedDiffOutput] = None
+    udiff: CombinedDiffOutput | None = None
     ratio: float = 0.0
     is_effective_match: bool = False
     is_stub: bool = False
@@ -54,10 +54,10 @@ def create_reloc_lookup(bin_file: PEImage) -> Callable[[int], bool]:
     return lookup
 
 
-def create_bin_lookup(bin_file: PEImage) -> Callable[[int, int], Optional[bytes]]:
+def create_bin_lookup(bin_file: PEImage) -> Callable[[int, int], bytes | None]:
     """Function generator for reading from the bin file"""
 
-    def lookup(addr: int, size: int) -> Optional[bytes]:
+    def lookup(addr: int, size: int) -> bytes | None:
         try:
             return bin_file.read(addr, size)
         except InvalidVirtualAddressError:
@@ -773,7 +773,7 @@ class Compare:
         )
 
         def match_text(
-            m: Optional[ReccmpEntity], raw_addr: Optional[int] = None
+            m: ReccmpEntity | None, raw_addr: int | None = None
         ) -> str:
             """Format the function reference at this vtable index as text.
             If we have not identified this function, we have the option to
@@ -841,7 +841,7 @@ class Compare:
             ratio=ratio,
         )
 
-    def _compare_match(self, match: ReccmpMatch) -> Optional[DiffReport]:
+    def _compare_match(self, match: ReccmpMatch) -> DiffReport | None:
         """Router for comparison type"""
 
         if match.size is None or match.size == 0:
@@ -884,10 +884,10 @@ class Compare:
 
         return match.recomp_addr == recomp_addr
 
-    def get_by_orig(self, addr: int) -> Optional[ReccmpEntity]:
+    def get_by_orig(self, addr: int) -> ReccmpEntity | None:
         return self._db.get_by_orig(addr)
 
-    def get_by_recomp(self, addr: int) -> Optional[ReccmpEntity]:
+    def get_by_recomp(self, addr: int) -> ReccmpEntity | None:
         return self._db.get_by_recomp(addr)
 
     def get_all(self) -> Iterator[ReccmpEntity]:
@@ -902,7 +902,7 @@ class Compare:
     def get_variables(self) -> Iterator[ReccmpMatch]:
         return self._db.get_matches_by_type(SymbolType.DATA)
 
-    def compare_address(self, addr: int) -> Optional[DiffReport]:
+    def compare_address(self, addr: int) -> DiffReport | None:
         match = self._db.get_one_match(addr)
         if match is None:
             return None

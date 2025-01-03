@@ -46,7 +46,7 @@ class StackSymbol:
 class StackRegisterOffset:
     register: str
     offset: int
-    symbol: Optional[StackSymbol] = None
+    symbol: StackSymbol | None = None
 
     def __str__(self) -> str:
         first_part = (
@@ -92,7 +92,7 @@ def extract_stack_offset_from_instruction(
 
 
 def analyze_diff(
-    diff: Dict[str, List[Tuple[str, ...]]], warnings: Warnings
+    diff: Dict[str, list[Tuple[str, ...]]], warnings: Warnings
 ) -> StackPairs:
     stack_pairs: StackPairs = set()
     if "both" in diff:
@@ -161,14 +161,14 @@ def print_non_bijective_match(left: str, right: str):
 
 
 def print_structural_mismatch(
-    orig: List[Tuple[str, ...]], recomp: List[Tuple[str, ...]]
+    orig: list[Tuple[str, ...]], recomp: list[Tuple[str, ...]]
 ) -> str:
     orig_str = "\n".join(f"-{x[1]}" for x in orig) if orig else "-"
     recomp_str = "\n".join(f"+{x[1]}" for x in recomp) if recomp else "+"
     return f"{colorama.Fore.RED}{orig_str}\n{colorama.Fore.GREEN}{recomp_str}\n{colorama.Style.RESET_ALL}"
 
 
-def format_list_of_offsets(offsets: List[StackRegisterOffset]) -> str:
+def format_list_of_offsets(offsets: list[StackRegisterOffset]) -> str:
     return str([str(x) for x in offsets])
 
 

@@ -62,7 +62,7 @@ class Cvdump:
         self._options.add(DumpOpt.TYPES)
         return self
 
-    def cmd_line(self) -> List[str]:
+    def cmd_line(self) -> list[str]:
         cvdump_exe = lib_path_join("cvdump.exe")
         flags = [cvdump_opt_map[opt] for opt in self._options]
 

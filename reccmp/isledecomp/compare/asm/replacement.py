@@ -10,17 +10,17 @@ class AddrTestProtocol(Protocol):
 
 
 class NameReplacementProtocol(Protocol):
-    def __call__(self, addr: int, exact: bool = False) -> Optional[str]:
+    def __call__(self, addr: int, exact: bool = False) -> str | None:
         pass
 
 
 def create_name_lookup(
-    db_getter: Callable[[int, bool], Optional[ReccmpEntity]], addr_attribute: str
+    db_getter: Callable[[int, bool], ReccmpEntity | None], addr_attribute: str
 ) -> NameReplacementProtocol:
     """Function generator for name replacement"""
 
     @cache
-    def lookup(addr: int, exact: bool = False) -> Optional[str]:
+    def lookup(addr: int, exact: bool = False) -> str | None:
         m = db_getter(addr, exact)
         if m is None:
             return None

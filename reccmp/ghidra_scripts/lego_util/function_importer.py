@@ -341,7 +341,7 @@ class FullPdbFunctionImporter(PdbFunctionImporter):
 
         param.setName(name, SourceType.USER_DEFINED)
 
-    def get_matching_stack_symbol(self, stack_offset: int) -> Optional[CppStackSymbol]:
+    def get_matching_stack_symbol(self, stack_offset: int) -> CppStackSymbol | None:
         return next(
             (
                 symbol
@@ -354,7 +354,7 @@ class FullPdbFunctionImporter(PdbFunctionImporter):
 
     def get_matching_register_symbol(
         self, register: str
-    ) -> Optional[CppRegisterSymbol]:
+    ) -> CppRegisterSymbol | None:
         return next(
             (
                 symbol

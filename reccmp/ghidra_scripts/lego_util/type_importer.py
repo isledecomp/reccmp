@@ -326,7 +326,7 @@ class PdbTypeImporter:
         class_name_with_namespace: str,
         current_type: StructureInternal,
     ) -> Iterator[dict[str, Any]]:
-        vbasepointer: Optional[VirtualBasePointer] = field_list.get("vbase", None)
+        vbasepointer: VirtualBasePointer | None = field_list.get("vbase", None)
 
         if vbasepointer is not None and any(x.direct for x in vbasepointer.bases):
             vbaseptr_type = get_or_add_pointer_type(
