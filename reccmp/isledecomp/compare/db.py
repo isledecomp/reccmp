@@ -109,11 +109,13 @@ class ReccmpMatch(ReccmpEntity):
         return self._recomp_addr
 
 
-def entity_factory(_, row: tuple[int, int, str]) -> ReccmpEntity:
+def entity_factory(_, row: object) -> ReccmpEntity:
+    assert isinstance(row, tuple)
     return ReccmpEntity(*row)
 
 
-def matched_entity_factory(_, row: tuple[int, int, str]) -> ReccmpMatch:
+def matched_entity_factory(_, row: object) -> ReccmpMatch:
+    assert isinstance(row, tuple)
     return ReccmpMatch(*row)
 
 

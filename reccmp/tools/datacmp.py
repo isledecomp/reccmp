@@ -130,8 +130,6 @@ def create_comparison_item(
     """Helper to create the ComparisonItem from the fields in the reccmp database."""
     if compared is None:
         compared = []
-    assert var.orig_addr is not None
-    assert var.recomp_addr is not None
     assert var.name is not None
 
     return ComparisonItem(
@@ -178,8 +176,6 @@ def do_the_comparison(target: RecCmpBuiltTarget) -> Iterable[ComparisonItem]:
     }
 
     for var in isle_compare.get_variables():
-        assert var.orig_addr is not None
-        assert var.recomp_addr is not None
         assert var.name is not None
         type_name = recomp_type_reference.get(var.recomp_addr)
 

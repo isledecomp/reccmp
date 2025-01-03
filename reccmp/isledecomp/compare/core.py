@@ -320,8 +320,6 @@ class Compare:
         cvdump_lookup = {x.addr: x for x in self.cvdump_analysis.nodes}
 
         for match in self._db.get_matches_by_type(SymbolType.DATA):
-            assert match.orig_addr is not None
-            assert match.recomp_addr is not None
             node = cvdump_lookup.get(match.recomp_addr)
             if node is None or node.data_type is None:
                 continue
@@ -630,7 +628,6 @@ class Compare:
     def _match_vtordisp_in_vtable(self, orig_addr, recomp_addr):
         thunk_fn = self.get_by_recomp(recomp_addr)
         assert thunk_fn is not None
-        assert thunk_fn.size is not None
 
         # Read the function bytes here.
         # In practice, the adjuster thunk will be under 16 bytes.
@@ -689,9 +686,6 @@ class Compare:
         # Detect when the recomp function size would cause us to read
         # enough bytes from the original function that we cross into
         # the next annotated function.
-        assert match.orig_addr is not None
-        assert match.recomp_addr is not None
-        assert match.size is not None
         next_orig = self._db.get_next_orig_addr(match.orig_addr)
         if next_orig is not None:
             orig_size = min(next_orig - match.orig_addr, match.size)
@@ -853,8 +847,6 @@ class Compare:
         if match.get("skip", False):
             return None
 
-        assert match.orig_addr is not None
-        assert match.recomp_addr is not None
         assert match.compare_type is not None
         assert match.name is not None
         if match.get("stub", False):
