@@ -4,9 +4,8 @@ https://en.wikiversity.org/wiki/Visual_C%2B%2B_name_mangling
 """
 
 import re
-from collections import namedtuple
-from typing import Optional
-import pydemangler
+from typing import NamedTuple, Optional
+import pydemangler  # type: ignore
 
 
 class InvalidEncodedNumberError(Exception):
@@ -30,7 +29,11 @@ def parse_encoded_number(string: str) -> int:
 string_const_regex = re.compile(
     r"\?\?_C@\_(?P<is_utf16>[0-1])(?P<len>\d|[A-P]+@)(?P<hash>\w+)@(?P<value>.+)@"
 )
-StringConstInfo = namedtuple("StringConstInfo", "len is_utf16")
+
+
+class StringConstInfo(NamedTuple):
+    len: int
+    is_utf16: bool
 
 
 def demangle_string_const(symbol: str) -> Optional[StringConstInfo]:

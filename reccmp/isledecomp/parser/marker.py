@@ -89,7 +89,7 @@ class DecompMarker:
         return MarkerCategory.ADDRESS
 
     @property
-    def key(self) -> Tuple[str, str, Optional[str]]:
+    def key(self) -> Tuple[MarkerCategory, str, Optional[str]]:
         """For use with the MarkerDict. To detect/avoid marker collision."""
         return (self.category, self.module, self.extra)
 

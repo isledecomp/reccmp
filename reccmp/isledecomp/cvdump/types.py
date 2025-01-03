@@ -446,7 +446,7 @@ class CvdumpTypesParser:
 
         scalars = self.get_scalars(type_key)
 
-        output = []
+        output: list[ScalarType] = []
         last_extent = total_size
 
         # Walk the scalar list in reverse; we assume a gap could not

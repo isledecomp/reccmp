@@ -58,8 +58,9 @@ class CvdumpNode:
 
         elif self.decorated_name.startswith("??_C@"):
             self.node_type = SymbolType.STRING
-            (strlen, _) = demangle_string_const(self.decorated_name)
-            self.confirmed_size = strlen
+            demangled = demangle_string_const(self.decorated_name)
+            assert demangled is not None
+            self.confirmed_size = demangled.len
 
         elif not self.decorated_name.startswith("?") and "@" in self.decorated_name:
             # C mangled symbol. The trailing at-sign with number tells the number of bytes
@@ -93,7 +94,7 @@ class CvdumpAnalysis:
     """Collects the results from CvdumpParser into a list of nodes (i.e. symbols).
     These can then be analyzed by a downstream tool."""
 
-    verified_lines: Dict[Tuple[str, str], Tuple[str, str]]
+    verified_lines: dict[tuple[int, int], Tuple[str, int]]
 
     def __init__(self, parser: CvdumpParser):
         """Read in as much information as we have from the parser.

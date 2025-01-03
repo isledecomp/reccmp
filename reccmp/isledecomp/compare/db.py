@@ -109,11 +109,13 @@ class ReccmpMatch(ReccmpEntity):
         return self._recomp_addr
 
 
-def entity_factory(_, row: tuple[int, int, str]) -> ReccmpEntity:
+def entity_factory(_, row: object) -> ReccmpEntity:
+    assert isinstance(row, tuple)
     return ReccmpEntity(*row)
 
 
-def matched_entity_factory(_, row: tuple[int, int, str]) -> ReccmpMatch:
+def matched_entity_factory(_, row: object) -> ReccmpMatch:
+    assert isinstance(row, tuple)
     return ReccmpMatch(*row)
 
 
@@ -625,7 +627,9 @@ class CompareDb:
                     addr,
                     escaped,
                     repr(already_present.name),
-                    repr(SymbolType(already_present.compare_type)),
+                    repr(SymbolType(already_present.compare_type))
+                    if already_present.compare_type is not None
+                    else "<None>",
                 )
 
         return did_match
