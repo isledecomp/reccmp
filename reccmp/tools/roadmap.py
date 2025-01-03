@@ -16,7 +16,7 @@ from typing import Iterator, List, Optional, Tuple
 from collections import namedtuple
 import reccmp
 from reccmp.isledecomp import PEImage, detect_image
-from reccmp.isledecomp.compare.db import MatchInfo
+from reccmp.isledecomp.compare.db import ReccmpEntity
 from reccmp.isledecomp.cvdump import Cvdump
 from reccmp.isledecomp.compare import Compare as IsleCompare
 from reccmp.isledecomp.formats.exceptions import InvalidVirtualAddressError
@@ -421,7 +421,7 @@ def main() -> int:
         except IndexError:
             return False
 
-    def to_roadmap_row(match: MatchInfo):
+    def to_roadmap_row(match: ReccmpEntity):
         orig_sect = None
         orig_ofs = None
         orig_sect_ofs = None

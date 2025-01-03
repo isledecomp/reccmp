@@ -11,7 +11,7 @@ import reccmp
 from reccmp.isledecomp.formats.detect import detect_image
 from reccmp.isledecomp.formats.pe import PEImage
 from reccmp.isledecomp.compare import Compare as IsleCompare
-from reccmp.isledecomp.compare.db import MatchInfo
+from reccmp.isledecomp.compare.db import ReccmpMatch
 from reccmp.isledecomp.cvdump import Cvdump
 from reccmp.isledecomp.cvdump.types import (
     CvdumpKeyError,
@@ -122,12 +122,12 @@ class ComparisonItem(NamedTuple):
 
 
 def create_comparison_item(
-    var: MatchInfo,
+    var: ReccmpMatch,
     compared: Optional[List[ComparedOffset]] = None,
     error: Optional[str] = None,
     raw_only: bool = False,
 ) -> ComparisonItem:
-    """Helper to create the ComparisonItem from the fields in MatchInfo."""
+    """Helper to create the ComparisonItem from the fields in the reccmp database."""
     if compared is None:
         compared = []
     assert var.orig_addr is not None

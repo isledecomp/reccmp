@@ -4,7 +4,6 @@ import difflib
 from pathlib import Path
 import struct
 import uuid
-from functools import cache
 from dataclasses import dataclass
 from typing import Callable, Iterable, Iterator, Optional, TypedDict
 from reccmp.isledecomp.formats.exceptions import InvalidVirtualAddressError
@@ -15,8 +14,9 @@ from reccmp.isledecomp.parser import DecompCodebase
 from reccmp.isledecomp.dir import walk_source_dir
 from reccmp.isledecomp.types import SymbolType
 from reccmp.isledecomp.compare.asm import ParseAsm
+from reccmp.isledecomp.compare.asm.replacement import create_name_lookup
 from reccmp.isledecomp.compare.asm.fixes import assert_fixup, find_effective_match
-from .db import CompareDb, MatchInfo
+from .db import CompareDb, ReccmpEntity, ReccmpMatch
 from .diff import combined_diff, CombinedDiffOutput
 from .lines import LinesDb
 
@@ -69,29 +69,6 @@ def create_bin_lookup(bin_file: PEImage) -> Callable[[int, int], Optional[bytes]
     return lookup
 
 
-def create_name_lookup(
-    db_getter: Callable[[int, bool], Optional[MatchInfo]], addr_attribute: str
-) -> Callable[[int, bool], Optional[str]]:
-    """Function generator for name replacement"""
-
-    @cache
-    def lookup(addr: int, exact: bool) -> Optional[str]:
-        m = db_getter(addr, exact)
-        if m is None:
-            return None
-
-        if getattr(m, addr_attribute) == addr:
-            return m.match_name()
-
-        offset = addr - getattr(m, addr_attribute)
-        if m.compare_type != SymbolType.DATA or offset >= m.size:
-            return None
-
-        return m.offset_name(offset)
-
-    return lookup
-
-
 class Compare:
     # pylint: disable=too-many-instance-attributes
     def __init__(
@@ -134,12 +111,12 @@ class Compare:
         self._find_vtordisp()
 
         self.orig_sanitize = ParseAsm(
-            relocate_lookup=create_reloc_lookup(self.orig_bin),
+            addr_test=create_reloc_lookup(self.orig_bin),
             name_lookup=create_name_lookup(self._db.get_by_orig, "orig_addr"),
             bin_lookup=create_bin_lookup(self.orig_bin),
         )
         self.recomp_sanitize = ParseAsm(
-            relocate_lookup=create_reloc_lookup(self.recomp_bin),
+            addr_test=create_reloc_lookup(self.recomp_bin),
             name_lookup=create_name_lookup(self._db.get_by_recomp, "recomp_addr"),
             bin_lookup=create_bin_lookup(self.recomp_bin),
         )
@@ -708,7 +685,7 @@ class Compare:
             for addr, line in recomp_combined:
                 f.write(f"{addr}: {line}\n")
 
-    def _compare_function(self, match: MatchInfo) -> DiffReport:
+    def _compare_function(self, match: ReccmpMatch) -> DiffReport:
         # Detect when the recomp function size would cause us to read
         # enough bytes from the original function that we cross into
         # the next annotated function.
@@ -778,10 +755,7 @@ class Compare:
             is_effective_match=is_effective_match,
         )
 
-    def _compare_vtable(self, match: MatchInfo) -> DiffReport:
-        assert match.orig_addr is not None
-        assert match.recomp_addr is not None
-        assert match.size is not None
+    def _compare_vtable(self, match: ReccmpMatch) -> DiffReport:
         vtable_size = match.size
 
         # The vtable size should always be a multiple of 4 because that
@@ -801,7 +775,9 @@ class Compare:
             [t for (t,) in struct.iter_unpack("<L", recomp_table)],
         )
 
-        def match_text(m: Optional[MatchInfo], raw_addr: Optional[int] = None) -> str:
+        def match_text(
+            m: Optional[ReccmpEntity], raw_addr: Optional[int] = None
+        ) -> str:
             """Format the function reference at this vtable index as text.
             If we have not identified this function, we have the option to
             display the raw address. This is only worth doing for the original addr
@@ -868,7 +844,7 @@ class Compare:
             ratio=ratio,
         )
 
-    def _compare_match(self, match: MatchInfo) -> Optional[DiffReport]:
+    def _compare_match(self, match: ReccmpMatch) -> Optional[DiffReport]:
         """Router for comparison type"""
 
         if match.size is None or match.size == 0:
@@ -913,22 +889,22 @@ class Compare:
 
         return match.recomp_addr == recomp_addr
 
-    def get_by_orig(self, addr: int) -> Optional[MatchInfo]:
+    def get_by_orig(self, addr: int) -> Optional[ReccmpEntity]:
         return self._db.get_by_orig(addr)
 
-    def get_by_recomp(self, addr: int) -> Optional[MatchInfo]:
+    def get_by_recomp(self, addr: int) -> Optional[ReccmpEntity]:
         return self._db.get_by_recomp(addr)
 
-    def get_all(self) -> Iterator[MatchInfo]:
+    def get_all(self) -> Iterator[ReccmpEntity]:
         return self._db.get_all()
 
-    def get_functions(self) -> Iterator[MatchInfo]:
+    def get_functions(self) -> Iterator[ReccmpMatch]:
         return self._db.get_matches_by_type(SymbolType.FUNCTION)
 
-    def get_vtables(self) -> Iterator[MatchInfo]:
+    def get_vtables(self) -> Iterator[ReccmpMatch]:
         return self._db.get_matches_by_type(SymbolType.VTABLE)
 
-    def get_variables(self) -> Iterator[MatchInfo]:
+    def get_variables(self) -> Iterator[ReccmpMatch]:
         return self._db.get_matches_by_type(SymbolType.DATA)
 
     def compare_address(self, addr: int) -> Optional[DiffReport]:
