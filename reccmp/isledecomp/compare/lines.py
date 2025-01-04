@@ -75,6 +75,17 @@ class LinesDb:
         if len(possible_functions) == 1:
             return possible_functions[0]
 
+        # The file has been edited since the last compile.
+        if len(possible_functions) > 1:
+            logger.error(
+                "Debug data out of sync with function near: %s:%d",
+                path,
+                line_start,
+            )
+            return None
+
+        # No functions matched. This could mean the file is out of sync, or that
+        # the function was eliminated or inlined by compiler optimizations.
         logger.error(
             "Failed to find function symbol with filename and line: %s:%d",
             path,
