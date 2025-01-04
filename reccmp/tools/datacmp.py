@@ -4,7 +4,7 @@ import os
 import argparse
 import logging
 from enum import Enum
-from typing import Iterable, NamedTuple, Tuple
+from typing import Iterable, NamedTuple
 from struct import unpack
 import colorama
 import reccmp
@@ -83,7 +83,7 @@ class ComparedOffset(NamedTuple):
     # name is None for scalar types
     name: str | None
     match: bool
-    values: Tuple[str, str]
+    values: tuple[str, str]
 
 
 class ComparisonItem(NamedTuple):

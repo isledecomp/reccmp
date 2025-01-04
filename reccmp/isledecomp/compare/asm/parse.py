@@ -9,7 +9,7 @@ placeholder string."""
 import re
 import struct
 from functools import cache
-from typing import Callable, Tuple
+from typing import Callable
 from .const import JUMP_MNEMONICS, SINGLE_OPERAND_INSTS
 from .instgen import InstructGen, SectionType
 from .replacement import AddrTestProtocol, NameReplacementProtocol
@@ -134,7 +134,7 @@ class ParseAsm:
 
         return match.group(0).replace(match.group(1), self.replace(value))
 
-    def sanitize(self, inst: DisasmLiteInst) -> Tuple[str, str]:
+    def sanitize(self, inst: DisasmLiteInst) -> tuple[str, str]:
         # For jumps or calls, if the entire op_str is a hex number, the value
         # is a relative offset.
         # Otherwise (i.e. it looks like `dword ptr [address]`) it is an

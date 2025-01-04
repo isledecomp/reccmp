@@ -1,17 +1,17 @@
 from difflib import SequenceMatcher
-from typing import Tuple, TypedDict
+from typing import TypedDict
 
-CombinedDiffInput = list[Tuple[str, str]]
+CombinedDiffInput = list[tuple[str, str]]
 
-MatchingBlock = TypedDict("MatchingBlock", {"both": list[Tuple[str, str, str]]})
+MatchingBlock = TypedDict("MatchingBlock", {"both": list[tuple[str, str, str]]})
 MismatchingBlock = TypedDict(
-    "MismatchingBlock", {"orig": list[Tuple[str, str]], "recomp": list[Tuple[str, str]]}
+    "MismatchingBlock", {"orig": list[tuple[str, str]], "recomp": list[tuple[str, str]]}
 )
 MatchingOrMismatchingBlock = MatchingBlock | MismatchingBlock
 
-# Tuple[str, list[...]]: One contiguous part of the diff (without skipping matching code)
+# tuple[str, list[...]]: One contiguous part of the diff (without skipping matching code)
 # list[...]: The list of all the contiguous diffs of a given function
-CombinedDiffOutput = list[Tuple[str, list[MatchingOrMismatchingBlock]]]
+CombinedDiffOutput = list[tuple[str, list[MatchingOrMismatchingBlock]]]
 
 
 def combined_diff(

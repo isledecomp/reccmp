@@ -12,7 +12,7 @@ import logging
 from pathlib import Path
 import statistics
 import bisect
-from typing import Iterator, Tuple
+from typing import Iterator
 from collections import namedtuple
 import reccmp
 from reccmp.isledecomp import PEImage, detect_image
@@ -208,7 +208,7 @@ class DeltaCollector:
 
             self.disp_map[row.module].append(row.displacement)
 
-    def iter_sorted(self) -> Iterator[Tuple[int, int]]:
+    def iter_sorted(self) -> Iterator[tuple[int, int]]:
         """Compute the average address for each module, then generate them
         in ascending order."""
         avg_address = {

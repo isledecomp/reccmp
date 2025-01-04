@@ -1,4 +1,3 @@
-from typing import Optional
 import pytest
 from reccmp.isledecomp.parser.parser import (
     ReaderState as _rs,

@@ -1,5 +1,4 @@
 import re
-from typing import Tuple
 from enum import Enum
 
 
@@ -89,7 +88,7 @@ class DecompMarker:
         return MarkerCategory.ADDRESS
 
     @property
-    def key(self) -> Tuple[MarkerCategory, str, str | None]:
+    def key(self) -> tuple[MarkerCategory, str, str | None]:
         """For use with the MarkerDict. To detect/avoid marker collision."""
         return (self.category, self.module, self.extra)
 

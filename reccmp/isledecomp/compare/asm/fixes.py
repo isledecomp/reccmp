@@ -1,7 +1,7 @@
 import re
-from typing import Sequence, Tuple, Set
+from typing import Sequence, Set
 
-DiffOpcode = Tuple[str, int, int, int, int]
+DiffOpcode = tuple[str, int, int, int, int]
 
 REG_FIND = re.compile(r"(?: |\[)(e?[a-d]x|e?[s,d]i|[a-d][l,h]|e?[b,s]p)")
 
@@ -128,7 +128,7 @@ def find_regs_used(inst: str) -> list[str]:
     return REG_FIND.findall(inst)
 
 
-def find_regs_changed(a: str, b: str) -> list[Tuple[str, str]]:
+def find_regs_changed(a: str, b: str) -> list[tuple[str, str]]:
     """For instructions a, b, return the pairs of registers that were used.
     This is not a very precise way to compare the instructions, so it depends
     on the input being two instructions that would match *except* for
@@ -302,7 +302,7 @@ def find_effective_match(
     return corrections.issuperset(recomp_lines_disputed)
 
 
-def assert_fixup(asm: list[Tuple[str, str]]):
+def assert_fixup(asm: list[tuple[str, str]]):
     """Detect assert calls and replace the code filename and line number
     values with macros (from assert.h)."""
     for i, (_, line) in enumerate(asm):

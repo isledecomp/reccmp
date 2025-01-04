@@ -1,6 +1,5 @@
 """Tests for asm sanitize, 32-bit pointers."""
 
-from typing import Optional
 from unittest.mock import Mock, patch
 import pytest
 from reccmp.isledecomp.compare.asm.parse import DisasmLiteInst, ParseAsm

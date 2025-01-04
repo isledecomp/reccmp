@@ -5,14 +5,14 @@ import re
 import bisect
 import struct
 from enum import Enum, auto
-from typing import Iterable, Literal, NamedTuple, Tuple
+from typing import Iterable, Literal, NamedTuple
 from capstone import Cs, CS_ARCH_X86, CS_MODE_32  # type: ignore
 from .const import JUMP_MNEMONICS
 from .types import DisasmLiteInst
 
 disassembler = Cs(CS_ARCH_X86, CS_MODE_32)
 
-DisasmLiteTuple = Tuple[int, int, str, str]
+DisasmLiteTuple = tuple[int, int, str, str]
 
 displacement_regex = re.compile(r".*\+ (0x[0-9a-f]+)\]")
 
@@ -33,7 +33,7 @@ TabSectionType = Literal[SectionType.DATA_TAB] | Literal[SectionType.ADDR_TAB]
 
 class TabSection(NamedTuple):
     type: TabSectionType
-    contents: list[Tuple[int, int]]
+    contents: list[tuple[int, int]]
 
 
 FuncSection = CodeSection | TabSection

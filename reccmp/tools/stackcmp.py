@@ -3,7 +3,7 @@ import re
 import logging
 import argparse
 import struct
-from typing import Dict, NamedTuple, Set, Tuple
+from typing import Dict, NamedTuple, Set
 
 import colorama
 import reccmp
@@ -92,7 +92,7 @@ def extract_stack_offset_from_instruction(
 
 
 def analyze_diff(
-    diff: Dict[str, list[Tuple[str, ...]]], warnings: Warnings
+    diff: Dict[str, list[tuple[str, ...]]], warnings: Warnings
 ) -> StackPairs:
     stack_pairs: StackPairs = set()
     if "both" in diff:
@@ -161,7 +161,7 @@ def print_non_bijective_match(left: str, right: str):
 
 
 def print_structural_mismatch(
-    orig: list[Tuple[str, ...]], recomp: list[Tuple[str, ...]]
+    orig: list[tuple[str, ...]], recomp: list[tuple[str, ...]]
 ) -> str:
     orig_str = "\n".join(f"-{x[1]}" for x in orig) if orig else "-"
     recomp_str = "\n".join(f"+{x[1]}" for x in recomp) if recomp else "+"
