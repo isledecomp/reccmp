@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 import re
 import logging
-from typing import Any, Dict, NamedTuple
+from typing import Any, NamedTuple
 
 
 logger = logging.getLogger(__name__)
@@ -265,7 +265,7 @@ class CvdumpTypesParser:
     def __init__(self) -> None:
         self.mode: str | None = None
         self.last_key = ""
-        self.keys: Dict[str, Dict[str, Any]] = {}
+        self.keys: dict[str, dict[str, Any]] = {}
 
     def _new_type(self):
         """Prepare a new dict for the type we just parsed.
@@ -295,7 +295,7 @@ class CvdumpTypesParser:
         variants: list[dict[str, Any]] = obj["variants"]
         variants.append({"name": name, "value": value})
 
-    def _get_field_list(self, type_obj: Dict[str, Any]) -> list[FieldListItem]:
+    def _get_field_list(self, type_obj: dict[str, Any]) -> list[FieldListItem]:
         """Return the field list for the given LF_CLASS/LF_STRUCTURE reference"""
 
         if type_obj.get("type") == "LF_FIELDLIST":
@@ -325,7 +325,7 @@ class CvdumpTypesParser:
 
         return sorted(members, key=lambda m: m.offset)
 
-    def _mock_array_members(self, type_obj: Dict) -> list[FieldListItem]:
+    def _mock_array_members(self, type_obj: dict[str, Any]) -> list[FieldListItem]:
         """LF_ARRAY elements provide the element type and the total size.
         We want the list of "members" as if this was a struct."""
 

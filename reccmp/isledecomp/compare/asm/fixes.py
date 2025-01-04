@@ -1,5 +1,5 @@
 import re
-from typing import Sequence, Set
+from typing import Sequence
 
 DiffOpcode = tuple[str, int, int, int, int]
 
@@ -73,7 +73,7 @@ def patch_jump(a: str, b: str) -> str:
 
 def patch_cmp_swaps(
     codes: Sequence[DiffOpcode], orig_asm: list[str], recomp_asm: list[str]
-) -> Set[int]:
+) -> set[int]:
     """Can we resolve the diffs between orig and recomp by patching
     swapped cmp instructions?
     For example:
@@ -137,8 +137,8 @@ def find_regs_changed(a: str, b: str) -> list[tuple[str, str]]:
 
 
 def bad_register_swaps(
-    swaps: Set[int], orig_asm: list[str], recomp_asm: list[str]
-) -> Set[int]:
+    swaps: set[int], orig_asm: list[str], recomp_asm: list[str]
+) -> set[int]:
     """The list of recomp indices in `swaps` tells which instructions are
     a match for orig except for the registers used. From that list, check
     whether a register swap should not be allowed.
@@ -178,7 +178,7 @@ def bad_register_swaps(
 MODIFIER_INSTRUCTIONS = ("adc", "add", "lea", "mov", "neg", "sbb", "sub", "pop", "xor")
 
 
-def instruction_alters_regs(inst: str, regs: Set[str]) -> bool:
+def instruction_alters_regs(inst: str, regs: set[str]) -> bool:
     (mnemonic, _, op_str) = inst.partition(" ")
     (first_operand, _, __) = op_str.partition(", ")
 
@@ -189,7 +189,7 @@ def instruction_alters_regs(inst: str, regs: Set[str]) -> bool:
 
 def relocate_instructions(
     codes: Sequence[DiffOpcode], orig_asm: list[str], recomp_asm: list[str]
-) -> Set[int]:
+) -> set[int]:
     """Collect the list of instructions deleted from orig and inserted
     into recomp, according to the diff opcodes. Using this list, match up
     any pairs of instructions that we assume to be relocated and return
@@ -234,7 +234,7 @@ WORD_REGS = ("ax", "bx", "cx", "dx", "si", "di", "bp", "sp")
 BYTE_REGS = ("ah", "al", "bh", "bl", "ch", "cl", "dh", "dl")
 
 
-def naive_register_replacement(orig_asm: list[str], recomp_asm: list[str]) -> Set[int]:
+def naive_register_replacement(orig_asm: list[str], recomp_asm: list[str]) -> set[int]:
     """Replace all registers of the same size with a placeholder string.
     After doing that, compare orig and recomp again.
     Return indices from recomp that are now equal to the same index in orig.

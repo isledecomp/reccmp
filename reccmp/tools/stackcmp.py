@@ -3,7 +3,7 @@ import re
 import logging
 import argparse
 import struct
-from typing import Dict, NamedTuple, Set
+from typing import NamedTuple
 
 import colorama
 import reccmp
@@ -72,7 +72,7 @@ class StackPair(NamedTuple):
     recomp: StackRegisterOffset
 
 
-StackPairs = Set[StackPair]
+StackPairs = set[StackPair]
 
 
 @dataclass
@@ -92,7 +92,7 @@ def extract_stack_offset_from_instruction(
 
 
 def analyze_diff(
-    diff: Dict[str, list[tuple[str, ...]]], warnings: Warnings
+    diff: dict[str, list[tuple[str, ...]]], warnings: Warnings
 ) -> StackPairs:
     stack_pairs: StackPairs = set()
     if "both" in diff:
@@ -188,7 +188,7 @@ def compare_function_stacks(udiff: CombinedDiffOutput, fn_symbol: SymbolsEntry):
     # but only to entries above (i.e. the function arguments on the stack).
     # See also pdb_extraction.py.
 
-    stack_symbols: Dict[int, StackSymbol] = {}
+    stack_symbols: dict[int, StackSymbol] = {}
 
     for symbol in fn_symbol.stack_symbols:
         if symbol.symbol_type == "S_BPREL32":
