@@ -4,20 +4,18 @@ between FUNCTION markers and PDB analysis."""
 import sqlite3
 import logging
 from functools import cache
-from typing import Optional
 from pathlib import Path
 from reccmp.isledecomp.dir import PathResolver
 
 
 _SETUP_SQL = """
-    DROP TABLE IF EXISTS `lineref`;
-    CREATE TABLE `lineref` (
+    CREATE TABLE lineref (
         path text not null,
         filename text not null,
         line int not null,
         addr int not null
     );
-    CREATE INDEX `file_line` ON `lineref` (filename, line);
+    CREATE INDEX file_line ON lineref (filename, line);
 """
 
 
@@ -46,25 +44,40 @@ class LinesDb:
         filename = my_basename_lower(sourcepath)
 
         self._db.execute(
-            "INSERT INTO `lineref` (path, filename, line, addr) VALUES (?,?,?,?)",
+            "INSERT INTO lineref (path, filename, line, addr) VALUES (?,?,?,?)",
             (sourcepath, filename, line_no, addr),
         )
 
-    def search_line(self, path: str, line_no: int) -> Optional[int]:
-        """Using path and line number from FUNCTION marker,
-        get the address of this function in the recomp."""
+    def search_line(
+        self, path: str, line_start: int, line_end: int | None = None
+    ) -> int | None:
+        """The database contains the first line of each function, as verified by
+        reducing the starting list of line-offset pairs using other information from the pdb.
+        We want to know if exactly one function exists between line start and line end
+        in the given file."""
+
+        # We might not capture the end line of a function. If not, search for the start line only.
+        if line_end is None:
+            line_end = line_start
+
+        # Search using the filename from the path to limit calls to Path.samefile.
+        # TODO: This should be refactored. Maybe sqlite isn't suited for this and we
+        # should store Path objects as dict keys instead.
         filename = my_basename_lower(path)
         cur = self._db.execute(
-            "SELECT path, addr FROM `lineref` WHERE filename = ? AND line = ?",
-            (filename, line_no),
+            "SELECT path, addr FROM lineref WHERE filename = ? AND line >= ? AND line <= ?",
+            (filename, line_start, line_end),
         )
-        for source_path, addr in cur.fetchall():
-            if my_samefile(path, source_path):
-                return addr
+
+        possible_functions = [
+            addr for source_path, addr in cur if my_samefile(path, source_path)
+        ]
+        if len(possible_functions) == 1:
+            return possible_functions[0]
 
         logger.error(
             "Failed to find function symbol with filename and line: %s:%d",
             path,
-            line_no,
+            line_start,
         )
         return None

@@ -478,17 +478,18 @@ class DecompParser:
                 # to help parsing.
                 self.function_sig = remove_trailing_comment(line_strip)
 
+                # The range of lines for this function begins when we see a non-blank line.
+                self._function_starts_here()
+
                 # Now check to see if the opening curly bracket is on the
                 # same line. clang-format should prevent this (BraceWrapping)
                 # but it is easy to detect.
                 # If the entire function is on one line, handle that too.
                 if self.function_sig.endswith("{"):
-                    self._function_starts_here()
                     self.state = ReaderState.IN_FUNC
                 elif self.function_sig.endswith("}") or self.function_sig.endswith(
                     "};"
                 ):
-                    self._function_starts_here()
                     self._function_done()
                 elif self.function_sig.endswith(");"):
                     # Detect forward reference or declaration
@@ -499,7 +500,6 @@ class DecompParser:
         elif self.state == ReaderState.WANT_CURLY:
             if line_strip == "{":
                 self.curly_indent_stops = line.index("{")
-                self._function_starts_here()
                 self.state = ReaderState.IN_FUNC
 
         elif self.state == ReaderState.IN_FUNC:
