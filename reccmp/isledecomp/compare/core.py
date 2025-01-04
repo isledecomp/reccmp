@@ -772,9 +772,7 @@ class Compare:
             [t for (t,) in struct.iter_unpack("<L", recomp_table)],
         )
 
-        def match_text(
-            m: ReccmpEntity | None, raw_addr: int | None = None
-        ) -> str:
+        def match_text(m: ReccmpEntity | None, raw_addr: int | None = None) -> str:
             """Format the function reference at this vtable index as text.
             If we have not identified this function, we have the option to
             display the raw address. This is only worth doing for the original addr

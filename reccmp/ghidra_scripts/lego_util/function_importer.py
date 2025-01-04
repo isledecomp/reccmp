@@ -351,9 +351,7 @@ class FullPdbFunctionImporter(PdbFunctionImporter):
             None,
         )
 
-    def get_matching_register_symbol(
-        self, register: str
-    ) -> CppRegisterSymbol | None:
+    def get_matching_register_symbol(self, register: str) -> CppRegisterSymbol | None:
         return next(
             (
                 symbol
