@@ -264,11 +264,7 @@ class DecompParser:
             self._syntax_warning(ParserError.DUPLICATE_MODULE)
         self.state = ReaderState.IN_VTABLE
 
-    def _vtable_done(self, class_name: str | None = None):
-        if class_name is None:
-            # Best we can do
-            class_name = self.last_line.strip()
-
+    def _vtable_done(self, class_name: str):
         for marker in self.tbl_markers.iter():
             self._symbols.append(
                 ParserVtable(

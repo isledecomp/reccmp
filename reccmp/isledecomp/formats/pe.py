@@ -31,10 +31,6 @@ class UnknownPEMachine(ValueError):
     """The PE binary has an unknown machine architecture."""
 
 
-class UninitializedDataReadError(ValueError):
-    """Attempt to read from an uninitialized section."""
-
-
 class PEMachine(IntEnum):
     IMAGE_FILE_MACHINE_ALPHA = 0x184
     IMAGE_FILE_MACHINE_ALPHA64 = 0x284
@@ -446,7 +442,7 @@ class DebugDirectoryEntryHeader:
     @classmethod
     def from_memory(
         cls, data: bytes, offset: int
-    ) -> "tuple[DebugDirectoryEntryHeader, int]":
+    ) -> tuple["DebugDirectoryEntryHeader", int]:
         struct_fmt = "<2I2H4I"
         items = struct.unpack_from(struct_fmt, data, offset=offset)
         return cls(*items), offset + struct.calcsize(struct_fmt)
