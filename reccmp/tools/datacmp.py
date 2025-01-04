@@ -4,7 +4,7 @@ import os
 import argparse
 import logging
 from enum import Enum
-from typing import Iterable, List, NamedTuple, Optional, Tuple
+from typing import Iterable, NamedTuple, Tuple
 from struct import unpack
 import colorama
 import reccmp

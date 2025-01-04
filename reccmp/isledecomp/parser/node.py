@@ -1,4 +1,3 @@
-from typing import Optional
 from dataclasses import dataclass
 from .marker import MarkerType
 

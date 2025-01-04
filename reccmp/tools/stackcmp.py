@@ -3,7 +3,7 @@ import re
 import logging
 import argparse
 import struct
-from typing import Dict, List, NamedTuple, Optional, Set, Tuple
+from typing import Dict, NamedTuple, Set, Tuple
 
 import colorama
 import reccmp

@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 import logging
 import re
 from re import Match
-from typing import NamedTuple, Optional
+from typing import NamedTuple
 
 
 logger = logging.getLogger(__name__)

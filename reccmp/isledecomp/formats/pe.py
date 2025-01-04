@@ -10,7 +10,7 @@ from enum import IntEnum, IntFlag
 from functools import cached_property
 from pathlib import Path
 import struct
-from typing import Iterator, Optional, cast
+from typing import Iterator, cast
 
 from .exceptions import (
     InvalidVirtualAddressError,

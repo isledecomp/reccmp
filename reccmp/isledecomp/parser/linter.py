@@ -1,4 +1,4 @@
-from typing import List, Optional, Sequence
+from typing import Sequence
 from .parser import DecompParser
 from .error import ParserAlert, ParserError
 from .node import ParserSymbol, ParserString

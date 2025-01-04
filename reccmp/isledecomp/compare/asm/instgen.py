@@ -5,7 +5,7 @@ import re
 import bisect
 import struct
 from enum import Enum, auto
-from typing import Iterable, List, Literal, NamedTuple, Optional, Tuple
+from typing import Iterable, Literal, NamedTuple, Tuple
 from capstone import Cs, CS_ARCH_X86, CS_MODE_32  # type: ignore
 from .const import JUMP_MNEMONICS
 from .types import DisasmLiteInst

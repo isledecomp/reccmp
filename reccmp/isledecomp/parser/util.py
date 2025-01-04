@@ -1,6 +1,5 @@
 # C++ Parser utility functions and data structures
 import re
-from typing import Optional
 from ast import literal_eval
 
 # The goal here is to just read whatever is on the next line, so some

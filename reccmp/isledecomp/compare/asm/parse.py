@@ -9,7 +9,7 @@ placeholder string."""
 import re
 import struct
 from functools import cache
-from typing import Callable, Optional, Tuple
+from typing import Callable, Tuple
 from .const import JUMP_MNEMONICS, SINGLE_OPERAND_INSTS
 from .instgen import InstructGen, SectionType
 from .replacement import AddrTestProtocol, NameReplacementProtocol

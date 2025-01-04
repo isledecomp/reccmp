@@ -1,5 +1,5 @@
 import re
-from typing import List, Sequence, Tuple, Set
+from typing import Sequence, Tuple, Set
 
 DiffOpcode = Tuple[str, int, int, int, int]
 

@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 import re
-from typing import Any, Optional
+from typing import Any
 import logging
 
 from reccmp.isledecomp.formats.exceptions import InvalidVirtualAddressError

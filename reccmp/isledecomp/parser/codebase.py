@@ -1,6 +1,6 @@
 """For aggregating decomp markers read from an entire directory and for a single module."""
 
-from typing import Callable, Iterable, Iterator, List
+from typing import Callable, Iterable, Iterator
 from .parser import DecompParser
 from .node import (
     ParserSymbol,

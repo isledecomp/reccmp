@@ -1,5 +1,5 @@
 from difflib import SequenceMatcher
-from typing import List, Tuple, TypedDict
+from typing import Tuple, TypedDict
 
 CombinedDiffInput = list[Tuple[str, str]]
 

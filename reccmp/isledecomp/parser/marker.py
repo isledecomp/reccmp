@@ -1,5 +1,5 @@
 import re
-from typing import Optional, Tuple
+from typing import Tuple
 from enum import Enum
 
 

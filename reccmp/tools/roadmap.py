@@ -12,7 +12,7 @@ import logging
 from pathlib import Path
 import statistics
 import bisect
-from typing import Iterator, List, Optional, Tuple
+from typing import Iterator, Tuple
 from collections import namedtuple
 import reccmp
 from reccmp.isledecomp import PEImage, detect_image

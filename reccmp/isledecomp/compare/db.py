@@ -5,7 +5,7 @@ import sqlite3
 import logging
 import json
 from functools import cached_property
-from typing import Any, Iterable, Iterator, List, Optional
+from typing import Any, Iterable, Iterator
 from reccmp.isledecomp.types import SymbolType
 from reccmp.isledecomp.cvdump.demangler import get_vtordisp_name
 

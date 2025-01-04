@@ -4,7 +4,6 @@
 # pyright: reportMissingModuleSource=false
 
 import logging
-from typing import Optional
 from abc import ABC, abstractmethod
 
 from ghidra.program.model.listing import Function, Parameter

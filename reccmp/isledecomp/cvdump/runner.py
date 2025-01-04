@@ -1,7 +1,6 @@
 import io
 from os import name as os_name
 from enum import Enum
-from typing import List
 import subprocess
 from reccmp.bin import lib_path_join
 from reccmp.isledecomp.dir import winepath_unix_to_win

@@ -28,7 +28,7 @@ import sys
 import logging
 from pathlib import Path
 import traceback
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import ghidra

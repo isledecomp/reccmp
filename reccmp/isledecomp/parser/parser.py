@@ -1,7 +1,7 @@
 # C++ file parser
 
 import io
-from typing import List, Iterator, Optional
+from typing import Iterator
 from enum import Enum
 from .util import (
     get_class_name,

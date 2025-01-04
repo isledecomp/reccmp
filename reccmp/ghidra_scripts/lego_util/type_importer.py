@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Callable, Iterator, Optional, TypeVar
+from typing import Any, Callable, Iterator, TypeVar
 
 # Disable spurious warnings in vscode / pylance
 # pyright: reportMissingModuleSource=false

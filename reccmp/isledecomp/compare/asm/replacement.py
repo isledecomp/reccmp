@@ -1,5 +1,5 @@
 from functools import cache
-from typing import Callable, Protocol, Optional
+from typing import Callable, Protocol
 from reccmp.isledecomp.compare.db import ReccmpEntity
 from reccmp.isledecomp.types import SymbolType
 

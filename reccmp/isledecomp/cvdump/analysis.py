@@ -1,6 +1,5 @@
 """For collating the results from parsing cvdump.exe into a more directly useful format."""
 
-from typing import Optional
 from reccmp.isledecomp.types import SymbolType
 from .demangler import demangle_string_const, demangle_vtable
 from .parser import CvdumpParser
