@@ -1,6 +1,6 @@
 """For aggregating decomp markers read from an entire directory and for a single module."""
 
-from typing import Callable, Iterable, Iterator, List
+from typing import Callable, Iterable, Iterator
 from .parser import DecompParser
 from .node import (
     ParserSymbol,
@@ -13,7 +13,7 @@ from .node import (
 
 class DecompCodebase:
     def __init__(self, filenames: Iterable[str], module: str) -> None:
-        self._symbols: List[ParserSymbol] = []
+        self._symbols: list[ParserSymbol] = []
 
         parser = DecompParser()
         for filename in filenames:
@@ -25,7 +25,9 @@ class DecompCodebase:
                 sym.filename = filename
                 self._symbols.append(sym)
 
-    def prune_invalid_addrs(self, is_valid: Callable[int, bool]) -> List[ParserSymbol]:
+    def prune_invalid_addrs(
+        self, is_valid: Callable[[int], bool]
+    ) -> list[ParserSymbol]:
         """Some decomp annotations might have an invalid address.
         Return the list of addresses where we fail the is_valid check,
         and remove those from our list of symbols."""
@@ -38,21 +40,22 @@ class DecompCodebase:
         """Return lineref functions separately from nameref. Assuming the PDB matches
         the state of the source code, a line reference is a guaranteed match, even if
         multiple functions share the same name. (i.e. polymorphism)"""
-        return filter(
-            lambda s: isinstance(s, ParserFunction) and not s.is_nameref(),
-            self._symbols,
+        return (
+            s
+            for s in self._symbols
+            if isinstance(s, ParserFunction) and not s.is_nameref()
         )
 
     def iter_name_functions(self) -> Iterator[ParserFunction]:
-        return filter(
-            lambda s: isinstance(s, ParserFunction) and s.is_nameref(), self._symbols
+        return (
+            s for s in self._symbols if isinstance(s, ParserFunction) and s.is_nameref()
         )
 
     def iter_vtables(self) -> Iterator[ParserVtable]:
-        return filter(lambda s: isinstance(s, ParserVtable), self._symbols)
+        return (s for s in self._symbols if isinstance(s, ParserVtable))
 
     def iter_variables(self) -> Iterator[ParserVariable]:
-        return filter(lambda s: isinstance(s, ParserVariable), self._symbols)
+        return (s for s in self._symbols if isinstance(s, ParserVariable))
 
     def iter_strings(self) -> Iterator[ParserString]:
-        return filter(lambda s: isinstance(s, ParserString), self._symbols)
+        return (s for s in self._symbols if isinstance(s, ParserString))

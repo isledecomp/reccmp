@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Sequence
 from .parser import DecompParser
 from .error import ParserAlert, ParserError
 from .node import ParserSymbol, ParserString
@@ -11,17 +11,17 @@ def get_checkorder_filter(module):
 
 class DecompLinter:
     def __init__(self) -> None:
-        self.alerts: List[ParserAlert] = []
+        self.alerts: list[ParserAlert] = []
         self._parser = DecompParser()
         self._filename: str = ""
-        self._module: Optional[str] = None
+        self._module: str | None = None
         # Set of (str, int) tuples for each module/offset pair seen while scanning.
         # This is _not_ reset between files and is intended to report offset reuse
         # when scanning the entire directory.
-        self._offsets_used = set()
+        self._offsets_used: set[tuple[str, int]] = set()
         # Keep track of strings we have seen. Persists across files.
         # Module/offset can be repeated for string markers but the strings must match.
-        self._strings = {}
+        self._strings: dict[tuple[str, int], str] = {}
 
     def reset(self, full_reset: bool = False):
         self.alerts = []
@@ -36,7 +36,7 @@ class DecompLinter:
     def file_is_header(self):
         return self._filename.lower().endswith(".h")
 
-    def _load_offsets_from_list(self, marker_list: List[ParserSymbol]):
+    def _load_offsets_from_list(self, marker_list: Sequence[ParserSymbol]):
         """Helper for loading (module, offset) tuples while the DecompParser
         has them broken up into three different lists."""
         for marker in marker_list:

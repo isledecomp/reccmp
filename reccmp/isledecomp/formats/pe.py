@@ -10,7 +10,7 @@ from enum import IntEnum, IntFlag
 from functools import cached_property
 from pathlib import Path
 import struct
-from typing import Iterator, Optional
+from typing import Iterator, cast
 
 from .exceptions import (
     InvalidVirtualAddressError,
@@ -189,7 +189,7 @@ class PEImageOptionalHeader:
     size_of_uninitialized_data: int
     address_of_entry_point: int
     base_of_code: int
-    base_of_data: Optional[int]
+    base_of_data: int | None
     image_base: int
     section_alignment: int
     file_alignment: int
@@ -230,11 +230,11 @@ class PEImageOptionalHeader:
         offset += struct.calcsize(struct_fmt2)
         if pe32_plus:
             struct_fmt3 = "<QII6H4I2H4Q2I"
-            part3 = struct.unpack_from(struct_fmt3, data, offset=offset)
+            part3_tuple = struct.unpack_from(struct_fmt3, data, offset=offset)
         else:
             struct_fmt3 = "<III6H4I2H4I2I"
-            part3 = struct.unpack_from(struct_fmt3, data, offset=offset)
-        part3 = list(part3)
+            part3_tuple = struct.unpack_from(struct_fmt3, data, offset=offset)
+        part3 = list(part3_tuple)
         part3[13] = WindowsSubsystem(part3[13])
         part3[14] = DllCharacteristics(part3[14])
         offset += struct.calcsize(struct_fmt3)
@@ -319,8 +319,9 @@ class PEImageSectionHeader:
                 *members[1:-1],
                 PESectionFlags(members[-1]),
             )
-            for members in struct.iter_unpack(
-                struct_fmt, data[offset : offset + count * s_size]
+            for members in cast(
+                Iterator[tuple[bytes, int, int, int, int, int, int, int, int, int]],
+                struct.iter_unpack(struct_fmt, data[offset : offset + count * s_size]),
             )
         )
         return items, offset + count * struct.calcsize(struct_fmt)
@@ -335,11 +336,13 @@ class CodeViewHeaderNB10:
     pdb_file_name: bytes  # zero terminated string with the name of the PDB file
 
     @classmethod
-    def from_memory(cls, data: bytes, offset: int) -> Optional["CodeViewHeaderNB10"]:
+    def from_memory(cls, data: bytes, offset: int) -> "CodeViewHeaderNB10| None":
         struct_fmt = "<4sIII"
         if not cls.taste(data, offset):
             raise ValueError
-        items = struct.unpack_from(struct_fmt, data, offset)
+        items: tuple[bytes, int, int, int] = struct.unpack_from(
+            struct_fmt, data, offset
+        )
         offset_pdb_filename = offset + struct.calcsize(struct_fmt)
         try:
             pos_null = data.index(0, offset_pdb_filename)
@@ -360,11 +363,11 @@ class CodeViewHeaderRSDS:
     pdb_file_name: bytes  # zero terminated string with the name of the PDB file
 
     @classmethod
-    def from_memory(cls, data: bytes, offset: int) -> Optional["CodeViewHeaderRSDS"]:
+    def from_memory(cls, data: bytes, offset: int) -> "CodeViewHeaderRSDS | None":
         struct_fmt = "<4s16s"
         if not cls.taste(data, offset):
             raise ValueError
-        items = struct.unpack_from(struct_fmt, data, offset)
+        items: tuple[bytes, bytes] = struct.unpack_from(struct_fmt, data, offset)
         offset_pdb_filename = offset + struct.calcsize(struct_fmt)
         try:
             pos_null = data.index(0, offset_pdb_filename)
@@ -437,7 +440,9 @@ class DebugDirectoryEntryHeader:
     pointer_to_raw_data: int  # The file pointer to the debug data.
 
     @classmethod
-    def from_memory(cls, data: bytes, offset: int) -> "DebugDirectoryEntryHeader":
+    def from_memory(
+        cls, data: bytes, offset: int
+    ) -> tuple["DebugDirectoryEntryHeader", int]:
         struct_fmt = "<2I2H4I"
         items = struct.unpack_from(struct_fmt, data, offset=offset)
         return cls(*items), offset + struct.calcsize(struct_fmt)
@@ -471,8 +476,10 @@ class PEImage(Image):
     _relocated_addrs: set[int] = dataclasses.field(default_factory=set, repr=False)
     _relocations: set[int] = dataclasses.field(default_factory=set, repr=False)
     # find_str: bool = dataclasses.field(default=False, repr=False)
-    imports: list[tuple[int, str]] = dataclasses.field(default_factory=list, repr=False)
-    exports: list[tuple[str, str, int]] = dataclasses.field(
+    imports: list[tuple[str, str, int]] = dataclasses.field(
+        default_factory=list, repr=False
+    )
+    exports: list[tuple[int, bytes]] = dataclasses.field(
         default_factory=list, repr=False
     )
     thunks: list[tuple[int, int]] = dataclasses.field(default_factory=list, repr=False)
@@ -542,7 +549,7 @@ class PEImage(Image):
 
     def get_data_directory_region(
         self, t: PEDataDirectoryItemType
-    ) -> Optional[PEDataDirectoryItemRegion]:
+    ) -> PEDataDirectoryItemRegion | None:
         directory_header = self.optional_header.directories[t.value]
         if not directory_header.rva:
             return None
@@ -566,7 +573,7 @@ class PEImage(Image):
         )
 
     @property
-    def pdb_filename(self) -> Optional[str]:
+    def pdb_filename(self) -> str | None:
         debug_directory = self.get_data_directory_region(PEDataDirectoryItemType.DEBUG)
         if not debug_directory:
             return None
@@ -581,17 +588,19 @@ class PEImage(Image):
             if CodeViewHeaderNB10.taste(
                 data=self.data, offset=debug_entry.pointer_to_raw_data
             ):
-                cv = CodeViewHeaderNB10.from_memory(
+                cv_nb10 = CodeViewHeaderNB10.from_memory(
                     data=self.data, offset=debug_entry.pointer_to_raw_data
                 )
-                return cv.pdb_file_name.decode("ascii")
+                assert cv_nb10 is not None
+                return cv_nb10.pdb_file_name.decode("ascii")
             if CodeViewHeaderRSDS.taste(
                 data=self.data, offset=debug_entry.pointer_to_raw_data
             ):
-                cv = CodeViewHeaderRSDS.from_memory(
+                cv_rsds = CodeViewHeaderRSDS.from_memory(
                     data=self.data, offset=debug_entry.pointer_to_raw_data
                 )
-                return cv.pdb_file_name.decode()
+                assert cv_rsds is not None
+                return cv_rsds.pdb_file_name.decode()
         return None
 
     @property
@@ -601,7 +610,7 @@ class PEImage(Image):
     def get_relocated_addresses(self) -> list[int]:
         return sorted(self._relocated_addrs)
 
-    def find_string(self, target: bytes) -> Optional[int]:
+    def find_string(self, target: bytes) -> int | None:
         # Pad with null terminator to make sure we don't
         # match on a subset of the full string
         if not target.endswith(b"\x00"):
@@ -755,6 +764,7 @@ class PEImage(Image):
         import_directory = self.get_data_directory_region(
             PEDataDirectoryItemType.IMPORT_TABLE
         )
+        assert import_directory is not None
 
         def iter_image_import(offset: int):
             while True:
@@ -873,13 +883,13 @@ class PEImage(Image):
         n_functions = export_table.address_table_entries
 
         func_start = export_start + 40
-        func_addrs = [
+        func_addrs: list[int] = [
             self.imagebase + rva
             for rva, in struct.iter_unpack("<L", self.read(func_start, 4 * n_functions))
         ]
 
         name_start = func_start + 4 * n_functions
-        name_addrs = [
+        name_addrs: list[int] = [
             self.imagebase + rva
             for rva, in struct.iter_unpack("<L", self.read(name_start, 4 * n_functions))
         ]

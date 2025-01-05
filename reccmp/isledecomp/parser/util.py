@@ -1,6 +1,5 @@
 # C++ Parser utility functions and data structures
 import re
-from typing import Optional
 from ast import literal_eval
 
 # The goal here is to just read whatever is on the next line, so some
@@ -27,7 +26,7 @@ doubleQuoteRegex = re.compile(r"(\"(?:[^\"\\]|\\.)*\")")
 scopeDetectRegex = re.compile(r"(?:class|struct|namespace) (?P<name>\w+).*(?:{)?")
 
 
-def get_synthetic_name(line: str) -> Optional[str]:
+def get_synthetic_name(line: str) -> str | None:
     """Synthetic names appear on a single line comment on the line after the marker.
     If that's not what we have, return None"""
     template_match = templateCommentRegex.match(line)
@@ -95,7 +94,7 @@ def fix_template_type(class_name: str) -> str:
     return template_regex.sub(template_replace, class_name)
 
 
-def get_class_name(line: str) -> Optional[str]:
+def get_class_name(line: str) -> str | None:
     """For VTABLE markers, extract the class name from the code line or comment
     where it appears."""
 
@@ -110,7 +109,7 @@ global_regex = re.compile(r"(?P<name>(?:\w+::)*g_\w+)")
 less_strict_global_regex = re.compile(r"(?P<name>(?:\w+::)*\w+)(?:\)\(|\[.*|\s*=.*|;)")
 
 
-def get_variable_name(line: str) -> Optional[str]:
+def get_variable_name(line: str) -> str | None:
     """Grab the name of the variable annotated with the GLOBAL marker.
     Correct syntax would have the variable start with the prefix "g_"
     but we will try to match regardless."""
@@ -124,7 +123,7 @@ def get_variable_name(line: str) -> Optional[str]:
     return None
 
 
-def get_string_contents(line: str) -> Optional[str]:
+def get_string_contents(line: str) -> str | None:
     """Return the first C string seen on this line.
     We have to unescape the string, and a simple way to do that is to use
     python's ast.literal_eval. I'm sure there are many pitfalls to doing

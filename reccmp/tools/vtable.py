@@ -2,7 +2,6 @@
 
 import argparse
 import logging
-from typing import List
 import colorama
 import reccmp
 from reccmp.isledecomp import PEImage, detect_image
@@ -14,6 +13,7 @@ from reccmp.project.detect import (
     argparse_parse_built_project_target,
     RecCmpProjectException,
 )
+from reccmp.isledecomp.compare.diff import CombinedDiffOutput
 
 
 logger = logging.getLogger(__name__)
@@ -45,7 +45,7 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def show_vtable_diff(udiff: List, _: bool = False, plain: bool = False):
+def show_vtable_diff(udiff: CombinedDiffOutput, _: bool = False, plain: bool = False):
     print_combined_diff(udiff, plain)
 
 
@@ -86,7 +86,8 @@ def main():
         if tbl_match.ratio < 1:
             problem_count += 1
 
-            udiff = list(tbl_match.udiff)
+            udiff = tbl_match.udiff
+            assert udiff is not None
 
             print(
                 tbl_match.name,
@@ -102,10 +103,12 @@ def main():
     # They should always match 100%. If not, there is a problem
     # with the inheritance or an overriden function.
     for fun_match in engine.get_functions():
+        assert fun_match.name is not None
         if "`vtordisp" not in fun_match.name:
             continue
 
         diff = engine.compare_address(fun_match.orig_addr)
+        assert diff is not None
         if diff.ratio < 1.0:
             problem_count += 1
             print(

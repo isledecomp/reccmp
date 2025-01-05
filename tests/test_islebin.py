@@ -3,7 +3,6 @@
 2. Provides an interface to read from the DLL or EXE using a virtual address.
 These are some basic smoke tests."""
 
-from typing import Tuple
 import pytest
 from reccmp.isledecomp.formats import PEImage
 from reccmp.isledecomp.formats.exceptions import (
@@ -144,7 +143,7 @@ IMPORT_REFS = (
 
 
 @pytest.mark.parametrize("import_ref", IMPORT_REFS)
-def test_imports(import_ref: Tuple[str, str, int], binfile: PEImage):
+def test_imports(import_ref: tuple[str, str, int], binfile: PEImage):
     assert import_ref in binfile.imports
 
 
@@ -156,7 +155,7 @@ THUNKS = (
 
 
 @pytest.mark.parametrize("thunk_ref", THUNKS)
-def test_thunks(thunk_ref: Tuple[int, int], binfile: PEImage):
+def test_thunks(thunk_ref: tuple[int, int], binfile: PEImage):
     assert thunk_ref in binfile.thunks
 
 

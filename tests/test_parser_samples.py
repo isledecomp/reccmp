@@ -1,5 +1,5 @@
 import os
-from typing import List, TextIO
+from typing import TextIO
 import pytest
 from reccmp.isledecomp.parser import DecompParser
 from reccmp.isledecomp.parser.node import ParserSymbol
@@ -14,7 +14,7 @@ def sample_file(filename: str) -> TextIO:
     return open(full_path, "r", encoding="utf-8")
 
 
-def code_blocks_are_sorted(blocks: List[ParserSymbol]) -> bool:
+def code_blocks_are_sorted(blocks: list[ParserSymbol]) -> bool:
     """Helper to make this more idiomatic"""
     just_offsets = [block.offset for block in blocks]
     return just_offsets == sorted(just_offsets)
@@ -36,8 +36,8 @@ def test_sanity(parser):
     assert len(parser.functions) == 3
     assert code_blocks_are_sorted(parser.functions) is True
     # n.b. The parser returns line numbers as 1-based
-    # Function starts when we see the opening curly brace
-    assert parser.functions[0].line_number == 8
+    # Function begins on the first code line
+    assert parser.functions[0].line_number == 7
     assert parser.functions[0].end_line == 10
 
 
@@ -86,19 +86,14 @@ def test_indented(parser):
     with sample_file("basic_class.cpp") as f:
         parser.read(f.read())
 
-    # TODO: We don't properly detect the end of these functions
-    # because the closing brace is indented. However... knowing where each
-    # function ends is less important (for now) than capturing
-    # all the functions that are there.
-
     assert len(parser.functions) == 2
     assert parser.functions[0].offset == int("0x12345678", 16)
-    assert parser.functions[0].line_number == 16
-    # assert parser.functions[0].end_line == 19
+    assert parser.functions[0].line_number == 15
+    assert parser.functions[0].end_line == 19
 
     assert parser.functions[1].offset == int("0xdeadbeef", 16)
-    assert parser.functions[1].line_number == 23
-    # assert parser.functions[1].end_line == 25
+    assert parser.functions[1].line_number == 22
+    assert parser.functions[1].end_line == 25
 
 
 def test_inline(parser):
@@ -120,13 +115,13 @@ def test_multiple_offsets(parser):
 
     assert len(parser.functions) == 4
     assert parser.functions[0].module == "TEST"
-    assert parser.functions[0].line_number == 9
+    assert parser.functions[0].line_number == 8
 
     assert parser.functions[1].module == "HELLO"
-    assert parser.functions[1].line_number == 9
+    assert parser.functions[1].line_number == 8
 
     # Duplicate modules are ignored
-    assert parser.functions[2].line_number == 16
+    assert parser.functions[2].line_number == 15
     assert parser.functions[2].offset == 0x2345
 
     assert parser.functions[3].module == "TEST"
