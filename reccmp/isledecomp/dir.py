@@ -87,7 +87,7 @@ def walk_source_dir(source: Path, recursive: bool = True) -> Iterator[str]:
     """Generator to walk the given directory recursively and return
     any C++ files found."""
 
-    for subdir, _, files in source.absolute().walk():
+    for subdir, _, files in os.walk(source.absolute()):
         for file in files:
             if is_file_cpp(file):
                 yield os.path.join(subdir, file)
