@@ -1,13 +1,16 @@
 from difflib import SequenceMatcher
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 CombinedDiffInput = list[tuple[str, str]]
 
-MatchingBlock = TypedDict("MatchingBlock", {"both": list[tuple[str, str, str]]})
-MismatchingBlock = TypedDict(
-    "MismatchingBlock", {"orig": list[tuple[str, str]], "recomp": list[tuple[str, str]]}
-)
-MatchingOrMismatchingBlock = MatchingBlock | MismatchingBlock
+
+# TODO: Find a solution for Python versions < 3.11 - maybe typing_extensions?
+class MatchingOrMismatchingBlock(TypedDict):
+    # I tried a union and narrowing, but this does not work in mypy - see https://github.com/python/mypy/issues/11080
+    both: NotRequired[list[tuple[str, str, str]]]
+    orig: NotRequired[list[tuple[str, str]]]
+    recomp: NotRequired[list[tuple[str, str]]]
+
 
 # tuple[str, list[...]]: One contiguous part of the diff (without skipping matching code)
 # list[...]: The list of all the contiguous diffs of a given function
