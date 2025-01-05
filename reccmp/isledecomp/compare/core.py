@@ -5,7 +5,7 @@ from pathlib import Path
 import struct
 import uuid
 from dataclasses import dataclass
-from typing import Callable, Iterable, Iterator, Optional
+from typing import Callable, Iterable, Iterator
 from reccmp.isledecomp.formats.exceptions import InvalidVirtualAddressError
 from reccmp.isledecomp.formats.pe import PEImage
 from reccmp.isledecomp.cvdump.demangler import demangle_string_const
@@ -31,7 +31,7 @@ class DiffReport:
     orig_addr: int
     recomp_addr: int
     name: str
-    udiff: Optional[CombinedDiffOutput] = None
+    udiff: CombinedDiffOutput | None = None
     ratio: float = 0.0
     is_effective_match: bool = False
     is_stub: bool = False
@@ -54,10 +54,10 @@ def create_reloc_lookup(bin_file: PEImage) -> Callable[[int], bool]:
     return lookup
 
 
-def create_bin_lookup(bin_file: PEImage) -> Callable[[int, int], Optional[bytes]]:
+def create_bin_lookup(bin_file: PEImage) -> Callable[[int, int], bytes | None]:
     """Function generator for reading from the bin file"""
 
-    def lookup(addr: int, size: int) -> Optional[bytes]:
+    def lookup(addr: int, size: int) -> bytes | None:
         try:
             return bin_file.read(addr, size)
         except InvalidVirtualAddressError:
@@ -74,14 +74,15 @@ class Compare:
         recomp_bin: PEImage,
         pdb_file: Path | str,
         code_dir: Path | str,
-        target_id: str = None,
+        target_id: str | None = None,
     ):
         self.orig_bin = orig_bin
         self.recomp_bin = recomp_bin
         self.pdb_file = str(pdb_file)
         self.code_dir = str(code_dir)
-        self.target_id = target_id
-        if self.target_id is None:
+        if target_id is not None:
+            self.target_id = target_id
+        else:
             # Assume module name is the base filename of the original binary.
             self.target_id, _ = os.path.splitext(
                 os.path.basename(self.orig_bin.filepath)
@@ -165,6 +166,7 @@ class Compare:
                 )
 
             if sym.node_type == SymbolType.STRING:
+                assert sym.decorated_name is not None
                 string_info = demangle_string_const(sym.decorated_name)
                 if string_info is None:
                     logger.debug(
@@ -176,11 +178,10 @@ class Compare:
                 if string_info.is_utf16:
                     continue
 
-                raw = self.recomp_bin.read(addr, sym.size())
+                size = sym.size()
+                assert size is not None
 
-                # read returns None when reading 0 bytes
-                if sym.size() == 0 and raw is None:
-                    raw = b""
+                raw = self.recomp_bin.read(addr, size)
 
                 try:
                     # We use the string length reported in the mangled symbol as the
@@ -250,6 +251,7 @@ class Compare:
         # a lineref, we can match the nameref correctly because the lineref
         # was already removed from consideration.
         for fun in codebase.iter_line_functions():
+            assert fun.filename is not None
             recomp_addr = self._lines_db.search_line(
                 fun.filename, fun.line_number, fun.end_line
             )
@@ -301,8 +303,8 @@ class Compare:
         Note that there is no recursion, so an array of arrays would not be handled entirely.
         This step is necessary e.g. for `0x100f0a20` (LegoRacers.cpp).
         """
-
-        dataset = {}
+        dataset: dict[int, dict[str, str]] = {}
+        orig_by_recomp: dict[int, int] = {}
 
         # Helper function
         def _add_match_in_array(
@@ -311,7 +313,8 @@ class Compare:
             # pylint: disable=unused-argument
             # TODO: Previously used scalar_type_pointer(type_id) to set whether this is a pointer
             if recomp_addr not in dataset:
-                dataset[recomp_addr] = {"orig": orig_addr, "name": name}
+                dataset[recomp_addr] = {"name": name}
+                orig_by_recomp[recomp_addr] = orig_addr
 
         # Indexed by recomp addr. Need to preload this data because it is not stored alongside the db rows.
         cvdump_lookup = {x.addr: x for x in self.cvdump_analysis.nodes}
@@ -357,7 +360,10 @@ class Compare:
             upsert=True,
         )
         self._db.bulk_match(
-            ((values["orig"], addr) for addr, values in dataset.items())
+            (
+                (orig_addr, recomp_addr)
+                for recomp_addr, orig_addr in orig_by_recomp.items()
+            )
         )
 
     def _find_original_strings(self):
@@ -486,11 +492,12 @@ class Compare:
             if recomp_func is None:
                 continue
 
+            assert recomp_func.name is not None
             self._db.create_recomp_thunk(recomp_thunk, recomp_func.name)
 
         # Thunks may be non-unique, so use a list as dict value when
         # inverting the list of tuples from self.recomp_bin.
-        recomp_thunks = {}
+        recomp_thunks: dict[int, list[int]] = {}
         for thunk_addr, func_addr in self.recomp_bin.thunks:
             recomp_thunks.setdefault(func_addr, []).append(thunk_addr)
 
@@ -502,6 +509,7 @@ class Compare:
 
             # Check whether the thunk destination is a matched symbol
             if orig_func.recomp_addr not in recomp_thunks:
+                assert orig_func.name is not None
                 self._db.create_orig_thunk(orig_thunk, orig_func.name)
                 continue
 
@@ -536,6 +544,7 @@ class Compare:
                 # *is* the thunk, but it's more helpful to mark the actual function.
                 # It could be the case that only one side is a thunk, but we can
                 # deal with that.
+                rel_addr: int
                 (opcode, rel_addr) = struct.unpack(
                     "<Bl", self.recomp_bin.read(recomp_addr, 5)
                 )
@@ -622,7 +631,6 @@ class Compare:
     def _match_vtordisp_in_vtable(self, orig_addr, recomp_addr):
         thunk_fn = self.get_by_recomp(recomp_addr)
         assert thunk_fn is not None
-        assert thunk_fn.size is not None
 
         # Read the function bytes here.
         # In practice, the adjuster thunk will be under 16 bytes.
@@ -733,6 +741,7 @@ class Compare:
             is_effective_match = False
             unified_diff = []
 
+        assert match.name is not None
         return DiffReport(
             match_type=SymbolType.FUNCTION,
             orig_addr=match.orig_addr,
@@ -763,9 +772,7 @@ class Compare:
             [t for (t,) in struct.iter_unpack("<L", recomp_table)],
         )
 
-        def match_text(
-            m: Optional[ReccmpEntity], raw_addr: Optional[int] = None
-        ) -> str:
+        def match_text(m: ReccmpEntity | None, raw_addr: int | None = None) -> str:
             """Format the function reference at this vtable index as text.
             If we have not identified this function, we have the option to
             display the raw address. This is only worth doing for the original addr
@@ -789,7 +796,7 @@ class Compare:
 
         orig_text = []
         recomp_text = []
-        ratio = 0
+        ratio = 0.0
         n_entries = 0
 
         # Now compare each pointer from the two vtables.
@@ -809,7 +816,7 @@ class Compare:
             orig_text.append((index, match_text(orig, raw_orig)))
             recomp_text.append((index, match_text(recomp)))
 
-        ratio = ratio / float(n_entries) if n_entries > 0 else 0
+        ratio = ratio / float(n_entries) if n_entries > 0 else 0.0
 
         # n=100: Show the entire table if there is a diff to display.
         # Otherwise it would be confusing if the table got cut off.
@@ -822,6 +829,7 @@ class Compare:
 
         unified_diff = combined_diff(sm, orig_text, recomp_text, context_size=100)
 
+        assert match.name is not None
         return DiffReport(
             match_type=SymbolType.VTABLE,
             orig_addr=match.orig_addr,
@@ -831,7 +839,7 @@ class Compare:
             ratio=ratio,
         )
 
-    def _compare_match(self, match: ReccmpMatch) -> Optional[DiffReport]:
+    def _compare_match(self, match: ReccmpMatch) -> DiffReport | None:
         """Router for comparison type"""
 
         if match.size is None or match.size == 0:
@@ -840,9 +848,11 @@ class Compare:
         if match.get("skip", False):
             return None
 
+        assert match.compare_type is not None
+        assert match.name is not None
         if match.get("stub", False):
             return DiffReport(
-                match_type=match.compare_type,
+                match_type=SymbolType(match.compare_type),
                 orig_addr=match.orig_addr,
                 recomp_addr=match.recomp_addr,
                 name=match.name,
@@ -872,10 +882,10 @@ class Compare:
 
         return match.recomp_addr == recomp_addr
 
-    def get_by_orig(self, addr: int) -> Optional[ReccmpEntity]:
+    def get_by_orig(self, addr: int) -> ReccmpEntity | None:
         return self._db.get_by_orig(addr)
 
-    def get_by_recomp(self, addr: int) -> Optional[ReccmpEntity]:
+    def get_by_recomp(self, addr: int) -> ReccmpEntity | None:
         return self._db.get_by_recomp(addr)
 
     def get_all(self) -> Iterator[ReccmpEntity]:
@@ -890,7 +900,7 @@ class Compare:
     def get_variables(self) -> Iterator[ReccmpMatch]:
         return self._db.get_matches_by_type(SymbolType.DATA)
 
-    def compare_address(self, addr: int) -> Optional[DiffReport]:
+    def compare_address(self, addr: int) -> DiffReport | None:
         match = self._db.get_one_match(addr)
         if match is None:
             return None
@@ -922,4 +932,4 @@ class Compare:
         for match in self.get_vtables():
             diff = self._compare_match(match)
             if diff is not None:
-                yield self._compare_match(match)
+                yield diff

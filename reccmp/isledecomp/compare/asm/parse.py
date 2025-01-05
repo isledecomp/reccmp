@@ -9,11 +9,11 @@ placeholder string."""
 import re
 import struct
 from functools import cache
-from typing import Callable, List, Optional, Tuple
-from collections import namedtuple
+from typing import Callable
 from .const import JUMP_MNEMONICS, SINGLE_OPERAND_INSTS
 from .instgen import InstructGen, SectionType
 from .replacement import AddrTestProtocol, NameReplacementProtocol
+from .types import DisasmLiteInst
 
 ptr_replace_regex = re.compile(r"\[(0x[0-9a-f]+)\]")
 
@@ -23,11 +23,9 @@ displace_replace_regex = re.compile(r"\+ (0x[0-9a-f]+)\]")
 # Preceded by start-of-string (first operand) or comma-space (second operand)
 immediate_replace_regex = re.compile(r"(?:^|, )(0x[0-9a-f]+)")
 
-DisasmLiteInst = namedtuple("DisasmLiteInst", "address, size, mnemonic, op_str")
-
 
 @cache
-def from_hex(string: str) -> Optional[int]:
+def from_hex(string: str) -> int | None:
     try:
         return int(string, 16)
     except ValueError:
@@ -36,7 +34,7 @@ def from_hex(string: str) -> Optional[int]:
     return None
 
 
-def bytes_to_dword(b: bytes) -> Optional[int]:
+def bytes_to_dword(b: bytes) -> int | None:
     if len(b) == 4:
         return struct.unpack("<L", b)[0]
 
@@ -46,14 +44,14 @@ def bytes_to_dword(b: bytes) -> Optional[int]:
 class ParseAsm:
     def __init__(
         self,
-        addr_test: Optional[AddrTestProtocol] = None,
-        name_lookup: Optional[NameReplacementProtocol] = None,
-        bin_lookup: Optional[Callable[[int, int], Optional[bytes]]] = None,
+        addr_test: AddrTestProtocol | None = None,
+        name_lookup: NameReplacementProtocol | None = None,
+        bin_lookup: Callable[[int, int], bytes | None] | None = None,
     ) -> None:
         self.addr_test = addr_test
         self.name_lookup = name_lookup
         self.bin_lookup = bin_lookup
-        self.replacements = {}
+        self.replacements: dict[int, str] = {}
         self.number_placeholders = True
 
     def reset(self):
@@ -66,7 +64,7 @@ class ParseAsm:
 
         return False
 
-    def lookup(self, addr: int, exact: bool = False) -> Optional[str]:
+    def lookup(self, addr: int, exact: bool = False) -> str | None:
         """Wrapper for user-provided name lookup"""
         if callable(self.name_lookup):
             return self.name_lookup(addr, exact=exact)
@@ -136,7 +134,7 @@ class ParseAsm:
 
         return match.group(0).replace(match.group(1), self.replace(value))
 
-    def sanitize(self, inst: DisasmLiteInst) -> Tuple[str, str]:
+    def sanitize(self, inst: DisasmLiteInst) -> tuple[str, str]:
         # For jumps or calls, if the entire op_str is a hex number, the value
         # is a relative offset.
         # Otherwise (i.e. it looks like `dword ptr [address]`) it is an
@@ -194,15 +192,15 @@ class ParseAsm:
 
         return (inst.mnemonic, op_str)
 
-    def parse_asm(self, data: bytes, start_addr: Optional[int] = 0) -> List[str]:
+    def parse_asm(self, data: bytes, start_addr: int = 0) -> list[tuple[str, str]]:
         self.reset()
-        asm = []
+        asm: list[tuple[str, str]] = []
 
         ig = InstructGen(data, start_addr)
 
-        for sect_type, sect_contents in ig.sections:
-            if sect_type == SectionType.CODE:
-                for inst in sect_contents:
+        for section in ig.sections:
+            if section.type == SectionType.CODE:
+                for inst in section.contents:
                     # Use heuristics to disregard some differences that aren't representative
                     # of the accuracy of a function (e.g. global offsets)
 
@@ -224,14 +222,14 @@ class ParseAsm:
 
                     # mnemonic + " " + op_str
                     asm.append((hex(inst.address), " ".join(result)))
-            elif sect_type == SectionType.ADDR_TAB:
+            elif section.type == SectionType.ADDR_TAB:
                 asm.append(("", "Jump table:"))
-                for i, (ofs, _) in enumerate(sect_contents):
+                for i, (ofs, _) in enumerate(section.contents):
                     asm.append((hex(ofs), f"Jump_dest_{i}"))
 
-            elif sect_type == SectionType.DATA_TAB:
+            elif section.type == SectionType.DATA_TAB:
                 asm.append(("", "Data table:"))
-                for ofs, b in sect_contents:
+                for ofs, b in section.contents:
                     asm.append((hex(ofs), hex(b)))
 
         return asm

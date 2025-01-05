@@ -4,7 +4,7 @@ import os
 import argparse
 import logging
 from enum import Enum
-from typing import Iterable, List, NamedTuple, Optional, Tuple
+from typing import Iterable, NamedTuple
 from struct import unpack
 import colorama
 import reccmp
@@ -81,9 +81,9 @@ class CompareResult(Enum):
 class ComparedOffset(NamedTuple):
     offset: int
     # name is None for scalar types
-    name: Optional[str]
+    name: str | None
     match: bool
-    values: Tuple[str, str]
+    values: tuple[str, str]
 
 
 class ComparisonItem(NamedTuple):
@@ -98,10 +98,10 @@ class ComparisonItem(NamedTuple):
     # For a scalar type, this is a list of size one.
     # If we could not retrieve type information, this is
     # a list of size one but without any specific type.
-    compared: List[ComparedOffset]
+    compared: list[ComparedOffset]
 
     # If present, the error message from the types parser.
-    error: Optional[str] = None
+    error: str | None = None
 
     # If true, there is no type specified for this variable. (i.e. non-public)
     # In this case, we can only compare the raw bytes.
@@ -123,13 +123,14 @@ class ComparisonItem(NamedTuple):
 
 def create_comparison_item(
     var: ReccmpMatch,
-    compared: Optional[List[ComparedOffset]] = None,
-    error: Optional[str] = None,
+    compared: list[ComparedOffset] | None = None,
+    error: str | None = None,
     raw_only: bool = False,
 ) -> ComparisonItem:
     """Helper to create the ComparisonItem from the fields in the reccmp database."""
     if compared is None:
         compared = []
+    assert var.name is not None
 
     return ComparisonItem(
         orig_addr=var.orig_addr,
@@ -175,6 +176,7 @@ def do_the_comparison(target: RecCmpBuiltTarget) -> Iterable[ComparisonItem]:
     }
 
     for var in isle_compare.get_variables():
+        assert var.name is not None
         type_name = recomp_type_reference.get(var.recomp_addr)
 
         # Start by assuming we can only compare the raw bytes
@@ -191,6 +193,7 @@ def do_the_comparison(target: RecCmpBuiltTarget) -> Iterable[ComparisonItem]:
                 yield create_comparison_item(var, error=repr(ex))
                 continue
 
+        assert data_size is not None
         orig_raw = origfile.read(var.orig_addr, data_size)
         recomp_raw = recompfile.read(var.recomp_addr, data_size)
 
@@ -247,7 +250,7 @@ def do_the_comparison(target: RecCmpBuiltTarget) -> Iterable[ComparisonItem]:
                         offset=0,
                         name="(raw)",
                         match=orig_raw == recomp_raw,
-                        values=(orig_raw, recomp_raw),
+                        values=(str(orig_raw), str(recomp_raw)),
                     )
                 ],
                 raw_only=True,
@@ -305,7 +308,7 @@ def do_the_comparison(target: RecCmpBuiltTarget) -> Iterable[ComparisonItem]:
         yield create_comparison_item(var, compared=compared)
 
 
-def value_get(value: Optional[str], default: str):
+def value_get(value: str | None, default: str):
     return value if value is not None else default
 
 

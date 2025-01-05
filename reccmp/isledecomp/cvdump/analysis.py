@@ -1,6 +1,5 @@
 """For collating the results from parsing cvdump.exe into a more directly useful format."""
 
-from typing import Dict, List, Tuple, Optional
 from reccmp.isledecomp.types import SymbolType
 from .demangler import demangle_string_const, demangle_vtable
 from .parser import CvdumpParser
@@ -14,29 +13,29 @@ class CvdumpNode:
     section: int
     offset: int
     # aka the mangled name from the PUBLICS section
-    decorated_name: Optional[str] = None
+    decorated_name: str | None = None
     # optional "nicer" name (e.g. of a function from SYMBOLS section)
-    friendly_name: Optional[str] = None
+    friendly_name: str | None = None
     # To be determined by context after inserting data, unless the decorated
     # name makes this obvious. (i.e. string constants or vtables)
     # We choose not to assume that section 1 (probably ".text") contains only
     # functions. Smacker functions are linked to their own section "_UNSTEXT"
-    node_type: Optional[SymbolType] = None
+    node_type: SymbolType | None = None
     # Function size can be read from the LINES section so use this over any
     # other value if we have it.
     # TYPES section can tell us the size of structs and other complex types.
-    confirmed_size: Optional[int] = None
+    confirmed_size: int | None = None
     # Estimated by reading the distance between this symbol and the one that
     # follows in the same section.
     # If this is the last symbol in the section, we cannot estimate a size.
-    estimated_size: Optional[int] = None
+    estimated_size: int | None = None
     # Size as reported by SECTION CONTRIBUTIONS section. Not guaranteed to be
     # accurate.
-    section_contribution: Optional[int] = None
-    addr: Optional[int] = None
-    symbol_entry: Optional[SymbolsEntry] = None
+    section_contribution: int | None = None
+    addr: int | None = None
+    symbol_entry: SymbolsEntry | None = None
     # Preliminary - only used for non-static variables at the moment
-    data_type: Optional[TypeInfo] = None
+    data_type: TypeInfo | None = None
 
     def __init__(self, section: int, offset: int) -> None:
         self.section = section
@@ -58,8 +57,9 @@ class CvdumpNode:
 
         elif self.decorated_name.startswith("??_C@"):
             self.node_type = SymbolType.STRING
-            (strlen, _) = demangle_string_const(self.decorated_name)
-            self.confirmed_size = strlen
+            demangled = demangle_string_const(self.decorated_name)
+            assert demangled is not None
+            self.confirmed_size = demangled.len
 
         elif not self.decorated_name.startswith("?") and "@" in self.decorated_name:
             # C mangled symbol. The trailing at-sign with number tells the number of bytes
@@ -68,7 +68,7 @@ class CvdumpNode:
             # https://learn.microsoft.com/en-us/cpp/build/reference/decorated-names?view=msvc-170#FormatC
             self.node_type = SymbolType.FUNCTION
 
-    def name(self) -> Optional[str]:
+    def name(self) -> str | None:
         """Prefer "friendly" name if we have it.
         This is what we have been using to match functions."""
         return (
@@ -77,7 +77,7 @@ class CvdumpNode:
             else self.decorated_name
         )
 
-    def size(self) -> Optional[int]:
+    def size(self) -> int | None:
         if self.confirmed_size is not None:
             return self.confirmed_size
 
@@ -93,12 +93,12 @@ class CvdumpAnalysis:
     """Collects the results from CvdumpParser into a list of nodes (i.e. symbols).
     These can then be analyzed by a downstream tool."""
 
-    verified_lines: Dict[Tuple[str, str], Tuple[str, str]]
+    verified_lines: dict[tuple[int, int], tuple[str, int]]
 
     def __init__(self, parser: CvdumpParser):
         """Read in as much information as we have from the parser.
         The more sections we have, the better our information will be."""
-        node_dict: Dict[Tuple[int, int], CvdumpNode] = {}
+        node_dict: dict[tuple[int, int], CvdumpNode] = {}
 
         # PUBLICS is our roadmap for everything that follows.
         for pub in parser.publics:
@@ -166,7 +166,7 @@ class CvdumpAnalysis:
                 node_dict[key].node_type = SymbolType.FUNCTION
                 node_dict[key].symbol_entry = sym
 
-        self.nodes: List[CvdumpNode] = [
+        self.nodes: list[CvdumpNode] = [
             v for _, v in dict(sorted(node_dict.items())).items()
         ]
         self._estimate_size()

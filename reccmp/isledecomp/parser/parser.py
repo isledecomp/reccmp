@@ -1,7 +1,7 @@
 # C++ file parser
 
 import io
-from typing import List, Iterator, Optional
+from typing import Iterator
 from enum import Enum
 from .util import (
     get_class_name,
@@ -55,8 +55,8 @@ class MarkerDict:
         return False
 
     def query(
-        self, category: MarkerCategory, module: str, extra: Optional[str] = None
-    ) -> Optional[DecompMarker]:
+        self, category: MarkerCategory, module: str, extra: str | None = None
+    ) -> DecompMarker | None:
         return self.markers.get((category, module, extra))
 
     def iter(self) -> Iterator[DecompMarker]:
@@ -83,7 +83,7 @@ class CurlyManager:
         except IndexError:
             pass
 
-    def get_prefix(self, name: Optional[str] = None) -> str:
+    def get_prefix(self, name: str | None = None) -> str:
         """Return the prefix for where we are."""
 
         scopes = [t for t in self._stack if t != "{"]
@@ -124,8 +124,8 @@ class DecompParser:
     # but not right now
     def __init__(self) -> None:
         # The lists to be populated as we parse
-        self._symbols: List[ParserSymbol] = []
-        self.alerts: List[ParserAlert] = []
+        self._symbols: list[ParserSymbol] = []
+        self.alerts: list[ParserAlert] = []
 
         self.line_number: int = 0
         self.state: ReaderState = ReaderState.SEARCH
@@ -174,22 +174,22 @@ class DecompParser:
         self.curly.reset()
 
     @property
-    def functions(self) -> List[ParserFunction]:
+    def functions(self) -> list[ParserFunction]:
         return [s for s in self._symbols if isinstance(s, ParserFunction)]
 
     @property
-    def vtables(self) -> List[ParserVtable]:
+    def vtables(self) -> list[ParserVtable]:
         return [s for s in self._symbols if isinstance(s, ParserVtable)]
 
     @property
-    def variables(self) -> List[ParserVariable]:
+    def variables(self) -> list[ParserVariable]:
         return [s for s in self._symbols if isinstance(s, ParserVariable)]
 
     @property
-    def strings(self) -> List[ParserString]:
+    def strings(self) -> list[ParserString]:
         return [s for s in self._symbols if isinstance(s, ParserString)]
 
-    def iter_symbols(self, module: Optional[str] = None) -> Iterator[ParserSymbol]:
+    def iter_symbols(self, module: str | None = None) -> Iterator[ParserSymbol]:
         for s in self._symbols:
             if module is None or s.module == module:
                 yield s
@@ -264,11 +264,7 @@ class DecompParser:
             self._syntax_warning(ParserError.DUPLICATE_MODULE)
         self.state = ReaderState.IN_VTABLE
 
-    def _vtable_done(self, class_name: str = None):
-        if class_name is None:
-            # Best we can do
-            class_name = self.last_line.strip()
-
+    def _vtable_done(self, class_name: str):
         for marker in self.tbl_markers.iter():
             self._symbols.append(
                 ParserVtable(
@@ -294,7 +290,7 @@ class DecompParser:
             self.state = ReaderState.IN_GLOBAL
 
     def _variable_done(
-        self, variable_name: Optional[str] = None, string_value: Optional[str] = None
+        self, variable_name: str | None = None, string_value: str | None = None
     ):
         if variable_name is None and string_value is None:
             self._syntax_error(ParserError.NO_SUITABLE_NAME)
@@ -302,6 +298,7 @@ class DecompParser:
 
         for marker in self.var_markers.iter():
             if marker.is_string():
+                assert string_value is not None
                 self._symbols.append(
                     ParserString(
                         type=marker.type,
@@ -462,7 +459,9 @@ class DecompParser:
                 # If we found a comment, assume implicit lookup-by-name
                 # function and end here. We know this is not a decomp marker
                 # because it would have been handled already.
-                self.function_sig = get_synthetic_name(line)
+                synthetic_name = get_synthetic_name(line)
+                assert synthetic_name is not None
+                self.function_sig = synthetic_name
                 self._function_starts_here()
                 self._function_done(lookup_by_name=True)
 

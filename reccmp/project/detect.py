@@ -2,7 +2,7 @@ import argparse
 import enum
 import logging
 from pathlib import Path
-import typing
+from typing import Sequence
 
 import ruamel.yaml
 
@@ -54,7 +54,7 @@ def verify_target_names(
         )
 
 
-def find_filename_recursively(directory: Path, filename: str) -> typing.Optional[Path]:
+def find_filename_recursively(directory: Path, filename: str) -> Path | None:
     """
     Find filename in working directory, or parent directories.
     """
@@ -75,7 +75,8 @@ class RecCmpProject:
         self.targets: dict[str, RecCmpTarget] = {}
 
     @classmethod
-    def from_directory(cls, directory: Path) -> typing.Optional["RecCmpProject"]:
+    def from_directory(cls, directory: Path) -> "RecCmpProject | None":
+        project_directory: Path | None
         build_directory = find_filename_recursively(
             directory=directory, filename=RECCMP_BUILD_CONFIG
         )
@@ -214,13 +215,15 @@ class RecCmpBuiltProject:
 
 
 class RecCmpPathsAction(argparse.Action):
-    def __call__(self, parser, namespace, values: tuple[str, str], option_string=None):
+    def __call__(
+        self, parser, namespace, values: Sequence[str] | None, option_string=None
+    ):
+        assert isinstance(values, Sequence)
         target_id, source_root = values
-        source_root = Path(source_root)
         target = RecCmpTarget(
             target_id=target_id,
             filename="???",
-            source_root=source_root,
+            source_root=Path(source_root),
             ghidra_config=GhidraConfig.default(),
         )
         setattr(namespace, self.dest, target)
@@ -228,8 +231,9 @@ class RecCmpPathsAction(argparse.Action):
 
 class RecCmpBuiltPathsAction(argparse.Action):
     def __call__(
-        self, parser, namespace, values: tuple[str, str, str, str], option_string=None
+        self, parser, namespace, values: Sequence[str] | None, option_string=None
     ):
+        assert isinstance(values, Sequence)
         original, recompiled, pdb, source_root = list(Path(o) for o in values)
         target = RecCmpBuiltTarget(
             target_id="???",
@@ -361,7 +365,7 @@ def detect_project(
     project_directory: Path,
     search_path: list[Path],
     detect_what: DetectWhat,
-    build_directory: typing.Optional[Path] = None,
+    build_directory: Path | None = None,
 ) -> None:
     yaml = ruamel.yaml.YAML()
 

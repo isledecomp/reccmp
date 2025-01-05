@@ -5,15 +5,14 @@ import re
 import bisect
 import struct
 from enum import Enum, auto
-from collections import namedtuple
-from typing import Iterable, List, NamedTuple, Optional, Tuple, Union
-from capstone import Cs, CS_ARCH_X86, CS_MODE_32
+from typing import Iterable, Literal, NamedTuple
+from capstone import Cs, CS_ARCH_X86, CS_MODE_32  # type: ignore
 from .const import JUMP_MNEMONICS
+from .types import DisasmLiteInst
 
 disassembler = Cs(CS_ARCH_X86, CS_MODE_32)
 
-DisasmLiteTuple = Tuple[int, int, str, str]
-DisasmLiteInst = namedtuple("DisasmLiteInst", "address, size, mnemonic, op_str")
+DisasmLiteTuple = tuple[int, int, str, str]
 
 displacement_regex = re.compile(r".*\+ (0x[0-9a-f]+)\]")
 
@@ -24,9 +23,20 @@ class SectionType(Enum):
     ADDR_TAB = auto()
 
 
-class FuncSection(NamedTuple):
-    type: SectionType
-    contents: List[Union[DisasmLiteInst, Tuple[str, int]]]
+class CodeSection(NamedTuple):
+    type: Literal[SectionType.CODE]
+    contents: list[DisasmLiteInst]
+
+
+TabSectionType = Literal[SectionType.DATA_TAB] | Literal[SectionType.ADDR_TAB]
+
+
+class TabSection(NamedTuple):
+    type: TabSectionType
+    contents: list[tuple[int, int]]
+
+
+FuncSection = CodeSection | TabSection
 
 
 def stop_at_int3(
@@ -49,21 +59,23 @@ class InstructGen:
         self.start = start
         self.end = len(blob) + start
         self.section_end: int = self.end
-        self.code_tracks: List[List[DisasmLiteInst]] = []
+        self.code_tracks: list[list[DisasmLiteInst]] = []
 
         # Todo: Could be refactored later
         self.cur_addr: int = 0
         self.cur_section_type: SectionType = SectionType.CODE
         self.section_start = start
 
-        self.sections: List[FuncSection] = []
+        self.sections: list[FuncSection] = []
 
-        self.confirmed_addrs = {}
+        self.confirmed_addrs: dict[int, SectionType] = {}
         self.analysis()
 
-    def _finish_section(self, type_: SectionType, stuff):
-        sect = FuncSection(type_, stuff)
-        self.sections.append(sect)
+    def _finish_code_section(self, contents: list[DisasmLiteInst]):
+        self.sections.append(CodeSection(SectionType.CODE, contents))
+
+    def _finish_tab_section(self, type_: TabSectionType, stuff: list[tuple[int, int]]):
+        self.sections.append(TabSection(type_, stuff))
 
     def _insert_confirmed_addr(self, addr: int, type_: SectionType):
         # Ignore address outside the bounds of the function
@@ -82,7 +94,7 @@ class InstructGen:
         if type_ != self.cur_section_type and addr > self.cur_addr:
             self.section_end = min(self.section_end, addr)
 
-    def _next_section(self, addr: int) -> Optional[SectionType]:
+    def _next_section(self, addr: int) -> SectionType | None:
         """We have reached the start of a new section. Tell what kind of
         data we are looking at (code or other) and how much we should read."""
 
@@ -122,7 +134,7 @@ class InstructGen:
 
         return new_type
 
-    def _get_code_for(self, addr: int) -> List[DisasmLiteInst]:
+    def _get_code_for(self, addr: int) -> list[DisasmLiteInst]:
         """Start disassembling at the given address."""
         # If we are reading a code block beyond the first, see if we already
         # have disassembled instructions beginning at the specified address.
@@ -211,7 +223,7 @@ class InstructGen:
                 instruction_slice = [
                     inst for inst in instructions if inst.address < self.section_end
                 ]
-                self._finish_section(SectionType.CODE, instruction_slice)
+                self._finish_code_section(instruction_slice)
 
             elif sect_type == SectionType.ADDR_TAB:
                 # Clamp to multiple of 4 (dwords)
@@ -220,7 +232,7 @@ class InstructGen:
                 dwords = self.blob[
                     self.cur_addr - self.start : self.cur_addr - self.start + read_size
                 ]
-                addrs = [addr for addr, in struct.iter_unpack("<L", dwords)]
+                addrs: list[int] = [addr for addr, in struct.iter_unpack("<L", dwords)]
                 for addr in addrs:
                     # Todo: the fact that these are jump table destinations
                     # should factor into the label name.
@@ -230,7 +242,7 @@ class InstructGen:
                 # for (t0,t1) in jump_table:
                 #     print(f"{t0:x} : --> {t1:x}")
 
-                self._finish_section(SectionType.ADDR_TAB, jump_table)
+                self._finish_tab_section(SectionType.ADDR_TAB, jump_table)
                 self.cur_addr = self.section_end
 
             else:
@@ -246,5 +258,5 @@ class InstructGen:
                 # for (t0,t1) in data_table:
                 #     print(f"{t0:x} : value {t1:02x}")
 
-                self._finish_section(SectionType.DATA_TAB, data_table)
+                self._finish_tab_section(SectionType.DATA_TAB, data_table)
                 self.cur_addr = self.section_end

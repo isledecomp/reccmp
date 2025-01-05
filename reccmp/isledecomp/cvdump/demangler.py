@@ -4,9 +4,8 @@ https://en.wikiversity.org/wiki/Visual_C%2B%2B_name_mangling
 """
 
 import re
-from collections import namedtuple
-from typing import Optional
-import pydemangler
+from typing import NamedTuple
+import pydemangler  # type: ignore
 
 
 class InvalidEncodedNumberError(Exception):
@@ -30,10 +29,14 @@ def parse_encoded_number(string: str) -> int:
 string_const_regex = re.compile(
     r"\?\?_C@\_(?P<is_utf16>[0-1])(?P<len>\d|[A-P]+@)(?P<hash>\w+)@(?P<value>.+)@"
 )
-StringConstInfo = namedtuple("StringConstInfo", "len is_utf16")
 
 
-def demangle_string_const(symbol: str) -> Optional[StringConstInfo]:
+class StringConstInfo(NamedTuple):
+    len: int
+    is_utf16: bool
+
+
+def demangle_string_const(symbol: str) -> StringConstInfo | None:
     """Don't bother to decode the string text from the symbol.
     We can just read it from the binary once we have the length."""
     match = string_const_regex.match(symbol)
@@ -53,7 +56,7 @@ def demangle_string_const(symbol: str) -> Optional[StringConstInfo]:
     return StringConstInfo(len=strlen, is_utf16=is_utf16)
 
 
-def get_vtordisp_name(symbol: str) -> Optional[str]:
+def get_vtordisp_name(symbol: str) -> str | None:
     # pylint: disable=c-extension-no-member
     """For adjuster thunk functions, the PDB will sometimes use a name
     that contains "vtordisp" but often will just reuse the name of the
