@@ -40,6 +40,10 @@ class DecompLinter:
         """Helper for loading (module, offset) tuples while the DecompParser
         has them broken up into three different lists."""
         for marker in marker_list:
+            # If we are checking a specific module, ignore problems in other modules
+            if self._module is not None and marker.module != self._module:
+                continue
+
             is_string = isinstance(marker, ParserString)
 
             value = (marker.module, marker.offset)

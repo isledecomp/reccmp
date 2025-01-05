@@ -8,7 +8,8 @@ def fixture_linter():
     return DecompLinter()
 
 
-def test_simple_in_order(linter):
+def test_order_in_order(linter):
+    """Functions from the same module are in order. No problems here."""
     code = """\
         // FUNCTION: TEST 0x1000
         void function1() {}
@@ -20,7 +21,8 @@ def test_simple_in_order(linter):
     assert linter.read(code, "test.cpp", "TEST") is True
 
 
-def test_simple_not_in_order(linter):
+def test_order_out_of_order(linter):
+    """Detect functions that are out of order."""
     code = """\
         // FUNCTION: TEST 0x1000
         void function1() {}
@@ -37,7 +39,7 @@ def test_simple_not_in_order(linter):
     assert linter.alerts[0].line_number == 6
 
 
-def test_byname_ignored(linter):
+def test_order_ignore_lookup_by_name(linter):
     """Should ignore lookup-by-name markers when checking order."""
     code = """\
         // FUNCTION: TEST 0x1000
@@ -47,31 +49,27 @@ def test_byname_ignored(linter):
         // FUNCTION: TEST 0x2000
         void function2() {}
         """
-    # This will fail because byname lookup does not belong in the cpp file
-    assert linter.read(code, "test.cpp", "TEST") is False
-    # but it should not fail for function order.
-    assert all(
-        alert.code != ParserError.FUNCTION_OUT_OF_ORDER for alert in linter.alerts
-    )
+
+    assert linter.read(code, "test.h", "TEST") is True
 
 
-def test_module_isolation(linter):
+def test_order_module_isolation(linter):
     """Should check the order of markers from a single module only."""
     code = """\
-        // FUNCTION: ALPHA 0x0001
+        // FUNCTION: ALPHA 0x0003
         // FUNCTION: TEST 0x1000
         void function1() {}
         // FUNCTION: ALPHA 0x0002
         // FUNCTION: TEST 0x2000
         void function2() {}
-        // FUNCTION: ALPHA 0x0003
+        // FUNCTION: ALPHA 0x0001
         // FUNCTION: TEST 0x3000
         void function3() {}
         """
 
     assert linter.read(code, "test.cpp", "TEST") is True
     linter.reset(True)
-    assert linter.read(code, "test.cpp", "ALPHA") is True
+    assert linter.read(code, "test.cpp", "ALPHA") is False
 
 
 def test_byname_headers_only(linter):
@@ -87,7 +85,7 @@ def test_byname_headers_only(linter):
     assert linter.alerts[0].code == ParserError.BYNAME_FUNCTION_IN_CPP
 
 
-def test_duplicate_offsets(linter):
+def test_duplicate_offsets_module_scope(linter):
     """The linter will retain module/offset pairs found until we do a full reset."""
     code = """\
         // FUNCTION: TEST 0x1000
@@ -101,8 +99,8 @@ def test_duplicate_offsets(linter):
     # Simulate a failure by reading the same file twice.
     assert linter.read(code, "test.h", "TEST") is False
 
-    # Two errors because offsets from both modules are duplicated
-    assert len(linter.alerts) == 2
+    # Only one error because we are focused on the TEST module
+    assert len(linter.alerts) == 1
     assert all(a.code == ParserError.DUPLICATE_OFFSET for a in linter.alerts)
 
     # Partial reset will retain the list of seen offsets.
@@ -112,6 +110,41 @@ def test_duplicate_offsets(linter):
     # Full reset will forget seen offsets.
     linter.reset(True)
     assert linter.read(code, "test.h", "TEST") is True
+
+
+def test_duplicate_offsets_all(linter):
+    """If we do not specify a module, check everything"""
+    code = """\
+        // FUNCTION: TEST 0x1000
+        // FUNCTION: HELLO 0x1000
+        // MyClass::~MyClass
+        """
+
+    # Simulate a failure by reading the same file twice.
+    assert linter.read(code, "test.h", None) is True
+    assert linter.read(code, "test.h", None) is False
+    assert all(a.code == ParserError.DUPLICATE_OFFSET for a in linter.alerts)
+
+
+def test_duplicate_offsets_isolation(linter):
+    """Ignore problems in another module unless we ask for them."""
+    code = """\
+        // FUNCTION: TEST 0x1000
+        // FUNCTION: HELLO 0x1000
+        // MyClass::MyClass
+        // FUNCTION: TEST 0x1000
+        // FUNCTION: HELLO 0x2000
+        // MyClass::~MyClass
+        """
+
+    # No module = check everything
+    assert linter.read(code, "test.h", None) is False
+
+    linter.reset(True)
+    assert linter.read(code, "test.h", "TEST") is False
+
+    linter.reset(True)
+    assert linter.read(code, "test.h", "HELLO") is True
 
 
 def test_duplicate_strings(linter):
