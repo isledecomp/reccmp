@@ -172,13 +172,13 @@ class CompareDb:
             )
 
     def bulk_match(self, pairs: Iterable[tuple[int, int]]):
-        """Expects iterable of (orig_addr, recomp_addr)."""
+        """Expects iterable of `(orig_addr, recomp_addr)`."""
         self._sql.executemany(
             "UPDATE or ignore symbols SET orig_addr = ? WHERE recomp_addr = ?", pairs
         )
 
     def get_unmatched_strings(self) -> List[str]:
-        """Return any strings not already identified by STRING markers."""
+        """Return any strings not already identified by `STRING` markers."""
 
         cur = self._sql.execute(
             "SELECT json_extract(kvstore,'$.name') FROM `symbols` WHERE json_extract(kvstore, '$.type') = ? AND orig_addr IS NULL",

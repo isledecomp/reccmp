@@ -294,11 +294,6 @@ class Compare:
 
             self._db.match_string(string.offset, string.name)
 
-    @dataclass
-    class MatchedOrigEntry:
-        orig: int
-        name: str
-
     def _match_array_elements(self):
         """
         For each matched variable, check whether it is an array.
@@ -306,7 +301,8 @@ class Compare:
         Note that there is no recursion, so an array of arrays would not be handled entirely.
         This step is necessary e.g. for `0x100f0a20` (LegoRacers.cpp).
         """
-        dataset: dict[int, Compare.MatchedOrigEntry] = {}
+        dataset: dict[int, dict[str, str]] = {}
+        orig_by_recomp: dict[int, int] = {}
 
         # Helper function
         def _add_match_in_array(
@@ -315,7 +311,8 @@ class Compare:
             # pylint: disable=unused-argument
             # TODO: Previously used scalar_type_pointer(type_id) to set whether this is a pointer
             if recomp_addr not in dataset:
-                dataset[recomp_addr] = Compare.MatchedOrigEntry(orig_addr, name)
+                dataset[recomp_addr] = {"name": name}
+                orig_by_recomp[recomp_addr] = orig_addr
 
         # Indexed by recomp addr. Need to preload this data because it is not stored alongside the db rows.
         cvdump_lookup = {x.addr: x for x in self.cvdump_analysis.nodes}
@@ -357,10 +354,15 @@ class Compare:
 
         # Upsert here to update the starting address of variables already in the db.
         self._db.bulk_recomp_insert(
-            ((addr, {"name": values.name}) for addr, values in dataset.items()),
+            ((addr, {"name": values["name"]}) for addr, values in dataset.items()),
             upsert=True,
         )
-        self._db.bulk_match(((values.orig, addr) for addr, values in dataset.items()))
+        self._db.bulk_match(
+            (
+                (orig_addr, recomp_addr)
+                for recomp_addr, orig_addr in orig_by_recomp.items()
+            )
+        )
 
     def _find_original_strings(self):
         """Go to the original binary and look for the specified string constants
