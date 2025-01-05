@@ -23,6 +23,7 @@ from .mz import ImageDosHeader
 # pylint: disable=too-many-lines
 # pylint: disable=duplicate-code
 
+
 class PEHeaderNotFoundError(ValueError):
     """PE magic string not found."""
 
