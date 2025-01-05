@@ -15,13 +15,12 @@ from .instgen import InstructGen, SectionType
 from .replacement import AddrTestProtocol, NameReplacementProtocol
 from .types import DisasmLiteInst
 
-ptr_replace_regex = re.compile(r"\[(0x[0-9a-f]+)\]")
+ptr_replace_regex = re.compile(r"(?<=\[)(0x[0-9a-f]+)(?=\])")
 
-displace_replace_regex = re.compile(r"\+ (0x[0-9a-f]+)\]")
+displace_replace_regex = re.compile(r"(?<= )(0x[0-9a-f]+)(?=\])")
 
-# For matching an immediate value on its own.
-# Preceded by start-of-string (first operand) or comma-space (second operand)
-immediate_replace_regex = re.compile(r"(?:^|, )(0x[0-9a-f]+)")
+# For matching an immediate value operand
+immediate_replace_regex = re.compile(r"(?<=, )(0x[0-9a-f]+)")
 
 
 @cache
@@ -91,7 +90,7 @@ class ParseAsm:
     def hex_replace_always(self, match: re.Match) -> str:
         """If a pointer value was matched, always insert a placeholder"""
         value = int(match.group(1), 16)
-        return match.group(0).replace(match.group(1), self.replace(value))
+        return self.replace(value)
 
     def hex_replace_relocated(self, match: re.Match) -> str:
         """For replacing immediate value operands. We only want to
@@ -99,7 +98,7 @@ class ParseAsm:
         We can check the relocation table to find out."""
         value = int(match.group(1), 16)
         if self.is_addr(value):
-            return match.group(0).replace(match.group(1), self.replace(value))
+            return self.replace(value)
 
         return match.group(0)
 
@@ -109,7 +108,7 @@ class ParseAsm:
         value = int(match.group(1), 16)
         placeholder = self.lookup(value)
         if placeholder is not None:
-            return match.group(0).replace(match.group(1), placeholder)
+            return placeholder
 
         return match.group(0)
 
@@ -128,11 +127,9 @@ class ParseAsm:
         if indirect_value is not None:
             indirect_addr = bytes_to_dword(indirect_value)
             if indirect_addr is not None and self.lookup(indirect_addr) is not None:
-                return match.group(0).replace(
-                    match.group(1), "->" + self.replace(indirect_addr)
-                )
+                return "->" + self.replace(indirect_addr)
 
-        return match.group(0).replace(match.group(1), self.replace(value))
+        return self.replace(value)
 
     def sanitize(self, inst: DisasmLiteInst) -> tuple[str, str]:
         # For jumps or calls, if the entire op_str is a hex number, the value
