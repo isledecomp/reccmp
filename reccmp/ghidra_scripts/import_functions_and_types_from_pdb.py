@@ -28,7 +28,7 @@ import sys
 import logging
 from pathlib import Path
 import traceback
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import ghidra
@@ -196,7 +196,7 @@ def do_execute_import(
 
 
 def log_and_track_failure(
-    function_name: Optional[str], error: Exception, unexpected: bool = False
+    function_name: str | None, error: Exception, unexpected: bool = False
 ):
     if GLOBALS.statistics.track_failure_and_tell_if_new(error):
         logger.error(

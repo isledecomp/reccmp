@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 import re
-from typing import Any, Optional
+from typing import Any
 import logging
 
 from reccmp.isledecomp.formats.exceptions import InvalidVirtualAddressError
@@ -35,7 +35,7 @@ class FunctionSignature:
     call_type: str
     arglist: list[str]
     return_type: str
-    class_type: Optional[str]
+    class_type: str | None
     stack_symbols: list[CppStackOrRegisterSymbol]
     # if non-zero: an offset to the `this` parameter in a __thiscall
     this_adjust: int
@@ -44,7 +44,7 @@ class FunctionSignature:
 @dataclass
 class PdbFunction:
     match_info: ReccmpMatch
-    signature: Optional[FunctionSignature]
+    signature: FunctionSignature | None
     is_stub: bool
 
 
@@ -65,14 +65,14 @@ class PdbFunctionExtractor:
         "STD Near": "__stdcall",
     }
 
-    def _get_cvdump_type(self, type_name: Optional[str]) -> Optional[dict[str, Any]]:
+    def _get_cvdump_type(self, type_name: str | None) -> dict[str, Any | None]:
         return (
             None
             if type_name is None
             else self.compare.cv.types.keys.get(type_name.lower())
         )
 
-    def get_func_signature(self, fn: SymbolsEntry) -> Optional[FunctionSignature]:
+    def get_func_signature(self, fn: SymbolsEntry) -> FunctionSignature | None:
         function_type_str = fn.func_type
         if function_type_str == "T_NOTYPE(0000)":
             logger.debug("Treating NOTYPE function as thunk: %s", fn.name)
@@ -141,7 +141,7 @@ class PdbFunctionExtractor:
         )
         return [signature for signature in handled if signature is not None]
 
-    def handle_matched_function(self, match_info: ReccmpMatch) -> Optional[PdbFunction]:
+    def handle_matched_function(self, match_info: ReccmpMatch) -> PdbFunction | None:
         function_data = next(
             (
                 y

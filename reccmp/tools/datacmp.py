@@ -4,7 +4,7 @@ import os
 import argparse
 import logging
 from enum import Enum
-from typing import Iterable, List, NamedTuple, Optional, Tuple
+from typing import Iterable, NamedTuple
 from struct import unpack
 import colorama
 import reccmp
@@ -81,9 +81,9 @@ class CompareResult(Enum):
 class ComparedOffset(NamedTuple):
     offset: int
     # name is None for scalar types
-    name: Optional[str]
+    name: str | None
     match: bool
-    values: Tuple[str, str]
+    values: tuple[str, str]
 
 
 class ComparisonItem(NamedTuple):
@@ -98,10 +98,10 @@ class ComparisonItem(NamedTuple):
     # For a scalar type, this is a list of size one.
     # If we could not retrieve type information, this is
     # a list of size one but without any specific type.
-    compared: List[ComparedOffset]
+    compared: list[ComparedOffset]
 
     # If present, the error message from the types parser.
-    error: Optional[str] = None
+    error: str | None = None
 
     # If true, there is no type specified for this variable. (i.e. non-public)
     # In this case, we can only compare the raw bytes.
@@ -123,8 +123,8 @@ class ComparisonItem(NamedTuple):
 
 def create_comparison_item(
     var: ReccmpMatch,
-    compared: Optional[List[ComparedOffset]] = None,
-    error: Optional[str] = None,
+    compared: list[ComparedOffset] | None = None,
+    error: str | None = None,
     raw_only: bool = False,
 ) -> ComparisonItem:
     """Helper to create the ComparisonItem from the fields in the reccmp database."""
@@ -308,7 +308,7 @@ def do_the_comparison(target: RecCmpBuiltTarget) -> Iterable[ComparisonItem]:
         yield create_comparison_item(var, compared=compared)
 
 
-def value_get(value: Optional[str], default: str):
+def value_get(value: str | None, default: str):
     return value if value is not None else default
 
 

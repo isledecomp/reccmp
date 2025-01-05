@@ -10,7 +10,7 @@ from enum import IntEnum, IntFlag
 from functools import cached_property
 from pathlib import Path
 import struct
-from typing import Iterator, Optional, cast
+from typing import Iterator, cast
 
 from .exceptions import (
     InvalidVirtualAddressError,
@@ -189,7 +189,7 @@ class PEImageOptionalHeader:
     size_of_uninitialized_data: int
     address_of_entry_point: int
     base_of_code: int
-    base_of_data: Optional[int]
+    base_of_data: int | None
     image_base: int
     section_alignment: int
     file_alignment: int
@@ -336,7 +336,7 @@ class CodeViewHeaderNB10:
     pdb_file_name: bytes  # zero terminated string with the name of the PDB file
 
     @classmethod
-    def from_memory(cls, data: bytes, offset: int) -> Optional["CodeViewHeaderNB10"]:
+    def from_memory(cls, data: bytes, offset: int) -> "CodeViewHeaderNB10| None":
         struct_fmt = "<4sIII"
         if not cls.taste(data, offset):
             raise ValueError
@@ -363,7 +363,7 @@ class CodeViewHeaderRSDS:
     pdb_file_name: bytes  # zero terminated string with the name of the PDB file
 
     @classmethod
-    def from_memory(cls, data: bytes, offset: int) -> Optional["CodeViewHeaderRSDS"]:
+    def from_memory(cls, data: bytes, offset: int) -> "CodeViewHeaderRSDS | None":
         struct_fmt = "<4s16s"
         if not cls.taste(data, offset):
             raise ValueError
@@ -549,7 +549,7 @@ class PEImage(Image):
 
     def get_data_directory_region(
         self, t: PEDataDirectoryItemType
-    ) -> Optional[PEDataDirectoryItemRegion]:
+    ) -> PEDataDirectoryItemRegion | None:
         directory_header = self.optional_header.directories[t.value]
         if not directory_header.rva:
             return None
@@ -573,7 +573,7 @@ class PEImage(Image):
         )
 
     @property
-    def pdb_filename(self) -> Optional[str]:
+    def pdb_filename(self) -> str | None:
         debug_directory = self.get_data_directory_region(PEDataDirectoryItemType.DEBUG)
         if not debug_directory:
             return None
@@ -610,7 +610,7 @@ class PEImage(Image):
     def get_relocated_addresses(self) -> list[int]:
         return sorted(self._relocated_addrs)
 
-    def find_string(self, target: bytes) -> Optional[int]:
+    def find_string(self, target: bytes) -> int | None:
         # Pad with null terminator to make sure we don't
         # match on a subset of the full string
         if not target.endswith(b"\x00"):

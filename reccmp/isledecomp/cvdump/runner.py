@@ -1,7 +1,6 @@
 import io
 from os import name as os_name
 from enum import Enum
-from typing import List
 import subprocess
 from reccmp.bin import lib_path_join
 from reccmp.isledecomp.dir import winepath_unix_to_win
@@ -62,7 +61,7 @@ class Cvdump:
         self._options.add(DumpOpt.TYPES)
         return self
 
-    def cmd_line(self) -> List[str]:
+    def cmd_line(self) -> list[str]:
         cvdump_exe = lib_path_join("cvdump.exe")
         flags = [cvdump_opt_map[opt] for opt in self._options]
 

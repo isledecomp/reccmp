@@ -5,14 +5,14 @@ import re
 import bisect
 import struct
 from enum import Enum, auto
-from typing import Iterable, List, Literal, NamedTuple, Optional, Tuple
+from typing import Iterable, Literal, NamedTuple
 from capstone import Cs, CS_ARCH_X86, CS_MODE_32  # type: ignore
 from .const import JUMP_MNEMONICS
 from .types import DisasmLiteInst
 
 disassembler = Cs(CS_ARCH_X86, CS_MODE_32)
 
-DisasmLiteTuple = Tuple[int, int, str, str]
+DisasmLiteTuple = tuple[int, int, str, str]
 
 displacement_regex = re.compile(r".*\+ (0x[0-9a-f]+)\]")
 
@@ -25,7 +25,7 @@ class SectionType(Enum):
 
 class CodeSection(NamedTuple):
     type: Literal[SectionType.CODE]
-    contents: List[DisasmLiteInst]
+    contents: list[DisasmLiteInst]
 
 
 TabSectionType = Literal[SectionType.DATA_TAB] | Literal[SectionType.ADDR_TAB]
@@ -33,7 +33,7 @@ TabSectionType = Literal[SectionType.DATA_TAB] | Literal[SectionType.ADDR_TAB]
 
 class TabSection(NamedTuple):
     type: TabSectionType
-    contents: List[Tuple[int, int]]
+    contents: list[tuple[int, int]]
 
 
 FuncSection = CodeSection | TabSection
@@ -59,19 +59,19 @@ class InstructGen:
         self.start = start
         self.end = len(blob) + start
         self.section_end: int = self.end
-        self.code_tracks: List[List[DisasmLiteInst]] = []
+        self.code_tracks: list[list[DisasmLiteInst]] = []
 
         # Todo: Could be refactored later
         self.cur_addr: int = 0
         self.cur_section_type: SectionType = SectionType.CODE
         self.section_start = start
 
-        self.sections: List[FuncSection] = []
+        self.sections: list[FuncSection] = []
 
         self.confirmed_addrs: dict[int, SectionType] = {}
         self.analysis()
 
-    def _finish_code_section(self, contents: List[DisasmLiteInst]):
+    def _finish_code_section(self, contents: list[DisasmLiteInst]):
         self.sections.append(CodeSection(SectionType.CODE, contents))
 
     def _finish_tab_section(self, type_: TabSectionType, stuff: list[tuple[int, int]]):
@@ -94,7 +94,7 @@ class InstructGen:
         if type_ != self.cur_section_type and addr > self.cur_addr:
             self.section_end = min(self.section_end, addr)
 
-    def _next_section(self, addr: int) -> Optional[SectionType]:
+    def _next_section(self, addr: int) -> SectionType | None:
         """We have reached the start of a new section. Tell what kind of
         data we are looking at (code or other) and how much we should read."""
 
@@ -134,7 +134,7 @@ class InstructGen:
 
         return new_type
 
-    def _get_code_for(self, addr: int) -> List[DisasmLiteInst]:
+    def _get_code_for(self, addr: int) -> list[DisasmLiteInst]:
         """Start disassembling at the given address."""
         # If we are reading a code block beyond the first, see if we already
         # have disassembled instructions beginning at the specified address.

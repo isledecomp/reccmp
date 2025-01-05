@@ -1,4 +1,4 @@
-from typing import List, Optional, Sequence
+from typing import Sequence
 from .parser import DecompParser
 from .error import ParserAlert, ParserError
 from .node import ParserSymbol, ParserString
@@ -11,10 +11,10 @@ def get_checkorder_filter(module):
 
 class DecompLinter:
     def __init__(self) -> None:
-        self.alerts: List[ParserAlert] = []
+        self.alerts: list[ParserAlert] = []
         self._parser = DecompParser()
         self._filename: str = ""
-        self._module: Optional[str] = None
+        self._module: str | None = None
         # Set of (str, int) tuples for each module/offset pair seen while scanning.
         # This is _not_ reset between files and is intended to report offset reuse
         # when scanning the entire directory.

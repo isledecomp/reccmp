@@ -4,7 +4,6 @@
 # pyright: reportMissingModuleSource=false
 
 import logging
-from typing import Optional
 from abc import ABC, abstractmethod
 
 from ghidra.program.model.listing import Function, Parameter
@@ -341,7 +340,7 @@ class FullPdbFunctionImporter(PdbFunctionImporter):
 
         param.setName(name, SourceType.USER_DEFINED)
 
-    def get_matching_stack_symbol(self, stack_offset: int) -> Optional[CppStackSymbol]:
+    def get_matching_stack_symbol(self, stack_offset: int) -> CppStackSymbol | None:
         return next(
             (
                 symbol
@@ -352,9 +351,7 @@ class FullPdbFunctionImporter(PdbFunctionImporter):
             None,
         )
 
-    def get_matching_register_symbol(
-        self, register: str
-    ) -> Optional[CppRegisterSymbol]:
+    def get_matching_register_symbol(self, register: str) -> CppRegisterSymbol | None:
         return next(
             (
                 symbol
