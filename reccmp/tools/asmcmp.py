@@ -332,19 +332,21 @@ def main():
 
     implemented_funcs = function_count
 
-    # Substitute an alternate value for the total number of functions in the file
+    # If we know how many functions are in the file (via analysis with Ghidra or other tools)
+    # we can substitute an alternate value to use when calculating the percentages below.
     if args.total:
-        function_count = int(args.total)
+        # Use the alternate value if it exceeds the number of annotated functions
+        function_count = max(function_count, int(args.total))
 
     if function_count > 0:
         effective_accuracy = total_effective_accuracy / function_count * 100
         actual_accuracy = total_accuracy / function_count * 100
-        alignment_accuracy = functions_aligned_count / function_count * 100
+        alignment_percentage = functions_aligned_count / function_count * 100
         print(
             f"\nTotal effective accuracy {effective_accuracy:.2f}% across {function_count} functions ({actual_accuracy:.2f}% actual accuracy)"
         )
         print(
-            f"{functions_aligned_count} functions are aligned ({alignment_accuracy:.2f}%)"
+            f"{functions_aligned_count} functions are aligned ({alignment_percentage:.2f}%)"
         )
 
         if args.svg is not None:
