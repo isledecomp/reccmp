@@ -123,7 +123,7 @@ class ComparisonItem(NamedTuple):
 
 def create_comparison_item(
     var: ReccmpMatch,
-    compared: list[ComparedOffset | None] = None,
+    compared: list[ComparedOffset] | None = None,
     error: str | None = None,
     raw_only: bool = False,
 ) -> ComparisonItem:
