@@ -12,8 +12,7 @@ import logging
 from pathlib import Path
 import statistics
 import bisect
-from typing import Iterator
-from collections import namedtuple
+from typing import Iterator, NamedTuple
 import reccmp
 from reccmp.isledecomp import PEImage, detect_image
 from reccmp.isledecomp.compare.db import ReccmpEntity
@@ -69,7 +68,7 @@ class ModuleMap:
             if obj.startswith("CMakeFiles")
         ]
 
-    def get_module(self, addr: int) -> str | None:
+    def get_module(self, addr: int) -> tuple[str, str] | None:
         i = bisect.bisect_left(self.contrib_starts, addr)
         # If the addr matches the section contribution start, we are in the
         # right spot. Otherwise, we need to subtract one here.
@@ -149,20 +148,16 @@ def avg_remove_outliers(entries: list[int]) -> int:
     return int(statistics.mean([e for e in entries if abs(e - avg) <= 2 * sd]))
 
 
-RoadmapRow = namedtuple(
-    "RoadmapRow",
-    [
-        "orig_sect_ofs",
-        "recomp_sect_ofs",
-        "orig_addr",
-        "recomp_addr",
-        "displacement",
-        "sym_type",
-        "size",
-        "name",
-        "module",
-    ],
-)
+class RoadmapRow(NamedTuple):
+    orig_sect_ofs: str | None
+    recomp_sect_ofs: str | None
+    orig_addr: int | None
+    recomp_addr: int | None
+    displacement: int | None
+    sym_type: str
+    size: int
+    name: str | None
+    module: str | None
 
 
 class DeltaCollector:
@@ -171,13 +166,13 @@ class DeltaCollector:
 
     def __init__(self, match_type: str = "fun") -> None:
         # The displacement for each symbol from each module
-        self.disp_map = {}
+        self.disp_map: dict[str, list[int]] = {}
 
         # Each address for each module
-        self.addresses = {}
+        self.addresses: dict[str, list[int]] = {}
 
         # The earliest address for each module
-        self.earliest = {}
+        self.earliest: dict[str, int] = {}
 
         # String abbreviation for which symbol type we are checking
         self.match_type = "fun"
@@ -208,7 +203,7 @@ class DeltaCollector:
 
             self.disp_map[row.module].append(row.displacement)
 
-    def iter_sorted(self) -> Iterator[tuple[int, int]]:
+    def iter_sorted(self) -> Iterator[tuple[int, str]]:
         """Compute the average address for each module, then generate them
         in ascending order."""
         avg_address = {
@@ -244,7 +239,7 @@ def suggest_order(results: list[RoadmapRow], module_map: ModuleMap, match_type: 
     for prefix in cmake_prefixes:
         print(prefix)
 
-        last_earliest = 0
+        last_earliest: int = 0
         # Show modules ordered by the computed average of addresses
         for _, module in computed_order:
             if not module.startswith(prefix):
@@ -260,8 +255,11 @@ def suggest_order(results: list[RoadmapRow], module_map: ModuleMap, match_type: 
             # Call attention to any modules where ordering by earliest
             # address is different from the computed order we display.
             earliest = dc.earliest.get(module)
-            ooo_mark = "*" if earliest < last_earliest else " "
-            last_earliest = earliest
+            if earliest is not None and earliest < last_earliest:
+                ooo_mark = "*"
+                last_earliest = earliest
+            else:
+                ooo_mark = " "
 
             code_file = truncate_module_name(prefix, module)
             print(f"0x{earliest:08x}{ooo_mark} {avg_displacement:10}  {code_file}")
@@ -284,7 +282,7 @@ def suggest_order(results: list[RoadmapRow], module_map: ModuleMap, match_type: 
         print()
 
     # Now display the order of all libaries in the final file.
-    library_order = {}
+    library_order: dict[str, int] = {}
 
     for start, module in computed_order:
         lib = module_map.get_lib_for_module(module)
