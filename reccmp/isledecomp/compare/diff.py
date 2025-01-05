@@ -1,10 +1,10 @@
 from difflib import SequenceMatcher
-from typing import NotRequired, TypedDict
+from typing import TypedDict
+from typing_extensions import NotRequired
 
 CombinedDiffInput = list[tuple[str, str]]
 
 
-# TODO: Find a solution for Python versions < 3.11 - maybe typing_extensions?
 class MatchingOrMismatchingBlock(TypedDict):
     # I tried a union and narrowing, but this does not work in mypy - see https://github.com/python/mypy/issues/11080
     both: NotRequired[list[tuple[str, str, str]]]
