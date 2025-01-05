@@ -6,8 +6,9 @@ import json
 import logging
 import os
 from datetime import datetime
+from pathlib import Path
 
-from pystache import Renderer
+from pystache import Renderer  # type: ignore[import-untyped]
 import colorama
 import reccmp
 from reccmp.isledecomp import (
@@ -33,7 +34,7 @@ logger = logging.getLogger()
 colorama.just_fix_windows_console()
 
 
-def gen_json(json_file: str, orig_file: str, data):
+def gen_json(json_file: str, orig_file: Path, data):
     """Create a JSON file that contains the comparison summary"""
 
     # If the structure of the JSON file ever changes, we would run into a problem
@@ -49,7 +50,7 @@ def gen_json(json_file: str, orig_file: str, data):
     with open(json_file, "w", encoding="utf-8") as f:
         json.dump(
             {
-                "file": os.path.basename(orig_file).lower(),
+                "file": orig_file.name.lower(),
                 "format": json_format_version,
                 "timestamp": datetime.now().timestamp(),
                 "data": reduced_data,
@@ -265,8 +266,8 @@ def main():
     ### Compare everything.
 
     function_count = 0
-    total_accuracy = 0
-    total_effective_accuracy = 0
+    total_accuracy = 0.0
+    total_effective_accuracy = 0.0
     htmlinsert = []
 
     for match in isle_compare.compare_all():

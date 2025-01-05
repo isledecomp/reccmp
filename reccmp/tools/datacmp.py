@@ -167,7 +167,7 @@ def do_the_comparison(target: RecCmpBuiltTarget) -> Iterable[ComparisonItem]:
     # maps recomp addresses to their type.
     # We still need to build the full compare DB though, because we may
     # need the matched symbols to compare pointers (e.g. on strings)
-    mini_cvdump = Cvdump(target.recompiled_pdb).globals().types().run()
+    mini_cvdump = Cvdump(str(target.recompiled_pdb)).globals().types().run()
 
     recomp_type_reference = {
         recompfile.get_abs_addr(g.section, g.offset): g.type

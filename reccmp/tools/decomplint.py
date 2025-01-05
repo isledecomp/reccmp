@@ -109,7 +109,7 @@ def main():
             set(target.source_root for target in project.targets.values())
         )
 
-    files_to_check = []
+    files_to_check: list[str] = []
     for path in args.paths:
         if path.is_dir():
             files_to_check.extend(walk_source_dir(path))
