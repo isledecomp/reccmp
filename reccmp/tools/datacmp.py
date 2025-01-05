@@ -130,6 +130,7 @@ def create_comparison_item(
     """Helper to create the ComparisonItem from the fields in the reccmp database."""
     if compared is None:
         compared = []
+    assert var.name is not None
 
     return ComparisonItem(
         orig_addr=var.orig_addr,
@@ -175,6 +176,7 @@ def do_the_comparison(target: RecCmpBuiltTarget) -> Iterable[ComparisonItem]:
     }
 
     for var in isle_compare.get_variables():
+        assert var.name is not None
         type_name = recomp_type_reference.get(var.recomp_addr)
 
         # Start by assuming we can only compare the raw bytes
@@ -191,6 +193,7 @@ def do_the_comparison(target: RecCmpBuiltTarget) -> Iterable[ComparisonItem]:
                 yield create_comparison_item(var, error=repr(ex))
                 continue
 
+        assert data_size is not None
         orig_raw = origfile.read(var.orig_addr, data_size)
         recomp_raw = recompfile.read(var.recomp_addr, data_size)
 
@@ -247,7 +250,7 @@ def do_the_comparison(target: RecCmpBuiltTarget) -> Iterable[ComparisonItem]:
                         offset=0,
                         name="(raw)",
                         match=orig_raw == recomp_raw,
-                        values=(orig_raw, recomp_raw),
+                        values=(str(orig_raw), str(recomp_raw)),
                     )
                 ],
                 raw_only=True,

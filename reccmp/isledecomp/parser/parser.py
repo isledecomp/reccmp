@@ -264,11 +264,7 @@ class DecompParser:
             self._syntax_warning(ParserError.DUPLICATE_MODULE)
         self.state = ReaderState.IN_VTABLE
 
-    def _vtable_done(self, class_name: str = None):
-        if class_name is None:
-            # Best we can do
-            class_name = self.last_line.strip()
-
+    def _vtable_done(self, class_name: str):
         for marker in self.tbl_markers.iter():
             self._symbols.append(
                 ParserVtable(
@@ -302,6 +298,7 @@ class DecompParser:
 
         for marker in self.var_markers.iter():
             if marker.is_string():
+                assert string_value is not None
                 self._symbols.append(
                     ParserString(
                         type=marker.type,
@@ -462,7 +459,9 @@ class DecompParser:
                 # If we found a comment, assume implicit lookup-by-name
                 # function and end here. We know this is not a decomp marker
                 # because it would have been handled already.
-                self.function_sig = get_synthetic_name(line)
+                synthetic_name = get_synthetic_name(line)
+                assert synthetic_name is not None
+                self.function_sig = synthetic_name
                 self._function_starts_here()
                 self._function_done(lookup_by_name=True)
 

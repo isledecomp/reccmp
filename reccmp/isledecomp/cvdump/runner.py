@@ -32,7 +32,7 @@ cvdump_opt_map = {
 class Cvdump:
     def __init__(self, pdb: str) -> None:
         self._pdb: str = pdb
-        self._options = set()
+        self._options: set[DumpOpt] = set()
 
     def lines(self):
         self._options.add(DumpOpt.LINES)
@@ -75,6 +75,7 @@ class Cvdump:
         parser = CvdumpParser()
         call = self.cmd_line()
         with subprocess.Popen(call, stdout=subprocess.PIPE) as proc:
+            assert proc.stdout is not None
             for line in io.TextIOWrapper(
                 proc.stdout, encoding="utf-8", errors="ignore"
             ):

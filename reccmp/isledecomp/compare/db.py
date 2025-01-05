@@ -109,11 +109,13 @@ class ReccmpMatch(ReccmpEntity):
         return self._recomp_addr
 
 
-def entity_factory(_, row: tuple[int, int, str]) -> ReccmpEntity:
+def entity_factory(_, row: object) -> ReccmpEntity:
+    assert isinstance(row, tuple)
     return ReccmpEntity(*row)
 
 
-def matched_entity_factory(_, row: tuple[int, int, str]) -> ReccmpMatch:
+def matched_entity_factory(_, row: object) -> ReccmpMatch:
+    assert isinstance(row, tuple)
     return ReccmpMatch(*row)
 
 
@@ -170,13 +172,13 @@ class CompareDb:
             )
 
     def bulk_match(self, pairs: Iterable[tuple[int, int]]):
-        """Expects iterable of (orig_addr, recomp_addr)."""
+        """Expects iterable of `(orig_addr, recomp_addr)`."""
         self._sql.executemany(
             "UPDATE or ignore symbols SET orig_addr = ? WHERE recomp_addr = ?", pairs
         )
 
     def get_unmatched_strings(self) -> List[str]:
-        """Return any strings not already identified by STRING markers."""
+        """Return any strings not already identified by `STRING` markers."""
 
         cur = self._sql.execute(
             "SELECT json_extract(kvstore,'$.name') FROM `symbols` WHERE json_extract(kvstore, '$.type') = ? AND orig_addr IS NULL",
@@ -625,7 +627,9 @@ class CompareDb:
                     addr,
                     escaped,
                     repr(already_present.name),
-                    repr(SymbolType(already_present.compare_type)),
+                    repr(SymbolType(already_present.compare_type))
+                    if already_present.compare_type is not None
+                    else "<None>",
                 )
 
         return did_match

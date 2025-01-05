@@ -1,5 +1,5 @@
 import re
-from typing import List, Tuple, Set
+from typing import List, Sequence, Tuple, Set
 
 DiffOpcode = Tuple[str, int, int, int, int]
 
@@ -72,7 +72,7 @@ def patch_jump(a: str, b: str) -> str:
 
 
 def patch_cmp_swaps(
-    codes: List[DiffOpcode], orig_asm: List[str], recomp_asm: List[str]
+    codes: Sequence[DiffOpcode], orig_asm: List[str], recomp_asm: List[str]
 ) -> Set[int]:
     """Can we resolve the diffs between orig and recomp by patching
     swapped cmp instructions?
@@ -133,7 +133,7 @@ def find_regs_changed(a: str, b: str) -> List[Tuple[str, str]]:
     This is not a very precise way to compare the instructions, so it depends
     on the input being two instructions that would match *except* for
     the register choice."""
-    return zip(REG_FIND.findall(a), REG_FIND.findall(b))
+    return list(zip(REG_FIND.findall(a), REG_FIND.findall(b)))
 
 
 def bad_register_swaps(
@@ -188,7 +188,7 @@ def instruction_alters_regs(inst: str, regs: Set[str]) -> bool:
 
 
 def relocate_instructions(
-    codes: List[DiffOpcode], orig_asm: List[str], recomp_asm: List[str]
+    codes: Sequence[DiffOpcode], orig_asm: List[str], recomp_asm: List[str]
 ) -> Set[int]:
     """Collect the list of instructions deleted from orig and inserted
     into recomp, according to the diff opcodes. Using this list, match up
@@ -265,7 +265,7 @@ def naive_register_replacement(orig_asm: List[str], recomp_asm: List[str]) -> Se
 
 
 def find_effective_match(
-    codes: List[DiffOpcode], orig_asm: List[str], recomp_asm: List[str]
+    codes: Sequence[DiffOpcode], orig_asm: List[str], recomp_asm: List[str]
 ) -> bool:
     """Check whether the two sequences of instructions are an effective match.
     Meaning: do they differ only by instruction order or register selection?"""
