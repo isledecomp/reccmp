@@ -336,7 +336,7 @@ class CodeViewHeaderNB10:
     pdb_file_name: bytes  # zero terminated string with the name of the PDB file
 
     @classmethod
-    def from_memory(cls, data: bytes, offset: int) -> "CodeViewHeaderNB10" | None:
+    def from_memory(cls, data: bytes, offset: int) -> "CodeViewHeaderNB10| None":
         struct_fmt = "<4sIII"
         if not cls.taste(data, offset):
             raise ValueError
@@ -363,7 +363,7 @@ class CodeViewHeaderRSDS:
     pdb_file_name: bytes  # zero terminated string with the name of the PDB file
 
     @classmethod
-    def from_memory(cls, data: bytes, offset: int) -> "CodeViewHeaderRSDS" | None:
+    def from_memory(cls, data: bytes, offset: int) -> "CodeViewHeaderRSDS | None":
         struct_fmt = "<4s16s"
         if not cls.taste(data, offset):
             raise ValueError
