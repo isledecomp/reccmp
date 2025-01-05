@@ -16,8 +16,8 @@ jobs:
       fail-fast: false
       matrix:
         platform:
-          - { name: 'Windows', os: 'ubuntu-latest' }
-          - { name: 'Linux',   os: 'windows-latest' }
+          - { name: 'Windows', os: 'windows-latest' }
+          - { name: 'Linux',   os: 'ubuntu-latest' }
 
     steps:
     - uses: actions/checkout@v4
