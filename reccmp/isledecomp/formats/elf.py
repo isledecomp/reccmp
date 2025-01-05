@@ -275,11 +275,13 @@ class ElfFileHeader:
             case 1:
                 struct_fmt_pt1 = "<"  # little endian
             case 2:
-                struct_fmt_pt1 = ">"  # bit endian
+                struct_fmt_pt1 = ">"  # big endian
             case _:
                 raise ValueError("Invalid endianness")
         struct_fmt = struct_fmt_pt1 + struct_fmt_pt2
-        items = struct.unpack_from(struct_fmt, data, offset=offset)
+        items: tuple[
+            bytes, int, int, int, int, int, int, int, int, int, int, int, int, int
+        ] = struct.unpack_from(struct_fmt, data, offset=offset)
         return cls(*items[:2], ElfMachine(items[2]), *items[3:]), struct.calcsize(
             struct_fmt
         )
