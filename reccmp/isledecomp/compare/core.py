@@ -252,7 +252,9 @@ class Compare:
         # was already removed from consideration.
         for fun in codebase.iter_line_functions():
             assert fun.filename is not None
-            recomp_addr = self._lines_db.search_line(fun.filename, fun.line_number)
+            recomp_addr = self._lines_db.search_line(
+                fun.filename, fun.line_number, fun.end_line
+            )
             if recomp_addr is not None:
                 self._db.set_function_pair(fun.offset, recomp_addr)
                 if fun.should_skip():
