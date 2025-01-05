@@ -79,17 +79,15 @@ class PathResolver:
         return self._memo[path_str]
 
 
-def is_file_cpp(filename: str) -> bool:
-    (_, ext) = os.path.splitext(filename)
-    return ext.lower() in (".h", ".cpp")
+def is_file_cpp(filename: Path | str) -> bool:
+    return Path(filename).suffix.lower() in (".h", ".cpp")
 
 
-def walk_source_dir(source: str, recursive: bool = True) -> Iterator[str]:
+def walk_source_dir(source: Path, recursive: bool = True) -> Iterator[str]:
     """Generator to walk the given directory recursively and return
     any C++ files found."""
 
-    source = os.path.abspath(source)
-    for subdir, _, files in os.walk(source):
+    for subdir, _, files in source.absolute().walk():
         for file in files:
             if is_file_cpp(file):
                 yield os.path.join(subdir, file)

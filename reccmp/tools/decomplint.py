@@ -114,7 +114,7 @@ def main():
         if path.is_dir():
             files_to_check.extend(walk_source_dir(path))
         elif path.is_file() and is_file_cpp(path):
-            files_to_check.append(path)
+            files_to_check.append(str(path))
         else:
             logger.error("Invalid path: %s", path)
 
