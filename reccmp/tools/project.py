@@ -102,7 +102,7 @@ def main():
     if args.subcommand == ProjectSubcommand.CREATE:
         try:
             # pylint: disable=unused-argument
-            project = create_project(
+            create_project(
                 project_directory=args.create_directory,
                 original_paths=args.create_originals,
                 scm=args.create_scm,
@@ -114,7 +114,7 @@ def main():
 
     elif args.subcommand == ProjectSubcommand.DETECT:
         project = RecCmpProject.from_directory(Path.cwd())
-        if not project:
+        if project is None:
             parser.error(
                 f"Cannot find reccmp project. Run '{parser.prog} create' first."
             )
