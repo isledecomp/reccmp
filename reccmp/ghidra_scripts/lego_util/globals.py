@@ -1,7 +1,7 @@
 import logging
 from enum import Enum
 from dataclasses import dataclass, field
-from lego_util.statistics import Statistics
+from .statistics import Statistics
 
 
 class SupportedModules(Enum):

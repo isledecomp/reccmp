@@ -17,19 +17,19 @@ from ghidra.program.model.data import (
     ComponentOffsetSettingsDefinition,
 )
 
-from lego_util.pdb_extraction import (
+from .pdb_extraction import (
     PdbFunction,
     CppRegisterSymbol,
     CppStackSymbol,
 )
-from lego_util.ghidra_helper import (
+from .ghidra_helper import (
     add_data_type_or_reuse_existing,
     get_namespace_and_name,
     get_or_add_pointer_type,
 )
 
-from lego_util.exceptions import StackOffsetMismatchError, Lego1Exception
-from lego_util.type_importer import PdbTypeImporter
+from .exceptions import StackOffsetMismatchError, Lego1Exception
+from .type_importer import PdbTypeImporter
 
 logger = logging.getLogger(__name__)
 

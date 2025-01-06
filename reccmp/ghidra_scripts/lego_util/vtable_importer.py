@@ -9,9 +9,10 @@ from typing import Iterator
 from ghidra.program.flatapi import FlatProgramAPI
 from ghidra.program.model.symbol import SourceType
 
-from lego_util.ghidra_helper import get_namespace_and_name
-
 from reccmp.isledecomp.compare.db import ReccmpEntity
+
+from .ghidra_helper import get_namespace_and_name
+
 
 logger = logging.getLogger(__name__)
 
