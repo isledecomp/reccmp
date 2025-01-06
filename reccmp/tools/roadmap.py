@@ -239,7 +239,7 @@ def suggest_order(results: list[RoadmapRow], module_map: ModuleMap, match_type: 
     for prefix in cmake_prefixes:
         print(prefix)
 
-        last_earliest: int = 0
+        last_earliest = 0
         # Show modules ordered by the computed average of addresses
         for _, module in computed_order:
             if not module.startswith(prefix):
