@@ -102,7 +102,11 @@ class NewExeHeader:
             raise ValueError
         struct_fmt = "<2s2BHI17HI3H2B4H"
         struct_size = struct.calcsize(struct_fmt)
-        items = struct.unpack_from(struct_fmt, data, offset)
+        # fmt: off
+        items: tuple[bytes, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int] = (
+            struct.unpack_from(struct_fmt, data, offset)
+        )
+        # fmt: on
         result = cls(
             *items[:6],
             NESegmentFlags(items[6]),
@@ -125,7 +129,7 @@ class NewExeHeader:
 class NEImage(Image):
     mz_header: ImageDosHeader
     header: NewExeHeader
-    segments: tuple[NESegmentTableEntry]
+    segments: tuple[NESegmentTableEntry, ...]
 
     @classmethod
     def from_memory(
