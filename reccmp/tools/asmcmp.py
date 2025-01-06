@@ -6,8 +6,9 @@ import json
 import logging
 import os
 from datetime import datetime
+from pathlib import Path
 
-from pystache import Renderer
+from pystache import Renderer  # type: ignore[import-untyped]
 import colorama
 import reccmp
 from reccmp.isledecomp import (
@@ -33,7 +34,7 @@ logger = logging.getLogger()
 colorama.just_fix_windows_console()
 
 
-def gen_json(json_file: str, orig_file: str, data):
+def gen_json(json_file: str, orig_file: Path, data):
     """Create a JSON file that contains the comparison summary"""
 
     # If the structure of the JSON file ever changes, we would run into a problem
@@ -49,7 +50,7 @@ def gen_json(json_file: str, orig_file: str, data):
     with open(json_file, "w", encoding="utf-8") as f:
         json.dump(
             {
-                "file": os.path.basename(orig_file).lower(),
+                "file": orig_file.name.lower(),
                 "format": json_format_version,
                 "timestamp": datetime.now().timestamp(),
                 "data": reduced_data,
@@ -264,9 +265,13 @@ def main():
 
     ### Compare everything.
 
+    # Count how many functions have the same virtual address in orig and recomp.
+    functions_aligned_count = 0
+
+    # Number of functions compared (i.e. excluding stubs)
     function_count = 0
-    total_accuracy = 0
-    total_effective_accuracy = 0
+    total_accuracy = 0.0
+    total_effective_accuracy = 0.0
     htmlinsert = []
 
     for match in isle_compare.compare_all():
@@ -274,6 +279,12 @@ def main():
             print_match_oneline(
                 match, show_both_addrs=args.print_rec_addr, is_plain=args.no_color
             )
+
+        if (
+            match.match_type == SymbolType.FUNCTION
+            and match.orig_addr == match.recomp_addr
+        ):
+            functions_aligned_count += 1
 
         if match.match_type == SymbolType.FUNCTION and not match.is_stub:
             function_count += 1
@@ -322,14 +333,21 @@ def main():
 
     implemented_funcs = function_count
 
+    # If we know how many functions are in the file (via analysis with Ghidra or other tools)
+    # we can substitute an alternate value to use when calculating the percentages below.
     if args.total:
-        function_count = int(args.total)
+        # Use the alternate value if it exceeds the number of annotated functions
+        function_count = max(function_count, int(args.total))
 
     if function_count > 0:
         effective_accuracy = total_effective_accuracy / function_count * 100
         actual_accuracy = total_accuracy / function_count * 100
+        alignment_percentage = functions_aligned_count / function_count * 100
         print(
             f"\nTotal effective accuracy {effective_accuracy:.2f}% across {function_count} functions ({actual_accuracy:.2f}% actual accuracy)"
+        )
+        print(
+            f"{functions_aligned_count} functions are aligned ({alignment_percentage:.2f}%)"
         )
 
         if args.svg is not None:

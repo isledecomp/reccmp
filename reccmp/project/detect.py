@@ -37,6 +37,7 @@ def verify_target_names(
     user_targets: dict[str, UserFileTarget],
     build_targets: dict[str, BuildFileTarget],
 ):
+    """Warn if the user or build files have different targets than the canonical list in the project file."""
     project_keys = set(project_targets.keys())
     user_keys = set(user_targets.keys())
     build_keys = set(build_targets.keys())
@@ -118,6 +119,8 @@ class RecCmpProject:
 
 
 class RecCmpBuiltProject:
+    """Combines information from the project, user, and build yml files."""
+
     def __init__(
         self,
         project_config_path: Path,
@@ -131,6 +134,7 @@ class RecCmpBuiltProject:
 
     @classmethod
     def from_directory(cls, directory: Path) -> "RecCmpBuiltProject":
+        # Searching for build.yml
         build_directory = find_filename_recursively(
             directory=directory, filename=RECCMP_BUILD_CONFIG
         )
@@ -140,10 +144,13 @@ class RecCmpBuiltProject:
             )
         build_config = build_directory / RECCMP_BUILD_CONFIG
         logger.debug("Using build config: %s", build_config)
+
+        # Parse build.yml
         yaml_loader = ruamel.yaml.YAML()
         with build_config.open() as buildfile:
             build_data = BuildFile.model_validate(yaml_loader.load(buildfile))
 
+        # Searching for project.yml
         # note that Path.joinpath() will ignore the first path if the second path is absolute
         project_directory = build_directory.joinpath(build_data.project)
         project_config_path = project_directory / RECCMP_PROJECT_CONFIG
@@ -152,15 +159,20 @@ class RecCmpBuiltProject:
                 f"{build_config}: .project is invalid ({project_config_path} does not exist)"
             )
         logger.debug("Using project config: %s", project_config_path)
+
+        # Parse project.yml
         with project_config_path.open() as projectfile:
             project_data = ProjectFile.model_validate(yaml_loader.load(projectfile))
 
+        # Searching for user.yml
         user_config = project_directory / RECCMP_USER_CONFIG
         if not user_config.is_file():
             raise InvalidRecCmpProjectException(
                 f"Missing {RECCMP_USER_CONFIG}. First run 'reccmp-project detect'."
             )
         logger.debug("Using user config: %s", user_config)
+
+        # Parse user.yml
         with user_config.open() as userfile:
             user_data = UserFile.model_validate(yaml_loader.load(userfile))
 
@@ -175,10 +187,13 @@ class RecCmpBuiltProject:
             user_config=user_config,
             build_config=build_config,
         )
+
+        # For each target in the project file, combine information from user and build files.
         for target_id, project_target_data in project_data.targets.items():
             user_target_data = user_data.targets.get(target_id, None)
             build_target_data = build_data.targets.get(target_id, None)
 
+            # Skip this target if the build or user files do not have it.
             if not user_target_data:
                 logger.warning(
                     "%s: targets.%s is missing. Target will not be available.",
@@ -236,7 +251,7 @@ class RecCmpBuiltPathsAction(argparse.Action):
         assert isinstance(values, Sequence)
         original, recompiled, pdb, source_root = list(Path(o) for o in values)
         target = RecCmpBuiltTarget(
-            target_id="???",
+            target_id=None,
             filename=original.name,
             original_path=original,
             recompiled_path=recompiled,

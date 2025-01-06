@@ -79,7 +79,7 @@ class Compare:
         self.orig_bin = orig_bin
         self.recomp_bin = recomp_bin
         self.pdb_file = str(pdb_file)
-        self.code_dir = str(code_dir)
+        self.code_dir = Path(code_dir)
         if target_id is not None:
             self.target_id = target_id
         else:

@@ -1,6 +1,6 @@
-import os
 from datetime import datetime
 import logging
+from pathlib import Path
 import colorama
 
 
@@ -178,7 +178,7 @@ def diff_json_display(show_both_addrs: bool = False, is_plain: bool = False):
 def diff_json(
     saved_data,
     new_data,
-    orig_file: str,
+    orig_file: Path,
     show_both_addrs: bool = False,
     is_plain: bool = False,
 ):
@@ -186,7 +186,7 @@ def diff_json(
     report showing which functions/symbols have changed match percentage."""
 
     # Don't try to diff a report generated for a different binary file
-    base_file = os.path.basename(orig_file).lower()
+    base_file = orig_file.name.lower()
 
     if saved_data.get("file") != base_file:
         logging.getLogger().error(

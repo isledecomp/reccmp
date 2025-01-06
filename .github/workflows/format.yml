@@ -15,9 +15,14 @@ jobs:
       run: |
         pip install -r requirements.txt -r requirements-tests.txt
 
-    - name: Run pylint and black
+    - name: Run black
       shell: bash
-      run: |
-        pylint reccmp
-        pylint tests
-        black --check .
+      run: black --check .
+
+    - name: Run pylint
+      shell: bash
+      run: pylint reccmp tests
+
+    - name: Run mypy
+      shell: bash
+      run: mypy ./reccmp

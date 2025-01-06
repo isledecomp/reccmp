@@ -44,7 +44,11 @@ class ImageDosHeader:
             raise ValueError
         struct_fmt = "<2s29HI"
         struct_size = struct.calcsize(struct_fmt)
-        items = struct.unpack_from(struct_fmt, data, offset)
+        # fmt: off
+        items: tuple[bytes, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int] = (
+            struct.unpack_from(struct_fmt, data, offset)
+        )
+        # fmt: on
         result = cls(
             *items[:14],
             items[14:18],

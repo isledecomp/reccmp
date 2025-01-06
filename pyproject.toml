@@ -1,2 +1,8 @@
 [flake8]
 max-line-length = 120
+
+
+[tool.mypy]
+check_untyped_defs = true
+# excluded until fixed
+exclude = "reccmp/ghidra_scripts/.*"

@@ -218,10 +218,12 @@ class PEImageOptionalHeader:
         cls, data: bytes, offset: int
     ) -> tuple["PEImageOptionalHeader", int]:
         struct_fmt1 = "<H2B5I"
-        part1 = struct.unpack_from(struct_fmt1, data, offset=offset)
+        part1: tuple[int, int, int, int, int, int, int, int] = struct.unpack_from(
+            struct_fmt1, data, offset=offset
+        )
         assert part1[0] in (0x10B, 0x20B)  # PE32, PE32+
         pe32_plus = part1[0] == 0x20B
-        base_of_data = None
+        base_of_data: int | None = None
         struct_fmt2 = "<"
         offset += struct.calcsize(struct_fmt1)
         if not pe32_plus:
@@ -230,13 +232,14 @@ class PEImageOptionalHeader:
         offset += struct.calcsize(struct_fmt2)
         if pe32_plus:
             struct_fmt3 = "<QII6H4I2H4Q2I"
-            part3_tuple = struct.unpack_from(struct_fmt3, data, offset=offset)
         else:
             struct_fmt3 = "<III6H4I2H4I2I"
-            part3_tuple = struct.unpack_from(struct_fmt3, data, offset=offset)
-        part3 = list(part3_tuple)
-        part3[13] = WindowsSubsystem(part3[13])
-        part3[14] = DllCharacteristics(part3[14])
+
+        # fmt: off
+        part3: tuple[int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int] = (
+            struct.unpack_from(struct_fmt3, data, offset=offset)
+        )
+        # fmt: on
         offset += struct.calcsize(struct_fmt3)
 
         count_directories = part3[-1]
@@ -247,7 +250,18 @@ class PEImageOptionalHeader:
             )
         )
         offset += 8 * count_directories
-        return cls(*part1, base_of_data, *part3, directories), offset
+        return (
+            cls(
+                *part1,
+                base_of_data,
+                *part3[:13],
+                WindowsSubsystem(part3[13]),
+                DllCharacteristics(part3[14]),
+                *part3[15:],
+                directories,
+            ),
+            offset,
+        )
 
 
 class PESectionFlags(IntFlag):
@@ -435,8 +449,12 @@ class DebugDirectoryEntryHeader:
     major_version: int  # The major version number of the debug data format.
     minor_version: int  # The minor version number of the debug data format.
     type: int  # The format of debugging information. This field enables support of multiple debuggers. For more information, see Debug Type.
-    size_of_data: int  # The size of the debug data (not including the debug directory itself).
-    address_of_raw_data: int  # The address of the debug data when loaded, relative to the image base.
+    size_of_data: (
+        int  # The size of the debug data (not including the debug directory itself).
+    )
+    address_of_raw_data: (
+        int  # The address of the debug data when loaded, relative to the image base.
+    )
     pointer_to_raw_data: int  # The file pointer to the debug data.
 
     @classmethod
