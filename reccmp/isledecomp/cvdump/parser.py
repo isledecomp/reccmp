@@ -1,5 +1,5 @@
 import re
-from typing import Iterable, NamedTuple, Tuple
+from typing import Iterable, NamedTuple
 from .types import CvdumpTypesParser
 from .symbols import CvdumpSymbolsParser
 
@@ -91,9 +91,9 @@ class CvdumpParser:
     # pylint: disable=too-many-instance-attributes
     def __init__(self) -> None:
         self._section: str = ""
-        self._lines_function: Tuple[str, int] = ("", 0)
+        self._lines_function: tuple[str, int] = ("", 0)
 
-        self.lines = {}
+        self.lines: dict[tuple[int, int], tuple[str, int]] = {}
         self.publics: list[PublicsEntry] = []
         self.sizerefs: list[SizeRefEntry] = []
         self.globals: list[GdataEntry] = []

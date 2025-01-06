@@ -28,7 +28,7 @@ import sys
 import logging
 from pathlib import Path
 import traceback
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import ghidra
@@ -196,7 +196,7 @@ def do_execute_import(
 
 
 def log_and_track_failure(
-    function_name: Optional[str], error: Exception, unexpected: bool = False
+    function_name: str | None, error: Exception, unexpected: bool = False
 ):
     if GLOBALS.statistics.track_failure_and_tell_if_new(error):
         logger.error(
@@ -227,8 +227,10 @@ def find_and_add_venv_to_pythonpath():
     while not path.is_mount():
         venv_candidate = path / ".venv"
         if venv_candidate.exists():
-            add_python_path(venv_candidate / "Lib" / "site-packages")
-            return
+            site_packages = next(venv_candidate.glob("lib/**/site-packages/"), None)
+            if site_packages is not None:
+                add_python_path(site_packages)
+                return
         path = path.parent
 
     logger.warning(

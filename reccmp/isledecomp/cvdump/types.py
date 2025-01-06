@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 import re
 import logging
-from typing import Any, Dict, List, NamedTuple, Optional
+from typing import Any, NamedTuple
 
 
 logger = logging.getLogger(__name__)
@@ -42,7 +42,7 @@ class VirtualBasePointer:
 
 class ScalarType(NamedTuple):
     offset: int
-    name: Optional[str]
+    name: str | None
     type: str
 
     @property
@@ -60,9 +60,9 @@ class ScalarType(NamedTuple):
 
 class TypeInfo(NamedTuple):
     key: str
-    size: Optional[int]
-    name: Optional[str] = None
-    members: Optional[List[FieldListItem]] = None
+    size: int | None
+    name: str | None = None
+    members: list[FieldListItem] | None = None
 
     def is_scalar(self) -> bool:
         # TODO: distinction between a class with zero members and no vtable?
@@ -127,7 +127,7 @@ def scalar_type_format_char(type_name: str) -> str:
     return char if scalar_type_signed(type_name) else char.upper()
 
 
-def member_list_to_struct_string(members: List[ScalarType]) -> str:
+def member_list_to_struct_string(members: list[ScalarType]) -> str:
     """Create a string for use with struct.unpack"""
 
     format_string = "".join(m.format_char for m in members)
@@ -137,7 +137,7 @@ def member_list_to_struct_string(members: List[ScalarType]) -> str:
     return ""
 
 
-def join_member_names(parent: str, child: Optional[str]) -> str:
+def join_member_names(parent: str, child: str | None) -> str:
     """Helper method to combine parent/child member names.
     Child member name is None if the child is a scalar type."""
 
@@ -263,9 +263,9 @@ class CvdumpTypesParser:
     }
 
     def __init__(self) -> None:
-        self.mode: Optional[str] = None
+        self.mode: str | None = None
         self.last_key = ""
-        self.keys: Dict[str, Dict[str, Any]] = {}
+        self.keys: dict[str, dict[str, Any]] = {}
 
     def _new_type(self):
         """Prepare a new dict for the type we just parsed.
@@ -295,7 +295,7 @@ class CvdumpTypesParser:
         variants: list[dict[str, Any]] = obj["variants"]
         variants.append({"name": name, "value": value})
 
-    def _get_field_list(self, type_obj: Dict[str, Any]) -> List[FieldListItem]:
+    def _get_field_list(self, type_obj: dict[str, Any]) -> list[FieldListItem]:
         """Return the field list for the given LF_CLASS/LF_STRUCTURE reference"""
 
         if type_obj.get("type") == "LF_FIELDLIST":
@@ -304,7 +304,7 @@ class CvdumpTypesParser:
             field_list_type = type_obj["field_list_type"]
             field_obj = self.keys[field_list_type]
 
-        members: List[FieldListItem] = []
+        members: list[FieldListItem] = []
 
         super_ids = field_obj.get("super", [])
         for super_id in super_ids:
@@ -325,7 +325,7 @@ class CvdumpTypesParser:
 
         return sorted(members, key=lambda m: m.offset)
 
-    def _mock_array_members(self, type_obj: Dict) -> List[FieldListItem]:
+    def _mock_array_members(self, type_obj: dict[str, Any]) -> list[FieldListItem]:
         """LF_ARRAY elements provide the element type and the total size.
         We want the list of "members" as if this was a struct."""
 
@@ -408,7 +408,7 @@ class CvdumpTypesParser:
         # TODO
         raise NotImplementedError
 
-    def get_scalars(self, type_key: str) -> List[ScalarType]:
+    def get_scalars(self, type_key: str) -> list[ScalarType]:
         """Reduce the given type to a list of scalars so we can
         compare each component value."""
 
@@ -434,7 +434,7 @@ class CvdumpTypesParser:
             for cm in self.get_scalars(m.type)
         ]
 
-    def get_scalars_gapless(self, type_key: str) -> List[ScalarType]:
+    def get_scalars_gapless(self, type_key: str) -> list[ScalarType]:
         """Reduce the given type to a list of scalars so we can
         compare each component value."""
 
@@ -446,7 +446,7 @@ class CvdumpTypesParser:
 
         scalars = self.get_scalars(type_key)
 
-        output = []
+        output: list[ScalarType] = []
         last_extent = total_size
 
         # Walk the scalar list in reverse; we assume a gap could not

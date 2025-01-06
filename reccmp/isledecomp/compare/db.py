@@ -5,8 +5,7 @@ import sqlite3
 import logging
 import json
 from functools import cached_property
-from dataclasses import dataclass
-from typing import Any, Iterable, Iterator, List, Optional
+from typing import Any, Iterable, Iterator
 from reccmp.isledecomp.types import SymbolType
 from reccmp.isledecomp.cvdump.demangler import get_vtordisp_name
 
@@ -25,36 +24,55 @@ SymbolTypeLookup: dict[int, str] = {
 }
 
 
-@dataclass
-class MatchInfo:
-    orig_addr: Optional[int]
-    recomp_addr: Optional[int]
-    kvstore: str
+class ReccmpEntity:
+    """ORM object for Reccmp database entries."""
+
+    _orig_addr: int | None
+    _recomp_addr: int | None
+    _kvstore: str
+
+    def __init__(
+        self, orig: int | None, recomp: int | None, kvstore: str = "{}"
+    ) -> None:
+        """Requires one or both of the addresses to be defined"""
+        assert orig is not None or recomp is not None
+        self._orig_addr = orig
+        self._recomp_addr = recomp
+        self._kvstore = kvstore
 
     @cached_property
     def options(self) -> dict[str, Any]:
-        return json.loads(self.kvstore)
+        return json.loads(self._kvstore)
 
     @property
-    def compare_type(self) -> Optional[int]:
+    def orig_addr(self) -> int | None:
+        return self._orig_addr
+
+    @property
+    def recomp_addr(self) -> int | None:
+        return self._recomp_addr
+
+    @property
+    def compare_type(self) -> int | None:
         return self.options.get("type")
 
     @property
-    def name(self) -> Optional[str]:
+    def name(self) -> str | None:
         return self.options.get("name")
 
     @property
-    def size(self) -> Optional[int]:
-        return self.options.get("size")
+    def size(self) -> int:
+        """Assume null size means size is zero: there are no bytes to read for this entity."""
+        return self.options.get("size", 0)
 
     @property
     def matched(self) -> bool:
-        return self.orig_addr is not None and self.recomp_addr is not None
+        return self._orig_addr is not None and self._recomp_addr is not None
 
     def get(self, key: str, default: Any = None) -> Any:
         return self.options.get(key, default)
 
-    def match_name(self) -> Optional[str]:
+    def match_name(self) -> str | None:
         """Combination of the name and compare type.
         Intended for name substitution in the diff. If there is a diff,
         it will be more obvious what this symbol indicates."""
@@ -65,15 +83,40 @@ class MatchInfo:
         name = repr(self.name) if self.compare_type == SymbolType.STRING else self.name
         return f"{name} ({ctype})"
 
-    def offset_name(self, ofs: int) -> Optional[str]:
+    def offset_name(self, ofs: int) -> str | None:
         if self.name is None:
             return None
 
         return f"{self.name}+{ofs} (OFFSET)"
 
 
-def matchinfo_factory(_, row):
-    return MatchInfo(*row)
+class ReccmpMatch(ReccmpEntity):
+    """To simplify type checking, use this object when a "match" is
+    required or expected. Meaning: both orig and recomp addresses are set."""
+
+    def __init__(self, orig: int, recomp: int, kvstore: str = "{}") -> None:
+        assert orig is not None and recomp is not None
+        super().__init__(orig, recomp, kvstore)
+
+    @property
+    def orig_addr(self) -> int:
+        assert self._orig_addr is not None
+        return self._orig_addr
+
+    @property
+    def recomp_addr(self) -> int:
+        assert self._recomp_addr is not None
+        return self._recomp_addr
+
+
+def entity_factory(_, row: object) -> ReccmpEntity:
+    assert isinstance(row, tuple)
+    return ReccmpEntity(*row)
+
+
+def matched_entity_factory(_, row: object) -> ReccmpMatch:
+    assert isinstance(row, tuple)
+    return ReccmpMatch(*row)
 
 
 logger = logging.getLogger(__name__)
@@ -129,13 +172,13 @@ class CompareDb:
             )
 
     def bulk_match(self, pairs: Iterable[tuple[int, int]]):
-        """Expects iterable of (orig_addr, recomp_addr)."""
+        """Expects iterable of `(orig_addr, recomp_addr)`."""
         self._sql.executemany(
             "UPDATE or ignore symbols SET orig_addr = ? WHERE recomp_addr = ?", pairs
         )
 
-    def get_unmatched_strings(self) -> List[str]:
-        """Return any strings not already identified by STRING markers."""
+    def get_unmatched_strings(self) -> list[str]:
+        """Return any strings not already identified by `STRING` markers."""
 
         cur = self._sql.execute(
             "SELECT json_extract(kvstore,'$.name') FROM `symbols` WHERE json_extract(kvstore, '$.type') = ? AND orig_addr IS NULL",
@@ -144,24 +187,24 @@ class CompareDb:
 
         return [string for (string,) in cur.fetchall()]
 
-    def get_all(self) -> Iterator[MatchInfo]:
+    def get_all(self) -> Iterator[ReccmpEntity]:
         cur = self._sql.execute(
             "SELECT orig_addr, recomp_addr, kvstore FROM symbols ORDER BY orig_addr NULLS LAST"
         )
-        cur.row_factory = matchinfo_factory
+        cur.row_factory = entity_factory
         yield from cur
 
-    def get_matches(self) -> Iterator[MatchInfo]:
+    def get_matches(self) -> Iterator[ReccmpMatch]:
         cur = self._sql.execute(
             """SELECT orig_addr, recomp_addr, kvstore FROM symbols
             WHERE matched = 1
             ORDER BY orig_addr NULLS LAST
             """,
         )
-        cur.row_factory = matchinfo_factory
+        cur.row_factory = matched_entity_factory
         yield from cur
 
-    def get_one_match(self, addr: int) -> Optional[MatchInfo]:
+    def get_one_match(self, addr: int) -> ReccmpMatch | None:
         cur = self._sql.execute(
             """SELECT orig_addr, recomp_addr, kvstore FROM symbols
             WHERE orig_addr = ?
@@ -169,10 +212,10 @@ class CompareDb:
             """,
             (addr,),
         )
-        cur.row_factory = matchinfo_factory
+        cur.row_factory = matched_entity_factory
         return cur.fetchone()
 
-    def _get_closest_orig(self, addr: int) -> Optional[int]:
+    def _get_closest_orig(self, addr: int) -> int | None:
         for (value,) in self._sql.execute(
             "SELECT orig_addr FROM symbols WHERE ? >= orig_addr ORDER BY orig_addr desc LIMIT 1",
             (addr,),
@@ -181,7 +224,7 @@ class CompareDb:
 
         return None
 
-    def _get_closest_recomp(self, addr: int) -> Optional[int]:
+    def _get_closest_recomp(self, addr: int) -> int | None:
         for (value,) in self._sql.execute(
             "SELECT recomp_addr FROM symbols WHERE ? >= recomp_addr ORDER BY recomp_addr desc LIMIT 1",
             (addr,),
@@ -190,7 +233,7 @@ class CompareDb:
 
         return None
 
-    def get_by_orig(self, orig: int, exact: bool = True) -> Optional[MatchInfo]:
+    def get_by_orig(self, orig: int, exact: bool = True) -> ReccmpEntity | None:
         addr = self._get_closest_orig(orig)
         if addr is None or exact and orig != addr:
             return None
@@ -199,10 +242,10 @@ class CompareDb:
             "SELECT orig_addr, recomp_addr, kvstore FROM symbols WHERE orig_addr = ?",
             (addr,),
         )
-        cur.row_factory = matchinfo_factory
+        cur.row_factory = entity_factory
         return cur.fetchone()
 
-    def get_by_recomp(self, recomp: int, exact: bool = True) -> Optional[MatchInfo]:
+    def get_by_recomp(self, recomp: int, exact: bool = True) -> ReccmpEntity | None:
         addr = self._get_closest_recomp(recomp)
         if addr is None or exact and recomp != addr:
             return None
@@ -211,10 +254,10 @@ class CompareDb:
             "SELECT orig_addr, recomp_addr, kvstore FROM symbols WHERE recomp_addr = ?",
             (addr,),
         )
-        cur.row_factory = matchinfo_factory
+        cur.row_factory = entity_factory
         return cur.fetchone()
 
-    def get_matches_by_type(self, compare_type: SymbolType) -> Iterator[MatchInfo]:
+    def get_matches_by_type(self, compare_type: SymbolType) -> Iterator[ReccmpMatch]:
         cur = self._sql.execute(
             """SELECT orig_addr, recomp_addr, kvstore FROM symbols
             WHERE json_extract(kvstore, '$.type') = ?
@@ -223,7 +266,7 @@ class CompareDb:
             """,
             (compare_type,),
         )
-        cur.row_factory = matchinfo_factory
+        cur.row_factory = matched_entity_factory
         yield from cur
 
     def _orig_used(self, addr: int) -> bool:
@@ -235,7 +278,7 @@ class CompareDb:
         return cur.fetchone() is not None
 
     def set_pair(
-        self, orig: int, recomp: int, compare_type: Optional[SymbolType] = None
+        self, orig: int, recomp: int, compare_type: SymbolType | None = None
     ) -> bool:
         if self._orig_used(orig):
             logger.debug("Original address %s not unique!", hex(orig))
@@ -249,7 +292,7 @@ class CompareDb:
         return cur.rowcount > 0
 
     def set_pair_tentative(
-        self, orig: int, recomp: int, compare_type: Optional[SymbolType] = None
+        self, orig: int, recomp: int, compare_type: SymbolType | None = None
     ) -> bool:
         """Declare a match for the original and recomp addresses given, but only if:
         1. The original address is not used elsewhere (as with set_pair)
@@ -362,7 +405,7 @@ class CompareDb:
 
         return True
 
-    def search_symbol(self, symbol: str) -> Iterator[MatchInfo]:
+    def search_symbol(self, symbol: str) -> Iterator[ReccmpEntity]:
         if "symbol" not in self._indexed:
             self._sql.execute(
                 "CREATE index idx_symbol on symbols(json_extract(kvstore, '$.symbol'))"
@@ -374,10 +417,12 @@ class CompareDb:
             WHERE json_extract(kvstore, '$.symbol') = ?""",
             (symbol,),
         )
-        cur.row_factory = matchinfo_factory
+        cur.row_factory = entity_factory
         yield from cur
 
-    def search_name(self, name: str, compare_type: SymbolType) -> Iterator[MatchInfo]:
+    def search_name(
+        self, name: str, compare_type: SymbolType
+    ) -> Iterator[ReccmpEntity]:
         if "name" not in self._indexed:
             self._sql.execute(
                 "CREATE index idx_name on symbols(json_extract(kvstore, '$.name'))"
@@ -392,7 +437,7 @@ class CompareDb:
             AND (json_extract(kvstore, '$.type') IS NULL OR json_extract(kvstore, '$.type') = ?)""",
             (name, compare_type),
         )
-        cur.row_factory = matchinfo_factory
+        cur.row_factory = entity_factory
         yield from cur
 
     def _match_on(self, compare_type: SymbolType, addr: int, name: str) -> bool:
@@ -436,7 +481,7 @@ class CompareDb:
 
         return False
 
-    def get_next_orig_addr(self, addr: int) -> Optional[int]:
+    def get_next_orig_addr(self, addr: int) -> int | None:
         """Return the original address (matched or not) that follows
         the one given. If our recomp function size would cause us to read
         too many bytes for the original function, we can adjust it."""
@@ -463,7 +508,7 @@ class CompareDb:
         return did_match
 
     def match_vtable(
-        self, addr: int, class_name: str, base_class: Optional[str] = None
+        self, addr: int, class_name: str, base_class: str | None = None
     ) -> bool:
         """Match the vtable for the given class name. If a base class is provided,
         we will match the multiple inheritance vtable instead.
@@ -582,7 +627,9 @@ class CompareDb:
                     addr,
                     escaped,
                     repr(already_present.name),
-                    repr(SymbolType(already_present.compare_type)),
+                    repr(SymbolType(already_present.compare_type))
+                    if already_present.compare_type is not None
+                    else "<None>",
                 )
 
         return did_match

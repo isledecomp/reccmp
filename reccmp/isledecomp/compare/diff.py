@@ -1,14 +1,20 @@
 from difflib import SequenceMatcher
-from typing import Dict, List, Tuple
+from typing import TypedDict
+from typing_extensions import NotRequired
 
-CombinedDiffInput = List[Tuple[str, str]]
-# from inner to outer:
-# Tuple[str, ...]: either (orig_addr, instruction, recomp_addr) or (addr, instruction)
-# List[...]: a contiguous block of instructions, all matching or all mismatching
-# Dict[...]: either {"both": List[...]} or {"orig": [...], "recomp": [...]}
-# Tuple[str, List[...]]: One contiguous part of the diff (without skipping matching code)
-# List[...]: The list of all the contiguous diffs of a given function
-CombinedDiffOutput = List[Tuple[str, List[Dict[str, List[Tuple[str, ...]]]]]]
+CombinedDiffInput = list[tuple[str, str]]
+
+
+class MatchingOrMismatchingBlock(TypedDict):
+    # I tried a union and narrowing, but this does not work in mypy - see https://github.com/python/mypy/issues/11080
+    both: NotRequired[list[tuple[str, str, str]]]
+    orig: NotRequired[list[tuple[str, str]]]
+    recomp: NotRequired[list[tuple[str, str]]]
+
+
+# tuple[str, list[...]]: One contiguous part of the diff (without skipping matching code)
+# list[...]: The list of all the contiguous diffs of a given function
+CombinedDiffOutput = list[tuple[str, list[MatchingOrMismatchingBlock]]]
 
 
 def combined_diff(
@@ -30,7 +36,7 @@ def combined_diff(
     unified_diff = []
 
     for group in diff.get_grouped_opcodes(context_size):
-        subgroups = []
+        subgroups: list[MatchingOrMismatchingBlock] = []
 
         # Keep track of the addresses we've seen in this diff group.
         # This helps create the "@@" line. (Does this have a name?)

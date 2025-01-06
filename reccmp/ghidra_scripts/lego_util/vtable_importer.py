@@ -11,12 +11,12 @@ from ghidra.program.model.symbol import SourceType
 
 from lego_util.ghidra_helper import get_namespace_and_name
 
-from reccmp.isledecomp.compare.db import MatchInfo
+from reccmp.isledecomp.compare.db import ReccmpEntity
 
 logger = logging.getLogger(__name__)
 
 
-def import_vftables_into_ghidra(api: FlatProgramAPI, vftables: Iterator[MatchInfo]):
+def import_vftables_into_ghidra(api: FlatProgramAPI, vftables: Iterator[ReccmpEntity]):
     address_factory = api.getAddressFactory()
     symbol_table = api.getCurrentProgram().getSymbolTable()
     for vtable in vftables:

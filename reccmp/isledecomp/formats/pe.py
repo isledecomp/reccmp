@@ -5,15 +5,18 @@ Based on the following resources:
 - Debug information: https://www.debuginfo.com/examples/src/DebugDir.cpp
 """
 
-import bisect
 import dataclasses
 from enum import IntEnum, IntFlag
 from functools import cached_property
 from pathlib import Path
 import struct
-from typing import Iterator, Optional
+from typing import Iterator, cast
 
-from .exceptions import InvalidVirtualAddressError, SectionNotFoundError
+from .exceptions import (
+    InvalidVirtualAddressError,
+    InvalidVirtualReadError,
+    SectionNotFoundError,
+)
 from .image import Image
 from .mz import ImageDosHeader
 
@@ -186,7 +189,7 @@ class PEImageOptionalHeader:
     size_of_uninitialized_data: int
     address_of_entry_point: int
     base_of_code: int
-    base_of_data: Optional[int]
+    base_of_data: int | None
     image_base: int
     section_alignment: int
     file_alignment: int
@@ -215,10 +218,12 @@ class PEImageOptionalHeader:
         cls, data: bytes, offset: int
     ) -> tuple["PEImageOptionalHeader", int]:
         struct_fmt1 = "<H2B5I"
-        part1 = struct.unpack_from(struct_fmt1, data, offset=offset)
+        part1: tuple[int, int, int, int, int, int, int, int] = struct.unpack_from(
+            struct_fmt1, data, offset=offset
+        )
         assert part1[0] in (0x10B, 0x20B)  # PE32, PE32+
         pe32_plus = part1[0] == 0x20B
-        base_of_data = None
+        base_of_data: int | None = None
         struct_fmt2 = "<"
         offset += struct.calcsize(struct_fmt1)
         if not pe32_plus:
@@ -227,13 +232,14 @@ class PEImageOptionalHeader:
         offset += struct.calcsize(struct_fmt2)
         if pe32_plus:
             struct_fmt3 = "<QII6H4I2H4Q2I"
-            part3 = struct.unpack_from(struct_fmt3, data, offset=offset)
         else:
             struct_fmt3 = "<III6H4I2H4I2I"
-            part3 = struct.unpack_from(struct_fmt3, data, offset=offset)
-        part3 = list(part3)
-        part3[13] = WindowsSubsystem(part3[13])
-        part3[14] = DllCharacteristics(part3[14])
+
+        # fmt: off
+        part3: tuple[int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int] = (
+            struct.unpack_from(struct_fmt3, data, offset=offset)
+        )
+        # fmt: on
         offset += struct.calcsize(struct_fmt3)
 
         count_directories = part3[-1]
@@ -244,7 +250,18 @@ class PEImageOptionalHeader:
             )
         )
         offset += 8 * count_directories
-        return cls(*part1, base_of_data, *part3, directories), offset
+        return (
+            cls(
+                *part1,
+                base_of_data,
+                *part3[:13],
+                WindowsSubsystem(part3[13]),
+                DllCharacteristics(part3[14]),
+                *part3[15:],
+                directories,
+            ),
+            offset,
+        )
 
 
 class PESectionFlags(IntFlag):
@@ -316,8 +333,9 @@ class PEImageSectionHeader:
                 *members[1:-1],
                 PESectionFlags(members[-1]),
             )
-            for members in struct.iter_unpack(
-                struct_fmt, data[offset : offset + count * s_size]
+            for members in cast(
+                Iterator[tuple[bytes, int, int, int, int, int, int, int, int, int]],
+                struct.iter_unpack(struct_fmt, data[offset : offset + count * s_size]),
             )
         )
         return items, offset + count * struct.calcsize(struct_fmt)
@@ -332,11 +350,13 @@ class CodeViewHeaderNB10:
     pdb_file_name: bytes  # zero terminated string with the name of the PDB file
 
     @classmethod
-    def from_memory(cls, data: bytes, offset: int) -> Optional["CodeViewHeaderNB10"]:
+    def from_memory(cls, data: bytes, offset: int) -> "CodeViewHeaderNB10| None":
         struct_fmt = "<4sIII"
         if not cls.taste(data, offset):
             raise ValueError
-        items = struct.unpack_from(struct_fmt, data, offset)
+        items: tuple[bytes, int, int, int] = struct.unpack_from(
+            struct_fmt, data, offset
+        )
         offset_pdb_filename = offset + struct.calcsize(struct_fmt)
         try:
             pos_null = data.index(0, offset_pdb_filename)
@@ -357,11 +377,11 @@ class CodeViewHeaderRSDS:
     pdb_file_name: bytes  # zero terminated string with the name of the PDB file
 
     @classmethod
-    def from_memory(cls, data: bytes, offset: int) -> Optional["CodeViewHeaderRSDS"]:
+    def from_memory(cls, data: bytes, offset: int) -> "CodeViewHeaderRSDS | None":
         struct_fmt = "<4s16s"
         if not cls.taste(data, offset):
             raise ValueError
-        items = struct.unpack_from(struct_fmt, data, offset)
+        items: tuple[bytes, bytes] = struct.unpack_from(struct_fmt, data, offset)
         offset_pdb_filename = offset + struct.calcsize(struct_fmt)
         try:
             pos_null = data.index(0, offset_pdb_filename)
@@ -429,12 +449,18 @@ class DebugDirectoryEntryHeader:
     major_version: int  # The major version number of the debug data format.
     minor_version: int  # The minor version number of the debug data format.
     type: int  # The format of debugging information. This field enables support of multiple debuggers. For more information, see Debug Type.
-    size_of_data: int  # The size of the debug data (not including the debug directory itself).
-    address_of_raw_data: int  # The address of the debug data when loaded, relative to the image base.
+    size_of_data: (
+        int  # The size of the debug data (not including the debug directory itself).
+    )
+    address_of_raw_data: (
+        int  # The address of the debug data when loaded, relative to the image base.
+    )
     pointer_to_raw_data: int  # The file pointer to the debug data.
 
     @classmethod
-    def from_memory(cls, data: bytes, offset: int) -> "DebugDirectoryEntryHeader":
+    def from_memory(
+        cls, data: bytes, offset: int
+    ) -> tuple["DebugDirectoryEntryHeader", int]:
         struct_fmt = "<2I2H4I"
         items = struct.unpack_from(struct_fmt, data, offset=offset)
         return cls(*items), offset + struct.calcsize(struct_fmt)
@@ -467,10 +493,11 @@ class PEImage(Image):
     # FIXME: do these belong to PEImage? Shouldn't the loade apply these to the data?
     _relocated_addrs: set[int] = dataclasses.field(default_factory=set, repr=False)
     _relocations: set[int] = dataclasses.field(default_factory=set, repr=False)
-    _section_vaddr: list[int] = dataclasses.field(default_factory=list, repr=False)
     # find_str: bool = dataclasses.field(default=False, repr=False)
-    imports: list[tuple[int, str]] = dataclasses.field(default_factory=list, repr=False)
-    exports: list[tuple[str, str, int]] = dataclasses.field(
+    imports: list[tuple[str, str, int]] = dataclasses.field(
+        default_factory=list, repr=False
+    )
+    exports: list[tuple[int, bytes]] = dataclasses.field(
         default_factory=list, repr=False
     )
     thunks: list[tuple[int, int]] = dataclasses.field(default_factory=list, repr=False)
@@ -524,9 +551,6 @@ class PEImage(Image):
                 f"reccmp only supports i386 binaries: {self.header.machine}."
             )
 
-        # bisect does not support key on the GitHub CI version of python
-        self._section_vaddr = [section.virtual_address for section in self.sections]
-
         self._populate_relocations()
         self._populate_imports()
         self._populate_thunks()
@@ -543,7 +567,7 @@ class PEImage(Image):
 
     def get_data_directory_region(
         self, t: PEDataDirectoryItemType
-    ) -> Optional[PEDataDirectoryItemRegion]:
+    ) -> PEDataDirectoryItemRegion | None:
         directory_header = self.optional_header.directories[t.value]
         if not directory_header.rva:
             return None
@@ -567,7 +591,7 @@ class PEImage(Image):
         )
 
     @property
-    def pdb_filename(self) -> Optional[str]:
+    def pdb_filename(self) -> str | None:
         debug_directory = self.get_data_directory_region(PEDataDirectoryItemType.DEBUG)
         if not debug_directory:
             return None
@@ -582,17 +606,19 @@ class PEImage(Image):
             if CodeViewHeaderNB10.taste(
                 data=self.data, offset=debug_entry.pointer_to_raw_data
             ):
-                cv = CodeViewHeaderNB10.from_memory(
+                cv_nb10 = CodeViewHeaderNB10.from_memory(
                     data=self.data, offset=debug_entry.pointer_to_raw_data
                 )
-                return cv.pdb_file_name.decode("ascii")
+                assert cv_nb10 is not None
+                return cv_nb10.pdb_file_name.decode("ascii")
             if CodeViewHeaderRSDS.taste(
                 data=self.data, offset=debug_entry.pointer_to_raw_data
             ):
-                cv = CodeViewHeaderRSDS.from_memory(
+                cv_rsds = CodeViewHeaderRSDS.from_memory(
                     data=self.data, offset=debug_entry.pointer_to_raw_data
                 )
-                return cv.pdb_file_name.decode()
+                assert cv_rsds is not None
+                return cv_rsds.pdb_file_name.decode()
         return None
 
     @property
@@ -602,7 +628,7 @@ class PEImage(Image):
     def get_relocated_addresses(self) -> list[int]:
         return sorted(self._relocated_addrs)
 
-    def find_string(self, target: bytes) -> Optional[int]:
+    def find_string(self, target: bytes) -> int | None:
         # Pad with null terminator to make sure we don't
         # match on a subset of the full string
         if not target.endswith(b"\x00"):
@@ -756,6 +782,7 @@ class PEImage(Image):
         import_directory = self.get_data_directory_region(
             PEDataDirectoryItemType.IMPORT_TABLE
         )
+        assert import_directory is not None
 
         def iter_image_import(offset: int):
             while True:
@@ -874,13 +901,13 @@ class PEImage(Image):
         n_functions = export_table.address_table_entries
 
         func_start = export_start + 40
-        func_addrs = [
+        func_addrs: list[int] = [
             self.imagebase + rva
             for rva, in struct.iter_unpack("<L", self.read(func_start, 4 * n_functions))
         ]
 
         name_start = func_start + 4 * n_functions
-        name_addrs = [
+        name_addrs: list[int] = [
             self.imagebase + rva
             for rva, in struct.iter_unpack("<L", self.read(name_start, 4 * n_functions))
         ]
@@ -941,16 +968,27 @@ class PEImage(Image):
         into an absolute vaddr."""
         return self.get_section_offset_by_index(section) + offset
 
+    @cached_property
+    def vaddr_ranges(self) -> list[tuple[int, int]]:
+        """Return the start and end virtual address of each section in the file."""
+        return list(
+            (
+                self.imagebase + section.virtual_address,
+                self.imagebase
+                + section.virtual_address
+                + max(section.size_of_raw_data, section.virtual_size),
+            )
+            for section in self.section_headers
+        )
+
     def get_relative_addr(self, addr: int) -> tuple[int, int]:
-        """Convert an absolute address back into a (section, offset) pair."""
-        i = bisect.bisect_right(self._section_vaddr, addr) - 1
-        i = max(0, i)
+        """Convert an absolute address back into a (section_id, offset) pair.
+        n.b. section_id is 1-based to match PDB output."""
+        for i, (start, end) in enumerate(self.vaddr_ranges):
+            if start <= addr < end:
+                return i + 1, addr - start
 
-        section = self.sections[i]
-        if section.contains_vaddr(addr):
-            return i + 1, addr - section.virtual_address
-
-        raise InvalidVirtualAddressError(f"{self.filepath} : 0x{addr:08x} {section=}")
+        raise InvalidVirtualAddressError(f"{self.filepath} : 0x{addr:x}")
 
     def is_valid_section(self, section_id: int) -> bool:
         """The PDB will refer to sections that are not listed in the headers
@@ -962,36 +1000,64 @@ class PEImage(Image):
             return False
 
     def is_valid_vaddr(self, vaddr: int) -> bool:
-        """Does this virtual address point to anything in the exe?"""
-        try:
-            (_, __) = self.get_relative_addr(vaddr)
-        except InvalidVirtualAddressError:
-            return False
+        """Is this virtual address part of the image when loaded?"""
+        # Use max here just in case the section headers are not ordered by v.addr
+        (_, last_vaddr) = max(self.vaddr_ranges, key=lambda s: s[1])
+        return self.imagebase <= vaddr < last_vaddr
 
-        return True
+    @cached_property
+    def uninitialized_ranges(self) -> list[tuple[int, int]]:
+        """Return a start and end range of each region in the file that holds uninitialized data.
+        This can be an entire section (.bss) or the gap between the end of the physical data
+        and the virtual size. These ranges do not correspond to section ids."""
+        output = []
+        for section in self.section_headers:
+            if (
+                section.characteristics
+                & PESectionFlags.IMAGE_SCN_CNT_UNINITIALIZED_DATA
+            ):
+                output.append(
+                    (
+                        self.imagebase + section.virtual_address,
+                        self.imagebase + section.virtual_address + section.virtual_size,
+                    )
+                )
+            elif section.virtual_size > section.size_of_raw_data:
+                # Should also cover the case where size_of_raw_data = 0.
+                output.append(
+                    (
+                        self.imagebase
+                        + section.virtual_address
+                        + section.size_of_raw_data,
+                        self.imagebase + section.virtual_address + section.virtual_size,
+                    )
+                )
 
-    def read_string(self, offset: int, chunk_size: int = 1000) -> Optional[bytes]:
-        """Read until we find a zero byte."""
-        b = self.read(offset, chunk_size)
-        if b is None:
-            return None
+        return output
 
-        try:
-            return b[: b.index(b"\x00")]
-        except ValueError:
-            # No terminator found, just return what we have
-            return b
+    def addr_is_uninitialized(self, vaddr: int) -> bool:
+        return any(start <= vaddr < end for start, end in self.uninitialized_ranges)
 
-    def read(self, vaddr: int, size: int) -> Optional[bytes]:
-        """Read (at most) the given number of bytes at the given virtual address.
-        If we return None, the given address points to uninitialized data."""
+    def read_string(self, vaddr: int, chunk_size: int = 1000) -> bytes:
+        """Read up to chunk_size or until we find a zero byte."""
+        (section_id, offset) = self.get_relative_addr(vaddr)
+        section = self.sections[section_id - 1]
+        view = section.view[offset : offset + chunk_size]
+        # Don't call read() here because we might not get the entire chunk size.
+        # Use whatever we can get if we are at the end of the section.
+        return view.tobytes().partition(b"\x00")[0]
+
+    def read(self, vaddr: int, size: int) -> bytes:
         (section_id, offset) = self.get_relative_addr(vaddr)
         section = self.sections[section_id - 1]
 
-        if section.addr_is_uninitialized(vaddr):
-            return None
+        # If we try to read off the end of the section
+        if size < 0 or (offset + size) > section.extent:
+            raise InvalidVirtualReadError(
+                f"{self.filepath} : Cannot read {size} bytes from 0x{vaddr:x}"
+            )
 
-        # Clamp the read within the extent of the current section.
-        # Reading off the end will most likely misrepresent the virtual addressing.
-        _size = min(size, section.size_of_raw_data - offset)
-        return bytes(section.view[offset : offset + _size])
+        # Pad with zero bytes if reading uninitialized data.
+        # Assumes the section memoryview is cropped to the initialized bytes
+        view = section.view[offset : offset + size]
+        return bytes(view) + b"\x00" * (size - len(view))

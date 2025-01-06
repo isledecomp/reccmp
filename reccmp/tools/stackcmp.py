@@ -3,14 +3,17 @@ import re
 import logging
 import argparse
 import struct
-from typing import Dict, List, NamedTuple, Optional, Set, Tuple
+from typing import NamedTuple, Sequence
 
 import colorama
 import reccmp
 from reccmp.isledecomp.formats.detect import detect_image
 from reccmp.isledecomp.formats.pe import PEImage
 from reccmp.isledecomp.compare import Compare as IsleCompare
-from reccmp.isledecomp.compare.diff import CombinedDiffOutput
+from reccmp.isledecomp.compare.diff import (
+    CombinedDiffOutput,
+    MatchingOrMismatchingBlock,
+)
 from reccmp.isledecomp.cvdump.symbols import SymbolsEntry
 from reccmp.project.detect import (
     argparse_add_built_project_target_args,
@@ -46,7 +49,7 @@ class StackSymbol:
 class StackRegisterOffset:
     register: str
     offset: int
-    symbol: Optional[StackSymbol] = None
+    symbol: StackSymbol | None = None
 
     def __str__(self) -> str:
         first_part = (
@@ -63,8 +66,12 @@ class StackRegisterOffset:
     def copy(self) -> "StackRegisterOffset":
         return StackRegisterOffset(self.register, self.offset, self.symbol)
 
-    def __eq__(self, other: "StackRegisterOffset"):
-        return self.register == other.register and self.offset == other.offset
+    def __eq__(self, other: object):
+        return (
+            isinstance(other, StackRegisterOffset)
+            and self.register == other.register
+            and self.offset == other.offset
+        )
 
 
 class StackPair(NamedTuple):
@@ -72,7 +79,7 @@ class StackPair(NamedTuple):
     recomp: StackRegisterOffset
 
 
-StackPairs = Set[StackPair]
+StackPairs = set[StackPair]
 
 
 @dataclass
@@ -91,9 +98,7 @@ def extract_stack_offset_from_instruction(
     return StackRegisterOffset(match.group("register"), offset)
 
 
-def analyze_diff(
-    diff: Dict[str, List[Tuple[str, ...]]], warnings: Warnings
-) -> StackPairs:
+def analyze_diff(diff: MatchingOrMismatchingBlock, warnings: Warnings) -> StackPairs:
     stack_pairs: StackPairs = set()
     if "both" in diff:
         # get the matching stack entries
@@ -109,6 +114,8 @@ def analyze_diff(
                 logging.debug("not a stack offset: %s", instruction)
 
     else:
+        assert "orig" in diff
+        assert "recomp" in diff
         orig = diff["orig"]
         recomp = diff["recomp"]
         if len(orig) != len(recomp):
@@ -161,14 +168,14 @@ def print_non_bijective_match(left: str, right: str):
 
 
 def print_structural_mismatch(
-    orig: List[Tuple[str, ...]], recomp: List[Tuple[str, ...]]
+    orig: Sequence[tuple[str, ...]], recomp: Sequence[tuple[str, ...]]
 ) -> str:
     orig_str = "\n".join(f"-{x[1]}" for x in orig) if orig else "-"
     recomp_str = "\n".join(f"+{x[1]}" for x in recomp) if recomp else "+"
     return f"{colorama.Fore.RED}{orig_str}\n{colorama.Fore.GREEN}{recomp_str}\n{colorama.Style.RESET_ALL}"
 
 
-def format_list_of_offsets(offsets: List[StackRegisterOffset]) -> str:
+def format_list_of_offsets(offsets: list[StackRegisterOffset]) -> str:
     return str([str(x) for x in offsets])
 
 
@@ -188,7 +195,7 @@ def compare_function_stacks(udiff: CombinedDiffOutput, fn_symbol: SymbolsEntry):
     # but only to entries above (i.e. the function arguments on the stack).
     # See also pdb_extraction.py.
 
-    stack_symbols: Dict[int, StackSymbol] = {}
+    stack_symbols: dict[int, StackSymbol] = {}
 
     for symbol in fn_symbol.stack_symbols:
         if symbol.symbol_type == "S_BPREL32":
@@ -209,6 +216,12 @@ def compare_function_stacks(udiff: CombinedDiffOutput, fn_symbol: SymbolsEntry):
                 "Matching esp offsets to debug symbols is not implemented right now"
             )
 
+    print_by_original_stack(stack_pairs, warnings)
+    print_by_recomp_stack(stack_pairs, stack_symbols, warnings)
+    print_footer(warnings)
+
+
+def print_by_original_stack(stack_pairs: set[StackPair], warnings: Warnings):
     print("\nOrdered by original stack (left=orig, right=recomp):")
 
     all_orig_offsets = set(x.orig.offset for x in stack_pairs)
@@ -224,6 +237,12 @@ def compare_function_stacks(udiff: CombinedDiffOutput, fn_symbol: SymbolsEntry):
             print_non_bijective_match(str(orig), format_list_of_offsets(recomps))
             warnings.error_map_not_bijective = True
 
+
+def print_by_recomp_stack(
+    stack_pairs: set[StackPair],
+    stack_symbols: dict[int, StackSymbol],
+    warnings: Warnings,
+):
     # Show offsets from the debug symbols that we have not encountered in the diff
     all_recomp_offsets = set(x.recomp.offset for x in stack_pairs).union(
         stack_symbols.keys()
@@ -253,6 +272,8 @@ def compare_function_stacks(udiff: CombinedDiffOutput, fn_symbol: SymbolsEntry):
             print_non_bijective_match(format_list_of_offsets(origs), str(recomp))
             warnings.error_map_not_bijective = True
 
+
+def print_footer(warnings: Warnings):
     print(
         "\nLegend:\n"
         + f"{SWAP_ICON} : This stack variable matches 1:1, but the order of variables is not correct.\n"

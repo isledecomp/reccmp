@@ -1,5 +1,4 @@
 import re
-from typing import Optional, Tuple
 from enum import Enum
 
 
@@ -41,7 +40,7 @@ markerExactRegex = re.compile(
 
 class DecompMarker:
     def __init__(
-        self, marker_type: str, module: str, offset: int, extra: Optional[str] = None
+        self, marker_type: str, module: str, offset: int, extra: str | None = None
     ) -> None:
         try:
             self._type = MarkerType[marker_type.upper()]
@@ -53,7 +52,7 @@ class DecompMarker:
         # we will emit a syntax error.
         self._module: str = module.upper()
         self._offset: int = offset
-        self._extra: Optional[str] = extra
+        self._extra: str | None = extra
 
     @property
     def type(self) -> MarkerType:
@@ -68,7 +67,7 @@ class DecompMarker:
         return self._offset
 
     @property
-    def extra(self) -> Optional[str]:
+    def extra(self) -> str | None:
         return self._extra
 
     @property
@@ -89,7 +88,7 @@ class DecompMarker:
         return MarkerCategory.ADDRESS
 
     @property
-    def key(self) -> Tuple[str, str, Optional[str]]:
+    def key(self) -> tuple[MarkerCategory, str, str | None]:
         """For use with the MarkerDict. To detect/avoid marker collision."""
         return (self.category, self.module, self.extra)
 
@@ -129,7 +128,7 @@ class DecompMarker:
         return self._type in (MarkerType.GLOBAL, MarkerType.STRING)
 
 
-def match_marker(line: str) -> Optional[DecompMarker]:
+def match_marker(line: str) -> DecompMarker | None:
     match = markerRegex.match(line)
     if match is None:
         return None

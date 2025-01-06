@@ -1,7 +1,6 @@
 import io
 from os import name as os_name
 from enum import Enum
-from typing import List
 import subprocess
 from reccmp.bin import lib_path_join
 from reccmp.isledecomp.dir import winepath_unix_to_win
@@ -32,7 +31,7 @@ cvdump_opt_map = {
 class Cvdump:
     def __init__(self, pdb: str) -> None:
         self._pdb: str = pdb
-        self._options = set()
+        self._options: set[DumpOpt] = set()
 
     def lines(self):
         self._options.add(DumpOpt.LINES)
@@ -62,7 +61,7 @@ class Cvdump:
         self._options.add(DumpOpt.TYPES)
         return self
 
-    def cmd_line(self) -> List[str]:
+    def cmd_line(self) -> list[str]:
         cvdump_exe = lib_path_join("cvdump.exe")
         flags = [cvdump_opt_map[opt] for opt in self._options]
 
@@ -75,6 +74,7 @@ class Cvdump:
         parser = CvdumpParser()
         call = self.cmd_line()
         with subprocess.Popen(call, stdout=subprocess.PIPE) as proc:
+            assert proc.stdout is not None
             for line in io.TextIOWrapper(
                 proc.stdout, encoding="utf-8", errors="ignore"
             ):
