@@ -21,7 +21,6 @@ from .image import Image
 from .mz import ImageDosHeader
 
 # pylint: disable=too-many-lines
-# pylint: disable=duplicate-code
 
 
 class PEHeaderNotFoundError(ValueError):
@@ -236,29 +235,11 @@ class PEImageOptionalHeader:
         else:
             struct_fmt3 = "<III6H4I2H4I2I"
 
-        part3: tuple[
-            int,
-            int,
-            int,
-            int,
-            int,
-            int,
-            int,
-            int,
-            int,
-            int,
-            int,
-            int,
-            int,
-            int,
-            int,
-            int,
-            int,
-            int,
-            int,
-            int,
-            int,
-        ] = struct.unpack_from(struct_fmt3, data, offset=offset)
+        # fmt: off
+        part3: tuple[int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int] = (
+            struct.unpack_from(struct_fmt3, data, offset=offset)
+        )
+        # fmt: on
         offset += struct.calcsize(struct_fmt3)
 
         count_directories = part3[-1]

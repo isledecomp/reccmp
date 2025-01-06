@@ -102,7 +102,7 @@ def main():
     if args.subcommand == ProjectSubcommand.CREATE:
         try:
             # pylint: disable=unused-argument
-            project: RecCmpProject | None = create_project(
+            create_project(
                 project_directory=args.create_directory,
                 original_paths=args.create_originals,
                 scm=args.create_scm,
