@@ -1,14 +1,17 @@
 """Types shared by other modules"""
 
-from enum import IntEnum
+import enum
 
 
-class SymbolType(IntEnum):
-    """Broadly tells us what kind of comparison is required for this symbol."""
+class EntityType(enum.StrEnum):
+    """Broadly tells us what kind of comparison is required for this entity."""
 
-    FUNCTION = 1
-    DATA = 2
-    POINTER = 3
-    STRING = 4
-    VTABLE = 5
-    FLOAT = 6
+    ERRTYPE = enum.auto()
+    UNKNOWN = enum.auto()
+
+    FUNCTION = enum.auto()
+    DATA = enum.auto()
+    POINTER = enum.auto()
+    STRING = enum.auto()
+    VTABLE = enum.auto()
+    FLOAT = enum.auto()
