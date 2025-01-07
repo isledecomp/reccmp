@@ -1,7 +1,7 @@
 from functools import cache
 from typing import Callable, Protocol
 from reccmp.isledecomp.compare.db import ReccmpEntity
-from reccmp.isledecomp.types import SymbolType
+from reccmp.isledecomp.types import EntityType
 
 
 class AddrTestProtocol(Protocol):
@@ -29,7 +29,7 @@ def create_name_lookup(
             return m.match_name()
 
         offset = addr - getattr(m, addr_attribute)
-        if m.compare_type != SymbolType.DATA or offset >= m.size:
+        if m.entity_type != EntityType.DATA or offset >= m.size:
             return None
 
         return m.offset_name(offset)

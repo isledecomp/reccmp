@@ -2,6 +2,7 @@
 
 import pytest
 from reccmp.isledecomp.compare.db import CompareDb
+from reccmp.isledecomp.types import EntityType
 
 
 @pytest.fixture(name="db")
@@ -84,3 +85,30 @@ def test_dynamic_metadata(db):
     # Should preserve boolean type
     assert isinstance(obj.get("option"), bool)
     assert obj.get("option") is True
+
+
+def test_enum_entity_type():
+    """Sanity check for expected values in EntityType enum. For a StrEnum, enum.auto()
+    should set the values to the lower case version of the enum constants."""
+    assert all(value == name.lower() for name, value in EntityType.__members__.items())
+
+
+def test_entity_type_property(db):
+    """Demonstrate expected behavior of entity_type helper property.
+    It always returns an EntityType instance, even for invalid or null values."""
+    db.set_recomp_symbol(1, type="string")
+    db.set_recomp_symbol(2)
+    db.set_recomp_symbol(3, type=None)
+    db.set_recomp_symbol(4, type="__test__")
+
+    # Value is part of the enum
+    assert db.get_by_recomp(1).entity_type == EntityType.STRING
+
+    # Implicit null
+    assert db.get_by_recomp(2).entity_type == EntityType.UNKNOWN
+
+    # Explicit null
+    assert db.get_by_recomp(3).entity_type == EntityType.UNKNOWN
+
+    # Value not part of the enum
+    assert db.get_by_recomp(4).entity_type == EntityType.ERRTYPE

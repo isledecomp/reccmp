@@ -19,7 +19,7 @@ from reccmp.isledecomp.compare.db import ReccmpEntity
 from reccmp.isledecomp.cvdump import Cvdump
 from reccmp.isledecomp.compare import Compare as IsleCompare
 from reccmp.isledecomp.formats.exceptions import InvalidVirtualAddressError
-from reccmp.isledecomp.types import SymbolType
+from reccmp.isledecomp.types import EntityType
 from reccmp.project.detect import (
     argparse_add_built_project_target_args,
     argparse_parse_built_project_target,
@@ -104,12 +104,9 @@ def print_sections(sections):
 ALLOWED_TYPE_ABBREVIATIONS = ["fun", "dat", "poi", "str", "vta", "flo"]
 
 
-def match_type_abbreviation(mtype: int | None) -> str:
-    """Return abbreviation of the given SymbolType name"""
-    if mtype is None:
-        return ""
-
-    return SymbolType(mtype).name.lower()[:3]
+def match_type_abbreviation(mtype: EntityType) -> str:
+    """Return abbreviation of the given EntityType name"""
+    return mtype.value.lower()[:3]
 
 
 def get_cmakefiles_prefix(module: str) -> str:
@@ -437,9 +434,9 @@ def main() -> int:
             if (module_ref := module_map.get_module(match.recomp_addr)) is not None:
                 (_, module_name) = module_ref
 
-        row_type = match_type_abbreviation(match.compare_type)
+        row_type = match_type_abbreviation(match.entity_type)
         name = (
-            repr(match.name) if match.compare_type == SymbolType.STRING else match.name
+            repr(match.name) if match.entity_type == EntityType.STRING else match.name
         )
 
         if match.orig_addr is not None:
