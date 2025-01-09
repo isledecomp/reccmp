@@ -20,7 +20,7 @@ from reccmp.isledecomp import (
 from reccmp.isledecomp.compare import Compare as IsleCompare
 from reccmp.isledecomp.formats.detect import detect_image
 from reccmp.isledecomp.formats.pe import PEImage
-from reccmp.isledecomp.types import SymbolType
+from reccmp.isledecomp.types import EntityType
 from reccmp.assets import get_asset_file
 from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
 from reccmp.project.detect import (
@@ -281,12 +281,12 @@ def main():
             )
 
         if (
-            match.match_type == SymbolType.FUNCTION
+            match.match_type == EntityType.FUNCTION
             and match.orig_addr == match.recomp_addr
         ):
             functions_aligned_count += 1
 
-        if match.match_type == SymbolType.FUNCTION and not match.is_stub:
+        if match.match_type == EntityType.FUNCTION and not match.is_stub:
             function_count += 1
             total_accuracy += match.ratio
             total_effective_accuracy += match.effective_ratio

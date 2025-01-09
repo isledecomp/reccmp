@@ -1,12 +1,12 @@
 """Testing compare database behavior, particularly matching"""
 
 import pytest
-from reccmp.isledecomp.compare.db import CompareDb
+from reccmp.isledecomp.compare.db import EntityDb
 
 
 @pytest.fixture(name="db")
 def fixture_db():
-    return CompareDb()
+    return EntityDb()
 
 
 def test_ignore_recomp_collision(db):
