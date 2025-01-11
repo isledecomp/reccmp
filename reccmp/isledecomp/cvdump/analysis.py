@@ -1,6 +1,6 @@
 """For collating the results from parsing cvdump.exe into a more directly useful format."""
 
-from reccmp.isledecomp.types import SymbolType
+from reccmp.isledecomp.types import EntityType
 from .demangler import demangle_string_const, demangle_vtable
 from .parser import CvdumpParser
 from .symbols import SymbolsEntry
@@ -20,7 +20,7 @@ class CvdumpNode:
     # name makes this obvious. (i.e. string constants or vtables)
     # We choose not to assume that section 1 (probably ".text") contains only
     # functions. Smacker functions are linked to their own section "_UNSTEXT"
-    node_type: SymbolType | None = None
+    node_type: EntityType | None = None
     # Function size can be read from the LINES section so use this over any
     # other value if we have it.
     # TYPES section can tell us the size of structs and other complex types.
@@ -45,18 +45,18 @@ class CvdumpNode:
         self.decorated_name = name
 
         if self.decorated_name.startswith("??_7"):
-            self.node_type = SymbolType.VTABLE
+            self.node_type = EntityType.VTABLE
             self.friendly_name = demangle_vtable(self.decorated_name)
 
         elif self.decorated_name.startswith("??_8"):
             # This is the `vbtable' symbol for virtual inheritance.
             # Should be okay to reuse demangle_vtable. We still want to
             # remove things like "const" from the output.
-            self.node_type = SymbolType.DATA
+            self.node_type = EntityType.DATA
             self.friendly_name = demangle_vtable(self.decorated_name)
 
         elif self.decorated_name.startswith("??_C@"):
-            self.node_type = SymbolType.STRING
+            self.node_type = EntityType.STRING
             demangled = demangle_string_const(self.decorated_name)
             assert demangled is not None
             self.confirmed_size = demangled.len
@@ -66,7 +66,7 @@ class CvdumpNode:
             # in the parameter list for __stdcall, __fastcall, or __vectorcall
             # For __cdecl it is more ambiguous and we would have to know which section we are in.
             # https://learn.microsoft.com/en-us/cpp/build/reference/decorated-names?view=msvc-170#FormatC
-            self.node_type = SymbolType.FUNCTION
+            self.node_type = EntityType.FUNCTION
 
     def name(self) -> str | None:
         """Prefer "friendly" name if we have it.
@@ -120,7 +120,7 @@ class CvdumpAnalysis:
             if key not in node_dict:
                 node_dict[key] = CvdumpNode(*key)
 
-            node_dict[key].node_type = SymbolType.DATA
+            node_dict[key].node_type = EntityType.DATA
             node_dict[key].friendly_name = glo.name
 
             try:
@@ -144,7 +144,7 @@ class CvdumpAnalysis:
             # Here we only set if the section:offset already exists
             # because our values include offsets inside of the function.
             if key in node_dict:
-                node_dict[key].node_type = SymbolType.FUNCTION
+                node_dict[key].node_type = EntityType.FUNCTION
 
         # The LINES section contains every code line in the file, naturally.
         # There isn't an obvious separation between functions, so we have to
@@ -163,7 +163,7 @@ class CvdumpAnalysis:
             if sym.type == "S_GPROC32":
                 node_dict[key].friendly_name = sym.name
                 node_dict[key].confirmed_size = sym.size
-                node_dict[key].node_type = SymbolType.FUNCTION
+                node_dict[key].node_type = EntityType.FUNCTION
                 node_dict[key].symbol_entry = sym
 
         self.nodes: list[CvdumpNode] = [
