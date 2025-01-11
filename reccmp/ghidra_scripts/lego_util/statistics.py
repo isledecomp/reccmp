@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 import logging
 
-from lego_util.exceptions import (
+from .exceptions import (
     TypeNotFoundInGhidraError,
     ClassOrNamespaceNotFoundInGhidraError,
 )

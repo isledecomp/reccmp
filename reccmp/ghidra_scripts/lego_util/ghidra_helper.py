@@ -3,19 +3,20 @@
 import logging
 import re
 
-from lego_util.exceptions import (
-    ClassOrNamespaceNotFoundInGhidraError,
-    TypeNotFoundInGhidraError,
-    MultipleTypesFoundInGhidraError,
-)
-from lego_util.globals import GLOBALS
-
 # Disable spurious warnings in vscode / pylance
 # pyright: reportMissingModuleSource=false
 
 from ghidra.program.flatapi import FlatProgramAPI
 from ghidra.program.model.data import DataType, DataTypeConflictHandler, PointerDataType
 from ghidra.program.model.symbol import Namespace
+
+from .exceptions import (
+    ClassOrNamespaceNotFoundInGhidraError,
+    TypeNotFoundInGhidraError,
+    MultipleTypesFoundInGhidraError,
+)
+from .globals import GLOBALS
+
 
 logger = logging.getLogger(__name__)
 

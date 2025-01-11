@@ -31,8 +31,7 @@ import traceback
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    import ghidra
-    from lego_util.headers import *  # pylint: disable=wildcard-import # these are just for headers
+    from reccmp.ghidra_scripts.lego_util.headers import *  # pylint: disable=wildcard-import # these are just for headers
 
 
 logger = logging.getLogger(__name__)
@@ -50,9 +49,45 @@ def reload_module(module: str):
     importlib.reload(importlib.import_module(module))
 
 
-reload_module("lego_util.statistics")
-reload_module("lego_util.globals")
-from lego_util.globals import GLOBALS
+def add_python_path(path: Path):
+    """
+    Scripts in Ghidra are executed from the tools/ghidra_scripts directory. We need to add
+    a few more paths to the Python path so we can import the other libraries.
+    """
+    logger.info("Adding %s to Python Path", path)
+    assert path.exists()
+    sys.path.insert(1, str(path))
+
+
+def find_and_add_venv_to_pythonpath():
+    path = Path(__file__).resolve()
+
+    # Add the virtual environment if we are in one, e.g. `.venv/Lib/site-packages/reccmp/ghidra_scripts/import_[...].py`
+    while not path.is_mount():
+        if path.name == "site-packages":
+            add_python_path(path)
+            return
+        path = path.parent
+
+    # Development setup: Running from the reccmp repository. The dependencies must be installed in a venv with name `.venv`.
+
+    # This one is needed when the reccmp project is installed in editable mode and we are running directly from the source
+    add_python_path(Path(__file__).parent.parent.parent)
+
+    # Now we add the virtual environment where the dependencies need to be installed
+    path = Path(__file__).resolve()
+    while not path.is_mount():
+        venv_candidate = path / ".venv"
+        if venv_candidate.exists():
+            site_packages = next(venv_candidate.glob("lib/**/site-packages/"), None)
+            if site_packages is not None:
+                add_python_path(site_packages)
+                return
+        path = path.parent
+
+    logger.warning(
+        "No virtual environment was found. This script might fail to find dependencies."
+    )
 
 
 def setup_logging():
@@ -61,7 +96,6 @@ def setup_logging():
     # formatter = logging.Formatter("%(name)s %(levelname)-8s %(message)s") # use this to identify loggers
     stdout_handler = logging.StreamHandler(sys.stdout)
     stdout_handler.setFormatter(formatter)
-    logging.root.setLevel(GLOBALS.loglevel)
     logging.root.addHandler(stdout_handler)
 
     logger.info("Starting import...")
@@ -70,6 +104,13 @@ def setup_logging():
 # This script can be run both from Ghidra and as a standalone.
 # In the latter case, only the PDB parser will be used.
 setup_logging()
+find_and_add_venv_to_pythonpath()
+reload_module("reccmp.ghidra_scripts.lego_util.statistics")
+reload_module("reccmp.ghidra_scripts.lego_util.globals")
+from reccmp.ghidra_scripts.lego_util.globals import GLOBALS
+
+logging.root.setLevel(GLOBALS.loglevel)
+
 try:
     from ghidra.program.flatapi import FlatProgramAPI
     from ghidra.util.exception import CancelledException
@@ -88,16 +129,6 @@ except ImportError as importError:
 
 def get_repository_root():
     return Path(__file__).absolute().parent.parent.parent
-
-
-def add_python_path(path: Path):
-    """
-    Scripts in Ghidra are executed from the tools/ghidra_scripts directory. We need to add
-    a few more paths to the Python path so we can import the other libraries.
-    """
-    logger.info("Adding %s to Python Path", path)
-    assert path.exists()
-    sys.path.insert(1, str(path))
 
 
 # We need to quote the types here because they might not exist when running without Ghidra
@@ -207,37 +238,6 @@ def log_and_track_failure(
         )
 
 
-def find_and_add_venv_to_pythonpath():
-    path = Path(__file__).resolve()
-
-    # Add the virtual environment if we are in one, e.g. `.venv/Lib/site-packages/reccmp/ghidra_scripts/import_[...].py`
-    while not path.is_mount():
-        if path.name == "site-packages":
-            add_python_path(path)
-            return
-        path = path.parent
-
-    # Development setup: Running from the reccmp repository. The dependencies must be installed in a venv with name `.venv`.
-
-    # This one is needed when the reccmp project is installed in editable mode and we are running directly from the source
-    add_python_path(Path(__file__).parent.parent.parent)
-
-    # Now we add the virtual environment where the dependencies need to be installed
-    path = Path(__file__).resolve()
-    while not path.is_mount():
-        venv_candidate = path / ".venv"
-        if venv_candidate.exists():
-            site_packages = next(venv_candidate.glob("lib/**/site-packages/"), None)
-            if site_packages is not None:
-                add_python_path(site_packages)
-                return
-        path = path.parent
-
-    logger.warning(
-        "No virtual environment was found. This script might fail to find dependencies."
-    )
-
-
 def find_build_target() -> "RecCmpBuiltTarget":
     """
     Known issue: In order to use this script, `reccmp-build.yml` must be located in the same directory as `reccmp-project.yml`.
@@ -338,9 +338,7 @@ def main():
 # sys.path is not reset after running the script, so we should restore it
 sys_path_backup = sys.path.copy()
 try:
-    find_and_add_venv_to_pythonpath()
-
-    import setuptools  # pylint: disable=unused-import # required to fix a distutils issue in Python 3.12
+    import setuptools  # type: ignore[import-untyped] # pylint: disable=unused-import # required to fix a distutils issue in Python 3.12
 
     # Packages are imported down here because reccmp's dependencies are only available after the venv was added to the pythonpath
     reload_module("reccmp.project.detect")
@@ -359,25 +357,29 @@ try:
     reload_module("reccmp.isledecomp.compare.db")
 
     reload_module("lego_util.exceptions")
-    from lego_util.exceptions import Lego1Exception
+    from reccmp.ghidra_scripts.lego_util.exceptions import Lego1Exception
 
     reload_module("lego_util.pdb_extraction")
-    from lego_util.pdb_extraction import (
+    from reccmp.ghidra_scripts.lego_util.pdb_extraction import (
         PdbFunctionExtractor,
         PdbFunction,
     )
 
     reload_module("lego_util.vtable_importer")
-    from lego_util.vtable_importer import import_vftables_into_ghidra
+    from reccmp.ghidra_scripts.lego_util.vtable_importer import (
+        import_vftables_into_ghidra,
+    )
 
     if GLOBALS.running_from_ghidra:
         reload_module("lego_util.ghidra_helper")
 
         reload_module("lego_util.function_importer")
-        from lego_util.function_importer import PdbFunctionImporter
+        from reccmp.ghidra_scripts.lego_util.function_importer import (
+            PdbFunctionImporter,
+        )
 
         reload_module("lego_util.type_importer")
-        from lego_util.type_importer import PdbTypeImporter
+        from reccmp.ghidra_scripts.lego_util.type_importer import PdbTypeImporter
 
     if __name__ == "__main__":
         main()

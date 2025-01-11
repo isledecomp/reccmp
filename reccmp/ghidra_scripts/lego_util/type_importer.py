@@ -7,21 +7,6 @@ from typing import Any, Callable, Iterator, TypeVar
 # pylint: disable=too-many-return-statements # a `match` would be better, but for now we are stuck with Python 3.9
 # pylint: disable=no-else-return # Not sure why this rule even is a thing, this is great for checking exhaustiveness
 
-from lego_util.exceptions import (
-    TypeNotFoundError,
-    TypeNotFoundInGhidraError,
-    TypeNotImplementedError,
-    StructModificationError,
-)
-from lego_util.ghidra_helper import (
-    add_data_type_or_reuse_existing,
-    get_or_add_pointer_type,
-    get_ghidra_type,
-    get_or_create_namespace,
-    sanitize_name,
-)
-from lego_util.pdb_extraction import PdbFunctionExtractor
-
 from ghidra.program.flatapi import FlatProgramAPI
 from ghidra.program.model.data import (
     ArrayDataType,
@@ -38,6 +23,21 @@ from ghidra.program.model.data import (
 from ghidra.util.task import ConsoleTaskMonitor
 
 from reccmp.isledecomp.cvdump.types import VirtualBasePointer
+
+from .exceptions import (
+    TypeNotFoundError,
+    TypeNotFoundInGhidraError,
+    TypeNotImplementedError,
+    StructModificationError,
+)
+from .ghidra_helper import (
+    add_data_type_or_reuse_existing,
+    get_or_add_pointer_type,
+    get_ghidra_type,
+    get_or_create_namespace,
+    sanitize_name,
+)
+from .pdb_extraction import PdbFunctionExtractor
 
 logger = logging.getLogger(__name__)
 

@@ -65,7 +65,7 @@ class PdbFunctionExtractor:
         "STD Near": "__stdcall",
     }
 
-    def _get_cvdump_type(self, type_name: str | None) -> dict[str, Any | None]:
+    def _get_cvdump_type(self, type_name: str | None) -> dict[str, Any] | None:
         return (
             None
             if type_name is None
