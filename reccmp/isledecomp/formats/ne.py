@@ -115,7 +115,7 @@ class NewExeHeader:
             (items[13], items[12]),  # SS:SP
             *items[14:26],
             NETargetOSFlags(items[26]),
-            *items[27:]
+            *items[27:],
         )
         return result, offset + struct_size
 
