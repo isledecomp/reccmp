@@ -5,6 +5,7 @@ from .image import Image
 from .lx import LXImage
 from .macho import MachOImage
 from .mz import ImageDosHeader, MZImage
+from .ne import NEImage
 from .pe import PEImage
 
 
@@ -21,7 +22,7 @@ def detect_image(filepath: Path | str) -> Image:
             case b"LE":
                 return LXImage.from_memory(data, mz_header=mz_header, filepath=filepath)
             case b"NE":
-                raise NotImplementedError("NE file format not implemented")
+                return NEImage.from_memory(data, mz_header=mz_header, filepath=filepath)
             case b"NX":
                 raise NotImplementedError("NX file format not implemented")
             case _:
