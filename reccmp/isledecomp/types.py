@@ -3,7 +3,7 @@
 from enum import IntEnum
 
 
-class SymbolType(IntEnum):
+class EntityType(IntEnum):
     """Broadly tells us what kind of comparison is required for this symbol."""
 
     FUNCTION = 1

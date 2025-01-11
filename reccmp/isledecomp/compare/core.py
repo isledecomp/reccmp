@@ -12,11 +12,11 @@ from reccmp.isledecomp.cvdump.demangler import demangle_string_const
 from reccmp.isledecomp.cvdump import Cvdump, CvdumpAnalysis
 from reccmp.isledecomp.parser import DecompCodebase
 from reccmp.isledecomp.dir import walk_source_dir
-from reccmp.isledecomp.types import SymbolType
+from reccmp.isledecomp.types import EntityType
 from reccmp.isledecomp.compare.asm import ParseAsm
 from reccmp.isledecomp.compare.asm.replacement import create_name_lookup
 from reccmp.isledecomp.compare.asm.fixes import assert_fixup, find_effective_match
-from .db import CompareDb, ReccmpEntity, ReccmpMatch
+from .db import EntityDb, ReccmpEntity, ReccmpMatch
 from .diff import combined_diff, CombinedDiffOutput
 from .lines import LinesDb
 
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DiffReport:
     # pylint: disable=too-many-instance-attributes
-    match_type: SymbolType
+    match_type: EntityType
     orig_addr: int
     recomp_addr: int
     name: str
@@ -94,7 +94,7 @@ class Compare:
         self.runid: str = uuid.uuid4().hex[:8]
 
         self._lines_db = LinesDb(code_dir)
-        self._db = CompareDb()
+        self._db = EntityDb()
 
         self._load_cvdump()
         self._load_markers()
@@ -165,7 +165,7 @@ class Compare:
                     - sym.offset
                 )
 
-            if sym.node_type == SymbolType.STRING:
+            if sym.node_type == EntityType.STRING:
                 assert sym.decorated_name is not None
                 string_info = demangle_string_const(sym.decorated_name)
                 if string_info is None:
@@ -319,7 +319,7 @@ class Compare:
         # Indexed by recomp addr. Need to preload this data because it is not stored alongside the db rows.
         cvdump_lookup = {x.addr: x for x in self.cvdump_analysis.nodes}
 
-        for match in self._db.get_matches_by_type(SymbolType.DATA):
+        for match in self._db.get_matches_by_type(EntityType.DATA):
             node = cvdump_lookup.get(match.recomp_addr)
             if node is None or node.data_type is None:
                 continue
@@ -405,13 +405,13 @@ class Compare:
             for addr, string in self.orig_bin.iter_string("latin1"):
                 if is_real_string(string):
                     self._db.set_orig_symbol(
-                        addr, type=SymbolType.STRING, name=string, size=len(string)
+                        addr, type=EntityType.STRING, name=string, size=len(string)
                     )
 
             for addr, string in self.recomp_bin.iter_string("latin1"):
                 if is_real_string(string):
                     self._db.set_recomp_symbol(
-                        addr, type=SymbolType.STRING, name=string, size=len(string)
+                        addr, type=EntityType.STRING, name=string, size=len(string)
                     )
 
     def _find_float_const(self):
@@ -420,12 +420,12 @@ class Compare:
         deduped like strings."""
         for addr, size, float_value in self.orig_bin.find_float_consts():
             self._db.set_orig_symbol(
-                addr, type=SymbolType.FLOAT, name=str(float_value), size=size
+                addr, type=EntityType.FLOAT, name=str(float_value), size=size
             )
 
         for addr, size, float_value in self.recomp_bin.find_float_consts():
             self._db.set_recomp_symbol(
-                addr, type=SymbolType.FLOAT, name=str(float_value), size=size
+                addr, type=EntityType.FLOAT, name=str(float_value), size=size
             )
 
     def _match_imports(self):
@@ -453,7 +453,7 @@ class Compare:
                 continue
 
             # Match the __imp__ symbol
-            self._db.set_pair(orig, recomp, SymbolType.POINTER)
+            self._db.set_pair(orig, recomp, EntityType.POINTER)
 
             # Read the relative address from .idata
             try:
@@ -475,9 +475,9 @@ class Compare:
             (dll_name, func_name) = orig_byaddr[orig]
             fullname = dll_name + ":" + func_name
             self._db.set_recomp_symbol(
-                recomp_rva, type=SymbolType.FUNCTION, name=fullname, size=4
+                recomp_rva, type=EntityType.FUNCTION, name=fullname, size=4
             )
-            self._db.set_pair(orig_rva, recomp_rva, SymbolType.FUNCTION)
+            self._db.set_pair(orig_rva, recomp_rva, EntityType.FUNCTION)
             self._db.skip_compare(orig_rva)
 
     def _match_thunks(self):
@@ -580,7 +580,7 @@ class Compare:
         We could do this differently and check only the original vtable,
         construct the name of the vtordisp function and match based on that."""
 
-        for match in self._db.get_matches_by_type(SymbolType.VTABLE):
+        for match in self._db.get_matches_by_type(EntityType.VTABLE):
             assert (
                 match.name is not None
                 and match.orig_addr is not None
@@ -743,7 +743,7 @@ class Compare:
 
         assert match.name is not None
         return DiffReport(
-            match_type=SymbolType.FUNCTION,
+            match_type=EntityType.FUNCTION,
             orig_addr=match.orig_addr,
             recomp_addr=match.recomp_addr,
             name=match.name,
@@ -831,7 +831,7 @@ class Compare:
 
         assert match.name is not None
         return DiffReport(
-            match_type=SymbolType.VTABLE,
+            match_type=EntityType.VTABLE,
             orig_addr=match.orig_addr,
             recomp_addr=match.recomp_addr,
             name=match.name,
@@ -848,21 +848,21 @@ class Compare:
         if match.get("skip", False):
             return None
 
-        assert match.compare_type is not None
+        assert match.entity_type is not None
         assert match.name is not None
         if match.get("stub", False):
             return DiffReport(
-                match_type=SymbolType(match.compare_type),
+                match_type=EntityType(match.entity_type),
                 orig_addr=match.orig_addr,
                 recomp_addr=match.recomp_addr,
                 name=match.name,
                 is_stub=True,
             )
 
-        if match.compare_type == SymbolType.FUNCTION:
+        if match.entity_type == EntityType.FUNCTION:
             return self._compare_function(match)
 
-        if match.compare_type == SymbolType.VTABLE:
+        if match.entity_type == EntityType.VTABLE:
             return self._compare_vtable(match)
 
         return None
@@ -892,13 +892,13 @@ class Compare:
         return self._db.get_all()
 
     def get_functions(self) -> Iterator[ReccmpMatch]:
-        return self._db.get_matches_by_type(SymbolType.FUNCTION)
+        return self._db.get_matches_by_type(EntityType.FUNCTION)
 
     def get_vtables(self) -> Iterator[ReccmpMatch]:
-        return self._db.get_matches_by_type(SymbolType.VTABLE)
+        return self._db.get_matches_by_type(EntityType.VTABLE)
 
     def get_variables(self) -> Iterator[ReccmpMatch]:
-        return self._db.get_matches_by_type(SymbolType.DATA)
+        return self._db.get_matches_by_type(EntityType.DATA)
 
     def compare_address(self, addr: int) -> DiffReport | None:
         match = self._db.get_one_match(addr)
