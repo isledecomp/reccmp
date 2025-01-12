@@ -54,7 +54,7 @@ def import_global_into_ghidra(
             if next_data_entry is None:
                 break
             next_data_address = int(next_data_entry.getAddress().getOffset())
-            if (next_data_address >= data_end):
+            if next_data_address >= data_end:
                 break
             logger.debug("Clearing conflicting data at %s", hex(next_data_address))
             api.removeData(next_data_entry)

@@ -510,7 +510,9 @@ class PdbTypeImporter:
             )
         except TypeNotFoundInGhidraError:
             logger.info(
-                "Creating new %s data type %s", readable_name_of_type_category, type_name
+                "Creating new %s data type %s",
+                readable_name_of_type_category,
+                type_name,
             )
             data_type = data_type_manager.addDataType(
                 new_instance_callback(), DataTypeConflictHandler.KEEP_HANDLER
@@ -523,7 +525,9 @@ class PdbTypeImporter:
                 logger.info("Deleting data type '%s'", result.getPathName())
                 data_type_manager.remove(result, ConsoleTaskMonitor())
             logger.info(
-                "(Re)creating new %s data type '%s'", readable_name_of_type_category, type_name
+                "(Re)creating new %s data type '%s'",
+                readable_name_of_type_category,
+                type_name,
             )
             data_type = data_type_manager.addDataType(
                 new_instance_callback(), DataTypeConflictHandler.KEEP_HANDLER
