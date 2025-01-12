@@ -28,7 +28,8 @@ import sys
 import logging
 from pathlib import Path
 import traceback
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
+from functools import partial
 
 if TYPE_CHECKING:
     from reccmp.ghidra_scripts.lego_util.headers import *  # pylint: disable=wildcard-import # these are just for headers
@@ -172,6 +173,26 @@ def import_function_into_ghidra(
     GLOBALS.statistics.functions_changed += 1
 
 
+def do_with_error_handling(step_name: str, action: Callable[[], None]):
+    try:
+        action()
+        GLOBALS.statistics.successes += 1
+    except Lego1Exception as e:
+        log_and_track_failure(step_name, e)
+    except RuntimeError as e:
+        cause = e.args[0]
+        if CancelledException is not None and isinstance(cause, CancelledException):
+            # let Ghidra's CancelledException pass through
+            logging.critical("Import aborted by the user.")
+            return
+
+        log_and_track_failure(step_name, cause, unexpected=True)
+        logger.error(traceback.format_exc())
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        log_and_track_failure(step_name, e, unexpected=True)
+        logger.error(traceback.format_exc())
+
+
 def do_execute_import(
     extraction: "PdbFunctionExtractor",
     ignore_types: set[str],
@@ -188,36 +209,31 @@ def do_execute_import(
     # pylint: disable=possibly-used-before-assignment
     type_importer = PdbTypeImporter(api, extraction, ignore_types=ignore_types)
 
-    logger.info("Importing functions...")
+    logger.info("Importing globals...")
+    for glob in extraction.compare.get_variables():
+        do_with_error_handling(
+            glob.name or hex(glob.orig_addr),
+            partial(
+                import_global_into_ghidra, api, extraction.compare, type_importer, glob
+            ),
+        )
 
+    logger.info("Importing functions...")
     for pdb_func in pdb_functions:
         func_name = pdb_func.match_info.name
         orig_addr = pdb_func.match_info.orig_addr
-        try:
-            if orig_addr in ignore_functions:
-                logger.info(
-                    "Skipping function '%s' at '%s' because it is on the ignore list",
-                    func_name,
-                    hex(orig_addr),
-                )
-                continue
+        if orig_addr in ignore_functions:
+            logger.info(
+                "Skipping function '%s' at '%s' because it is on the ignore list",
+                func_name,
+                hex(orig_addr),
+            )
+            continue
 
-            import_function_into_ghidra(api, pdb_func, type_importer)
-            GLOBALS.statistics.successes += 1
-        except Lego1Exception as e:
-            log_and_track_failure(func_name, e)
-        except RuntimeError as e:
-            cause = e.args[0]
-            if CancelledException is not None and isinstance(cause, CancelledException):
-                # let Ghidra's CancelledException pass through
-                logging.critical("Import aborted by the user.")
-                return
-
-            log_and_track_failure(func_name, cause, unexpected=True)
-            logger.error(traceback.format_exc())
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            log_and_track_failure(func_name, e, unexpected=True)
-            logger.error(traceback.format_exc())
+        do_with_error_handling(
+            func_name or hex(orig_addr),
+            partial(import_function_into_ghidra, api, pdb_func, type_importer),
+        )
 
     logger.info("Finished importing functions.")
 
@@ -227,12 +243,12 @@ def do_execute_import(
 
 
 def log_and_track_failure(
-    function_name: str | None, error: Exception, unexpected: bool = False
+    step_name: str | None, error: Exception, unexpected: bool = False
 ):
     if GLOBALS.statistics.track_failure_and_tell_if_new(error):
         logger.error(
-            "%s(): %s%s",
-            function_name,
+            "%s: %s%s",
+            step_name,
             "Unexpected error: " if unexpected else "",
             error,
         )
@@ -356,29 +372,34 @@ try:
 
     reload_module("reccmp.isledecomp.compare.db")
 
-    reload_module("lego_util.exceptions")
+    reload_module("reccmp.ghidra_scripts.lego_util.exceptions")
     from reccmp.ghidra_scripts.lego_util.exceptions import Lego1Exception
 
-    reload_module("lego_util.pdb_extraction")
+    reload_module("reccmp.ghidra_scripts.lego_util.pdb_extraction")
     from reccmp.ghidra_scripts.lego_util.pdb_extraction import (
         PdbFunctionExtractor,
         PdbFunction,
     )
 
-    reload_module("lego_util.vtable_importer")
-    from reccmp.ghidra_scripts.lego_util.vtable_importer import (
-        import_vftables_into_ghidra,
-    )
-
     if GLOBALS.running_from_ghidra:
-        reload_module("lego_util.ghidra_helper")
+        reload_module("reccmp.ghidra_scripts.lego_util.ghidra_helper")
 
-        reload_module("lego_util.function_importer")
+        reload_module("reccmp.ghidra_scripts.lego_util.vtable_importer")
+        from reccmp.ghidra_scripts.lego_util.vtable_importer import (
+            import_vftables_into_ghidra,
+        )
+
+        reload_module("reccmp.ghidra_scripts.lego_util.globals_importer")
+        from reccmp.ghidra_scripts.lego_util.globals_importer import (
+            import_global_into_ghidra,
+        )
+
+        reload_module("reccmp.ghidra_scripts.lego_util.function_importer")
         from reccmp.ghidra_scripts.lego_util.function_importer import (
             PdbFunctionImporter,
         )
 
-        reload_module("lego_util.type_importer")
+        reload_module("reccmp.ghidra_scripts.lego_util.type_importer")
         from reccmp.ghidra_scripts.lego_util.type_importer import PdbTypeImporter
 
     if __name__ == "__main__":

@@ -8,7 +8,7 @@ import re
 
 from ghidra.program.flatapi import FlatProgramAPI
 from ghidra.program.model.data import DataType, DataTypeConflictHandler, PointerDataType
-from ghidra.program.model.symbol import Namespace
+from ghidra.program.model.symbol import Namespace, SourceType
 
 from .exceptions import (
     ClassOrNamespaceNotFoundInGhidraError,
@@ -158,3 +158,31 @@ def get_namespace_and_name(api: FlatProgramAPI, name: str) -> tuple[Namespace, s
     name = colon_split.pop()
     namespace = get_or_create_namespace(api, "::".join(colon_split))
     return namespace, name
+
+
+def set_ghidra_label(api: FlatProgramAPI, address: int, label_with_namespace: str):
+    namespace, name = get_namespace_and_name(api, label_with_namespace)
+    symbol_table = api.getCurrentProgram().getSymbolTable()
+    address_hex = hex(address)
+    address_ghidra = api.getAddressFactory().getAddress(address_hex)
+    existing_label = symbol_table.getPrimarySymbol(address_ghidra)
+    if existing_label is not None:
+        existing_label_name = existing_label.getName()
+        if (
+            existing_label.getParentNamespace() == namespace
+            and existing_label_name == name
+        ):
+            logger.debug(
+                "Label '%s' at 0x%s already exists", label_with_namespace, address_hex
+            )
+        else:
+            logger.debug(
+                "Changing label at %s from '%s' to '%s'",
+                address_hex,
+                existing_label_name,
+                label_with_namespace,
+            )
+            existing_label.setNameAndNamespace(name, namespace, SourceType.USER_DEFINED)
+    else:
+        logger.debug("Adding label '%s' at 0x%s", name, address_hex)
+        symbol_table.createLabel(address_ghidra, name, SourceType.USER_DEFINED)

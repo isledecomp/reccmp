@@ -5,7 +5,7 @@ import logging
 
 from reccmp.isledecomp.formats.exceptions import InvalidVirtualAddressError
 from reccmp.isledecomp.cvdump.symbols import SymbolsEntry
-from reccmp.isledecomp.compare import Compare as IsleCompare
+from reccmp.isledecomp.compare import Compare
 from reccmp.isledecomp.compare.db import ReccmpMatch
 
 logger = logging.getLogger(__file__)
@@ -54,7 +54,7 @@ class PdbFunctionExtractor:
     and prepares the data for the import in Ghidra.
     """
 
-    def __init__(self, compare: IsleCompare):
+    def __init__(self, compare: Compare):
         self.compare = compare
 
     scalar_type_regex = re.compile(r"t_(?P<typename>\w+)(?:\((?P<type_id>\d+)\))?")

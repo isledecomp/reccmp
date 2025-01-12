@@ -25,6 +25,7 @@ from ghidra.util.task import ConsoleTaskMonitor
 from reccmp.isledecomp.cvdump.types import VirtualBasePointer
 
 from .exceptions import (
+    MultipleTypesFoundInGhidraError,
     TypeNotFoundError,
     TypeNotFoundInGhidraError,
     TypeNotImplementedError,
@@ -496,6 +497,9 @@ class PdbTypeImporter:
         Note that the return value of `addDataType()` is not the same instance as the input
         even if there is no name collision.
         """
+
+        data_type_manager = self.api.getCurrentProgram().getDataTypeManager()
+
         try:
             data_type = get_ghidra_type(self.api, type_name)
             logger.debug(
@@ -505,16 +509,26 @@ class PdbTypeImporter:
                 data_type.getCategoryPath(),
             )
         except TypeNotFoundInGhidraError:
-            data_type = (
-                self.api.getCurrentProgram()
-                .getDataTypeManager()
-                .addDataType(
-                    new_instance_callback(), DataTypeConflictHandler.KEEP_HANDLER
-                )
-            )
             logger.info(
-                "Created new %s data type %s", readable_name_of_type_category, type_name
+                "Creating new %s data type %s", readable_name_of_type_category, type_name
             )
+            data_type = data_type_manager.addDataType(
+                new_instance_callback(), DataTypeConflictHandler.KEEP_HANDLER
+            )
+        except MultipleTypesFoundInGhidraError as e:
+            logger.error(
+                "Found multiple existing types matching '%s'. Deleting all of them and trying to recreate..."
+            )
+            for result in e.results:
+                logger.info("Deleting data type '%s'", result.getPathName())
+                data_type_manager.remove(result, ConsoleTaskMonitor())
+            logger.info(
+                "(Re)creating new %s data type '%s'", readable_name_of_type_category, type_name
+            )
+            data_type = data_type_manager.addDataType(
+                new_instance_callback(), DataTypeConflictHandler.KEEP_HANDLER
+            )
+
         assert isinstance(
             data_type, expected_type
         ), f"Found existing type named {type_name} that is not a {readable_name_of_type_category}"
