@@ -1,3 +1,13 @@
+from typing import TYPE_CHECKING
+
+# Disable spurious warnings in vscode / pylance
+# pyright: reportMissingModuleSource=false
+
+
+if TYPE_CHECKING:
+    from ghidra.program.model.data import DataType
+
+
 class Lego1Exception(Exception):
     """
     Our own base class for exceptions.
@@ -32,10 +42,13 @@ class ClassOrNamespaceNotFoundInGhidraError(Lego1Exception):
 
 
 class MultipleTypesFoundInGhidraError(Lego1Exception):
+    def __init__(self, name: str, results: list["DataType"]):
+        super().__init__(name, results)
+        self.name = name
+        self.results = results
+
     def __str__(self):
-        return (
-            f"Found multiple types matching '{self.args[0]}' in Ghidra: {self.args[1]}"
-        )
+        return f"Found multiple types matching '{self.name}' in Ghidra: {self.results}"
 
 
 class StackOffsetMismatchError(Lego1Exception):
