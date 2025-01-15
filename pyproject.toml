@@ -1,4 +1,6 @@
 [project]
+name = "reccmp"
+dynamic = ["classifiers", "dependencies", "license", "scripts", "version"]
 requires-python = ">= 3.10"
 
 [flake8]
