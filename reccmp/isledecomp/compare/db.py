@@ -76,11 +76,16 @@ class ReccmpEntity:
         """Combination of the name and compare type.
         Intended for name substitution in the diff. If there is a diff,
         it will be more obvious what this symbol indicates."""
-        if self.name is None:
+        best_name: str
+        for key in ("computed_name", "name"):
+            if (value := self.options.get(key)) is not None:
+                best_name = str(value)
+                break
+        else:
             return None
 
         ctype = EntityTypeLookup.get(self.entity_type or -1, "UNK")
-        name = repr(self.name) if self.entity_type == EntityType.STRING else self.name
+        name = repr(self.name) if self.entity_type == EntityType.STRING else best_name
         return f"{name} ({ctype})"
 
     def offset_name(self, ofs: int) -> str | None:
