@@ -72,21 +72,35 @@ class ReccmpEntity:
     def get(self, key: str, default: Any = None) -> Any:
         return self.options.get(key, default)
 
+    def best_name(self) -> str | None:
+        """Return the first name that exists from our
+        priority list of name attributes for this entity."""
+        for key in ("computed_name", "name"):
+            if (value := self.options.get(key)) is not None:
+                return str(value)
+
+        return None
+
     def match_name(self) -> str | None:
         """Combination of the name and compare type.
         Intended for name substitution in the diff. If there is a diff,
         it will be more obvious what this symbol indicates."""
-        best_name: str
-        for key in ("computed_name", "name"):
-            if (value := self.options.get(key)) is not None:
-                best_name = str(value)
-                break
-        else:
+
+        # Special handling for strings that might contain newlines.
+        if self.entity_type == EntityType.STRING:
+            if self.name is not None:
+                # Escape newlines so they do not interfere
+                # with asm sanitize and diff calculation.
+                return f"{repr(self.name)} (STRING)"
+
+            return None
+
+        best_name = self.best_name()
+        if best_name is None:
             return None
 
         ctype = EntityTypeLookup.get(self.entity_type or -1, "UNK")
-        name = repr(self.name) if self.entity_type == EntityType.STRING else best_name
-        return f"{name} ({ctype})"
+        return f"{best_name} ({ctype})"
 
     def offset_name(self, ofs: int) -> str | None:
         if self.name is None:
