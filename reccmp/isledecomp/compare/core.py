@@ -786,12 +786,13 @@ class Compare:
             is_effective_match = False
             unified_diff = []
 
-        assert match.name is not None
+        best_name = match.best_name()
+        assert best_name is not None
         return DiffReport(
             match_type=EntityType.FUNCTION,
             orig_addr=match.orig_addr,
             recomp_addr=match.recomp_addr,
-            name=match.name,
+            name=best_name,
             udiff=unified_diff,
             ratio=ratio,
             is_effective_match=is_effective_match,
