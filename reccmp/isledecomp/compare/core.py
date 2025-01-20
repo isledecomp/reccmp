@@ -8,7 +8,10 @@ from dataclasses import dataclass
 from typing import Callable, Iterable, Iterator
 from reccmp.isledecomp.formats.exceptions import InvalidVirtualAddressError
 from reccmp.isledecomp.formats.pe import PEImage
-from reccmp.isledecomp.cvdump.demangler import demangle_string_const
+from reccmp.isledecomp.cvdump.demangler import (
+    demangle_string_const,
+    get_function_arg_string,
+)
 from reccmp.isledecomp.cvdump import Cvdump, CvdumpAnalysis
 from reccmp.isledecomp.parser import DecompCodebase
 from reccmp.isledecomp.dir import walk_source_dir
@@ -106,6 +109,7 @@ class Compare:
         self._match_exports()
         self._match_thunks()
         self._find_vtordisp()
+        self._unique_names_for_overloaded_functions()
 
         self.orig_sanitize = ParseAsm(
             addr_test=create_reloc_lookup(self.orig_bin),
@@ -675,6 +679,47 @@ class Compare:
                 )
             self._db.set_function_pair(orig_addr, recomp_addr)
 
+    def _unique_names_for_overloaded_functions(self):
+        """Our asm sanitize will use the "friendly" name of a function.
+        Overloaded functions will all have the same name. This function detects those
+        cases and gives each one a unique name in the db."""
+        repeat_names: dict[str, list[tuple[int, str | None]]] = {}
+
+        # Select addresses and symbols for all repeated function names
+        for recomp_addr, name, symbol in self._db.sql.execute(
+            """SELECT recomp_addr, json_extract(kvstore,'$.name') as name, json_extract(kvstore,'$.symbol')
+            from entities where name in (
+                select json_extract(kvstore,'$.name') as name from entities
+                where json_extract(kvstore,'$.type') = ?
+                group by name having count(name) > 1
+            )""",
+            (EntityType.FUNCTION,),
+        ):
+            # TODO: Thunk's link to the original function is lost once the record is created.
+            if "Thunk of" in name:
+                continue
+
+            repeat_names.setdefault(name, []).append((recomp_addr, symbol))
+
+        updates = {}
+
+        for name, items in repeat_names.items():
+            for i, (recomp_addr, symbol) in enumerate(items, start=1):
+                # Just number it to start, in case we don't have a symbol.
+                new_name = f"{name}({i})"
+
+                if symbol is not None:
+                    dm_args = get_function_arg_string(symbol)
+                    if dm_args is not None:
+                        new_name = f"{name}{dm_args}"
+
+                updates[recomp_addr] = new_name
+
+        self._db.sql.executemany(
+            "UPDATE entities SET kvstore = json_set(kvstore,'$.computed_name',?) WHERE recomp_addr = ?",
+            ((name, addr) for addr, name in updates.items()),
+        )
+
     def _dump_asm(self, orig_combined, recomp_combined):
         """Append the provided assembly output to the debug files"""
         with open(f"orig-{self.runid}.txt", "a", encoding="utf-8") as f:
@@ -741,12 +786,13 @@ class Compare:
             is_effective_match = False
             unified_diff = []
 
-        assert match.name is not None
+        best_name = match.best_name()
+        assert best_name is not None
         return DiffReport(
             match_type=EntityType.FUNCTION,
             orig_addr=match.orig_addr,
             recomp_addr=match.recomp_addr,
-            name=match.name,
+            name=best_name,
             udiff=unified_diff,
             ratio=ratio,
             is_effective_match=is_effective_match,

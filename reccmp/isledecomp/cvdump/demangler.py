@@ -79,6 +79,21 @@ def get_vtordisp_name(symbol: str) -> str | None:
         return name
 
 
+def get_function_arg_string(symbol: str) -> str | None:
+    # pylint: disable=c-extension-no-member
+    """Demangle the given symbol and return its parameters.
+    We can use this to distinguish functions with the same name."""
+    raw = pydemangler.demangle(symbol)
+    if raw is None:
+        return None
+
+    try:
+        # Just get what's in the parens
+        return raw[raw.index("(") : raw.rindex(")") + 1]
+    except ValueError:
+        return None
+
+
 def demangle_vtable(symbol: str) -> str:
     # pylint: disable=c-extension-no-member
     """Get the class name referenced in the vtable symbol."""
