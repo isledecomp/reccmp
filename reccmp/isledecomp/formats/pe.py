@@ -5,6 +5,7 @@ Based on the following resources:
 - Debug information: https://www.debuginfo.com/examples/src/DebugDir.cpp
 """
 
+import re
 import dataclasses
 from enum import IntEnum, IntFlag
 from functools import cached_property
@@ -21,6 +22,14 @@ from .image import Image
 from .mz import ImageDosHeader
 
 # pylint: disable=too-many-lines
+
+# Match 6 byte absolute jump instructions.
+abs_jump_re = re.compile(rb"\xff\x25(.{4})", flags=re.S)
+
+# Match floating point instructions.
+float_re = re.compile(
+    rb"([\xd8\xd9\xdc\xdd])([\x05\x0d\x15\x1d\x25\x2d\x35\x3d])(.{4})", flags=re.S
+)
 
 
 class PEHeaderNotFoundError(ValueError):
@@ -500,7 +509,6 @@ class PEImage(Image):
     exports: list[tuple[int, bytes]] = dataclasses.field(
         default_factory=list, repr=False
     )
-    thunks: list[tuple[int, int]] = dataclasses.field(default_factory=list, repr=False)
     _potential_strings: dict[int, set[int]] = dataclasses.field(
         default_factory=dict, repr=False
     )
@@ -553,7 +561,6 @@ class PEImage(Image):
 
         self._populate_relocations()
         self._populate_imports()
-        self._populate_thunks()
         # Export dir is always first
         self._populate_exports()
 
@@ -751,31 +758,31 @@ class PEImage(Image):
         text = self.get_section_by_name(".text")
         rdata = self.get_section_by_name(".rdata")
 
-        # These are the addresses where a relocation occurs.
-        # Meaning: it points to an absolute address of something
-        for addr in self._relocations:
-            if not text.contains_vaddr(addr):
+        text_raw = bytes(text.view)
+        seen_addrs = set()
+
+        for opcode, _, const_addr_bytes in float_re.findall(text_raw):
+            (const_addr,) = struct.unpack("<I", const_addr_bytes)
+            if const_addr not in self._relocated_addrs:
                 continue
 
-            # Read the two bytes before the relocated address.
-            # We will check against possible float opcodes
-            raw = text.read_virtual(addr - 2, 6)
-            (opcode, opcode_ext, const_addr) = struct.unpack("<BBL", raw)
-
-            # Skip right away if this is not const data
             if not rdata.contains_vaddr(const_addr):
                 continue
 
-            if opcode_ext in (0x5, 0xD, 0x15, 0x1D, 0x25, 0x2D, 0x35, 0x3D):
-                if opcode in (0xD8, 0xD9):
-                    # dword ptr -- single precision
-                    (float_value,) = struct.unpack("<f", self.read(const_addr, 4))
-                    yield (const_addr, 4, float_value)
+            if const_addr in seen_addrs:
+                continue
 
-                elif opcode in (0xDC, 0xDD):
-                    # qword ptr -- double precision
-                    (float_value,) = struct.unpack("<d", self.read(const_addr, 8))
-                    yield (const_addr, 8, float_value)
+            if opcode in (b"\xD8", b"\xD9"):
+                # dword ptr -- single precision
+                (float_value,) = struct.unpack("<f", self.read(const_addr, 4))
+                yield (const_addr, 4, float_value)
+
+            else:
+                # qword ptr -- double precision
+                (float_value,) = struct.unpack("<d", self.read(const_addr, 8))
+                yield (const_addr, 8, float_value)
+
+            seen_addrs.add(const_addr)
 
     def _populate_imports(self):
         """Parse .idata to find imported DLLs and their functions."""
@@ -837,48 +844,39 @@ class PEImage(Image):
 
         self.imports = list(iter_imports())
 
-    def _populate_thunks(self):
-        """For each imported function, we generate a thunk function. The only
-        instruction in the function is a jmp to the address in .idata.
-        Search .text to find these functions."""
+    @cached_property
+    def thunks(self) -> list[tuple[int, int]]:
+        """Return the address of each thunk and the address of the thunked function."""
+        thunks = []
 
+        # TODO: Should check any section that has code, not just .text
         text_sect = self.get_section_by_name(".text")
         text_start = text_sect.virtual_address
+
+        text_raw = bytes(text_sect.view)
+
+        # Find all 6 byte absolute jumps: FF 25 (addr)
+        for match in abs_jump_re.finditer(text_raw):
+            (jmp_ofs,) = struct.unpack("<I", match.group(1))
+            if self.is_valid_vaddr(jmp_ofs):
+                thunks.append((text_start + match.start(), jmp_ofs))
 
         # If this is a debug build, read the thunks at the start of .text
         # Terminated by a big block of 0xcc padding bytes before the first
         # real function in the section.
         if self.is_debug:
-            ofs = 0
-            while True:
-                (opcode, operand) = struct.unpack("<Bi", text_sect.view[ofs : ofs + 5])
+            for ofs in range(0, len(text_sect.view), 5):
+                (opcode, operand) = struct.unpack_from("<Bi", text_sect.view, ofs)
                 if opcode != 0xE9:
                     break
 
+                # Convert RVA back to vaddr
                 thunk_ofs = text_start + ofs
-                jmp_ofs = text_start + ofs + 5 + operand
-                self.thunks.append((thunk_ofs, jmp_ofs))
-                ofs += 5
+                # Jump displacement starts after the 5 byte JMP instruction
+                jmp_ofs = thunk_ofs + 5 + operand
+                thunks.append((thunk_ofs, jmp_ofs))
 
-        # Now check for import thunks which are present in debug and release.
-        # These use an absolute JMP with the 2 byte opcode: 0xff 0x25
-        idata_sections = self.get_sections_in_data_directory(
-            PEDataDirectoryItemType.IMPORT_TABLE
-        )
-        ofs = text_start
-
-        for shift in (0, 2, 4):
-            window = text_sect.view[shift:]
-            win_end = 6 * (len(window) // 6)
-            for i, (b0, b1, jmp_ofs) in enumerate(
-                struct.iter_unpack("<2BL", window[:win_end])
-            ):
-                if (b0, b1) == (0xFF, 0x25) and any(
-                    section.contains_vaddr(jmp_ofs) for section in idata_sections
-                ):
-                    # Record the address of the jmp instruction and the destination in .idata
-                    thunk_ofs = ofs + shift + i * 6
-                    self.thunks.append((thunk_ofs, jmp_ofs))
+        return thunks
 
     def _populate_exports(self):
         """If you are missing a lot of annotations in your file
