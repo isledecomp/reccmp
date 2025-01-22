@@ -2,7 +2,7 @@
 
 from reccmp.isledecomp.formats import PEImage
 from reccmp.isledecomp.analysis.float_const import (
-    find_float_instructions_in_bytes,
+    find_float_instructions_in_buffer,
     find_float_consts,
 )
 
@@ -12,7 +12,7 @@ def test_float_detect_overlap():
     Because we are not disassembling, we don't know whether a given
     byte is the start of an instruction."""
     code = b"\xd8\x05\xd8\x05\x00\x10\x00\x10"
-    floats = list(find_float_instructions_in_bytes(code))
+    floats = list(find_float_instructions_in_buffer(code))
     assert len(floats) == 2
 
 

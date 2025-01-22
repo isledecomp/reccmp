@@ -11,6 +11,7 @@ Then filter on pointers into read-only sections.
 """
 import re
 import struct
+from collections.abc import Buffer
 from typing import Iterator, NamedTuple
 from reccmp.isledecomp.formats import PEImage
 
@@ -45,7 +46,8 @@ DOUBLE_PRECISION_OPCODES = frozenset(
 FLOAT_OPCODES = frozenset([*SINGLE_PRECISION_OPCODES, *DOUBLE_PRECISION_OPCODES])
 
 
-# Match floating point instructions.
+# Match a superset of the floating point instructions above.
+# Uses positive lookahead to support overlapping matches.
 FLOAT_INSTRUCTION_RE = re.compile(
     rb"(?=([\xd8\xd9\xdc\xdd][\x05\x0d\x15\x1d\x25\x2d\x35\x3d].{4}))", flags=re.S
 )
@@ -60,13 +62,13 @@ class FloatInstruction(NamedTuple):
     pointer: int
 
 
-def find_float_instructions_in_bytes(
-    raw: bytes, base_addr: int = 0
+def find_float_instructions_in_buffer(
+    buf: Buffer, base_addr: int = 0
 ) -> Iterator[FloatInstruction]:
     """Search the given binary blob for floating-point instructions that reference a pointer.
     If the base addr is given, add it to the offset of the instruction to get an absolute address.
     """
-    for match in FLOAT_INSTRUCTION_RE.finditer(raw):
+    for match in FLOAT_INSTRUCTION_RE.finditer(buf):
         inst = match.group(1)
         opcode = (inst[0], inst[1])
 
@@ -96,17 +98,14 @@ def find_float_consts(image: PEImage) -> Iterator[FloatConstant]:
     const_sections = (image.get_section_by_name(".rdata"),)
 
     for sect in code_sections:
-        for inst in find_float_instructions_in_bytes(
-            bytes(sect.view), sect.virtual_address
-        ):
+        for inst in find_float_instructions_in_buffer(sect.view, sect.virtual_address):
             if inst.pointer in seen:
                 continue
 
             seen.add(inst.pointer)
 
             # Make sure that the address of the operand is a relocation.
-            # pylint: disable=protected-access
-            if inst.address + 2 not in image._relocations:
+            if inst.address + 2 not in image.relocations:
                 continue
 
             # Ignore instructions that point to variables

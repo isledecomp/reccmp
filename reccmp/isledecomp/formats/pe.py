@@ -492,7 +492,7 @@ class PEImage(Image):
 
     # FIXME: do these belong to PEImage? Shouldn't the loade apply these to the data?
     _relocated_addrs: set[int] = dataclasses.field(default_factory=set, repr=False)
-    _relocations: set[int] = dataclasses.field(default_factory=set, repr=False)
+    relocations: set[int] = dataclasses.field(default_factory=set, repr=False)
     # find_str: bool = dataclasses.field(default=False, repr=False)
     imports: list[tuple[str, str, int]] = dataclasses.field(
         default_factory=list, repr=False
@@ -734,7 +734,7 @@ class PEImage(Image):
         # We are now interested in the relocated addresses themselves. Seek to the
         # address where there is a relocation, then read the four bytes into our set.
         reloc_addrs.sort()
-        self._relocations = set(reloc_addrs)
+        self.relocations = set(reloc_addrs)
 
         for section_id, offset in map(self.get_relative_addr, reloc_addrs):
             section = self.get_section_by_index(section_id)
