@@ -11,7 +11,6 @@ Then filter on pointers into read-only sections.
 """
 import re
 import struct
-from collections.abc import Buffer
 from typing import Iterator, NamedTuple
 from reccmp.isledecomp.formats import PEImage
 
@@ -63,10 +62,11 @@ class FloatInstruction(NamedTuple):
 
 
 def find_float_instructions_in_buffer(
-    buf: Buffer, base_addr: int = 0
+    buf: bytes, base_addr: int = 0
 ) -> Iterator[FloatInstruction]:
     """Search the given binary blob for floating-point instructions that reference a pointer.
     If the base addr is given, add it to the offset of the instruction to get an absolute address.
+    TODO: Uses `bytes` as the generic type for the Buffer protocol. See PEP 688 added in Python 3.12.
     """
     for match in FLOAT_INSTRUCTION_RE.finditer(buf):
         inst = match.group(1)
