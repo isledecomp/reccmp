@@ -31,6 +31,9 @@ def test_basic_float_detection(binfile: PEImage):
     assert (0x100DB8F0, 8, 3.141592653589793) in floats
     assert (0x100DBD50, 8, 3.14159265359) in floats
 
+    # Ignore float variable from .data
+    assert (0x100F7500, 4, 0.1) not in floats
+
 
 def test_floats_appear_once(binfile: PEImage):
     """Multiple instructions may point at the same constant.
