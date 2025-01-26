@@ -338,7 +338,6 @@ class EntityDb:
         """For lineref match or _entry"""
         return self.set_pair(orig, recomp, EntityType.FUNCTION)
 
-
     def set_function_pair_tentative(self, orig: int, recomp: int) -> bool:
         """For lineref match or _entry"""
         return self.set_pair_tentative(orig, recomp, EntityType.FUNCTION)

@@ -72,9 +72,12 @@ class CvdumpSymbolsParser:
         r'\*\* Module: "(?P<module>[^"]+)"(?: from "(?P<from>[^"]+)")?$'
     )
 
-    _compile_key_value = re.compile(
-        r"\s{9}(?P<key>[^:]+):\s(?P<value>.+)$"
-    )
+    _compile_key_value = re.compile(r"\s{9}(?P<key>[^:]+):\s(?P<value>.+)$")
+    """
+    For lines like
+    `         Target processor: 80486`
+    within an `S_COMPILE` symbol.
+    """
 
     _flags_frame_pointer_regex = re.compile(r"\s*Flags: Frame Ptr Present$")
 
