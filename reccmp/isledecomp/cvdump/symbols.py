@@ -68,6 +68,14 @@ class CvdumpSymbolsParser:
         r"\s*Parent: (?P<parent_addr>\w+), End: (?P<end_addr>\w+), Next: (?P<next_addr>\w+)$"
     )
 
+    _module_start_regex = re.compile(
+        r'\*\* Module: "(?P<module>[^"]+)"(?: from "(?P<from>[^"]+)")?$'
+    )
+
+    _compile_key_value = re.compile(
+        r"\s{9}(?P<key>[^:]+):\s(?P<value>.+)$"
+    )
+
     _flags_frame_pointer_regex = re.compile(r"\s*Flags: Frame Ptr Present$")
 
     _register_stack_symbols = ["S_BPREL32", "S_REGISTER"]
@@ -109,8 +117,13 @@ class CvdumpSymbolsParser:
                 )
                 return
             self.current_function.frame_pointer_present = True
+        elif (match := self._module_start_regex.match(line)) is not None:
+            # We do not need this info at the moment, might be useful in the future
+            pass
+        elif (match := self._compile_key_value.match(line)) is not None:
+            # We do not need this info at the moment, might be useful in the future
+            pass
         else:
-            # Most of these are either `** Module: [...]` or data we do not care about
             logger.debug("Unhandled line: %s", line[:-1])
 
     def _parse_generic_case(self, line, line_match: Match[str]):
