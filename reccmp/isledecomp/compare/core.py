@@ -677,7 +677,9 @@ class Compare:
                     thunk_fn.name,
                     orig_addr,
                 )
-            self._db.set_function_pair(orig_addr, recomp_addr)
+            # Use `tentative` because vtordisps can be shared between different vtables.
+            # We get a lot of `address not unique!` debug logs otherwise
+            self._db.set_function_pair_tentative(orig_addr, recomp_addr)
 
     def _unique_names_for_overloaded_functions(self):
         """Our asm sanitize will use the "friendly" name of a function.
