@@ -25,6 +25,9 @@ from .diff import combined_diff, CombinedDiffOutput
 from .lines import LinesDb
 
 
+# pylint: disable=too-many-lines
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -313,12 +316,15 @@ class Compare:
 
         # Helper function
         def _add_match_in_array(
-            name: str, type_id: str, orig_addr: int, recomp_addr: int
+            name: str, type_id: str, orig_addr: int, recomp_addr: int, max_orig: int
         ):
             # pylint: disable=unused-argument
             # TODO: Previously used scalar_type_pointer(type_id) to set whether this is a pointer
-            if recomp_addr not in dataset:
-                dataset[recomp_addr] = {"name": name}
+            if recomp_addr in dataset:
+                return
+
+            dataset[recomp_addr] = {"name": name}
+            if orig_addr < max_orig:
                 orig_by_recomp[recomp_addr] = orig_addr
 
         # Indexed by recomp addr. Need to preload this data because it is not stored alongside the db rows.
@@ -335,29 +341,50 @@ class Compare:
 
             data_type = self.cv.types.keys[node.data_type.key.lower()]
 
-            if data_type["type"] == "LF_ARRAY":
-                array_element_type = self.cv.types.get(data_type["array_type"])
+            if data_type["type"] != "LF_ARRAY":
+                continue
 
-                assert node.data_type.members is not None
+            # Check whether another orig variable appears before the end of the array in recomp.
+            # If this happens we can still add all the recomp offsets, but do not attach the orig address
+            # where it would extend into the next variable.
+            upper_bound = match.orig_addr + match.size
+            if (
+                next_orig := self._db.get_next_orig_addr(match.orig_addr)
+            ) is not None and next_orig < upper_bound:
+                logger.warning(
+                    "Array variable %s at 0x%x is larger in recomp",
+                    match.name,
+                    match.orig_addr,
+                )
+                upper_bound = next_orig
 
-                for array_element in node.data_type.members:
-                    orig_element_base_addr = match.orig_addr + array_element.offset
-                    recomp_element_base_addr = match.recomp_addr + array_element.offset
-                    if array_element_type.members is None:
+            array_element_type = self.cv.types.get(data_type["array_type"])
+
+            assert node.data_type.members is not None
+
+            for array_element in node.data_type.members:
+                orig_element_base_addr = match.orig_addr + array_element.offset
+                recomp_element_base_addr = match.recomp_addr + array_element.offset
+                if array_element_type.members is None:
+                    # If array of scalars
+                    _add_match_in_array(
+                        f"{match.name}{array_element.name}",
+                        array_element_type.key,
+                        orig_element_base_addr,
+                        recomp_element_base_addr,
+                        upper_bound,
+                    )
+
+                else:
+                    # Else: multidimensional array or array of structs
+                    for member in array_element_type.members:
                         _add_match_in_array(
-                            f"{match.name}{array_element.name}",
+                            f"{match.name}{array_element.name}.{member.name}",
                             array_element_type.key,
-                            orig_element_base_addr,
-                            recomp_element_base_addr,
+                            orig_element_base_addr + member.offset,
+                            recomp_element_base_addr + member.offset,
+                            upper_bound,
                         )
-                    else:
-                        for member in array_element_type.members:
-                            _add_match_in_array(
-                                f"{match.name}{array_element.name}.{member.name}",
-                                array_element_type.key,
-                                orig_element_base_addr + member.offset,
-                                recomp_element_base_addr + member.offset,
-                            )
 
         # Upsert here to update the starting address of variables already in the db.
         self._db.bulk_recomp_insert(
