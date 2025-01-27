@@ -319,11 +319,6 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
 
     argparse_parse_logging(args=args)
-    if args.loglevel != logging.DEBUG:
-        # Mute logger events from compare engine
-        logging.getLogger("isledecomp.compare.core").setLevel(logging.CRITICAL)
-        logging.getLogger("isledecomp.compare.db").setLevel(logging.CRITICAL)
-        logging.getLogger("isledecomp.compare.lines").setLevel(logging.CRITICAL)
 
     return args
 
