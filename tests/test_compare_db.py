@@ -1,5 +1,6 @@
 """Testing compare database behavior, particularly matching"""
 
+import sqlite3
 from unittest.mock import patch
 import pytest
 from reccmp.isledecomp.compare.db import EntityDb
@@ -312,3 +313,34 @@ def test_batch_exception_caught(db):
 
     assert db.get_by_orig(100) is not None
     assert db.get_by_recomp(200) is not None
+
+
+def test_batch_sqlite_exception(db):
+    """Should rollback if an exception occurs during the commit."""
+
+    # Not using batch context for clarity
+    batch = db.batch()
+    batch.set_orig(100, name="Test")
+    batch.set_recomp(200, test=123)
+
+    # Insert bad data that will cause a binding error
+    batch.match(100, ("bogus",))
+
+    with pytest.raises(sqlite3.ProgrammingError):
+        batch.commit()
+
+    # Should rollback everything
+    assert db.get_by_orig(100) is None
+    assert db.get_by_recomp(200) is None
+
+
+def test_batch_sqlite_exception_insert_only(db):
+    """Should rollback even if we don't start the explicit transaction in match()"""
+    batch = db.batch()
+    batch.insert_orig(100, name="Test")
+    batch.insert_orig(("bogus",), name="Test")
+
+    with pytest.raises(sqlite3.ProgrammingError):
+        batch.commit()
+
+    assert db.get_by_orig(100) is None

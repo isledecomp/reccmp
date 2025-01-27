@@ -195,20 +195,22 @@ class EntityBatch:
         self._recomp_to_orig[recomp] = orig
 
     def commit(self):
-        if self._orig_insert:
-            self.base.bulk_orig_insert(self._orig_insert.items())
+        # SQL transaction
+        with self.base.sql:
+            if self._orig_insert:
+                self.base.bulk_orig_insert(self._orig_insert.items())
 
-        if self._recomp_insert:
-            self.base.bulk_recomp_insert(self._recomp_insert.items())
+            if self._recomp_insert:
+                self.base.bulk_recomp_insert(self._recomp_insert.items())
 
-        if self._orig:
-            self.base.bulk_orig_insert(self._orig.items(), upsert=True)
+            if self._orig:
+                self.base.bulk_orig_insert(self._orig.items(), upsert=True)
 
-        if self._recomp:
-            self.base.bulk_recomp_insert(self._recomp.items(), upsert=True)
+            if self._recomp:
+                self.base.bulk_recomp_insert(self._recomp.items(), upsert=True)
 
-        if self._orig_to_recomp:
-            self.base.bulk_match(self._orig_to_recomp.items())
+            if self._orig_to_recomp:
+                self.base.bulk_match(self._orig_to_recomp.items())
 
         self.reset()
 
