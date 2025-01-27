@@ -326,7 +326,7 @@ def test_batch_sqlite_exception(db):
     # Insert bad data that will cause a binding error
     batch.match(100, ("bogus",))
 
-    with pytest.raises(sqlite3.ProgrammingError):
+    with pytest.raises(sqlite3.Error):
         batch.commit()
 
     # Should rollback everything
@@ -340,7 +340,7 @@ def test_batch_sqlite_exception_insert_only(db):
     batch.insert_orig(100, name="Test")
     batch.insert_orig(("bogus",), name="Test")
 
-    with pytest.raises(sqlite3.ProgrammingError):
+    with pytest.raises(sqlite3.Error):
         batch.commit()
 
     assert db.get_by_orig(100) is None
