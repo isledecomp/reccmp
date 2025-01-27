@@ -232,11 +232,6 @@ def main():
     if not isinstance(recompfile, PEImage):
         raise ValueError(f"{target.recompiled_path} is not a PE executable")
 
-    if args.verbose is not None:
-        # Mute logger events from compare engine
-        logging.getLogger("isledecomp.compare.db").setLevel(logging.CRITICAL)
-        logging.getLogger("isledecomp.compare.lines").setLevel(logging.CRITICAL)
-
     isle_compare = IsleCompare(
         origfile,
         recompfile,
