@@ -1,5 +1,6 @@
 """Testing compare database behavior, particularly matching"""
 
+from unittest.mock import patch
 import pytest
 from reccmp.isledecomp.compare.db import EntityDb
 
@@ -84,3 +85,200 @@ def test_dynamic_metadata(db):
     # Should preserve boolean type
     assert isinstance(obj.get("option"), bool)
     assert obj.get("option") is True
+
+
+#### Testing new batch API ####
+
+
+def test_batch(db):
+    """Demonstrate batch with context manager"""
+    with db.batch() as batch:
+        batch.set_orig(100, name="Hello")
+        batch.set_recomp(200, name="Test")
+
+    assert db.get_by_orig(100).name == "Hello"
+    assert db.get_by_recomp(200).name == "Test"
+
+
+def test_batch_replace(db):
+    """Calling the set or insert methods again on the same address and data will replace the pending value."""
+    with db.batch() as batch:
+        batch.set_orig(100, name="")
+        batch.insert_orig(200, name="")
+        batch.set_recomp(100, name="")
+        batch.insert_recomp(200, name="")
+
+        batch.set_orig(100, name="Orig100")
+        batch.insert_orig(200, name="Orig200")
+        batch.set_recomp(100, name="Recomp100")
+        batch.insert_recomp(200, name="Recomp200")
+
+    assert db.get_by_orig(100).name == "Orig100"
+    assert db.get_by_orig(200).name == "Orig200"
+    assert db.get_by_recomp(100).name == "Recomp100"
+    assert db.get_by_recomp(200).name == "Recomp200"
+
+
+def test_batch_insert_overwrite(db):
+    """Inserts and sets on the same address in the same batch will result in the
+    'insert' values being replaced."""
+    with db.batch() as batch:
+        batch.insert_orig(100, name="Test")
+        batch.set_orig(100, name="Hello", test=123)
+        batch.insert_recomp(100, name="Test")
+        batch.set_recomp(100, name="Hello", test=123)
+
+    assert db.get_by_orig(100).name == "Hello"
+    assert db.get_by_orig(100).get("test") == 123
+
+    assert db.get_by_recomp(100).name == "Hello"
+    assert db.get_by_recomp(100).get("test") == 123
+
+
+def test_batch_insert(db):
+    """The 'insert' methods will abort if any data exists for the address"""
+    db.set_orig_symbol(100, name="Hello")
+    db.set_recomp_symbol(200, name="Test")
+
+    with db.batch() as batch:
+        batch.insert_orig(100, name="abc")
+        batch.insert_recomp(200, name="xyz")
+
+    assert db.get_by_orig(100).name != "abc"
+    assert db.get_by_recomp(200).name != "xyz"
+
+
+def test_batch_upsert(db):
+    """The 'set' methods overwrite existing values"""
+    db.set_orig_symbol(100, name="Hello")
+    db.set_recomp_symbol(200, name="Test")
+
+    with db.batch() as batch:
+        batch.set_orig(100, name="abc")
+        batch.set_recomp(200, name="xyz")
+
+    assert db.get_by_orig(100).name == "abc"
+    assert db.get_by_recomp(200).name == "xyz"
+
+
+def test_batch_match_attach(db):
+    """Match example with new orig addr.
+    There is no existing entity with the orig addr being matched."""
+    with db.batch() as batch:
+        batch.set_recomp(200, name="Hello")
+        batch.match(100, 200)
+
+    # Confirm match
+    assert db.get_by_orig(100).name == "Hello"
+
+
+def test_batch_match_combine(db):
+    """Match example with existing orig addr."""
+    with db.batch() as batch:
+        batch.set_orig(100, name="Test")
+        batch.set_recomp(200, name="Hello")
+
+    # Two entities
+    assert len([*db.get_all()]) == 2
+
+    # Use separate batches to demonstrate
+    with db.batch() as batch:
+        batch.match(100, 200)
+
+    # Should combine
+    assert len([*db.get_all()]) == 1
+
+    # Confirm match. Both entities have the "name" attribute. Should use recomp value.
+    assert db.get_by_orig(100).recomp_addr == 200
+    assert db.get_by_orig(100).name == "Hello"
+
+
+def test_batch_match_combine_except_null(db):
+    """We prefer recomp attributes when combining two entities.
+    The exception is when the recomp entity has a NULL. We should use the orig attribute in this case.
+    """
+    with db.batch() as batch:
+        batch.set_orig(100, name="Test", test=123)
+        batch.set_recomp(200, name="Hello", test=None)
+        batch.match(100, 200)
+
+    assert db.get_by_recomp(200).get("test") == 123
+
+
+def test_batch_match_combine_replace_null(db):
+    """Confirm that we will replace a NULL on the orig side with a recomp value."""
+    with db.batch() as batch:
+        batch.set_orig(100, name="Test", test=None)
+        batch.set_recomp(200, name="Hello", test=123)
+        batch.match(100, 200)
+
+    assert db.get_by_recomp(200).get("test") == 123
+
+
+@pytest.mark.xfail(reason="Known limitation.")
+def test_batch_match_create(db):
+    """Matching requires either the orig or recomp entity to exist. It does not create entities."""
+    with db.batch() as batch:
+        batch.match(100, 200)
+
+    assert db.get_by_orig(100).recomp_addr == 200
+
+
+def test_batch_commit_twice(db):
+    """Calling commit() clears the pending updates.
+    Calling commit() again without adding new changes will not alter the database."""
+    batch = db.batch()
+    batch.set_orig(100, name="Test")
+
+    with patch("reccmp.isledecomp.compare.db.EntityDb.bulk_orig_insert") as mock:
+        batch.commit()
+        batch.commit()
+        mock.assert_called_once()
+
+    with patch("reccmp.isledecomp.compare.db.EntityDb.bulk_orig_insert") as mock:
+        batch.commit()
+        mock.assert_not_called()
+
+
+def test_batch_cannot_alter_matched(db):
+    """batch.match() will not change an entity that is already matched."""
+
+    # Set up the match
+    with db.batch() as batch:
+        batch.set_recomp(200, name="Test")
+        batch.match(100, 200)
+
+    # Confirm it is there
+    assert db.get_by_orig(100).recomp_addr == 200
+
+    # Try to change recomp=200 to match orig=101
+    with db.batch() as batch:
+        batch.match(101, 200)
+
+    # Should not change it
+    assert db.get_by_recomp(200).orig_addr == 100
+
+
+def test_batch_change_staged_match(db):
+    """You can change an unsaved match by calling match() again on the same orig addr."""
+    with db.batch() as batch:
+        batch.set_recomp(200, name="Hello")
+        batch.set_recomp(201, name="Test")
+        batch.match(100, 200)
+        batch.match(100, 201)
+
+    assert db.get_by_orig(100).recomp_addr == 201
+    assert db.get_by_recomp(200).orig_addr is None
+
+
+def test_batch_match_repeat_recomp_addr(db):
+    """Calling match() with the same recomp addr should work the same as the orig addr case.
+    Discard the first match in favor of the new one."""
+    with db.batch() as batch:
+        batch.set_recomp(200, name="Hello")
+        batch.set_recomp(201, name="Test")
+        batch.match(100, 200)
+        batch.match(101, 200)
+
+    assert db.get_by_recomp(200).orig_addr == 101
+    assert db.get_by_orig(100) is None

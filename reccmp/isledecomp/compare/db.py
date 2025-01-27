@@ -141,6 +141,82 @@ def matched_entity_factory(_, row: object) -> ReccmpMatch:
 logger = logging.getLogger(__name__)
 
 
+class EntityBatch:
+    base: "EntityDb"
+
+    # To be inserted only if the address is unused
+    _orig_insert: dict[int, dict[str, Any]]
+    _recomp_insert: dict[int, dict[str, Any]]
+
+    # To be upserted
+    _orig: dict[int, dict[str, Any]]
+    _recomp: dict[int, dict[str, Any]]
+
+    # Matches
+    _orig_to_recomp: dict[int, int]
+    _recomp_to_orig: dict[int, int]
+
+    def __init__(self, backref: "EntityDb") -> None:
+        self.base = backref
+        self._orig_insert = {}
+        self._recomp_insert = {}
+        self._orig = {}
+        self._recomp = {}
+        self._orig_to_recomp = {}
+        self._recomp_to_orig = {}
+
+    def insert_orig(self, addr: int, **kwargs):
+        self._orig_insert.setdefault(addr, {}).update(kwargs)
+
+    def insert_recomp(self, addr: int, **kwargs):
+        self._recomp_insert.setdefault(addr, {}).update(kwargs)
+
+    def set_orig(self, addr: int, **kwargs):
+        self._orig.setdefault(addr, {}).update(kwargs)
+
+    def set_recomp(self, addr: int, **kwargs):
+        self._recomp.setdefault(addr, {}).update(kwargs)
+
+    def match(self, orig: int, recomp: int):
+        # Integrity check: orig and recomp addr must be used only once
+        if (used_orig := self._recomp_to_orig.pop(recomp, None)) is not None:
+            self._orig_to_recomp.pop(used_orig, None)
+
+        self._orig_to_recomp[orig] = recomp
+        self._recomp_to_orig[recomp] = orig
+
+    def commit(self):
+        if self._orig_insert:
+            self.base.bulk_orig_insert(self._orig_insert.items())
+
+        if self._recomp_insert:
+            self.base.bulk_recomp_insert(self._recomp_insert.items())
+
+        if self._orig:
+            self.base.bulk_orig_insert(self._orig.items(), upsert=True)
+
+        if self._recomp:
+            self.base.bulk_recomp_insert(self._recomp.items(), upsert=True)
+
+        if self._orig_to_recomp:
+            self.base.bulk_match(self._orig_to_recomp.items())
+
+        self._orig_insert.clear()
+        self._recomp_insert.clear()
+
+        self._orig.clear()
+        self._recomp.clear()
+
+        self._orig_to_recomp.clear()
+        self._recomp_to_orig.clear()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        self.commit()
+
+
 class EntityDb:
     # pylint: disable=too-many-public-methods
     def __init__(self):
@@ -151,6 +227,9 @@ class EntityDb:
     @property
     def sql(self) -> sqlite3.Connection:
         return self._sql
+
+    def batch(self) -> EntityBatch:
+        return EntityBatch(self)
 
     def set_orig_symbol(self, addr: int, **kwargs):
         self.bulk_orig_insert(iter([(addr, kwargs)]))
@@ -191,10 +270,28 @@ class EntityDb:
             )
 
     def bulk_match(self, pairs: Iterable[tuple[int, int]]):
-        """Expects iterable of `(orig_addr, recomp_addr)`."""
-        self._sql.executemany(
-            "UPDATE or ignore entities SET orig_addr = ? WHERE recomp_addr = ?", pairs
-        )
+        """Expects iterable of (orig_addr, recomp_addr)."""
+        # We need to iterate over this multiple times.
+        pairlist = list(pairs)
+
+        with self._sql:
+            # Copy orig information to recomp side. Prefer recomp information except for NULLS.
+            # json_patch(X, Y) copies keys from Y into X and replaces existing values.
+            # From inner-most to outer-most:
+            # - json_patch('{}', entities.kvstore)      Eliminate NULLS on recomp side (so orig will replace)
+            # - json_patch(o.kvstore, ^)                Merge orig and recomp keys. Prefer recomp values.
+            self._sql.executemany(
+                """UPDATE entities
+                SET kvstore = json_patch(o.kvstore, json_patch('{}', entities.kvstore))
+                FROM (SELECT kvstore FROM entities WHERE orig_addr = ? and recomp_addr is null) o
+                WHERE recomp_addr = ? AND orig_addr is null""",
+                pairlist,
+            )
+            # Patch orig address into recomp and delete orig entry.
+            self._sql.executemany(
+                "UPDATE OR REPLACE entities SET orig_addr = ? WHERE recomp_addr = ? AND orig_addr is null",
+                pairlist,
+            )
 
     def get_unmatched_strings(self) -> list[str]:
         """Return any strings not already identified by `STRING` markers."""
