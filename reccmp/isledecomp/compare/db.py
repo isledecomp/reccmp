@@ -165,6 +165,15 @@ class EntityBatch:
         self._orig_to_recomp = {}
         self._recomp_to_orig = {}
 
+    def reset(self):
+        """Clear all pending changes"""
+        self._orig_insert.clear()
+        self._recomp_insert.clear()
+        self._orig.clear()
+        self._recomp.clear()
+        self._orig_to_recomp.clear()
+        self._recomp_to_orig.clear()
+
     def insert_orig(self, addr: int, **kwargs):
         self._orig_insert.setdefault(addr, {}).update(kwargs)
 
@@ -201,20 +210,16 @@ class EntityBatch:
         if self._orig_to_recomp:
             self.base.bulk_match(self._orig_to_recomp.items())
 
-        self._orig_insert.clear()
-        self._recomp_insert.clear()
-
-        self._orig.clear()
-        self._recomp.clear()
-
-        self._orig_to_recomp.clear()
-        self._recomp_to_orig.clear()
+        self.reset()
 
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
-        self.commit()
+        if exc_type is not None:
+            self.reset()
+        else:
+            self.commit()
 
 
 class EntityDb:

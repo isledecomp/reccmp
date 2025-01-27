@@ -282,3 +282,33 @@ def test_batch_match_repeat_recomp_addr(db):
 
     assert db.get_by_recomp(200).orig_addr == 101
     assert db.get_by_orig(100) is None
+
+
+def test_batch_exception_uncaught(db):
+    """When using batch context manager, an uncaught exception should clear the staged changes."""
+    try:
+        with db.batch() as batch:
+            batch.set_orig(100, name="Test")
+            batch.set_recomp(200, test=123)
+            batch.match(100, 200)
+            _ = 1 / 0
+    except ZeroDivisionError:
+        pass
+
+    assert db.get_by_orig(100) is None
+    assert db.get_by_orig(200) is None
+
+
+def test_batch_exception_caught(db):
+    """If the exception is caught, allow the batch to go through."""
+    with db.batch() as batch:
+        batch.set_orig(100, name="Test")
+        batch.set_recomp(200, test=123)
+        batch.match(100, 200)
+        try:
+            _ = 1 / 0
+        except ZeroDivisionError:
+            pass
+
+    assert db.get_by_orig(100) is not None
+    assert db.get_by_recomp(200) is not None
