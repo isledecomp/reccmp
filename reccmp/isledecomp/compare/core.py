@@ -19,6 +19,7 @@ from reccmp.isledecomp.types import EntityType
 from reccmp.isledecomp.compare.asm import ParseAsm
 from reccmp.isledecomp.compare.asm.replacement import create_name_lookup
 from reccmp.isledecomp.compare.asm.fixes import assert_fixup, find_effective_match
+from reccmp.isledecomp.analysis import find_float_consts
 from .db import EntityDb, ReccmpEntity, ReccmpMatch
 from .diff import combined_diff, CombinedDiffOutput
 from .lines import LinesDb
@@ -422,12 +423,12 @@ class Compare:
         """Add floating point constants in each binary to the database.
         We are not matching anything right now because these values are not
         deduped like strings."""
-        for addr, size, float_value in self.orig_bin.find_float_consts():
+        for addr, size, float_value in find_float_consts(self.orig_bin):
             self._db.set_orig_symbol(
                 addr, type=EntityType.FLOAT, name=str(float_value), size=size
             )
 
-        for addr, size, float_value in self.recomp_bin.find_float_consts():
+        for addr, size, float_value in find_float_consts(self.recomp_bin):
             self._db.set_recomp_symbol(
                 addr, type=EntityType.FLOAT, name=str(float_value), size=size
             )
