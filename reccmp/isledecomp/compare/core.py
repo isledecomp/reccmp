@@ -144,6 +144,8 @@ class Compare:
         # In the rare case we have duplicate symbols for an address, ignore them.
         dataset = {}
 
+        batch = self._db.batch()
+
         for sym in self.cvdump_analysis.nodes:
             # Skip nodes where we have almost no information.
             # These probably came from SECTION CONTRIBUTIONS.
@@ -215,15 +217,15 @@ class Compare:
                 except UnicodeDecodeError:
                     pass
 
-            dataset[addr] = {
-                "type": sym.node_type,
-                "name": sym.name(),
-                "symbol": sym.decorated_name,
-                "size": sym.size(),
-            }
+            batch.set_recomp(
+                addr,
+                type=sym.node_type,
+                name=sym.name(),
+                symbol=sym.decorated_name,
+                size=sym.size(),
+            )
 
-        # Convert dict of dicts (keyed by addr) to list of dicts (that contains the addr)
-        self._db.bulk_recomp_insert(dataset.items())
+        batch.commit()
 
         for (section, offset), (
             filename,
@@ -233,7 +235,9 @@ class Compare:
             self._lines_db.add_line(filename, line_no, addr)
 
         # The _entry symbol is referenced in the PE header so we get this match for free.
-        self._db.set_function_pair(self.orig_bin.entry, self.recomp_bin.entry)
+        with self._db.batch() as batch:
+            batch.set_recomp(self.recomp_bin.entry, type=EntityType.FUNCTION)
+            batch.match(self.orig_bin.entry, self.recomp_bin.entry)
 
     def _load_markers(self):
         codefiles = list(walk_source_dir(self.code_dir))
@@ -311,8 +315,8 @@ class Compare:
         Note that there is no recursion, so an array of arrays would not be handled entirely.
         This step is necessary e.g. for `0x100f0a20` (LegoRacers.cpp).
         """
-        dataset: dict[int, dict[str, str]] = {}
-        orig_by_recomp: dict[int, int] = {}
+        seen_recomp = set()
+        batch = self._db.batch()
 
         # Helper function
         def _add_match_in_array(
@@ -320,12 +324,13 @@ class Compare:
         ):
             # pylint: disable=unused-argument
             # TODO: Previously used scalar_type_pointer(type_id) to set whether this is a pointer
-            if recomp_addr in dataset:
+            if recomp_addr in seen_recomp:
                 return
 
-            dataset[recomp_addr] = {"name": name}
+            seen_recomp.add(recomp_addr)
+            batch.set_recomp(recomp_addr, name=name)
             if orig_addr < max_orig:
-                orig_by_recomp[recomp_addr] = orig_addr
+                batch.match(orig_addr, recomp_addr)
 
         # Indexed by recomp addr. Need to preload this data because it is not stored alongside the db rows.
         cvdump_lookup = {x.addr: x for x in self.cvdump_analysis.nodes}
@@ -386,17 +391,7 @@ class Compare:
                             upper_bound,
                         )
 
-        # Upsert here to update the starting address of variables already in the db.
-        self._db.bulk_recomp_insert(
-            ((addr, {"name": values["name"]}) for addr, values in dataset.items()),
-            upsert=True,
-        )
-        self._db.bulk_match(
-            (
-                (orig_addr, recomp_addr)
-                for recomp_addr, orig_addr in orig_by_recomp.items()
-            )
-        )
+        batch.commit()
 
     def _find_original_strings(self):
         """Go to the original binary and look for the specified string constants
@@ -434,31 +429,33 @@ class Compare:
         # We could try to match the string addrs if there is only one in orig and recomp.
         # When we sanitize the asm, the result is the same regardless.
         if self.orig_bin.is_debug:
-            for addr, string in self.orig_bin.iter_string("latin1"):
-                if is_real_string(string):
-                    self._db.set_orig_symbol(
-                        addr, type=EntityType.STRING, name=string, size=len(string)
-                    )
+            with self._db.batch() as batch:
+                for addr, string in self.orig_bin.iter_string("latin1"):
+                    if is_real_string(string):
+                        batch.insert_orig(
+                            addr, type=EntityType.STRING, name=string, size=len(string)
+                        )
 
-            for addr, string in self.recomp_bin.iter_string("latin1"):
-                if is_real_string(string):
-                    self._db.set_recomp_symbol(
-                        addr, type=EntityType.STRING, name=string, size=len(string)
-                    )
+                for addr, string in self.recomp_bin.iter_string("latin1"):
+                    if is_real_string(string):
+                        batch.insert_recomp(
+                            addr, type=EntityType.STRING, name=string, size=len(string)
+                        )
 
     def _find_float_const(self):
         """Add floating point constants in each binary to the database.
         We are not matching anything right now because these values are not
         deduped like strings."""
-        for addr, size, float_value in find_float_consts(self.orig_bin):
-            self._db.set_orig_symbol(
-                addr, type=EntityType.FLOAT, name=str(float_value), size=size
-            )
+        with self._db.batch() as batch:
+            for addr, size, float_value in find_float_consts(self.orig_bin):
+                batch.insert_orig(
+                    addr, type=EntityType.FLOAT, name=str(float_value), size=size
+                )
 
-        for addr, size, float_value in find_float_consts(self.recomp_bin):
-            self._db.set_recomp_symbol(
-                addr, type=EntityType.FLOAT, name=str(float_value), size=size
-            )
+            for addr, size, float_value in find_float_consts(self.recomp_bin):
+                batch.insert_recomp(
+                    addr, type=EntityType.FLOAT, name=str(float_value), size=size
+                )
 
     def _match_imports(self):
         """We can match imported functions based on the DLL name and
