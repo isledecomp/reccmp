@@ -16,6 +16,16 @@ _SETUP_SQL = """
         matched int as (orig_addr is not null and recomp_addr is not null),
         kvstore text default '{}'
     );
+
+    CREATE VIEW orig_unmatched (orig_addr, kvstore) AS
+        SELECT orig_addr, kvstore FROM entities
+        WHERE orig_addr is not null and recomp_addr is null
+        ORDER by orig_addr;
+
+    CREATE VIEW recomp_unmatched (recomp_addr, kvstore) AS
+        SELECT recomp_addr, kvstore FROM entities
+        WHERE recomp_addr is not null and orig_addr is null
+        ORDER by recomp_addr;
 """
 
 
@@ -237,6 +247,10 @@ class EntityDb:
 
     def batch(self) -> EntityBatch:
         return EntityBatch(self)
+
+    def count(self) -> int:
+        (count,) = self._sql.execute("SELECT count(1) from entities").fetchone()
+        return count
 
     def set_orig_symbol(self, addr: int, **kwargs):
         self.bulk_orig_insert(iter([(addr, kwargs)]))

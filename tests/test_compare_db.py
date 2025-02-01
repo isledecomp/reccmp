@@ -88,6 +88,22 @@ def test_dynamic_metadata(db):
     assert obj.get("option") is True
 
 
+def test_db_count(db):
+    """Wrapper around SELECT COUNT"""
+    assert db.count() == 0
+
+    with db.batch() as batch:
+        batch.set_orig(100)
+        batch.set_recomp(100)
+
+    assert db.count() == 2
+
+    with db.batch() as batch:
+        batch.match(100, 100)
+
+    assert db.count() == 1
+
+
 #### Testing new batch API ####
 
 
