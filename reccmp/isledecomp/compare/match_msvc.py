@@ -33,7 +33,7 @@ class EntityIndex:
 
 
 def match_symbols(db: EntityDb, report: ReccmpReportProtocol = reccmp_report_nop):
-    """Match all entities using the symbol attribute. We expect this value to be unique."""
+    """Match all entities with the 'symbol' attribute set. We expect this value to be unique."""
 
     symbol_index = EntityIndex()
 
@@ -68,7 +68,7 @@ def match_symbols(db: EntityDb, report: ReccmpReportProtocol = reccmp_report_nop
                 report(
                     ReccmpEvent.NO_MATCH,
                     orig_addr,
-                    msg=f"Failed to match function at 0x{orig_addr:x} with symbol '{symbol}'",
+                    msg=f"Failed to match at 0x{orig_addr:x} with symbol '{symbol}'",
                 )
 
 
@@ -98,7 +98,7 @@ def match_functions(db: EntityDb, report: ReccmpReportProtocol = reccmp_report_n
             recomp_symbols[recomp_addr] = symbol
 
     # Report if the name used in the match is not unique.
-    # If the name list contained multiple addreses at the start,
+    # If the name list contained multiple addresses at the start,
     # we should report even for the last address in the list.
     non_unique_names = set()
 
