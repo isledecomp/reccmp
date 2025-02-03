@@ -222,7 +222,10 @@ def match_static_variables(
         - name = name of variable
         - static_var = True
         - parent_function = orig address of function
-    3. Recomp entity for the static variable with symbol"""
+    3. Recomp entity for the static variable with symbol
+
+    Requirement #1 is most likely to be met by matching the entity with recomp data.
+    Therefore, this function should be called after match_symbols or match_functions."""
     with db.batch() as batch:
         for (
             variable_addr,
