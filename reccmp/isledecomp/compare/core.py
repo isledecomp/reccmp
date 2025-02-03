@@ -315,8 +315,8 @@ class Compare:
         report = create_logging_wrapper(logger)
 
         # Now match
-        match_symbols(self._db, report)
-        match_functions(self._db, report)
+        match_symbols(self._db, report, truncate=True)
+        match_functions(self._db, report, truncate=True)
         match_vtables(self._db, report)
         match_static_variables(self._db, report)
         match_variables(self._db, report)

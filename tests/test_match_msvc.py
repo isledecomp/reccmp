@@ -97,18 +97,31 @@ def test_match_symbols_recomp_not_unique(db, report):
     report.assert_called_with(ReccmpEvent.NON_UNIQUE_SYMBOL, 123, msg=ANY)
 
 
-def test_match_symbols_over_255(db):
-    """MSVC truncates symbols to 255 characters in the PDB.
+def test_match_symbols_truncate_255(db):
+    """MSVC 4.2 truncates symbols to 255 characters in the PDB.
     Match entities where the symbols are equal up to the 255th character."""
     long_name = "x" * 255
     with db.batch() as batch:
         batch.set_orig(123, symbol=long_name + "y")
         batch.set_recomp(555, symbol=long_name + "z")
 
-    match_symbols(db)
+    match_symbols(db, truncate=True)
 
     assert db.get_by_orig(123).recomp_addr == 555
     assert db.get_by_recomp(555).orig_addr == 123
+
+
+def test_match_symbols_no_truncate(db):
+    """Should recognize these as distinct symbols if truncate=False"""
+    long_name = "x" * 255
+    with db.batch() as batch:
+        batch.set_orig(123, symbol=long_name + "y")
+        batch.set_recomp(555, symbol=long_name + "z")
+
+    match_symbols(db, truncate=False)
+
+    assert db.get_by_orig(123).recomp_addr is None
+    assert db.get_by_recomp(555).orig_addr is None
 
 
 #### match_functions ####
@@ -225,18 +238,31 @@ def test_match_functions_ignore_already_matched(db, report):
     assert db.count() == 2
 
 
-def test_match_function_names_over_255(db):
-    """MSVC truncates names to 255 characters in the PDB.
+def test_match_function_names_truncate_255(db):
+    """MSVC 4.2 truncates names to 255 characters in the PDB.
     Match function entities where the names are are equal up to the 255th character."""
     long_name = "x" * 255
     with db.batch() as batch:
         batch.set_orig(123, name=long_name + "y", type=EntityType.FUNCTION)
         batch.set_recomp(555, name=long_name + "z", type=EntityType.FUNCTION)
 
-    match_functions(db)
+    match_functions(db, truncate=True)
 
     assert db.get_by_orig(123).recomp_addr == 555
     assert db.get_by_recomp(555).orig_addr == 123
+
+
+def test_match_function_names_no_truncate(db):
+    """Should recognize these as distinct names if truncate=False"""
+    long_name = "x" * 255
+    with db.batch() as batch:
+        batch.set_orig(123, name=long_name + "y", type=EntityType.FUNCTION)
+        batch.set_recomp(555, name=long_name + "z", type=EntityType.FUNCTION)
+
+    match_functions(db, truncate=False)
+
+    assert db.get_by_orig(123).recomp_addr is None
+    assert db.get_by_recomp(555).orig_addr is None
 
 
 #### match_vtables ####

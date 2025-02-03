@@ -32,7 +32,12 @@ class EntityIndex:
         return value
 
 
-def match_symbols(db: EntityDb, report: ReccmpReportProtocol = reccmp_report_nop):
+def match_symbols(
+    db: EntityDb,
+    report: ReccmpReportProtocol = reccmp_report_nop,
+    *,
+    truncate: bool = False,
+):
     """Match all entities with the 'symbol' attribute set. We expect this value to be unique."""
 
     symbol_index = EntityIndex()
@@ -41,16 +46,21 @@ def match_symbols(db: EntityDb, report: ReccmpReportProtocol = reccmp_report_nop
         """SELECT recomp_addr, json_extract(kvstore, '$.symbol') as symbol
         from recomp_unmatched where symbol is not null"""
     ):
-        # Max symbol length in MSVC is 255 chars. See also: Warning C4786.
-        symbol_index.add(symbol[:255], recomp_addr)
+        # Truncate symbol to 255 chars for older MSVC. See also: Warning C4786.
+        if truncate:
+            symbol = symbol[:255]
+
+        symbol_index.add(symbol, recomp_addr)
 
     with db.batch() as batch:
         for orig_addr, symbol in db.sql.execute(
             """SELECT orig_addr, json_extract(kvstore, '$.symbol') as symbol
             from orig_unmatched where symbol is not null"""
         ):
-            # Same truncate to 255 chars as above.
-            symbol = symbol[:255]
+            # Repeat the truncate for our match search
+            if truncate:
+                symbol = symbol[:255]
+
             if symbol in symbol_index:
                 recomp_addr = symbol_index.pop(symbol)
 
@@ -72,7 +82,12 @@ def match_symbols(db: EntityDb, report: ReccmpReportProtocol = reccmp_report_nop
                 )
 
 
-def match_functions(db: EntityDb, report: ReccmpReportProtocol = reccmp_report_nop):
+def match_functions(
+    db: EntityDb,
+    report: ReccmpReportProtocol = reccmp_report_nop,
+    *,
+    truncate: bool = False,
+):
     # addr->symbol map. Used later in error message for non-unique match.
     recomp_symbols: dict[int, str] = {}
 
@@ -87,10 +102,10 @@ def match_functions(db: EntityDb, report: ReccmpReportProtocol = reccmp_report_n
         and (json_extract(kvstore, '$.type') = ? or json_extract(kvstore, '$.type') is null)""",
         (EntityType.FUNCTION,),
     ):
-        # Truncate the name to 255 characters. It will not be possible to match a name
-        # longer than that because MSVC truncates to this length.
-        # See also: warning C4786.
-        name = name[:255]
+        # Truncate function name to 255 chars for older MSVC. See also: Warning C4786.
+        if truncate:
+            name = name[:255]
+
         name_index.add(name, recomp_addr)
 
         # Get the symbol for the error message later.
@@ -110,7 +125,8 @@ def match_functions(db: EntityDb, report: ReccmpReportProtocol = reccmp_report_n
             (EntityType.FUNCTION,),
         ):
             # Repeat the truncate for our match search
-            name = name[:255]
+            if truncate:
+                name = name[:255]
 
             if name in name_index:
                 recomp_addr = name_index.pop(name)
