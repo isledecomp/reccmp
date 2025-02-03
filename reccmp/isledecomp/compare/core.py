@@ -16,7 +16,12 @@ from reccmp.isledecomp.cvdump import Cvdump, CvdumpAnalysis
 from reccmp.isledecomp.parser import DecompCodebase
 from reccmp.isledecomp.dir import walk_source_dir
 from reccmp.isledecomp.types import EntityType
-from reccmp.isledecomp.compare.event import create_logging_wrapper
+from reccmp.isledecomp.compare.event import (
+    ReccmpEvent,
+    ReccmpReportProtocol,
+    reccmp_report_nop,
+    create_logging_wrapper,
+)
 from reccmp.isledecomp.compare.asm import ParseAsm
 from reccmp.isledecomp.compare.asm.replacement import create_name_lookup
 from reccmp.isledecomp.compare.asm.fixes import assert_fixup, find_effective_match
@@ -112,8 +117,20 @@ class Compare:
         self._lines_db = LinesDb(code_dir)
         self._db = EntityDb()
 
+        # For now, just redirect match alerts to the logger.
+        report = create_logging_wrapper(logger)
+
         self._load_cvdump()
-        self._load_markers()
+        self._load_markers(report)
+
+        # Match using PDB and annotation data
+        match_symbols(self._db, report, truncate=True)
+        match_functions(self._db, report, truncate=True)
+        match_vtables(self._db, report)
+        match_static_variables(self._db, report)
+        match_variables(self._db, report)
+        match_strings(self._db, report)
+
         self._match_array_elements()
         # Detect floats first to eliminate potential overlap with string data
         self._find_float_const()
@@ -250,7 +267,7 @@ class Compare:
             batch.set_recomp(self.recomp_bin.entry, type=EntityType.FUNCTION)
             batch.match(self.orig_bin.entry, self.recomp_bin.entry)
 
-    def _load_markers(self):
+    def _load_markers(self, report: ReccmpReportProtocol = reccmp_report_nop):
         codefiles = list(walk_source_dir(self.code_dir))
         codebase = DecompCodebase(codefiles, self.target_id)
 
@@ -262,22 +279,20 @@ class Compare:
         bad_annotations = codebase.prune_invalid_addrs(orig_bin_checker)
 
         for sym in bad_annotations:
-            logger.error(
-                "Invalid address 0x%x on %s annotation in file: %s",
+            report(
+                ReccmpEvent.INVALID_USER_DATA,
                 sym.offset,
-                sym.type.name,
-                sym.filename,
+                msg=f"Invalid address 0x{sym.offset:x} on {sym.type.name} annotation in file: {sym.filename}",
             )
 
         # Make sure each address is used only once
         duplicate_annotations = codebase.prune_reused_addrs()
 
         for sym in duplicate_annotations:
-            logger.error(
-                "Dropped duplicate address 0x%x on %s annotation in file: %s",
+            report(
+                ReccmpEvent.INVALID_USER_DATA,
                 sym.offset,
-                sym.type.name,
-                sym.filename,
+                msg=f"Dropped duplicate address 0x{sym.offset:x} on {sym.type.name} annotation in file: {sym.filename}",
             )
 
         # Match lineref functions first because this is a guaranteed match.
@@ -286,17 +301,18 @@ class Compare:
         # was already removed from consideration.
         with self._db.batch() as batch:
             for fun in codebase.iter_line_functions():
+                batch.set_orig(
+                    fun.offset, type=EntityType.FUNCTION, stub=fun.should_skip()
+                )
+
                 assert fun.filename is not None
                 recomp_addr = self._lines_db.search_line(
                     fun.filename, fun.line_number, fun.end_line
                 )
+
                 if recomp_addr is not None:
                     batch.match(fun.offset, recomp_addr)
-                    batch.set_recomp(
-                        recomp_addr, type=EntityType.FUNCTION, stub=fun.should_skip()
-                    )
 
-        with self._db.batch() as batch:
             for fun in codebase.iter_name_functions():
                 batch.set_orig(
                     fun.offset, type=EntityType.FUNCTION, stub=fun.should_skip()
@@ -322,17 +338,6 @@ class Compare:
                     type=EntityType.VTABLE,
                 )
 
-        # For now, just redirect match alerts to the logger.
-        report = create_logging_wrapper(logger)
-
-        # Now match
-        match_symbols(self._db, report, truncate=True)
-        match_functions(self._db, report, truncate=True)
-        match_vtables(self._db, report)
-        match_static_variables(self._db, report)
-        match_variables(self._db, report)
-
-        with self._db.batch() as batch:
             for string in codebase.iter_strings():
                 # Not that we don't trust you, but we're checking the string
                 # annotation to make sure it is accurate.
@@ -344,10 +349,10 @@ class Compare:
                     string_correct = False
 
                 if not string_correct:
-                    logger.error(
-                        "Data at 0x%x does not match string %s",
+                    report(
+                        ReccmpEvent.INVALID_USER_DATA,
                         string.offset,
-                        repr(string.name),
+                        msg=f"Data at 0x{string.offset:x} does not match string {repr(string.name)}",
                     )
                     continue
 
@@ -357,9 +362,6 @@ class Compare:
                     type=EntityType.STRING,
                     size=len(string.name),
                 )
-                # self._db.match_string(string.offset, string.name)
-
-        match_strings(self._db, report)
 
     def _match_array_elements(self):
         """

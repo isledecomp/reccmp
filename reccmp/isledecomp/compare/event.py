@@ -21,12 +21,16 @@ class ReccmpEvent(enum.Enum):
     # Match by name/type not unique
     AMBIGUOUS_MATCH = enum.auto()
 
+    # User input (e.g. code annotation) cannot be added to the database
+    INVALID_USER_DATA = enum.auto()
+
 
 def event_to_severity(event: ReccmpEvent) -> LoggingSeverity:
     return {
         ReccmpEvent.NO_MATCH: LoggingSeverity.ERROR,
         ReccmpEvent.NON_UNIQUE_SYMBOL: LoggingSeverity.WARNING,
         ReccmpEvent.AMBIGUOUS_MATCH: LoggingSeverity.WARNING,
+        ReccmpEvent.INVALID_USER_DATA: LoggingSeverity.ERROR,
     }.get(event, LoggingSeverity.INFO)
 
 
