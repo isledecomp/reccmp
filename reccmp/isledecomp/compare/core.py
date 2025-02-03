@@ -269,6 +269,17 @@ class Compare:
                 sym.filename,
             )
 
+        # Make sure each address is used only once
+        duplicate_annotations = codebase.prune_reused_addrs()
+
+        for sym in duplicate_annotations:
+            logger.error(
+                "Dropped duplicate address 0x%x on %s annotation in file: %s",
+                sym.offset,
+                sym.type.name,
+                sym.filename,
+            )
+
         # Match lineref functions first because this is a guaranteed match.
         # If we have two functions that share the same name, and one is
         # a lineref, we can match the nameref correctly because the lineref

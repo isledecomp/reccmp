@@ -36,6 +36,24 @@ class DecompCodebase:
 
         return invalid_symbols
 
+    def prune_reused_addrs(self) -> list[ParserSymbol]:
+        """We are focused on annotations for a single module, so each address should be used only once.
+        Keep only the first occurrence of an address and discard the others.
+        Return the duplicates in a list for error reporting."""
+        used_addr = set()
+        duplicates = []
+        unique = []
+
+        for s in self._symbols:
+            if s.offset in used_addr:
+                duplicates.append(s)
+            else:
+                unique.append(s)
+                used_addr.add(s.offset)
+
+        self._symbols = unique
+        return duplicates
+
     def iter_line_functions(self) -> Iterator[ParserFunction]:
         """Return lineref functions separately from nameref. Assuming the PDB matches
         the state of the source code, a line reference is a guaranteed match, even if
