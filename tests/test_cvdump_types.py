@@ -703,3 +703,89 @@ def test_unnamed_union():
     # Make sure we can parse the members line
     union = parser.keys["0x369e"]
     assert union["size"] == 4
+
+
+ARGLIST_UNKNOWN_TYPE = """
+0x11f3 : Length = 34, Leaf = 0x1201 LF_ARGLIST argument count = 7
+    list[0] = 0x11EA
+    list[1] = 0x11F0
+    list[2] = 0x11F0
+    list[3] = 0x11F1
+    list[4] = ???(047C)
+    list[5] = ???(047C)
+    list[6] = 0x11F2
+"""
+
+
+def test_arglist_unknown_type():
+    """Should parse the ??? types and not fail with an assert."""
+    parser = CvdumpTypesParser()
+    for line in ARGLIST_UNKNOWN_TYPE.split("\n"):
+        parser.read_line(line)
+
+    t = parser.keys["0x11f3"]
+    assert len(t["args"]) == t["argcount"]
+
+
+FUNC_ATTR_EXAMPLES = """
+0x1216 : Length = 26, Leaf = 0x1009 LF_MFUNCTION
+    Return type = 0x1209, Class type = 0x1209, This type = T_NOTYPE(0000), 
+    Call type = C Near, Func attr = return UDT (C++ style)
+    Parms = 1, Arg list type = 0x116f, This adjust = 0
+
+0x122b : Length = 26, Leaf = 0x1009 LF_MFUNCTION
+    Return type = T_VOID(0003), Class type = 0x1226, This type = 0x1228, 
+    Call type = ThisCall, Func attr = instance constructor
+    Parms = 1, Arg list type = 0x122a, This adjust = 0
+
+0x1232 : Length = 26, Leaf = 0x1009 LF_MFUNCTION
+    Return type = T_VOID(0003), Class type = 0x1226, This type = 0x1228, 
+    Call type = ThisCall, Func attr = ****Warning**** unused field non-zero!
+    Parms = 0, Arg list type = 0x1018, This adjust = 0
+"""
+
+
+def test_mfunction_func_attr():
+    """Should parse "Func attr" values other than 'none'"""
+    parser = CvdumpTypesParser()
+    for line in FUNC_ATTR_EXAMPLES.split("\n"):
+        parser.read_line(line)
+
+    assert parser.keys["0x1216"]["func_attr"] == "return UDT (C++ style)"
+    assert parser.keys["0x122b"]["func_attr"] == "instance constructor"
+    assert (
+        parser.keys["0x1232"]["func_attr"] == "****Warning**** unused field non-zero!"
+    )
+
+
+UNION_UNNAMED_TAG = """
+0x3352 : Length = 46, Leaf = 0x1506 LF_UNION
+    # members = 2,  field list type 0x3350, SEALED, Size = 4    ,class name = <unnamed-tag>, unique name = .?AT<unnamed-tag>@@
+"""
+
+
+def test_union_without_udt():
+    """Should parse union that is missing the UDT attribute"""
+    parser = CvdumpTypesParser()
+    for line in UNION_UNNAMED_TAG.split("\n"):
+        parser.read_line(line)
+
+    assert "udt" not in parser.keys["0x3352"]
+    assert parser.keys["0x3352"]["name"] == "<unnamed-tag>"
+
+
+MFUNCTION_UNK_RETURN_TYPE = """
+0x11d8 : Length = 26, Leaf = 0x1009 LF_MFUNCTION
+    Return type = ???(047C), Class type = 0x1136, This type = T_NOTYPE(0000), 
+    Call type = C Near, Func attr = none
+    Parms = 3, Arg list type = 0x11d7, This adjust = 0
+"""
+
+
+def test_mfunction_unk_return_type():
+    """Should parse unknown return type as-is"""
+    parser = CvdumpTypesParser()
+    for line in MFUNCTION_UNK_RETURN_TYPE.split("\n"):
+        parser.read_line(line)
+
+    assert parser.keys["0x11d8"]["return_type"] == "???(047C)"
