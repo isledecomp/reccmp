@@ -243,7 +243,7 @@ class CvdumpTypesParser:
     )
     LF_ENUM_UDT = re.compile(r"^\s*UDT\((?P<udt>0x\w+)\)$")
     LF_UNION_LINE = re.compile(
-        r"^.*field list type (?P<field_type>0x\w+),.*Size = (?P<size>\d+)\s*,class name = (?P<name>(?:[^,]|,\S)+)(?:,\s.*UDT\((?P<udt>0x\w+)\))?"
+        r"^.*field list type (?P<field_type>0x\w+),.*Size = (?P<size>\d+)\s*,class name = (?P<name>(?:[^,]|,\S)+)(?:, unique name = [^,]+)?(?:,\s.*UDT\((?P<udt>0x\w+)\))?$"
     )
 
     MODES_OF_INTEREST = {
