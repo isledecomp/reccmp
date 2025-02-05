@@ -789,3 +789,21 @@ def test_mfunction_unk_return_type():
         parser.read_line(line)
 
     assert parser.keys["0x11d8"]["return_type"] == "???(047C)"
+
+
+CLASS_WITH_UNIQUE_NAME = """
+0x1cf0 : Length = 134, Leaf = 0x1504 LF_CLASS
+    # members = 8,  field list type 0x1cef, CONSTRUCTOR, OVERLOAD, NESTED, OVERLOADED ASSIGNMENT, 
+        CASTING, 
+    Derivation list type 0x0000, VT shape type 0x0000
+    Size = 8, class name = std::basic_ostream<char,std::char_traits<char> >::sentry, unique name = .?AVsentry@?$basic_ostream@DU?$char_traits@D@std@@@std@@, UDT(0x00001cf0)
+"""
+
+
+def test_class_unique_name():
+    """Make sure we can parse the UDT when the 'unique name' attribute is present"""
+    parser = CvdumpTypesParser()
+    for line in CLASS_WITH_UNIQUE_NAME.split("\n"):
+        parser.read_line(line)
+
+    assert parser.keys["0x1cf0"]["udt"] == "0x1cf0"

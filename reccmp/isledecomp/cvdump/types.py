@@ -201,7 +201,7 @@ class CvdumpTypesParser:
 
     # LF_CLASS/LF_STRUCTURE name and other info
     CLASS_NAME_RE = re.compile(
-        r"^\s+Size = (?P<size>\d+), class name = (?P<name>(?:[^,]|,\S)+)(?:, UDT\((?P<udt>0x\w+)\))?"
+        r"^\s+Size = (?P<size>\d+), class name = (?P<name>(?:[^,]|,\S)+)(?:, unique name = [^,]+)?(?:, UDT\((?P<udt>0x\w+)\))?"
     )
 
     # LF_MODIFIER, type being modified
