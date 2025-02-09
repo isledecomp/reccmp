@@ -201,7 +201,7 @@ class CvdumpTypesParser:
 
     # LF_CLASS/LF_STRUCTURE name and other info
     CLASS_NAME_RE = re.compile(
-        r"^\s+Size = (?P<size>\d+), class name = (?P<name>(?:[^,]|,\S)+)(?:, UDT\((?P<udt>0x\w+)\))?"
+        r"^\s+Size = (?P<size>\d+), class name = (?P<name>(?:[^,]|,\S)+)(?:, unique name = [^,]+)?(?:, UDT\((?P<udt>0x\w+)\))?"
     )
 
     # LF_MODIFIER, type being modified
@@ -212,7 +212,7 @@ class CvdumpTypesParser:
 
     # LF_ARGLIST list entry
     LF_ARGLIST_ENTRY = re.compile(
-        r"^\s+list\[(?P<index>\d+)\] = (?P<arg_type>[\w()]+)$"
+        r"^\s+list\[(?P<index>\d+)\] = (?P<arg_type>[?\w()]+)$"
     )
 
     # LF_POINTER element
@@ -220,7 +220,7 @@ class CvdumpTypesParser:
 
     # LF_MFUNCTION attribute key-value pairs
     LF_MFUNCTION_ATTRIBUTES = [
-        re.compile(r"\s*Return type = (?P<return_type>[\w()]+)$"),
+        re.compile(r"\s*Return type = (?P<return_type>[^,]+)$"),
         re.compile(r"\s*Class type = (?P<class_type>[\w()]+)$"),
         re.compile(r"\s*This type = (?P<this_type>[\w()]+)$"),
         # Call type may contain whitespace
@@ -231,9 +231,7 @@ class CvdumpTypesParser:
         re.compile(
             r"\s*This adjust = (?P<this_adjust>[\w()]+)$"
         ),  # By how much the incoming pointers are shifted in virtual inheritance; hex value without `0x` prefix
-        re.compile(
-            r"\s*Func attr = (?P<func_attr>[\w()]+)$"
-        ),  # Only for completeness, is always `none`
+        re.compile(r"\s*Func attr = (?P<func_attr>.+)$"),
     ]
 
     LF_ENUM_ATTRIBUTES = [
@@ -245,7 +243,7 @@ class CvdumpTypesParser:
     )
     LF_ENUM_UDT = re.compile(r"^\s*UDT\((?P<udt>0x\w+)\)$")
     LF_UNION_LINE = re.compile(
-        r"^.*field list type (?P<field_type>0x\w+),.*Size = (?P<size>\d+)\s*,class name = (?P<name>(?:[^,]|,\S)+)(?:,\s.*UDT\((?P<udt>0x\w+)\))?$"
+        r"^.*field list type (?P<field_type>0x\w+),.*Size = (?P<size>\d+)\s*,class name = (?P<name>(?:[^,]|,\S)+)(?:, unique name = [^,]+)?(?:,\s.*UDT\((?P<udt>0x\w+)\))?$"
     )
 
     MODES_OF_INTEREST = {
@@ -662,7 +660,13 @@ class CvdumpTypesParser:
             # in case we missed some relevant data
             if not any(
                 stripped_line.startswith(prefix)
-                for prefix in ["Pointer", "const Pointer", "L-value", "volatile"]
+                for prefix in [
+                    "R-value Reference",
+                    "Pointer",
+                    "const Pointer",
+                    "L-value",
+                    "volatile",
+                ]
             ):
                 logger.error("Unrecognized pointer attribute: %s", line[:-1])
 
