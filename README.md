@@ -48,7 +48,7 @@ This differs based on what kind of project you have.
 
 ## Tooling
 
-All scripts will become available to use in your terminal with the `reccmp-` prefix. The example usages below assume that the retail binaries have been copied to `./legobin`.
+All scripts will become available to use in your terminal with the `reccmp-` prefix. Note that these scripts need to be executed in the directory where `reccmp-build.yml` is located.
 
 * [`decomplint`](/reccmp/tools/decomplint.py): Checks the decompilation annotations (see above)
     * e.g. `reccmp-decomplint --module LEGO1 LEGO1`
@@ -66,15 +66,13 @@ All scripts will become available to use in your terminal with the `reccmp-` pre
 * [`datacmp`](/reccmp/tools/datacmp.py): Compares global data found in the original with the recompiled version
     * e.g. `reccmp-datacmp --target LEGO1`
 
+## Ghidra Import
+
+There are existing scripts to import the information from the decompilation into [Ghidra](https://github.com/NationalSecurityAgency/ghidra). See the relevant [README](reccmp/ghidra_scripts/README.md) for additional information.
+
 ## Best practices
 
 We have established some best practices that have no impact on `reccmp`'s output, but have made a positive impact on the Lego Island decompilation. We have listed them [here](docs/recommendations.md) for convenience.
-
-## Ghidra
-
-There are existing scripts to import the information from the decompilation into Ghidra.
-
-**TODO: Write the documentation**
 
 
 ## Contributing
