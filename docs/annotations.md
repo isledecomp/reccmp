@@ -15,7 +15,7 @@ refers to a function at address `0x100b12c0` in the build target aliased by `LEG
 
 ## Functions
 
-Functions can be annotated by one of the markers below. Each marker contains the address of the function as found in the original binaries. These information are then used to compare the recompiled assembly with the original assembly, resulting in an accuracy score.
+Functions can be annotated by one of the markers below. Each marker contains the address of the function as found in the original binaries. This information is then used to compare the recompiled assembly with the original assembly, resulting in an accuracy score.
 
 Note that functions in a given compilation unit must be ordered by their address in ascending order.
 
@@ -125,51 +125,6 @@ Classes with a virtual table should be annotated using the `VTABLE` marker, whic
 ```c++
 // VTABLE: LEGO1 0x100dc900
 class MxEventManager : public MxMediaManager {
-public:
-	MxEventManager();
-	virtual ~MxEventManager() override;
-
-	virtual void Destroy() override;                                     // vtable+0x18
-	virtual MxResult Create(MxU32 p_frequencyMS, MxBool p_createThread); // vtable+0x28
-    // ...
-}
-```
-While not relevant to the `reccmp` scripts, we made a rule in [isledecomp](https://github.com/isledecomp/isle) to annotate functions with a comment indicating their relative offset for convenience.
-
-
-
-## Class size
-
-**TODO: Is any of this relevant to reccmp or only to isledecomp?**
-
-Classes should be annotated using the `SIZE` marker to indicate their size. If you are unsure about the class size in the original binary, please use the currently available information (known member variables) and detail the circumstances in an extra comment if necessary.
-
-```c++
-// SIZE 0x1c
-class MxCriticalSection {
-public:
-	MxCriticalSection();
-	~MxCriticalSection();
-	static void SetDoMutex();
-    // ...
-}
-```
-
-Furthermore, add `DECOMP_SIZE_ASSERT(MxCriticalSection, 0x1c)` to the respective `.cpp` file (if the class has no dedicated `.cpp` file, use any appropriate `.cpp` file where the class is used).
-
-## Member variables
-
-**TODO: Is any of this relevant to reccmp or only to isledecomp?**
-
-Member variables should be annotated with their relative offsets.
-
-```c++
-class MxDSObject : public MxCore {
-private:
-	MxU32 m_sizeOnDisk;   // 0x8
-	MxU16 m_type;         // 0xc
-	char* m_sourceName;   // 0x10
-	undefined4 m_unk0x14; // 0x14
     // ...
 }
 ```
@@ -199,4 +154,11 @@ inline virtual const char* ClassName() const override // vtable+0x0c
 	// STRING: LEGO1 0x100f03fc
 	return "Act2PoliceStation";
 }
+```
+
+String constants can have a distinct `STRING` and `GLOBAL` address at the same time:
+```c++
+// GLOBAL: LEGO1 0x10102048
+// STRING: LEGO1 0x10102040
+const char* g_strACTION = "ACTION";
 ```
