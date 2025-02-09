@@ -251,16 +251,18 @@ def create_project(
     if scm:
         # Update existing .gitignore to skip build.yml and user.yml.
         gitignore_path = project_directory / ".gitignore"
-        if gitignore_path.exists():
-            ignore_rules = gitignore_path.read_text().splitlines()
-            if RECCMP_USER_CONFIG not in ignore_rules:
-                logger.debug("Adding '%s' to .gitignore...", RECCMP_USER_CONFIG)
-                with gitignore_path.open("a") as f:
-                    f.write(f"{RECCMP_USER_CONFIG}\n")
-            if RECCMP_BUILD_CONFIG not in ignore_rules:
-                logger.debug("Adding '%s' to .gitignore...", RECCMP_BUILD_CONFIG)
-                with gitignore_path.open("a") as f:
-                    f.write(f"{RECCMP_BUILD_CONFIG}\n")
+        if not gitignore_path.exists():
+            gitignore_path.touch()
+
+        ignore_rules = gitignore_path.read_text().splitlines()
+        if RECCMP_USER_CONFIG not in ignore_rules:
+            logger.debug("Adding '%s' to .gitignore...", RECCMP_USER_CONFIG)
+            with gitignore_path.open("a") as f:
+                f.write(f"{RECCMP_USER_CONFIG}\n")
+        if RECCMP_BUILD_CONFIG not in ignore_rules:
+            logger.debug("Adding '%s' to .gitignore...", RECCMP_BUILD_CONFIG)
+            with gitignore_path.open("a") as f:
+                f.write(f"{RECCMP_BUILD_CONFIG}\n")
 
     if cmake:
         # Generate tempalte files so you can start building each target with CMake.
