@@ -16,6 +16,16 @@ _SETUP_SQL = """
         matched int as (orig_addr is not null and recomp_addr is not null),
         kvstore text default '{}'
     );
+
+    CREATE VIEW orig_unmatched (orig_addr, kvstore) AS
+        SELECT orig_addr, kvstore FROM entities
+        WHERE orig_addr is not null and recomp_addr is null
+        ORDER by orig_addr;
+
+    CREATE VIEW recomp_unmatched (recomp_addr, kvstore) AS
+        SELECT recomp_addr, kvstore FROM entities
+        WHERE recomp_addr is not null and orig_addr is null
+        ORDER by recomp_addr;
 """
 
 
@@ -237,6 +247,10 @@ class EntityDb:
 
     def batch(self) -> EntityBatch:
         return EntityBatch(self)
+
+    def count(self) -> int:
+        (count,) = self._sql.execute("SELECT count(1) from entities").fetchone()
+        return count
 
     def set_orig_symbol(self, addr: int, **kwargs):
         self.bulk_orig_insert(iter([(addr, kwargs)]))
@@ -620,112 +634,6 @@ class EntityDb:
         ).fetchone()
 
         return result[0] if result is not None else None
-
-    def match_function(self, addr: int, name: str) -> bool:
-        did_match = self._match_on(EntityType.FUNCTION, addr, name)
-        if not did_match:
-            logger.error(
-                "Failed to find function symbol with annotation 0x%x and name '%s'",
-                addr,
-                name,
-            )
-
-        return did_match
-
-    def match_vtable(
-        self, addr: int, class_name: str, base_class: str | None = None
-    ) -> bool:
-        """Match the vtable for the given class name. If a base class is provided,
-        we will match the multiple inheritance vtable instead.
-
-        As with other name-based searches, set the given address on the first unmatched result.
-
-        Our search here depends on having already demangled the vtable symbol before
-        loading the data. For example: we want to search for "Pizza::`vftable'"
-        so we extract the class name from its symbol "??_7Pizza@@6B@".
-
-        For multiple inheritance, the vtable name references the base class like this:
-
-            - X::`vftable'{for `Y'}
-
-        The vtable for the derived class will take one of these forms:
-
-            - X::`vftable'{for `X'}
-            - X::`vftable'
-
-        We assume only one of the above will appear for a given class."""
-        # Most classes will not use multiple inheritance, so try the regular vtable
-        # first, unless a base class is provided.
-        if base_class is None or base_class == class_name:
-            bare_vftable = f"{class_name}::`vftable'"
-
-            for obj in self.search_name(bare_vftable, EntityType.VTABLE):
-                if obj.orig_addr is None and obj.recomp_addr is not None:
-                    return self.set_pair(addr, obj.recomp_addr, EntityType.VTABLE)
-
-        # If we didn't find a match above, search for the multiple inheritance vtable.
-        for_name = base_class if base_class is not None else class_name
-        for_vftable = f"{class_name}::`vftable'{{for `{for_name}'}}"
-
-        for obj in self.search_name(for_vftable, EntityType.VTABLE):
-            if obj.orig_addr is None and obj.recomp_addr is not None:
-                return self.set_pair(addr, obj.recomp_addr, EntityType.VTABLE)
-
-        logger.error(
-            "Failed to find vtable for class with annotation 0x%x and name '%s'",
-            addr,
-            class_name,
-        )
-        return False
-
-    def match_static_variable(
-        self, addr: int, variable_name: str, function_addr: int
-    ) -> bool:
-        """Matching a static function variable by combining the variable name
-        with the decorated (mangled) name of its parent function."""
-
-        result = self._sql.execute(
-            "SELECT json_extract(kvstore, '$.name'), json_extract(kvstore, '$.symbol') FROM entities WHERE orig_addr = ?",
-            (function_addr,),
-        ).fetchone()
-
-        if result is None:
-            logger.error("No function for static variable: %s", variable_name)
-            return False
-
-        # Get the friendly name for the "failed to match" error message
-        (function_name, function_symbol) = result
-
-        # If the static variable has a symbol, it will contain the parent function's symbol.
-        # e.g. Static variable "g_startupDelay" from function "IsleApp::Tick"
-        # The function symbol is:                    "?Tick@IsleApp@@QAEXH@Z"
-        # The variable symbol is: "?g_startupDelay@?1??Tick@IsleApp@@QAEXH@Z@4HA"
-        for (recomp_addr,) in self._sql.execute(
-            """SELECT recomp_addr FROM entities
-            WHERE orig_addr IS NULL
-            AND (json_extract(kvstore, '$.type') = ? OR json_extract(kvstore, '$.type') IS NULL)
-            AND json_extract(kvstore, '$.symbol') LIKE '%' || ? || '%' || ? || '%'""",
-            (EntityType.DATA, variable_name, function_symbol),
-        ):
-            return self.set_pair(addr, recomp_addr, EntityType.DATA)
-
-        logger.error(
-            "Failed to match static variable %s from function %s annotated with 0x%x",
-            variable_name,
-            function_name,
-            addr,
-        )
-
-        return False
-
-    def match_variable(self, addr: int, name: str) -> bool:
-        did_match = self._match_on(EntityType.DATA, addr, name) or self._match_on(
-            EntityType.POINTER, addr, name
-        )
-        if not did_match:
-            logger.error("Failed to find variable annotated with 0x%x: %s", addr, name)
-
-        return did_match
 
     def match_string(self, addr: int, value: str) -> bool:
         did_match = self._match_on(EntityType.STRING, addr, value)
