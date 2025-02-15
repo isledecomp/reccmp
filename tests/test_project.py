@@ -110,7 +110,7 @@ def test_project_creation(tmp_path_factory, binfile: PEImage):
     assert project.targets[target_name].target_id == target_name
     assert project.targets[target_name].filename == bin_path.name
     assert project.targets[target_name].source_root == project_root
-    assert not (project_root / ".gitignore").is_file()
+    assert (project_root / ".gitignore").is_file()
     assert (project_root / "CMakeLists.txt").is_file()
     assert (project_root / "cmake/reccmp.cmake").is_file()
 
