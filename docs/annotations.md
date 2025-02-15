@@ -146,7 +146,7 @@ MxAtomId* g_introScript = NULL;
 
 ## Strings
 
-String values should be annotated using the `STRING` marker, which includes the module name and address of the string. Note that this is usually not required since most strings can be auto-detected. If you want, you can use this for bookeeping, but it will usually not affect the `reccmp` match.
+String values should be annotated using the `STRING` marker, which includes the module name and address of the text content. Note that this is usually not required since most strings can be auto-detected. If you want, you can use this for bookeeping, but it will usually not affect the `reccmp` match.
 
 ```c++
 inline virtual const char* ClassName() const override // vtable+0x0c
@@ -156,9 +156,11 @@ inline virtual const char* ClassName() const override // vtable+0x0c
 }
 ```
 
-String constants can have a distinct `STRING` and `GLOBAL` address at the same time:
+String constants can have a distinct `STRING` and `GLOBAL` address at the same time. The `STRING` points at the actual text while the `GLOBAL` is a _pointer_ to the text:
 ```c++
 // GLOBAL: LEGO1 0x10102048
 // STRING: LEGO1 0x10102040
 const char* g_strACTION = "ACTION";
 ```
+
+In this example, there is an `A` at address `0x10102040` and a 32-bit pointer to `0x10102040` at address `0x10102048`.
