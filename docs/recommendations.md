@@ -1,6 +1,6 @@
 # Recommendations
 
-The following is a list of recommendations and best practices we have established at the [Lego Island Decompilation project](https://github.com/isledecomp/isle). They do not affect the output of `reccmp`, so it is up to you if you want to use them.
+The following is a list of recommendations and best practices we have established at the [LEGO Island Decompilation project](https://github.com/isledecomp/isle). They do not affect the output of `reccmp`, so it is up to you if you want to use them.
 
 ## Class/struct size annotation and assertion
 

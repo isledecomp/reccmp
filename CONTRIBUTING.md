@@ -18,7 +18,7 @@ This way, you can easily run your latest `reccmp` changes against your decompila
 pytest .
 ```
 
-As of this writing, some of the tests still depend on the [Lego Island decompilation project](https://github.com/isledecomp/isle). You will need a copy of the _original_ binaries for Lego Island in order to execute all tests. This can be done by
+As of this writing, some of the tests still depend on the [LEGO Island decompilation project](https://github.com/isledecomp/isle). You will need a copy of the _original_ binaries for LEGO Island in order to execute all tests. This can be done by
 ```bash
 pytest . --lego1=/path/to/LEGO1.DLL
 ```

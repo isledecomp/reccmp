@@ -1,6 +1,6 @@
 # Reccmp Decompilation Toolchain
 
-`reccmp` (recompilation comparison) is a collection of tools for decompilation projects. It was born from the [decompilation of Lego Island](https://github.com/isledecomp/isle). Functions and data are matched based on comments in the source code. For example:
+`reccmp` (recompilation comparison) is a collection of tools for decompilation projects. It was born from the [decompilation of LEGO Island](https://github.com/isledecomp/isle). Functions and data are matched based on comments in the source code. For example:
 ```cpp
 // FUNCTION: LEGO1 0x100b12c0
 MxCore* MxObjectFactory::Create(const char* p_name)
@@ -38,7 +38,7 @@ The next steps differ based on what kind of project you have.
 ### Fresh project
 
 1. Run `reccmp-project create --originals path/to/original/binary --cmake-project`
-2. You will see a lot of new files. Set up your C++ compiler and compile the project defined by `CMakeLists.txt`, ideally into a sub-directory like `./build`. Advice on building with old MSVC versions can be found at the [Lego Island Decompilation project](https://github.com/isledecomp/isle).
+2. You will see a lot of new files. Set up your C++ compiler and compile the project defined by `CMakeLists.txt`, ideally into a sub-directory like `./build`. Advice on building with old MSVC versions can be found at the [LEGO Island Decompilation project](https://github.com/isledecomp/isle).
 3. Look into `reccmp-project.yml` to see what the target is called.
 4. Navigate to the build directory and run `reccmp-reccmp --target <YOURTARGET>`.
 
@@ -68,7 +68,7 @@ There are existing scripts to import the information from the decompilation into
 
 ## Best practices
 
-We have established some best practices that have no impact on `reccmp`'s output, but have made a positive impact on the Lego Island decompilation. We have listed them [here](docs/recommendations.md) for convenience.
+We have established some best practices that have no impact on `reccmp`'s output, but have made a positive impact on the LEGO Island decompilation. We have listed them [here](docs/recommendations.md) for convenience.
 
 
 ## Contributing
