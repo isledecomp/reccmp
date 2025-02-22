@@ -12,3 +12,4 @@ class EntityType(IntEnum):
     STRING = 4
     VTABLE = 5
     FLOAT = 6
+    IMPORT = 7

@@ -75,7 +75,7 @@ def test_pointer_instructions_with_name(inst: DisasmLiteInst):
     (_, op_str) = p.sanitize(inst)
 
     # Using sample instructions where exact match is not required
-    name_lookup.assert_called_with(0x1234, exact=False)
+    name_lookup.assert_called_with(0x1234, exact=False, indirect=False)
     assert "[0x1234]" not in op_str
     assert "[Hello]" in op_str
 
@@ -258,7 +258,7 @@ def test_jmp_with_name_lookup():
 
     (_, op_str) = p.sanitize(DisasmLiteInst(0x1000, 5, "jmp", "0x2000"))
 
-    name_lookup.assert_called_with(0x2000, exact=True)
+    name_lookup.assert_called_with(0x2000, exact=True, indirect=False)
     assert op_str == "Hello"
 
 
@@ -302,7 +302,7 @@ def test_cmp_with_name_lookup():
 
     (_, op_str) = p.sanitize(inst)
 
-    name_lookup.assert_called_with(0x2000, exact=False)
+    name_lookup.assert_called_with(0x2000, exact=False, indirect=False)
     assert op_str == "eax, Hello"
 
 
@@ -327,7 +327,7 @@ def test_call_with_name_lookup():
 
     (_, op_str) = p.sanitize(inst)
 
-    name_lookup.assert_called_with(0x1234, exact=True)
+    name_lookup.assert_called_with(0x1234, exact=True, indirect=False)
     assert op_str == "Hello"
 
 
@@ -348,42 +348,72 @@ def test_replacement_numbering():
 
 
 def test_absolute_indirect():
-    """**** Held over from previous test file. This behavior may change soon. ****
-    The instruction `call dword ptr [0x1234]` means we call the function
-    whose address is at 0x1234. (i.e. absolute indirect addressing mode)
-    It is probably more useful to show the name of the function itself if
-    we have it, but there are some circumstances where we want to replace
-    with the pointer's name (i.e. an import function)."""
+    """Read the given pointer and replace its value with a name or placeholder.
+    Previously we handled reading from the binary inside the sanitize function.
+    This is now delegated to the name lookup function, so we just need to check
+    that it was called with the indirect parameter set."""
+    name_lookup = Mock(spec=NameReplacementProtocol, return_value=None)
+    p = ParseAsm(name_lookup=name_lookup)
+    inst = DisasmLiteInst(0x1000, 5, "call", "dword ptr [0x1234]")
 
-    def name_lookup(addr: int, **_) -> str | None:
-        return {
-            0x1234: "Hello",
-            0x4321: "xyz",
-            0x5555: "Test",
-        }.get(addr)
+    (_, op_str) = p.sanitize(inst)
 
-    def bin_lookup(addr: int, _: int) -> bytes | None:
-        return (
-            {
-                0x1234: b"\x55\x55\x00\x00",
-                0x4321: b"\x99\x99\x00\x00",
-            }
-        ).get(addr)
+    name_lookup.assert_called_with(0x1234, exact=True, indirect=True)
+    assert op_str == "dword ptr [<OFFSET1>]"
 
-    p = ParseAsm(name_lookup=name_lookup, bin_lookup=bin_lookup)
 
-    # If we know the indirect address (0x5555)
-    # Arrow to indicate this is an indirect replacement
-    (_, op_str) = p.sanitize(DisasmLiteInst(0x1000, 5, "call", "dword ptr [0x1234]"))
-    assert op_str == "dword ptr [->Test]"
+def test_direct_and_indirect_different_names():
+    """Indirect pointers should not collide with
+    cached lookups on direct pointers and vice versa"""
 
-    # If we do not know the indirect address (0x9999)
-    (_, op_str) = p.sanitize(DisasmLiteInst(0x1000, 5, "call", "dword ptr [0x4321]"))
-    assert op_str == "dword ptr [xyz]"
+    # Create a lookup that checks indirect access
+    def lookup(_, indirect: bool = False, **__) -> str:
+        return "Indirect" if indirect else "Direct"
 
-    # If we can't read the indirect address
-    (_, op_str) = p.sanitize(DisasmLiteInst(0x1000, 5, "call", "dword ptr [0x5555]"))
-    assert op_str == "dword ptr [Test]"
+    indirect_inst = DisasmLiteInst(0x1000, 5, "call", "dword ptr [0x1234]")
+    direct_inst = DisasmLiteInst(0x1000, 5, "mov", "eax, dword ptr [0x1234]")
+
+    # Indirect first
+    p = ParseAsm(name_lookup=lookup)
+    (_, op_str) = p.sanitize(indirect_inst)
+    assert op_str == "dword ptr [Indirect]"
+
+    (_, op_str) = p.sanitize(direct_inst)
+    assert op_str == "eax, dword ptr [Direct]"
+
+    # Direct first
+    p = ParseAsm(name_lookup=lookup)
+    (_, op_str) = p.sanitize(direct_inst)
+    assert op_str == "eax, dword ptr [Direct]"
+
+    (_, op_str) = p.sanitize(indirect_inst)
+    assert op_str == "dword ptr [Indirect]"
+
+    # Now verify that we use cached values for each
+    name_lookup = Mock(spec=NameReplacementProtocol, return_value=None)
+    p.name_lookup = name_lookup
+    (_, op_str) = p.sanitize(indirect_inst)
+    assert op_str == "dword ptr [Indirect]"
+
+    (_, op_str) = p.sanitize(direct_inst)
+    assert op_str == "eax, dword ptr [Direct]"
+
+    name_lookup.assert_not_called()
+
+
+def test_direct_and_indirect_placeholders():
+    """If no addresses are known, placeholders for direct and indirect lookup must be distinct"""
+    indirect_inst = DisasmLiteInst(0x1000, 5, "call", "dword ptr [0x1234]")
+    direct_inst = DisasmLiteInst(0x1000, 5, "mov", "eax, dword ptr [0x1234]")
+
+    name_lookup = Mock(spec=NameReplacementProtocol, return_value=None)
+    p = ParseAsm(name_lookup=name_lookup)
+
+    (_, indirect_op_str) = p.sanitize(indirect_inst)
+    (_, direct_op_str) = p.sanitize(direct_inst)
+
+    # Must use two different placeholders
+    assert indirect_op_str != direct_op_str
 
 
 def test_consistent_numbering():
