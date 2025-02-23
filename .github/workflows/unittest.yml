@@ -28,13 +28,21 @@ jobs:
         python-version: ${{ matrix.python-version }}
         cache: 'pip'
 
-    - name: Restore cached binary files
-      id: cache-original-binaries
+    - name: Restore lego files
+      id: cache-lego
       uses: actions/cache/restore@v3
       with:
         enableCrossOsArchive: true
         path: legobin
         key: legobin
+
+    - name: Restore skifree files
+      id: cache-skifree
+      uses: actions/cache/restore@v3
+      with:
+        enableCrossOsArchive: true
+        path: skifree
+        key: skifree
 
     - name: Install python libraries
       shell: bash
@@ -44,4 +52,4 @@ jobs:
     - name: Run unit tests
       shell: bash
       run: |
-        pytest . --lego1=legobin/LEGO1.DLL
+        pytest . --lego1=legobin/LEGO1.DLL --ski=skifree/SKI.EXE
