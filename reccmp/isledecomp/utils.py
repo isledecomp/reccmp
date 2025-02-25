@@ -1,7 +1,7 @@
 from datetime import datetime
 import logging
-from pathlib import Path
 import colorama
+from reccmp.isledecomp.compare.report import ReccmpStatusReport, ReccmpComparedEntity
 
 
 def print_combined_diff(udiff, plain: bool = False, show_both: bool = False):
@@ -129,7 +129,9 @@ def diff_json_display(show_both_addrs: bool = False, is_plain: bool = False):
     """Generate a function that will display the diff according to
     the reccmp display preferences."""
 
-    def formatter(orig_addr, saved, new) -> str:
+    def formatter(
+        orig_addr, saved: ReccmpComparedEntity, new: ReccmpComparedEntity
+    ) -> str:
         old_pct = "new"
         new_pct = "gone"
         name = ""
@@ -138,29 +140,25 @@ def diff_json_display(show_both_addrs: bool = False, is_plain: bool = False):
         if new is not None:
             new_pct = (
                 "stub"
-                if new.get("stub", False)
-                else percent_string(
-                    new["matching"], new.get("effective", False), is_plain
-                )
+                if new.is_stub
+                else percent_string(new.accuracy, new.is_effective_match, is_plain)
             )
 
             # Prefer the current name of this function if we have it.
             # We are using the original address as the key.
             # A function being renamed is not of interest here.
-            name = new.get("name", "")
-            recomp_addr = new.get("recomp", "n/a")
+            name = new.name
+            recomp_addr = new.recomp_addr or "n/a"
 
         if saved is not None:
             old_pct = (
                 "stub"
-                if saved.get("stub", False)
-                else percent_string(
-                    saved["matching"], saved.get("effective", False), is_plain
-                )
+                if saved.is_stub
+                else percent_string(saved.accuracy, saved.is_effective_match, is_plain)
             )
 
             if name == "":
-                name = saved.get("name", "")
+                name = saved.name
 
         if show_both_addrs:
             addr_string = f"{orig_addr} / {recomp_addr:10}"
@@ -176,29 +174,25 @@ def diff_json_display(show_both_addrs: bool = False, is_plain: bool = False):
 
 
 def diff_json(
-    saved_data,
-    new_data,
-    orig_file: Path,
+    saved_data: ReccmpStatusReport,
+    new_data: ReccmpStatusReport,
     show_both_addrs: bool = False,
     is_plain: bool = False,
 ):
-    """Using a saved copy of the diff summary and the current data, print a
-    report showing which functions/symbols have changed match percentage."""
+    """Compare two status report files, determine what items changed, and print the result."""
 
     # Don't try to diff a report generated for a different binary file
-    base_file = orig_file.name.lower()
-
-    if saved_data.get("file") != base_file:
+    if saved_data.filename != new_data.filename:
         logging.getLogger().error(
             "Diff report for '%s' does not match current file '%s'",
-            saved_data.get("file"),
-            base_file,
+            saved_data.filename,
+            new_data.filename,
         )
         return
 
-    if "timestamp" in saved_data:
+    if saved_data.timestamp is not None:
         now = datetime.now().replace(microsecond=0)
-        then = datetime.fromtimestamp(saved_data["timestamp"]).replace(microsecond=0)
+        then = saved_data.timestamp.replace(microsecond=0)
 
         print(
             " ".join(
@@ -213,8 +207,8 @@ def diff_json(
         print()
 
     # Convert to dict, using orig_addr as key
-    saved_invert = {obj["address"]: obj for obj in saved_data["data"]}
-    new_invert = {obj["address"]: obj for obj in new_data}
+    saved_invert = saved_data.entities
+    new_invert = new_data.entities
 
     all_addrs = set(saved_invert.keys()).union(new_invert.keys())
 
@@ -227,60 +221,56 @@ def diff_json(
         for addr in sorted(all_addrs)
     }
 
+    DiffSubsectionType = dict[
+        str, tuple[ReccmpComparedEntity | None, ReccmpComparedEntity | None]
+    ]
+
     # The criteria for diff judgement is in these dict comprehensions:
     # Any function not in the saved file
-    new_functions = {
+    new_functions: DiffSubsectionType = {
         key: (saved, new) for key, (saved, new) in combined.items() if saved is None
     }
 
     # Any function now missing from the saved file
     # or a non-stub -> stub conversion
-    dropped_functions = {
+    dropped_functions: DiffSubsectionType = {
         key: (saved, new)
         for key, (saved, new) in combined.items()
         if new is None
-        or (
-            new is not None
-            and saved is not None
-            and new.get("stub", False)
-            and not saved.get("stub", False)
-        )
+        or (new is not None and saved is not None and new.is_stub and not saved.is_stub)
     }
 
     # TODO: move these two into functions if the assessment gets more complex
     # Any function with increased match percentage
     # or stub -> non-stub conversion
-    improved_functions = {
+    improved_functions: DiffSubsectionType = {
         key: (saved, new)
         for key, (saved, new) in combined.items()
         if saved is not None
         and new is not None
-        and (
-            new["matching"] > saved["matching"]
-            or (not new.get("stub", False) and saved.get("stub", False))
-        )
+        and (new.accuracy > saved.accuracy or (not new.is_stub and saved.is_stub))
     }
 
     # Any non-stub function with decreased match percentage
-    degraded_functions = {
+    degraded_functions: DiffSubsectionType = {
         key: (saved, new)
         for key, (saved, new) in combined.items()
         if saved is not None
         and new is not None
-        and new["matching"] < saved["matching"]
-        and not saved.get("stub")
-        and not new.get("stub")
+        and new.accuracy < saved.accuracy
+        and not saved.is_stub
+        and not new.is_stub
     }
 
     # Any function with former or current "effective" match
-    entropy_functions = {
+    entropy_functions: DiffSubsectionType = {
         key: (saved, new)
         for key, (saved, new) in combined.items()
         if saved is not None
         and new is not None
-        and new["matching"] == 1.0
-        and saved["matching"] == 1.0
-        and new.get("effective", False) != saved.get("effective", False)
+        and new.accuracy == 1.0
+        and saved.accuracy == 1.0
+        and new.is_effective_match != saved.is_effective_match
     }
 
     get_diff_str = diff_json_display(show_both_addrs, is_plain)
