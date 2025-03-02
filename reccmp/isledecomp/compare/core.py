@@ -534,13 +534,23 @@ class Compare:
             for dll, name, addr in self.orig_bin.imports:
                 import_name = f"{dll.upper()}:{name}"
                 batch.set_orig(
-                    addr, import_name=import_name, size=4, type=EntityType.IMPORT
+                    addr,
+                    name=f"__imp__{name}",
+                    import_name=import_name,
+                    size=4,
+                    type=EntityType.IMPORT,
                 )
 
             for dll, name, addr in self.recomp_bin.imports:
+                # TODO: recomp imports should already have a name from the PDB
+                # but set it anyway to avoid problems later.
                 import_name = f"{dll.upper()}:{name}"
                 batch.set_recomp(
-                    addr, import_name=import_name, size=4, type=EntityType.IMPORT
+                    addr,
+                    name=f"__imp__{name}",
+                    import_name=import_name,
+                    size=4,
+                    type=EntityType.IMPORT,
                 )
 
             # Combine these two dictionaries. We don't care about imports from recomp
