@@ -8,6 +8,7 @@ from reccmp.isledecomp.compare.report import (
     ReccmpStatusReport,
     combine_reports,
     ReccmpReportDeserializeError,
+    ReccmpReportSameSourceError,
     deserialize_reccmp_report,
     serialize_reccmp_report,
 )
@@ -84,7 +85,15 @@ def main():
             logger.error("Not enough samples to aggregate!")
             return 1
 
-        agg_report = combine_reports(samples)
+        try:
+            agg_report = combine_reports(samples)
+        except ReccmpReportSameSourceError:
+            filename_list = sorted({s.filename for s in samples})
+            logger.error(
+                "Aggregate samples are not from the same source file!\nFilenames used: %s",
+                filename_list,
+            )
+            return 1
 
         if args.output is not None:
             write_report_file(args.output, agg_report)

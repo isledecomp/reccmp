@@ -10,6 +10,10 @@ class ReccmpReportDeserializeError(Exception):
     """The given file is not a serialized reccmp report file"""
 
 
+class ReccmpReportSameSourceError(Exception):
+    """Tried to aggregate reports derived from different source files."""
+
+
 @dataclass
 class ReccmpComparedEntity:
     orig_addr: str
@@ -76,8 +80,8 @@ def combine_reports(samples: list[ReccmpStatusReport]) -> ReccmpStatusReport:
     accuracy score from any report."""
     assert len(samples) > 0
 
-    # TODO: hack
-    assert all(samples[0].filename == s.filename for s in samples)
+    if not all(samples[0].filename == s.filename for s in samples):
+        raise ReccmpReportSameSourceError
 
     output = ReccmpStatusReport(filename=samples[0].filename)
 

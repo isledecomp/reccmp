@@ -1,16 +1,21 @@
 """Reccmp reports: files that contain the comparison result from asmcmp."""
+import pytest
 from reccmp.isledecomp.compare.report import (
     ReccmpStatusReport,
     ReccmpComparedEntity,
     combine_reports,
+    ReccmpReportSameSourceError,
 )
 
 
-def create_report(entities: list[tuple[str, float]]) -> ReccmpStatusReport:
+def create_report(
+    entities: list[tuple[str, float]] | None = None
+) -> ReccmpStatusReport:
     """Helper to quickly set up a report to be customized further for each test."""
     report = ReccmpStatusReport(filename="test.exe")
-    for addr, accuracy in entities:
-        report.entities[addr] = ReccmpComparedEntity(addr, "test", accuracy)
+    if entities is not None:
+        for addr, accuracy in entities:
+            report.entities[addr] = ReccmpComparedEntity(addr, "test", accuracy)
 
     return report
 
@@ -97,3 +102,17 @@ def test_aggregate_effective_over_any():
 
     # Should retain original accuracy for effective match.
     assert combined.entities["100"].accuracy == 0.5
+
+
+def test_aggregate_different_files():
+    """Should raise an exception if we try to aggregate reports
+    where the orig filename does not match."""
+    x = create_report()
+    y = create_report()
+
+    # Make sure they are different, regardless of what is set by create_report().
+    x.filename = "test.exe"
+    y.filename = "hello.exe"
+
+    with pytest.raises(ReccmpReportSameSourceError):
+        combine_reports([x, y])
