@@ -6,7 +6,10 @@ import struct
 import uuid
 from dataclasses import dataclass
 from typing import Callable, Iterable, Iterator
-from reccmp.isledecomp.formats.exceptions import InvalidVirtualAddressError
+from reccmp.isledecomp.formats.exceptions import (
+    InvalidVirtualAddressError,
+    InvalidVirtualReadError,
+)
 from reccmp.isledecomp.formats.pe import PEImage
 from reccmp.isledecomp.cvdump.demangler import (
     demangle_string_const,
@@ -75,13 +78,14 @@ def create_reloc_lookup(bin_file: PEImage) -> Callable[[int], bool]:
     return lookup
 
 
-def create_bin_lookup(bin_file: PEImage) -> Callable[[int, int], bytes | None]:
-    """Function generator for reading from the bin file"""
+def create_bin_lookup(bin_file: PEImage) -> Callable[[int], int | None]:
+    """Function generator to read a pointer from the bin file"""
 
-    def lookup(addr: int, size: int) -> bytes | None:
+    def lookup(addr: int) -> int | None:
         try:
-            return bin_file.read(addr, size)
-        except InvalidVirtualAddressError:
+            (ptr,) = struct.unpack("<L", bin_file.read(addr, 4))
+            return ptr
+        except (struct.error, InvalidVirtualAddressError, InvalidVirtualReadError):
             return None
 
     return lookup
@@ -143,13 +147,17 @@ class Compare:
 
         self.orig_sanitize = ParseAsm(
             addr_test=create_reloc_lookup(self.orig_bin),
-            name_lookup=create_name_lookup(self._db.get_by_orig, "orig_addr"),
-            bin_lookup=create_bin_lookup(self.orig_bin),
+            name_lookup=create_name_lookup(
+                self._db.get_by_orig, create_bin_lookup(self.orig_bin), "orig_addr"
+            ),
         )
         self.recomp_sanitize = ParseAsm(
             addr_test=create_reloc_lookup(self.recomp_bin),
-            name_lookup=create_name_lookup(self._db.get_by_recomp, "recomp_addr"),
-            bin_lookup=create_bin_lookup(self.recomp_bin),
+            name_lookup=create_name_lookup(
+                self._db.get_by_recomp,
+                create_bin_lookup(self.recomp_bin),
+                "recomp_addr",
+            ),
         )
 
     def _load_cvdump(self):
@@ -521,48 +529,38 @@ class Compare:
         recomp_byname = {
             (dll.upper(), name): addr for (dll, name, addr) in self.recomp_bin.imports
         }
-        # Combine these two dictionaries. We don't care about imports from recomp
-        # not found in orig because:
-        # 1. They shouldn't be there
-        # 2. They are already identified via cvdump
-        orig_to_recomp = {
-            addr: recomp_byname.get(pair, None) for addr, pair in orig_byaddr.items()
-        }
 
-        # Now: we have the IAT offset in each matched up, so we need to make
-        # the connection between the thunk functions.
-        # We already have the symbol name we need from the PDB.
-        for orig, recomp in orig_to_recomp.items():
-            if orig is None or recomp is None:
-                continue
+        with self._db.batch() as batch:
+            for dll, name, addr in self.orig_bin.imports:
+                import_name = f"{dll.upper()}:{name}"
+                batch.set_orig(
+                    addr,
+                    name=f"__imp__{name}",
+                    import_name=import_name,
+                    size=4,
+                    type=EntityType.IMPORT,
+                )
 
-            # Match the __imp__ symbol
-            self._db.set_pair(orig, recomp, EntityType.POINTER)
+            for dll, name, addr in self.recomp_bin.imports:
+                # TODO: recomp imports should already have a name from the PDB
+                # but set it anyway to avoid problems later.
+                import_name = f"{dll.upper()}:{name}"
+                batch.set_recomp(
+                    addr,
+                    name=f"__imp__{name}",
+                    import_name=import_name,
+                    size=4,
+                    type=EntityType.IMPORT,
+                )
 
-            # Read the relative address from .idata
-            try:
-                (recomp_rva,) = struct.unpack("<L", self.recomp_bin.read(recomp, 4))
-                (orig_rva,) = struct.unpack("<L", self.orig_bin.read(orig, 4))
-            except ValueError:
-                # Bail out if there's a problem with struct.unpack
-                continue
-
-            # Strictly speaking, this is a hack to support asm sanitize.
-            # When calling an import, we will recognize that the address for the
-            # CALL instruction is a pointer to the actual address, but this is
-            # not only not the address of a function, it is not an address at all.
-            # To make the asm display work correctly (i.e. to match what you see
-            # in ghidra) create a function match on the RVA. This is not a valid
-            # virtual address because it is before the imagebase, but it will
-            # do what we need it to do in the sanitize function.
-
-            (dll_name, func_name) = orig_byaddr[orig]
-            fullname = dll_name + ":" + func_name
-            self._db.set_recomp_symbol(
-                recomp_rva, type=EntityType.FUNCTION, name=fullname, size=4
-            )
-            self._db.set_pair(orig_rva, recomp_rva, EntityType.FUNCTION)
-            self._db.skip_compare(orig_rva)
+            # Combine these two dictionaries. We don't care about imports from recomp
+            # not found in orig because:
+            # 1. They shouldn't be there
+            # 2. They are already identified via cvdump
+            for orig_addr, pair in orig_byaddr.items():
+                recomp_addr = recomp_byname.get(pair, None)
+                if recomp_addr is not None:
+                    batch.match(orig_addr, recomp_addr)
 
     def _match_thunks(self):
         """Thunks are (by nature) matched by indirection. If a thunk from orig
