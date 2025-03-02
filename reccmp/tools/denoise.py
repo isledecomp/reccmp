@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+from typing import Sequence
 from pathlib import Path
 from reccmp.isledecomp.utils import diff_json
 from reccmp.isledecomp.compare.report import (
@@ -44,8 +45,36 @@ def deserialize_sample_files(paths: list[Path]) -> list[ReccmpStatusReport]:
                 samples.append(report)
             except ReccmpReportDeserializeError:
                 logger.warning("Skipping '%s' due to import error", path)
+        elif not path.exists():
+            logger.warning("File not found: '%s'", path)
 
     return samples
+
+
+class TwoOrMoreArgsAction(argparse.Action):
+    """Support nargs=2+"""
+
+    def __call__(
+        self, parser, namespace, values: Sequence[str] | None, option_string=None
+    ):
+        assert isinstance(values, Sequence)
+        if len(values) < 2:
+            raise argparse.ArgumentError(self, "expected two or more arguments")
+
+        setattr(namespace, self.dest, values)
+
+
+class TwoOrFewerArgsAction(argparse.Action):
+    """Support nargs=(1,2)"""
+
+    def __call__(
+        self, parser, namespace, values: Sequence[str] | None, option_string=None
+    ):
+        assert isinstance(values, Sequence)
+        if len(values) not in (1, 2):
+            raise argparse.ArgumentError(self, "expected one or two arguments")
+
+        setattr(namespace, self.dest, values)
 
 
 def main():
@@ -54,7 +83,12 @@ def main():
         description="Aggregate saved accuracy reports.",
     )
     parser.add_argument(
-        "--diff", type=Path, metavar="<files>", nargs="+", help="Report files to diff."
+        "--diff",
+        type=Path,
+        metavar="<files>",
+        nargs="+",
+        action=TwoOrFewerArgsAction,
+        help="Report files to diff.",
     )
     parser.add_argument(
         "--output",
@@ -68,6 +102,7 @@ def main():
         type=Path,
         metavar="<files>",
         nargs="+",
+        action=TwoOrMoreArgsAction,
         help="Report files to aggregate.",
     )
     parser.add_argument(
@@ -75,6 +110,16 @@ def main():
     )
 
     args = parser.parse_args()
+
+    if not (args.samples or args.diff):
+        parser.error(
+            "exepected arguments for --samples or --diff. (No input files specified)"
+        )
+
+    if not (args.output or args.diff):
+        parser.error(
+            "expected arguments for --output or --diff. (No output action specified)"
+        )
 
     agg_report: ReccmpStatusReport | None = None
 
@@ -99,7 +144,7 @@ def main():
             write_report_file(args.output, agg_report)
 
     # If --diff has at least one file and we aggregated some samples this run, diff the first file and the aggregate.
-    # If --diff has two or more files and we did not aggregate this run, diff the first two files in the list.
+    # If --diff has two files and we did not aggregate this run, diff the files in the list.
     if args.diff is not None:
         saved_data = load_report_file(args.diff[0])
 
@@ -109,6 +154,12 @@ def main():
             else:
                 logger.error("Not enough files to diff!")
                 return 1
+        elif len(args.diff) == 2:
+            logger.warning(
+                "Ignoring second --diff argument '%s'.\nDiff of '%s' and aggregate report follows.",
+                args.diff[1],
+                args.diff[0],
+            )
 
         diff_json(saved_data, agg_report, show_both_addrs=False, is_plain=args.no_color)
 
