@@ -586,7 +586,7 @@ class Compare:
         # Now match the thunks from orig where we can.
         for orig_thunk, orig_addr in self.orig_bin.thunks:
             orig_func = self._db.get_by_orig(orig_addr)
-            if orig_func is None:
+            if orig_func is None or orig_func.recomp_addr is None:
                 continue
 
             # Check whether the thunk destination is a matched symbol
