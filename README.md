@@ -46,12 +46,12 @@ The next steps differ based on what kind of project you have.
 
 All scripts will become available to use in your terminal with the `reccmp-` prefix. Note that these scripts need to be executed in the directory where `reccmp-build.yml` is located.
 
+* [`aggregate`](/reccmp/tools/aggregate.py): Combines JSON reports into a single file.
+    * Aggregate using highest accuracy score: `reccmp-aggregate --samples ./sample0.json ./sample1.json ./sample2.json --output ./combined.json`
+    * Diff two saved reports: `reccmp-aggregate --diff ./before.json ./after.json`
+    * Diff against the aggregate: `reccmp-aggregate --samples ./sample0.json ./sample1.json ./sample2.json --diff ./before.json`
 * [`decomplint`](/reccmp/tools/decomplint.py): Checks the decompilation annotations (see above)
     * e.g. `reccmp-decomplint --module LEGO1 LEGO1`
-* [`denoise`](/reccmp/tools/denoise.py): Combines JSON reports into a single aggregate file.
-    * Create aggregate report: `reccmp-denoise --samples ./sample0.json ./sample1.json ./sample2.json --output ./combined.json`
-    * Diff two saved reports: `reccmp-denoise --diff ./before.json ./after.json`
-    * Diff against the aggregate: `reccmp-denoise --samples ./sample0.json ./sample1.json ./sample2.json --diff ./before.json`
 * [`reccmp`](/reccmp/tools/asmcmp.py): Compares an original binary with a recompiled binary, provided a PDB file. For example:
     * Display the diff for a single function: `reccmp-reccmp --target LEGO1 --verbose 0x100ae1a0`
     * Generate an HTML report: `reccmp-reccmp --target LEGO1 --html output.html`
