@@ -180,7 +180,10 @@
         margin-bottom: 0;
       }
     </style>
-    <script>var data = {{{data}}};</script>
+    <script>
+      var report = {{{report}}};
+      var data = report["data"];
+    </script>
     <script>{{{reccmp_js}}}</script>
     </script>
   </head>

@@ -1,6 +1,5 @@
 from difflib import SequenceMatcher
-from typing import TypedDict
-from typing_extensions import NotRequired
+from typing_extensions import NotRequired, TypedDict
 
 CombinedDiffInput = list[tuple[str, str]]
 
