@@ -1,7 +1,31 @@
 from datetime import datetime
 import logging
 import colorama
-from reccmp.isledecomp.compare.report import ReccmpStatusReport, ReccmpComparedEntity
+from pystache import Renderer  # type: ignore[import-untyped]
+from reccmp.assets import get_asset_file
+from reccmp.isledecomp.compare.report import (
+    ReccmpStatusReport,
+    ReccmpComparedEntity,
+    serialize_reccmp_report,
+)
+
+
+def write_html_report(html_file: str, report: ReccmpStatusReport):
+    """Create the interactive HTML diff viewer with the given report."""
+    js_path = get_asset_file("../assets/reccmp.js")
+    with open(js_path, "r", encoding="utf-8") as f:
+        reccmp_js = f.read()
+
+    # Convert the report to a JSON string to insert in the HTML template.
+    report_str = serialize_reccmp_report(report, diff_included=True)
+
+    output_data = Renderer().render_path(
+        get_asset_file("../assets/template.html"),
+        {"report": report_str, "reccmp_js": reccmp_js},
+    )
+
+    with open(html_file, "w", encoding="utf-8") as htmlfile:
+        htmlfile.write(output_data)
 
 
 def print_combined_diff(udiff, plain: bool = False, show_both: bool = False):

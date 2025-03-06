@@ -116,3 +116,22 @@ def test_aggregate_different_files():
 
     with pytest.raises(ReccmpReportSameSourceError):
         combine_reports([x, y])
+
+
+def test_aggregate_recomp_addr():
+    """We combine the entity data based on the orig addr because this will not change.
+    The recomp addr may vary a lot. If it is the same in all samples, use the value.
+    Otherwise use a placeholder value."""
+    x = create_report([("100", 0.8), ("200", 0.2)])
+    y = create_report([("100", 0.2), ("200", 0.8)])
+    # These recomp addrs match:
+    x.entities["100"].recomp_addr = "500"
+    y.entities["100"].recomp_addr = "500"
+    # Y report has no addr for this
+    x.entities["200"].recomp_addr = "600"
+
+    combined = combine_reports([x, y])
+    assert combined.entities["100"].recomp_addr == "500"
+    assert combined.entities["200"].recomp_addr != "600"
+    # TODO: string subject to change? better to leave as none?
+    assert combined.entities["200"].recomp_addr == "various"

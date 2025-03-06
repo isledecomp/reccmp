@@ -4,7 +4,7 @@ import argparse
 import logging
 from typing import Sequence
 from pathlib import Path
-from reccmp.isledecomp.utils import diff_json
+from reccmp.isledecomp.utils import diff_json, write_html_report
 from reccmp.isledecomp.compare.report import (
     ReccmpStatusReport,
     combine_reports,
@@ -91,6 +91,12 @@ def main():
         help="Report files to diff.",
     )
     parser.add_argument(
+        "--html",
+        type=Path,
+        metavar="<file>",
+        help="Location for HTML report based on aggregate.",
+    )
+    parser.add_argument(
         "--output",
         "-o",
         type=Path,
@@ -116,9 +122,9 @@ def main():
             "exepected arguments for --samples or --diff. (No input files specified)"
         )
 
-    if not (args.output or args.diff):
+    if not (args.output or args.diff or args.html):
         parser.error(
-            "expected arguments for --output or --diff. (No output action specified)"
+            "expected arguments for --output, --html, or --diff. (No output action specified)"
         )
 
     agg_report: ReccmpStatusReport | None = None
@@ -142,6 +148,9 @@ def main():
 
         if args.output is not None:
             write_report_file(args.output, agg_report)
+
+        if args.html is not None:
+            write_html_report(args.html, agg_report)
 
     # If --diff has at least one file and we aggregated some samples this run, diff the first file and the aggregate.
     # If --diff has two files and we did not aggregate this run, diff the files in the list.
