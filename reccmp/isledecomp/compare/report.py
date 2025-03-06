@@ -167,6 +167,7 @@ def _deserialize_version_1(obj: JSONReportVersion1) -> ReccmpStatusReport:
             recomp_addr=e.recomp,
             is_stub=e.stub,
             is_effective_match=e.effective,
+            diff=e.diff,
         )
 
     return report
