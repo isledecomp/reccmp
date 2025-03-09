@@ -133,5 +133,4 @@ def test_aggregate_recomp_addr():
     combined = combine_reports([x, y])
     assert combined.entities["100"].recomp_addr == "500"
     assert combined.entities["200"].recomp_addr != "600"
-    # TODO: string subject to change? better to leave as none?
     assert combined.entities["200"].recomp_addr == "various"
