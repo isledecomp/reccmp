@@ -100,7 +100,7 @@ class NewExeHeader:
     def from_memory(cls, data: bytes, offset: int) -> tuple["NewExeHeader", int]:
         if not cls.taste(data, offset):
             raise ValueError
-        struct_fmt = "<2s2BHI17HI3H2B4H"
+        struct_fmt = "<2s2B2HI16HI3H2B4H"
         struct_size = struct.calcsize(struct_fmt)
         # fmt: off
         items: tuple[bytes, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int] = (

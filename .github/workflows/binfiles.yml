@@ -1,0 +1,40 @@
+name: Prepare sample binaries
+
+on:
+  workflow_call:
+
+jobs:
+  lego:
+    name: Download LEGO
+    uses: ./.github/workflows/binfile-lego.yml
+
+  ski:
+    name: Download SKI
+    uses: ./.github/workflows/binfile-ski.yml
+
+  merge:
+    needs: [lego, ski]
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Restore LEGO
+      uses: actions/cache/restore@v3
+      with:
+        path: binfiles
+        key: legobin
+        fail-on-cache-miss: true
+
+    - name: Restore SKI
+      uses: actions/cache/restore@v3
+      with:
+        path: binfiles
+        key: skibin
+        fail-on-cache-miss: true
+
+    - name: Cache binfiles
+      uses: actions/cache@v3
+      with:
+        enableCrossOsArchive: true
+        path: binfiles
+        key: binfiles-${{ hashFiles('binfiles/*') }}
+        restore-keys: binfiles

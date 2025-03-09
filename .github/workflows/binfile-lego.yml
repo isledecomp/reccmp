@@ -1,0 +1,29 @@
+name: Download LEGO binaries
+
+on:
+  workflow_call:
+
+jobs:
+  lego:
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Restore original binaries
+      id: cache
+      uses: actions/cache@v3
+      with:
+        path: binfiles
+        key: legobin
+
+    - name: Download original island binaries
+      if: ${{ !steps.cache.outputs.cache-hit }}
+      run: |
+        wget https://legoisland.org/download/CONFIG.EXE --directory-prefix=binfiles
+        wget https://legoisland.org/download/ISLE.EXE --directory-prefix=binfiles
+        wget https://legoisland.org/download/LEGO1.DLL --directory-prefix=binfiles
+
+    - name: Verify files
+      run: |
+        echo "864766d024d78330fed5e1f6efb2faf815f1b1c3405713a9718059dc9a54e52c binfiles/CONFIG.EXE" | sha256sum --check
+        echo "5cf57c284973fce9d14f5677a2e4435fd989c5e938970764d00c8932ed5128ca binfiles/ISLE.EXE" | sha256sum --check
+        echo "14645225bbe81212e9bc1919cd8a692b81b8622abb6561280d99b0fc4151ce17 binfiles/LEGO1.DLL" | sha256sum --check
