@@ -12,6 +12,7 @@ from reccmp.isledecomp import (
     print_combined_diff,
     diff_json,
     percent_string,
+    write_html_report,
 )
 
 from reccmp.isledecomp.compare import Compare as IsleCompare
@@ -42,20 +43,6 @@ def gen_json(json_file: str, json_str: str):
 
     with open(json_file, "w", encoding="utf-8") as f:
         f.write(json_str)
-
-
-def gen_html(html_file: str, report: str):
-    js_path = get_asset_file("../assets/reccmp.js")
-    with open(js_path, "r", encoding="utf-8") as f:
-        reccmp_js = f.read()
-
-    output_data = Renderer().render_path(
-        get_asset_file("../assets/template.html"),
-        {"report": report, "reccmp_js": reccmp_js},
-    )
-
-    with open(html_file, "w", encoding="utf-8") as htmlfile:
-        htmlfile.write(output_data)
 
 
 def gen_svg(svg_file, name_svg, icon, svg_implemented_funcs, total_funcs, raw_accuracy):
@@ -161,6 +148,11 @@ def parse_args() -> argparse.Namespace:
         "--json",
         metavar="<file>",
         help="Generate JSON file with match summary",
+    )
+    parser.add_argument(
+        "--json-diet",
+        action="store_true",
+        help="Exclude diff from JSON report.",
     )
     parser.add_argument(
         "--diff",
@@ -301,10 +293,14 @@ def main():
     ## Generate files and show summary.
 
     if args.json is not None:
-        gen_json(args.json, serialize_reccmp_report(report))
+        # If we're on a diet, hold the diff.
+        diff_included = not bool(args.json_diet)
+        gen_json(
+            args.json, serialize_reccmp_report(report, diff_included=diff_included)
+        )
 
     if args.html is not None:
-        gen_html(args.html, serialize_reccmp_report(report, diff_included=True))
+        write_html_report(args.html, report)
 
     implemented_funcs = function_count
 

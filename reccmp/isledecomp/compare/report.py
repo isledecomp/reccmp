@@ -99,8 +99,10 @@ def combine_reports(samples: list[ReccmpStatusReport]) -> ReccmpStatusReport:
 
         output.entities[addr] = e_list[0]
 
-        # Recomp addr will most likely vary between samples, so clear it
-        output.entities[addr].recomp_addr = None
+        # Keep the recomp_addr if it is the same across all samples.
+        # i.e. to detect where function alignment ends
+        if not all(e_list[0].recomp_addr == e.recomp_addr for e in e_list):
+            output.entities[addr].recomp_addr = "various"
 
     return output
 
@@ -165,6 +167,7 @@ def _deserialize_version_1(obj: JSONReportVersion1) -> ReccmpStatusReport:
             recomp_addr=e.recomp,
             is_stub=e.stub,
             is_effective_match=e.effective,
+            diff=e.diff,
         )
 
     return report
