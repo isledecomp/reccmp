@@ -5,7 +5,7 @@ on: [push, pull_request]
 jobs:
   fetch-deps:
     name: Prepare sample binary files
-    uses: ./.github/workflows/legobin.yml
+    uses: ./.github/workflows/binfiles.yml
 
   test:
     name: '${{ matrix.platform.name }} ${{ matrix.python-version }}'
@@ -28,21 +28,13 @@ jobs:
         python-version: ${{ matrix.python-version }}
         cache: 'pip'
 
-    - name: Restore lego files
-      id: cache-lego
+    - name: Restore sample binaries
+      id: cache
       uses: actions/cache/restore@v3
       with:
         enableCrossOsArchive: true
-        path: legobin
-        key: legobin
-
-    - name: Restore skifree files
-      id: cache-skifree
-      uses: actions/cache/restore@v3
-      with:
-        enableCrossOsArchive: true
-        path: skifree
-        key: skifree
+        path: binfiles
+        key: binfiles
 
     - name: Install python libraries
       shell: bash
@@ -52,4 +44,4 @@ jobs:
     - name: Run unit tests
       shell: bash
       run: |
-        pytest . --lego1=legobin/LEGO1.DLL --ski=skifree/SKI.EXE
+        pytest . --binfiles=binfiles --require-binfiles
