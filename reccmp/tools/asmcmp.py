@@ -2,11 +2,8 @@
 
 import argparse
 import base64
-import json
 import logging
 import os
-from datetime import datetime
-from pathlib import Path
 
 from pystache import Renderer  # type: ignore[import-untyped]
 import colorama
@@ -15,9 +12,16 @@ from reccmp.isledecomp import (
     print_combined_diff,
     diff_json,
     percent_string,
+    write_html_report,
 )
 
 from reccmp.isledecomp.compare import Compare as IsleCompare
+from reccmp.isledecomp.compare.report import (
+    ReccmpStatusReport,
+    ReccmpComparedEntity,
+    deserialize_reccmp_report,
+    serialize_reccmp_report,
+)
 from reccmp.isledecomp.formats.detect import detect_image
 from reccmp.isledecomp.formats.pe import PEImage
 from reccmp.isledecomp.types import EntityType
@@ -34,43 +38,11 @@ logger = logging.getLogger()
 colorama.just_fix_windows_console()
 
 
-def gen_json(json_file: str, orig_file: Path, data):
-    """Create a JSON file that contains the comparison summary"""
-
-    # If the structure of the JSON file ever changes, we would run into a problem
-    # reading an older format file in the CI action. Mark which version we are
-    # generating so we could potentially address this down the road.
-    json_format_version = 1
-
-    # Remove the diff field
-    reduced_data = [
-        {key: value for (key, value) in obj.items() if key != "diff"} for obj in data
-    ]
+def gen_json(json_file: str, json_str: str):
+    """Convert the status report to JSON and write to a file."""
 
     with open(json_file, "w", encoding="utf-8") as f:
-        json.dump(
-            {
-                "file": orig_file.name.lower(),
-                "format": json_format_version,
-                "timestamp": datetime.now().timestamp(),
-                "data": reduced_data,
-            },
-            f,
-        )
-
-
-def gen_html(html_file, data):
-    js_path = get_asset_file("../assets/reccmp.js")
-    with open(js_path, "r", encoding="utf-8") as f:
-        reccmp_js = f.read()
-
-    output_data = Renderer().render_path(
-        get_asset_file("../assets/template.html"),
-        {"data": data, "reccmp_js": reccmp_js},
-    )
-
-    with open(html_file, "w", encoding="utf-8") as htmlfile:
-        htmlfile.write(output_data)
+        f.write(json_str)
 
 
 def gen_svg(svg_file, name_svg, icon, svg_implemented_funcs, total_funcs, raw_accuracy):
@@ -178,6 +150,11 @@ def parse_args() -> argparse.Namespace:
         help="Generate JSON file with match summary",
     )
     parser.add_argument(
+        "--json-diet",
+        action="store_true",
+        help="Exclude diff from JSON report.",
+    )
+    parser.add_argument(
         "--diff",
         metavar="<file>",
         help="Diff against summary in JSON file",
@@ -267,7 +244,8 @@ def main():
     function_count = 0
     total_accuracy = 0.0
     total_effective_accuracy = 0.0
-    htmlinsert = []
+
+    report = ReccmpStatusReport(filename=target.original_path.name.lower())
 
     for match in isle_compare.compare_all():
         if not args.silent and args.diff is None:
@@ -287,44 +265,42 @@ def main():
             total_effective_accuracy += match.effective_ratio
 
         # If html, record the diffs to an HTML file
-        html_obj = {
-            "address": f"0x{match.orig_addr:x}",
-            "recomp": f"0x{match.recomp_addr:x}",
-            "name": match.name,
-            "matching": match.effective_ratio,
-        }
+        orig_addr = f"0x{match.orig_addr:x}"
+        recomp_addr = f"0x{match.recomp_addr:x}"
 
-        if match.is_effective_match:
-            html_obj["effective"] = True
-
-        if match.udiff is not None:
-            html_obj["diff"] = match.udiff
-
-        if match.is_stub:
-            html_obj["stub"] = True
-
-        htmlinsert.append(html_obj)
+        report.entities[orig_addr] = ReccmpComparedEntity(
+            orig_addr=orig_addr,
+            name=match.name,
+            accuracy=match.effective_ratio,
+            recomp_addr=recomp_addr,
+            is_effective_match=match.is_effective_match,
+            is_stub=match.is_stub,
+            diff=match.udiff,
+        )
 
     # Compare with saved diff report.
     if args.diff is not None:
         with open(args.diff, "r", encoding="utf-8") as f:
-            saved_data = json.load(f)
+            saved_data = deserialize_reccmp_report(f.read())
 
-            diff_json(
-                saved_data,
-                htmlinsert,
-                target.original_path,
-                show_both_addrs=args.print_rec_addr,
-                is_plain=args.no_color,
-            )
+        diff_json(
+            saved_data,
+            report,
+            show_both_addrs=args.print_rec_addr,
+            is_plain=args.no_color,
+        )
 
     ## Generate files and show summary.
 
     if args.json is not None:
-        gen_json(args.json, target.original_path, htmlinsert)
+        # If we're on a diet, hold the diff.
+        diff_included = not bool(args.json_diet)
+        gen_json(
+            args.json, serialize_reccmp_report(report, diff_included=diff_included)
+        )
 
     if args.html is not None:
-        gen_html(args.html, json.dumps(htmlinsert))
+        write_html_report(args.html, report)
 
     implemented_funcs = function_count
 

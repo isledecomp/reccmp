@@ -7,9 +7,7 @@ so that virtual addresses are replaced by symbol name or a generic
 placeholder string."""
 
 import re
-import struct
 from functools import cache
-from typing import Callable
 from .const import JUMP_MNEMONICS, SINGLE_OPERAND_INSTS
 from .instgen import InstructGen, SectionType
 from .replacement import AddrTestProtocol, NameReplacementProtocol
@@ -33,28 +31,22 @@ def from_hex(string: str) -> int | None:
     return None
 
 
-def bytes_to_dword(b: bytes) -> int | None:
-    if len(b) == 4:
-        return struct.unpack("<L", b)[0]
-
-    return None
-
-
 class ParseAsm:
     def __init__(
         self,
         addr_test: AddrTestProtocol | None = None,
         name_lookup: NameReplacementProtocol | None = None,
-        bin_lookup: Callable[[int, int], bytes | None] | None = None,
     ) -> None:
         self.addr_test = addr_test
         self.name_lookup = name_lookup
-        self.bin_lookup = bin_lookup
+
         self.replacements: dict[int, str] = {}
+        self.indirect_replacements: dict[int, str] = {}
         self.number_placeholders = True
 
     def reset(self):
         self.replacements = {}
+        self.indirect_replacements = {}
 
     def is_addr(self, value: int) -> bool:
         """Wrapper for user-provided address test"""
@@ -63,12 +55,21 @@ class ParseAsm:
 
         return False
 
-    def lookup(self, addr: int, exact: bool = False) -> str | None:
+    def lookup(
+        self, addr: int, exact: bool = False, indirect: bool = False
+    ) -> str | None:
         """Wrapper for user-provided name lookup"""
         if callable(self.name_lookup):
-            return self.name_lookup(addr, exact=exact)
+            return self.name_lookup(addr, exact=exact, indirect=indirect)
 
         return None
+
+    def _next_placeholder(self) -> str:
+        """The placeholder number corresponds to the number of addresses we have
+        already replaced. This is so the number will be consistent across the diff
+        if we can replace some symbols with actual names in recomp but not orig."""
+        number = len(self.replacements) + len(self.indirect_replacements) + 1
+        return f"<OFFSET{number}>" if self.number_placeholders else "<OFFSET>"
 
     def replace(self, addr: int, exact: bool = False) -> str:
         """Provide a replacement name for the given address."""
@@ -79,12 +80,20 @@ class ParseAsm:
             self.replacements[addr] = name
             return name
 
-        # The placeholder number corresponds to the number of addresses we have
-        # already replaced. This is so the number will be consistent across the diff
-        # if we can replace some symbols with actual names in recomp but not orig.
-        idx = len(self.replacements) + 1
-        placeholder = f"<OFFSET{idx}>" if self.number_placeholders else "<OFFSET>"
+        placeholder = self._next_placeholder()
         self.replacements[addr] = placeholder
+        return placeholder
+
+    def indirect_replace(self, addr: int) -> str:
+        if addr in self.indirect_replacements:
+            return self.indirect_replacements[addr]
+
+        if (name := self.lookup(addr, exact=True, indirect=True)) is not None:
+            self.indirect_replacements[addr] = name
+            return name
+
+        placeholder = self._next_placeholder()
+        self.indirect_replacements[addr] = placeholder
         return placeholder
 
     def hex_replace_always(self, match: re.Match) -> str:
@@ -119,17 +128,7 @@ class ParseAsm:
         If we cannot identify the indirect address, fall back to a lookup
         on the original pointer value so we might display something useful."""
         value = int(match.group(1), 16)
-        indirect_value = None
-
-        if callable(self.bin_lookup):
-            indirect_value = self.bin_lookup(value, 4)
-
-        if indirect_value is not None:
-            indirect_addr = bytes_to_dword(indirect_value)
-            if indirect_addr is not None and self.lookup(indirect_addr) is not None:
-                return "->" + self.replace(indirect_addr)
-
-        return self.replace(value)
+        return self.indirect_replace(value)
 
     def sanitize(self, inst: DisasmLiteInst) -> tuple[str, str]:
         # For jumps or calls, if the entire op_str is a hex number, the value
