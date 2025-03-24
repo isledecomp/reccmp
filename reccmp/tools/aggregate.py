@@ -79,7 +79,13 @@ class TwoOrFewerArgsAction(argparse.Action):
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
+    if len(argv) > 1:
+        prog = Path(argv[0]).stem
+    else:
+        prog = None  # defer to sys.argv
+
     parser = argparse.ArgumentParser(
+        prog=prog,
         allow_abbrev=False,
         description="Aggregate saved accuracy reports.",
         fromfile_prefix_chars="@",
@@ -117,7 +123,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--no-color", "-n", action="store_true", help="Do not color the output"
     )
 
-    args = parser.parse_args(argv)
+    args = parser.parse_args(argv[1:])
 
     if not (args.samples or args.diff):
         parser.error(
@@ -130,13 +136,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         )
 
     if args.diff and len(args.diff) == 1 and not args.samples:
-        parser.error("expected two report files to diff")
+        parser.error("--diff expects two report files")
 
     return args
 
 
 def main():
-    args = parse_args(sys.argv[1:])
+    args = parse_args(sys.argv)
 
     agg_report: ReccmpStatusReport | None = None
 
