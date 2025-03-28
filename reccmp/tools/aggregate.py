@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import sys
 import argparse
 import logging
 from typing import Sequence
@@ -77,10 +78,17 @@ class TwoOrFewerArgsAction(argparse.Action):
         setattr(namespace, self.dest, values)
 
 
-def main():
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    if len(argv) > 1:
+        prog = Path(argv[0]).stem
+    else:
+        prog = None  # defer to sys.argv
+
     parser = argparse.ArgumentParser(
+        prog=prog,
         allow_abbrev=False,
         description="Aggregate saved accuracy reports.",
+        fromfile_prefix_chars="@",
     )
     parser.add_argument(
         "--diff",
@@ -115,7 +123,7 @@ def main():
         "--no-color", "-n", action="store_true", help="Do not color the output"
     )
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv[1:])
 
     if not (args.samples or args.diff):
         parser.error(
@@ -126,6 +134,15 @@ def main():
         parser.error(
             "expected arguments for --output, --html, or --diff. (No output action specified)"
         )
+
+    if args.diff and len(args.diff) == 1 and not args.samples:
+        parser.error("--diff expects two report files")
+
+    return args
+
+
+def main():
+    args = parse_args(sys.argv)
 
     agg_report: ReccmpStatusReport | None = None
 
