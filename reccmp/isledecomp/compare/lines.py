@@ -1,52 +1,50 @@
 """Database used to match (filename, line_number) pairs
 between FUNCTION markers and PDB analysis."""
 
-import sqlite3
 import logging
 from functools import cache
-from pathlib import Path
-from reccmp.isledecomp.dir import PathResolver
-
-
-_SETUP_SQL = """
-    CREATE TABLE lineref (
-        path text not null,
-        filename text not null,
-        line int not null,
-        addr int not null
-    );
-    CREATE INDEX file_line ON lineref (filename, line);
-"""
+from pathlib import Path, PureWindowsPath
+from reccmp.isledecomp.dir import convert_foreign_path, walk_source_dir
 
 
 logger = logging.getLogger(__name__)
 
 
-@cache
-def my_samefile(path: str, source_path: str) -> bool:
-    return Path(path).samefile(source_path)
-
-
-@cache
-def my_basename_lower(path: str) -> str:
-    return Path(path).name.lower()
-
-
 class LinesDb:
     def __init__(self, code_dir) -> None:
-        self._db = sqlite3.connect(":memory:")
-        self._db.executescript(_SETUP_SQL)
-        self._path_resolver = PathResolver(code_dir)
+        # Code files of interest
+        # TODO: It may be better to provide the list of files instead of the directory
+        self._code_files = tuple(Path(p) for p in walk_source_dir(code_dir))
+        self._path_resolver = cache(convert_foreign_path)
+
+        # Set up memoized map of filenames to their paths
+        self._filenames: dict[str, list[Path]] = {}
+        for path in self._code_files:
+            self._filenames.setdefault(path.name.lower(), []).append(path)
+
+        # Local filename to list of (line_no, address) pairs
+        # This has to be a list instead of a dict because line numbers may be used twice.
+        # e.g. for the start and end of a loop.
+        self._map: dict[Path, list[tuple[int, int]]] = {}
 
     def add_line(self, path: str, line_no: int, addr: int):
-        """To be added from the LINES section of cvdump."""
-        sourcepath = self._path_resolver.resolve_cvdump(path)
-        filename = my_basename_lower(sourcepath)
+        """Connect the remote path to a line number and address pair."""
+        pdb_path = PureWindowsPath(path)
+        filename = pdb_path.name.lower()
 
-        self._db.execute(
-            "INSERT INTO lineref (path, filename, line, addr) VALUES (?,?,?,?)",
-            (sourcepath, filename, line_no, addr),
-        )
+        candidates = self._filenames.get(filename)
+        if candidates is None:
+            return
+
+        # Must convert to tuple (hashable type) so we can use functools.cache
+        sourcepath = self._path_resolver(pdb_path, tuple(candidates))
+        if sourcepath is None:
+            return
+
+        # mypy coersion. The function returns a PurePath because it is a superclass of Path.
+        assert isinstance(sourcepath, Path)
+
+        self._map.setdefault(sourcepath, []).append((line_no, addr))
 
     def search_line(
         self, path: str, line_start: int, line_end: int | None = None
@@ -60,18 +58,16 @@ class LinesDb:
         if line_end is None:
             line_end = line_start
 
-        # Search using the filename from the path to limit calls to Path.samefile.
-        # TODO: This should be refactored. Maybe sqlite isn't suited for this and we
-        # should store Path objects as dict keys instead.
-        filename = my_basename_lower(path)
-        cur = self._db.execute(
-            "SELECT path, addr FROM lineref WHERE filename = ? AND line >= ? AND line <= ?",
-            (filename, line_start, line_end),
-        )
+        lines = self._map.get(Path(path))
+        if lines is None:
+            return None
+
+        lines.sort()
 
         possible_functions = [
-            addr for source_path, addr in cur if my_samefile(path, source_path)
+            addr for (line_no, addr) in lines if line_start <= line_no <= line_end
         ]
+
         if len(possible_functions) == 1:
             return possible_functions[0]
 
