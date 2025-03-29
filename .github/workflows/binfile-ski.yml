@@ -1,0 +1,26 @@
+name: Download SKI binary
+
+on:
+  workflow_call:
+
+jobs:
+  ski:
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Restore original binaries
+      id: cache
+      uses: actions/cache@v3
+      with:
+        path: binfiles
+        key: skibin
+
+    - name: Download original ski binaries
+      if: ${{ !steps.cache.outputs.cache-hit }}
+      run: |
+        wget https://archive.org/download/win3_SKIFREE/SKIFREE.ZIP
+        unzip -d binfiles SKIFREE.ZIP SKI.EXE
+
+    - name: Verify files
+      run: |
+        echo "0b97b99fcf34af5f5d624080417c79c7d36ae11351a7870ce6e0a476f03515c2 binfiles/SKI.EXE" | sha256sum --check

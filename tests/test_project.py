@@ -13,7 +13,9 @@ from reccmp.project.error import (
     RecCmpProjectException,
 )
 from reccmp.isledecomp.formats import PEImage
-from .conftest import LEGO1_SHA256
+
+
+LEGO1_SHA256 = "14645225bbe81212e9bc1919cd8a692b81b8622abb6561280d99b0fc4151ce17"
 
 
 def test_project_loading(tmp_path_factory, binfile: PEImage):
