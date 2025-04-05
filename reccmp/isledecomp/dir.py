@@ -1,3 +1,4 @@
+"""Utility functions and modules for path resolution and traversal"""
 import os
 import subprocess
 from typing import Iterator
@@ -10,6 +11,59 @@ def winepath_win_to_unix(path: str) -> str:
 
 def winepath_unix_to_win(path: str) -> str:
     return subprocess.check_output(["winepath", "-w", path], text=True).strip()
+
+
+def _iter_path_components(path: PurePath) -> Iterator[str]:
+    """Walk path components in reverse and convert to lower case for matching."""
+    for p in reversed(path.parts):
+        yield p.lower()
+
+
+def _count_matching_path_parts(
+    foreign_path: PurePath, local_path: PurePath
+) -> tuple[int, PurePath]:
+    score = 0
+    for fp, lp in zip(
+        _iter_path_components(foreign_path), _iter_path_components(local_path)
+    ):
+        # Don't try to resolve any dot directories.
+        # We would get it wrong if any of the paths are symlinks.
+        if fp != lp or fp in (".", "..") or lp in (".", ".."):
+            break
+
+        score += 1
+
+    return (score, local_path)
+
+
+def convert_foreign_path(
+    foreign_path: PurePath, local_paths: tuple[PurePath]
+) -> PurePath | None:
+    """Connect the given foreign_path to the best match from the list of local_paths.
+    For best performance, you should narrow down the starting list to paths
+    that match the base filename."""
+    scored = [_count_matching_path_parts(foreign_path, p) for p in local_paths]
+    scored.sort(reverse=True)
+
+    if len(scored) >= 2:
+        [(top_score, top_path), (next_score, _)] = scored[:2]
+        # Return if this is the best match above all others
+        if top_score > next_score:
+            return top_path
+
+        # If there are two or more paths with an equal number of
+        # matching parts, none are clearly correct, so we return None.
+        return None
+
+    if len(scored) == 1:
+        (top_score, top_path) = scored[0]
+        # Return only if we matched at least one part
+        if top_score > 0:
+            return top_path
+
+        return None
+
+    return None
 
 
 class PathResolver:
