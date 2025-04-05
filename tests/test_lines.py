@@ -70,7 +70,8 @@ def test_db_hash_windows():
 
 def test_db_hash_posix():
     """Same as above, but POSIX paths *are* case-sensitive.
-    The goal here is just to show that we are not _____"""
+    The goal here is to show that we are not taking liberties with PurePath
+    and when it can be expected to match."""
 
     path = PurePosixPath("test.cpp")
     lines = LinesDb([path])
