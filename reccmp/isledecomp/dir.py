@@ -20,15 +20,15 @@ def _iter_path_components(path: PurePath) -> Iterator[str]:
 
 
 def _count_matching_path_parts(
-    remote_path: PurePath, local_path: PurePath
+    foreign_path: PurePath, local_path: PurePath
 ) -> tuple[int, PurePath]:
     score = 0
-    for rp, lp in zip(
-        _iter_path_components(remote_path), _iter_path_components(local_path)
+    for fp, lp in zip(
+        _iter_path_components(foreign_path), _iter_path_components(local_path)
     ):
         # Don't try to resolve any dot directories.
         # We would get it wrong if any of the paths are symlinks.
-        if rp != lp or rp in (".", "..") or lp in (".", ".."):
+        if fp != lp or fp in (".", "..") or lp in (".", ".."):
             break
 
         score += 1
@@ -37,12 +37,12 @@ def _count_matching_path_parts(
 
 
 def convert_foreign_path(
-    remote_path: PurePath, local_paths: tuple[PurePath]
+    foreign_path: PurePath, local_paths: tuple[PurePath]
 ) -> PurePath | None:
-    """Connect the given remote_path to the best match from the list of local_paths.
+    """Connect the given foreign_path to the best match from the list of local_paths.
     For best performance, you should narrow down the starting list to paths
     that match the base filename."""
-    scored = [_count_matching_path_parts(remote_path, p) for p in local_paths]
+    scored = [_count_matching_path_parts(foreign_path, p) for p in local_paths]
     scored.sort(reverse=True)
 
     if len(scored) >= 2:
@@ -51,11 +51,17 @@ def convert_foreign_path(
         if top_score > next_score:
             return top_path
 
-    elif len(scored) == 1:
+        # If there are two or more paths with an equal number of
+        # matching parts, none are clearly correct, so we return None.
+        return None
+
+    if len(scored) == 1:
         (top_score, top_path) = scored[0]
         # Return only if we matched at least one part
         if top_score > 0:
             return top_path
+
+        return None
 
     return None
 
