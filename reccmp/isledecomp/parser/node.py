@@ -60,3 +60,7 @@ class ParserVtable(ParserSymbol):
 @dataclass
 class ParserString(ParserSymbol):
     pass
+
+@dataclass
+class ParserLine(ParserSymbol):
+    pass

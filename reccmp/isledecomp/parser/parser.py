@@ -19,6 +19,7 @@ from .marker import (
     is_marker_exact,
 )
 from .node import (
+    ParserLine,
     ParserSymbol,
     ParserFunction,
     ParserVariable,
@@ -344,6 +345,17 @@ class DecompParser:
         else:
             self.state = ReaderState.SEARCH
 
+    def _line_marker(self, marker: DecompMarker):
+        self._symbols.append(
+            ParserLine(
+                type=marker.type,
+                line_number=self.line_number,
+                module=marker.module,
+                offset=marker.offset,
+                name="TODO: Does this make sense?"
+            )
+        )
+
     def _handle_marker(self, marker: DecompMarker):
         # Cannot handle any markers between function sig and opening curly brace
         if self.state == ReaderState.WANT_CURLY:
@@ -412,6 +424,10 @@ class DecompParser:
                 self._vtable_marker(marker)
             else:
                 self._syntax_error(ParserError.INCOMPATIBLE_MARKER)
+
+        elif marker.is_line():
+            # TODO: Check if in function
+            self._line_marker(marker)
 
         else:
             self._syntax_warning(ParserError.BOGUS_MARKER)
