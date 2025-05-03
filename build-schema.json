@@ -4,13 +4,13 @@
       "description": "Target schema for build.yml",
       "properties": {
         "path": {
-          "description": "Path to the recompiled executable file",
+          "description": "Path to the recompiled executable file, relative to the project path",
           "format": "path",
           "title": "Path",
           "type": "string"
         },
         "pdb": {
-          "description": "Path to the PDB file",
+          "description": "Path to the PDB file, relative to the project path",
           "format": "path",
           "title": "Pdb",
           "type": "string"
@@ -27,6 +27,7 @@
   "description": "File schema for build.yml",
   "properties": {
     "project": {
+      "description": "Path of the project directory",
       "format": "path",
       "title": "Project",
       "type": "string"

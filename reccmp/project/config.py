@@ -106,17 +106,19 @@ class BuildFileTarget(BaseModel):
     """Target schema for build.yml"""
 
     path: Path = Field(
-        description="Path to the recompiled executable file",
+        description="Path to the recompiled executable file, relative to the project path",
     )
     pdb: Path = Field(
-        description="Path to the PDB file",
+        description="Path to the PDB file, relative to the project path",
     )
 
 
 class BuildFile(BaseModel):
     """File schema for build.yml"""
 
-    project: Path
+    project: Path = Field(
+        description="Path of the project directory"
+    )
     targets: dict[str, BuildFileTarget] = Field(
         description="List of targets",
     )
