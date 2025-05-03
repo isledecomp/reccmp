@@ -6,6 +6,7 @@ import struct
 import uuid
 from dataclasses import dataclass
 from typing import Callable, Iterable, Iterator
+from reccmp.isledecomp.compare.asm.parse import AsmExcerpt
 from reccmp.isledecomp.formats.exceptions import (
     InvalidVirtualAddressError,
     InvalidVirtualReadError,
@@ -38,7 +39,7 @@ from .match_msvc import (
     match_variables,
     match_strings,
 )
-from .db import EntityDb, ReccmpEntity, ReccmpMatch
+from .db import EntityDb, ReccmpEntity, ReccmpMatch, matched_entity_factory
 from .diff import combined_diff, CombinedDiffOutput
 from .lines import LinesDb
 
@@ -858,33 +859,128 @@ class Compare:
 
         # TODO: Do something with these sync points
         # TODO: Add abstraction in self.db
-        sync_points = self._db._sql.execute(
-            "SELECT * FROM entities WHERE json_extract(kvstore, '$.type') = ? AND recomp_addr >= ? AND recomp_addr <= ?",
+        sync_points_cursor = self._db._sql.execute(
+            "SELECT orig_addr, recomp_addr, kvstore FROM entities WHERE json_extract(kvstore, '$.type') = ? AND recomp_addr >= ? AND recomp_addr <= ? ORDER BY orig_addr",
             (
                 EntityType.LINE,
-                int(recomp_combined[0][0], 16),
-                int(recomp_combined[-1][0], 16),
+                recomp_combined[0][0],
+                recomp_combined[-1][0],
             ),
-        ).fetchall()
+        )
+        sync_points_cursor.row_factory = matched_entity_factory
 
-        # Detach addresses from asm lines for the text diff.
-        orig_asm = [x[1] for x in orig_combined]
-        recomp_asm = [x[1] for x in recomp_combined]
+        sync_points: list[ReccmpMatch] = sync_points_cursor.fetchall()
 
-        diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm, autojunk=False)
-        ratio = diff.ratio()
+        # TODO: Move to dedicated function
 
-        if ratio != 1.0:
-            # Check whether we can resolve register swaps which are actually
-            # perfect matches modulo compiler entropy.
-            codes = diff.get_opcodes()
-            is_effective_match = find_effective_match(codes, orig_asm, recomp_asm)
-            unified_diff = combined_diff(
-                diff, orig_combined, recomp_combined, context_size=10
+        # TODO: There likely is a more elegant/efficient way than this
+        sync_points_monotonous: list[ReccmpMatch] = []
+        last_address = 0
+        for sync_point in sync_points:
+            if sync_point.recomp_addr > last_address:
+                sync_points_monotonous.append(sync_point)
+                last_address = sync_point.recomp_addr
+            else:
+                # TODO: Clean up message
+                logger.warning("LINE annotations out of order: %s", sync_point)
+
+        compared_code_parts: list[tuple[AsmExcerpt, AsmExcerpt]] = []
+
+        for sync_point in sync_points_monotonous:
+            # Logic:
+            # - Find correct line in orig
+            # - Find correct line in recomp
+            # - Skip if either does not match
+            orig_split_index = next(
+                (
+                    i
+                    for i, entry in enumerate(orig_combined)
+                    if entry[0] == sync_point.orig_addr
+                ),
+                None,
             )
-        else:
-            is_effective_match = False
-            unified_diff = []
+            if orig_split_index is None:
+                # TODO: better error
+                logger.warning(
+                    "No code line with original address %s", hex(sync_point.orig_addr)
+                )
+                continue
+
+            recomp_split_index = next(
+                (
+                    i
+                    for i, entry in enumerate(recomp_combined)
+                    if entry[0] == sync_point.recomp_addr
+                ),
+                None,
+            )
+            if recomp_split_index is None:
+                # TODO: better error
+                logger.warning(
+                    "No code line with recomp address %s", hex(sync_point.recomp_addr)
+                )
+                continue
+
+            # Add the block up to the sync point
+            compared_code_parts.append(
+                (orig_combined[:orig_split_index], recomp_combined[:recomp_split_index])
+            )
+            # Add the sync point itself as one block
+            compared_code_parts.append(
+                (
+                    orig_combined[orig_split_index : orig_split_index + 1],
+                    recomp_combined[recomp_split_index : recomp_split_index + 1],
+                )
+            )
+
+            # Remove the added parts from the originals
+            # TODO: Does this crash in case this matches the very last entry? We would want an empty list
+            orig_combined = orig_combined[orig_split_index + 1 :]
+            recomp_combined = recomp_combined[recomp_split_index + 1 :]
+
+        # Append the leftovers (which is everything in case there are no lines markers)
+        compared_code_parts.append(
+            (
+                orig_combined,
+                recomp_combined,
+            )
+        )
+
+
+        unified_diff = []
+
+        for local_orig_combined, local_recomp_combined in compared_code_parts:
+
+            # Detach addresses from asm lines for the text diff.
+            orig_asm = [x[1] for x in local_orig_combined]
+            recomp_asm = [x[1] for x in local_recomp_combined]
+
+            diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm, autojunk=False)
+            ratio = diff.ratio()
+
+            # TODO: cumulative ratio
+            if ratio != 1.0:
+                # Check whether we can resolve register swaps which are actually
+                # perfect matches modulo compiler entropy.
+                codes = diff.get_opcodes()
+                is_effective_match = find_effective_match(codes, orig_asm, recomp_asm)
+                local_unified_diff = combined_diff(
+                    diff,
+                    [
+                        (hex(addr) if addr is not None else "", instr)
+                        for addr, instr in local_orig_combined
+                    ],
+                    [
+                        (hex(addr) if addr is not None else "", instr)
+                        for addr, instr in local_recomp_combined
+                    ],
+                    context_size=10,
+                )
+            else:
+                is_effective_match = False
+                local_unified_diff = []
+
+            unified_diff += local_unified_diff
 
         best_name = match.best_name()
         assert best_name is not None

@@ -623,14 +623,20 @@ class EntityDb:
     def get_next_orig_addr(self, addr: int) -> int | None:
         """Return the original address (matched or not) that follows
         the one given. If our recomp function size would cause us to read
-        too many bytes for the original function, we can adjust it."""
+        too many bytes for the original function, we can adjust it.
+        Skips LINE-type symbols since these these are always contained
+        within functions.
+        """
         result = self._sql.execute(
             """SELECT orig_addr
             FROM entities
-            WHERE orig_addr > ?
+            WHERE
+              orig_addr > ?
+            AND
+              json_extract(kvstore,'$.type') != ?
             ORDER BY orig_addr
             LIMIT 1""",
-            (addr,),
+            (addr, EntityType.LINE),
         ).fetchone()
 
         return result[0] if result is not None else None

@@ -1,6 +1,8 @@
 import re
 from typing import Sequence
 
+from reccmp.isledecomp.compare.asm.parse import AsmExcerpt
+
 DiffOpcode = tuple[str, int, int, int, int]
 
 REG_FIND = re.compile(r"(?: |\[)(e?[a-d]x|e?[s,d]i|[a-d][l,h]|e?[b,s]p)")
@@ -302,7 +304,7 @@ def find_effective_match(
     return corrections.issuperset(recomp_lines_disputed)
 
 
-def assert_fixup(asm: list[tuple[str, str]]):
+def assert_fixup(asm: AsmExcerpt):
     """Detect assert calls and replace the code filename and line number
     values with macros (from assert.h)."""
     for i, (_, line) in enumerate(asm):
