@@ -30,6 +30,7 @@ from reccmp.isledecomp.compare.asm.replacement import create_name_lookup
 from reccmp.isledecomp.compare.asm.fixes import assert_fixup, find_effective_match
 from reccmp.isledecomp.analysis import find_float_consts
 from .match_msvc import (
+    match_lines,
     match_symbols,
     match_functions,
     match_vtables,
@@ -135,6 +136,7 @@ class Compare:
         match_static_variables(self._db, report)
         match_variables(self._db, report)
         match_strings(self._db, report)
+        match_lines(self._db, self.cv, self.recomp_bin, report)
 
         self._match_array_elements()
         # Detect floats first to eliminate potential overlap with string data
@@ -179,90 +181,87 @@ class Compare:
         # In the rare case we have duplicate symbols for an address, ignore them.
         seen_addrs = set()
 
-        batch = self._db.batch()
+        with self._db.batch() as batch:
+            for sym in self.cvdump_analysis.nodes:
+                # Skip nodes where we have almost no information.
+                # These probably came from SECTION CONTRIBUTIONS.
+                if sym.name() is None and sym.node_type is None:
+                    continue
 
-        for sym in self.cvdump_analysis.nodes:
-            # Skip nodes where we have almost no information.
-            # These probably came from SECTION CONTRIBUTIONS.
-            if sym.name() is None and sym.node_type is None:
-                continue
+                # The PDB might contain sections that do not line up with the
+                # actual binary. The symbol "__except_list" is one example.
+                # In these cases, just skip this symbol and move on because
+                # we can't do much with it.
+                if not self.recomp_bin.is_valid_section(sym.section):
+                    continue
 
-            # The PDB might contain sections that do not line up with the
-            # actual binary. The symbol "__except_list" is one example.
-            # In these cases, just skip this symbol and move on because
-            # we can't do much with it.
-            if not self.recomp_bin.is_valid_section(sym.section):
-                continue
+                addr = self.recomp_bin.get_abs_addr(sym.section, sym.offset)
+                sym.addr = addr
 
-            addr = self.recomp_bin.get_abs_addr(sym.section, sym.offset)
-            sym.addr = addr
+                if addr in seen_addrs:
+                    continue
 
-            if addr in seen_addrs:
-                continue
+                seen_addrs.add(addr)
 
-            seen_addrs.add(addr)
-
-            # If this symbol is the final one in its section, we were not able to
-            # estimate its size because we didn't have the total size of that section.
-            # We can get this estimate now and assume that the final symbol occupies
-            # the remainder of the section.
-            if sym.estimated_size is None:
-                sym.estimated_size = (
-                    self.recomp_bin.get_section_extent_by_index(sym.section)
-                    - sym.offset
-                )
-
-            if sym.node_type == EntityType.STRING:
-                assert sym.decorated_name is not None
-                string_info = demangle_string_const(sym.decorated_name)
-                if string_info is None:
-                    logger.debug(
-                        "Could not demangle string symbol: %s", sym.decorated_name
+                # If this symbol is the final one in its section, we were not able to
+                # estimate its size because we didn't have the total size of that section.
+                # We can get this estimate now and assume that the final symbol occupies
+                # the remainder of the section.
+                if sym.estimated_size is None:
+                    sym.estimated_size = (
+                        self.recomp_bin.get_section_extent_by_index(sym.section)
+                        - sym.offset
                     )
-                    continue
 
-                # TODO: skip unicode for now. will need to handle these differently.
-                if string_info.is_utf16:
-                    continue
-
-                size = sym.size()
-                assert size is not None
-
-                raw = self.recomp_bin.read(addr, size)
-
-                try:
-                    # We use the string length reported in the mangled symbol as the
-                    # data size, but this is not always accurate with respect to the
-                    # null terminator.
-                    # e.g. ??_C@_0BA@EFDM@MxObjectFactory?$AA@
-                    # reported length: 16 (includes null terminator)
-                    # c.f. ??_C@_03DPKJ@enz?$AA@
-                    # reported length: 3 (does NOT include terminator)
-                    # This will handle the case where the entire string contains "\x00"
-                    # because those are distinct from the empty string of length 0.
-                    decoded_string = raw.decode("latin1")
-                    rstrip_string = decoded_string.rstrip("\x00")
-
-                    # TODO: Hack to exclude a string that contains \x00 bytes
-                    # The proper solution is to escape the text for JSON or use
-                    # base64 encoding for comparing binary values.
-                    # Kicking the can down the road for now.
-                    if "\x00" in decoded_string and rstrip_string == "":
+                if sym.node_type == EntityType.STRING:
+                    assert sym.decorated_name is not None
+                    string_info = demangle_string_const(sym.decorated_name)
+                    if string_info is None:
+                        logger.debug(
+                            "Could not demangle string symbol: %s", sym.decorated_name
+                        )
                         continue
-                    sym.friendly_name = rstrip_string
 
-                except UnicodeDecodeError:
-                    pass
+                    # TODO: skip unicode for now. will need to handle these differently.
+                    if string_info.is_utf16:
+                        continue
 
-            batch.set_recomp(
-                addr,
-                type=sym.node_type,
-                name=sym.name(),
-                symbol=sym.decorated_name,
-                size=sym.size(),
-            )
+                    size = sym.size()
+                    assert size is not None
 
-        batch.commit()
+                    raw = self.recomp_bin.read(addr, size)
+
+                    try:
+                        # We use the string length reported in the mangled symbol as the
+                        # data size, but this is not always accurate with respect to the
+                        # null terminator.
+                        # e.g. ??_C@_0BA@EFDM@MxObjectFactory?$AA@
+                        # reported length: 16 (includes null terminator)
+                        # c.f. ??_C@_03DPKJ@enz?$AA@
+                        # reported length: 3 (does NOT include terminator)
+                        # This will handle the case where the entire string contains "\x00"
+                        # because those are distinct from the empty string of length 0.
+                        decoded_string = raw.decode("latin1")
+                        rstrip_string = decoded_string.rstrip("\x00")
+
+                        # TODO: Hack to exclude a string that contains \x00 bytes
+                        # The proper solution is to escape the text for JSON or use
+                        # base64 encoding for comparing binary values.
+                        # Kicking the can down the road for now.
+                        if "\x00" in decoded_string and rstrip_string == "":
+                            continue
+                        sym.friendly_name = rstrip_string
+
+                    except UnicodeDecodeError:
+                        pass
+
+                batch.set_recomp(
+                    addr,
+                    type=sym.node_type,
+                    name=sym.name(),
+                    symbol=sym.decorated_name,
+                    size=sym.size(),
+                )
 
         for (section, offset), (
             filename,
@@ -370,6 +369,15 @@ class Compare:
                     name=string.name,
                     type=EntityType.STRING,
                     size=len(string.name),
+                )
+
+            for line in codebase.iter_line_symbols():
+                batch.set_orig(
+                    line.offset,
+                    name=line.name,
+                    filename=line.filename,
+                    line=line.line_number,
+                    type=EntityType.LINE,
                 )
 
     def _match_array_elements(self):
@@ -847,6 +855,17 @@ class Compare:
         if self.orig_bin.is_debug or self.recomp_bin.is_debug:
             assert_fixup(orig_combined)
             assert_fixup(recomp_combined)
+
+        # TODO: Do something with these sync points
+        # TODO: Add abstraction in self.db
+        sync_points = self._db._sql.execute(
+            "SELECT * FROM entities WHERE json_extract(kvstore, '$.type') = ? AND recomp_addr >= ? AND recomp_addr <= ?",
+            (
+                EntityType.LINE,
+                int(recomp_combined[0][0], 16),
+                int(recomp_combined[-1][0], 16),
+            ),
+        ).fetchall()
 
         # Detach addresses from asm lines for the text diff.
         orig_asm = [x[1] for x in orig_combined]

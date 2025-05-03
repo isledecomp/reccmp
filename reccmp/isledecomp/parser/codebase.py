@@ -3,6 +3,7 @@
 from typing import Callable, Iterable, Iterator
 from .parser import DecompParser
 from .node import (
+    ParserLineSymbol,
     ParserSymbol,
     ParserFunction,
     ParserVtable,
@@ -77,3 +78,6 @@ class DecompCodebase:
 
     def iter_strings(self) -> Iterator[ParserString]:
         return (s for s in self._symbols if isinstance(s, ParserString))
+
+    def iter_line_symbols(self) -> Iterator[ParserLineSymbol]:
+        return (s for s in self._symbols if isinstance(s, ParserLineSymbol))

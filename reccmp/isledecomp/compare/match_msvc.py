@@ -1,3 +1,5 @@
+from reccmp.isledecomp.cvdump.parser import CvdumpParser
+from reccmp.isledecomp.formats.pe import PEImage
 from reccmp.isledecomp.types import EntityType
 from reccmp.isledecomp.compare.db import EntityDb
 from reccmp.isledecomp.compare.event import (
@@ -328,3 +330,68 @@ def match_strings(db: EntityDb, report: ReccmpReportProtocol = reccmp_report_nop
                     orig_addr,
                     msg=f"Failed to match string {repr(text)} at 0x{orig_addr:x}",
                 )
+
+
+def match_lines(
+    db: EntityDb,
+    cv: CvdumpParser,
+    recomp_bin: PEImage,
+    report: ReccmpReportProtocol = reccmp_report_nop,
+):
+    """
+    This function requires access to `cv` and `recomp_bin` because most lines will not have an annotation.
+    It would therefore be quite inefficient to load all recomp lines into the `entities` table
+    and only match a tiny fraction of them to symbols.
+    """
+
+    with db.batch() as batch:
+        for orig_addr, filename, line in db.sql.execute(
+            """SELECT orig_addr, json_extract(kvstore, '$.filename') as filename, json_extract(kvstore, '$.line') as line
+            FROM orig_unmatched
+            WHERE json_extract(kvstore,'$.type') = ?""",
+            (EntityType.LINE,),
+        ):
+            #
+            # We only match the line directly below the annotation since not all lines of code result in a debug line, especially if optimizations are turned on.
+            # However, this does cause false positives in cases like
+            # ```
+            # // LINE: TARGET 0x1234
+            # // OTHER_ANNOTATION: ...
+            # actual_code();
+            # ```
+            # or
+            # ```
+            # // LINE: TARGET 0x1234
+            #
+            # actual_code();
+            # ```
+            # but it is significantly more effort to detect these false positives.
+            #
+
+            line_match = next(
+                (
+                    x
+                    for x in cv.lines.items()
+                    # We match `line + 1` since `line` is the comment itself
+                    if x[1][0] == filename and x[1][1] == line + 1
+                ),
+                None,
+            )
+
+            if line_match is None:
+                report(
+                    ReccmpEvent.NO_MATCH,
+                    orig_addr,
+                    f"Found no matching debug symbol for {filename}:{line}",
+                )
+            else:
+                # TODO: Enhance batch methods
+                db._sql.execute(
+                    "UPDATE entities SET recomp_addr = ? WHERE orig_addr = ?",
+                    (
+                        recomp_bin.get_abs_addr(line_match[0][0], line_match[0][1]),
+                        orig_addr,
+                    ),
+                )
+
+                # batch.match(orig_addr, recomp_bin.get_abs_addr(line_match[0][0], line_match[0][1]))

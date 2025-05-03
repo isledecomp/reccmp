@@ -13,3 +13,4 @@ class EntityType(IntEnum):
     VTABLE = 5
     FLOAT = 6
     IMPORT = 7
+    LINE = 8

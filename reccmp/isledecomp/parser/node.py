@@ -62,5 +62,5 @@ class ParserString(ParserSymbol):
     pass
 
 @dataclass
-class ParserLine(ParserSymbol):
+class ParserLineSymbol(ParserSymbol):
     pass

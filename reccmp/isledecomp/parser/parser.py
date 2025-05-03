@@ -19,7 +19,7 @@ from .marker import (
     is_marker_exact,
 )
 from .node import (
-    ParserLine,
+    ParserLineSymbol,
     ParserSymbol,
     ParserFunction,
     ParserVariable,
@@ -347,7 +347,7 @@ class DecompParser:
 
     def _line_marker(self, marker: DecompMarker):
         self._symbols.append(
-            ParserLine(
+            ParserLineSymbol(
                 type=marker.type,
                 line_number=self.line_number,
                 module=marker.module,
