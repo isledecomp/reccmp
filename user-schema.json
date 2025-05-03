@@ -32,5 +32,6 @@
     "targets"
   ],
   "title": "UserFile",
-  "type": "object"
+  "type": "object",
+  "$schema": "http://json-schema.org/draft-07/schema#"
 }
