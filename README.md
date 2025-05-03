@@ -16,7 +16,7 @@ At the moment, C++ compiled to 32-bit x86 with old versions of MSVC (like 4.20) 
 
 ### Installing / upgrading `reccmp`
 1. (Recommended) Set up and activate a virtual Python environment in the directory of your recompilation project (this is different for different operating systems and shells).
-2. Install `reccmp`: `pip install https://github.com/isledecomp/reccmp`
+2. Install `reccmp`: `pip install git+https://github.com/isledecomp/reccmp`
 
 The next steps differ based on what kind of project you have.
 
@@ -37,7 +37,7 @@ The next steps differ based on what kind of project you have.
 
 ### Fresh project
 
-1. Run `reccmp-project create --originals path/to/original/binary --cmake-project`
+1. Run `reccmp-project create --originals path/to/original/binary [path/to/second/original/binary] --cmake-project`
 2. You will see a lot of new files. Set up your C++ compiler and compile the project defined by `CMakeLists.txt`, ideally into a sub-directory like `./build`. Advice on building with old MSVC versions can be found at the [LEGO Island Decompilation project](https://github.com/isledecomp/isle).
 3. Look into `reccmp-project.yml` to see what the target is called.
 4. Navigate to the build directory and run `reccmp-reccmp --target <YOURTARGET>`.
