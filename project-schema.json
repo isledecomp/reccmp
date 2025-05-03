@@ -3,20 +3,20 @@
     "GhidraConfig": {
       "description": "Ghidra-specific settings",
       "properties": {
-        "ignore-types": {
+        "ignore_types": {
           "description": "Names of types to ignore",
           "items": {
             "type": "string"
           },
-          "title": "Ignore-Types",
+          "title": "Ignore Types",
           "type": "array"
         },
-        "ignore-functions": {
+        "ignore_functions": {
           "description": "Addresses of functions to ignore",
           "items": {
             "type": "integer"
           },
-          "title": "Ignore-Functions",
+          "title": "Ignore Functions",
           "type": "array"
         }
       },
@@ -46,10 +46,10 @@
           "title": "Filename",
           "type": "string"
         },
-        "source-root": {
+        "source_root": {
           "description": "Base of the source code",
           "format": "path",
-          "title": "Source-Root",
+          "title": "Source Root",
           "type": "string"
         },
         "hash": {
@@ -61,7 +61,7 @@
       },
       "required": [
         "filename",
-        "source-root",
+        "source_root",
         "hash"
       ],
       "title": "ProjectFileTarget",
