@@ -1,0 +1,49 @@
+{
+  "$defs": {
+    "BuildFileTarget": {
+      "description": "Target schema for build.yml",
+      "properties": {
+        "path": {
+          "description": "Path to the recompiled executable file",
+          "format": "path",
+          "title": "Path",
+          "type": "string"
+        },
+        "pdb": {
+          "description": "Path to the PDB file",
+          "format": "path",
+          "title": "Pdb",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "pdb"
+      ],
+      "title": "BuildFileTarget",
+      "type": "object"
+    }
+  },
+  "description": "File schema for build.yml",
+  "properties": {
+    "project": {
+      "format": "path",
+      "title": "Project",
+      "type": "string"
+    },
+    "targets": {
+      "additionalProperties": {
+        "$ref": "#/$defs/BuildFileTarget"
+      },
+      "description": "List of targets",
+      "title": "Targets",
+      "type": "object"
+    }
+  },
+  "required": [
+    "project",
+    "targets"
+  ],
+  "title": "BuildFile",
+  "type": "object"
+}

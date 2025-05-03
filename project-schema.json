@@ -1,0 +1,87 @@
+{
+  "$defs": {
+    "GhidraConfig": {
+      "description": "Ghidra-specific settings",
+      "properties": {
+        "ignore-types": {
+          "description": "Names of types to ignore",
+          "items": {
+            "type": "string"
+          },
+          "title": "Ignore-Types",
+          "type": "array"
+        },
+        "ignore-functions": {
+          "description": "Addresses of functions to ignore",
+          "items": {
+            "type": "integer"
+          },
+          "title": "Ignore-Functions",
+          "type": "array"
+        }
+      },
+      "title": "GhidraConfig",
+      "type": "object"
+    },
+    "Hash": {
+      "description": "Hashes of the original binary",
+      "properties": {
+        "sha256": {
+          "description": "SHA256 hash of the original binary",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sha256"
+      ],
+      "title": "Hash",
+      "type": "object"
+    },
+    "ProjectFileTarget": {
+      "description": "Target schema for project.yml",
+      "properties": {
+        "filename": {
+          "description": "Name of the executable file",
+          "title": "Filename",
+          "type": "string"
+        },
+        "source-root": {
+          "description": "Base of the source code",
+          "format": "path",
+          "title": "Source-Root",
+          "type": "string"
+        },
+        "hash": {
+          "$ref": "#/$defs/Hash"
+        },
+        "ghidra": {
+          "$ref": "#/$defs/GhidraConfig"
+        }
+      },
+      "required": [
+        "filename",
+        "source-root",
+        "hash"
+      ],
+      "title": "ProjectFileTarget",
+      "type": "object"
+    }
+  },
+  "description": "File schema for project.yml",
+  "properties": {
+    "targets": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ProjectFileTarget"
+      },
+      "description": "List of targets",
+      "title": "Targets",
+      "type": "object"
+    }
+  },
+  "required": [
+    "targets"
+  ],
+  "title": "ProjectFile",
+  "type": "object"
+}
