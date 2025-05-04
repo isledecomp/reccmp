@@ -1,12 +1,13 @@
 from dataclasses import dataclass
 import difflib
 import struct
-from typing import Callable
+from itertools import pairwise
+from typing import Callable, Iterator, NamedTuple
 from reccmp.isledecomp.compare.asm.fixes import assert_fixup, find_effective_match
 from reccmp.isledecomp.compare.asm.parse import AsmExcerpt, ParseAsm
 from reccmp.isledecomp.compare.asm.replacement import create_name_lookup
 from reccmp.isledecomp.compare.db import EntityDb, ReccmpMatch
-from reccmp.isledecomp.compare.diff import DiffReport, combined_diff
+from reccmp.isledecomp.compare.diff import CombinedDiffOutput, DiffReport, combined_diff
 from reccmp.isledecomp.compare.event import ReccmpEvent, ReccmpReportProtocol
 from reccmp.isledecomp.formats.exceptions import (
     InvalidVirtualAddressError,
@@ -14,6 +15,13 @@ from reccmp.isledecomp.formats.exceptions import (
 )
 from reccmp.isledecomp.formats.pe import PEImage
 from reccmp.isledecomp.types import EntityType
+
+
+class FunctionPartCompareResult(NamedTuple):
+    diff: CombinedDiffOutput
+    is_effective_match: bool
+    # The match ratio multiplied by the combined number of instructions in orig and recomp
+    weighted_match_ratio: float
 
 
 def create_reloc_lookup(bin_file: PEImage) -> Callable[[int], bool]:
@@ -114,141 +122,24 @@ class FunctionComparator:
             assert_fixup(orig_combined)
             assert_fixup(recomp_combined)
 
-        # TODO: Do something with these sync points
-        # TODO: Add abstraction in self.db
 
-        recomp_start_addr = recomp_combined[0][0]
-        recomp_end_addr = recomp_combined[-1][0]
-        assert recomp_start_addr is not None and recomp_end_addr is not None
-        sync_points = self.db.get_lines_in_recomp_range(
-            recomp_start_addr, recomp_end_addr
-        )
+        line_annotations = self._collect_line_annotations(recomp_combined)
 
-        # TODO: Split into multiple functions
-
-        # TODO: There likely is a more elegant/efficient way than this
-        sync_points_monotonous: list[ReccmpMatch] = []
-        last_address = 0
-        for sync_point in sync_points:
-            if sync_point.recomp_addr > last_address:
-                sync_points_monotonous.append(sync_point)
-                last_address = sync_point.recomp_addr
-            else:
-                self.report(
-                    ReccmpEvent.WRONG_ORDER,
-                    sync_point.orig_addr,
-                    f"Line annotation '{sync_point.name}' is out of order relative to other line annotations",
-                )
-
-        compared_code_parts: list[tuple[AsmExcerpt, AsmExcerpt]] = []
-
-        for sync_point in sync_points_monotonous:
-            # Logic:
-            # - Find correct line in orig
-            # - Find correct line in recomp
-            # - Skip if either does not match
-            orig_split_index = next(
-                (
-                    i
-                    for i, entry in enumerate(orig_combined)
-                    if entry[0] == sync_point.orig_addr
-                ),
-                None,
-            )
-            if orig_split_index is None:
-                self.report(
-                    ReccmpEvent.NO_MATCH,
-                    sync_point.orig_addr,
-                    "Found no code line corresponding to this original address",
-                )
-                continue
-
-            recomp_split_index = next(
-                (
-                    i
-                    for i, entry in enumerate(recomp_combined)
-                    if entry[0] == sync_point.recomp_addr
-                ),
-                None,
-            )
-            if recomp_split_index is None:
-                self.report(
-                    ReccmpEvent.NO_MATCH,
-                    sync_point.orig_addr,
-                    f"Found no code line corresponding to recomp address {hex(sync_point.recomp_addr)}. Recompilation may fix this problem.",
-                )
-                continue
-
-            # Add the block up to the sync point
-            compared_code_parts.append(
-                (orig_combined[:orig_split_index], recomp_combined[:recomp_split_index])
-            )
-            # Add the sync point itself as one block
-            compared_code_parts.append(
-                (
-                    orig_combined[orig_split_index : orig_split_index + 1],
-                    recomp_combined[recomp_split_index : recomp_split_index + 1],
-                )
-            )
-
-            # TODO: Ideally, refactor to use immutable lists
-
-            # Remove the added parts from the originals
-            # TODO: Does this crash in case this matches the very last entry? We would want an empty list
-            orig_combined = orig_combined[orig_split_index + 1 :]
-            recomp_combined = recomp_combined[recomp_split_index + 1 :]
-
-        # Append the leftovers (which is everything in case there are no lines markers)
-        compared_code_parts.append(
-            (
-                orig_combined,
-                recomp_combined,
-            )
-        )
+        compared_code_parts = self._split_code_on_line_annotations(orig_combined, recomp_combined, line_annotations)
 
         unified_diff = []
-        cumulative_ratio = 0.0
-        all_mismatches_are_effective_matches = True
 
-        for local_orig_combined, local_recomp_combined in compared_code_parts:
+        diffs = [
+            self._compare_function_part(local_orig_combined, local_recomp_combined)
+            for local_orig_combined, local_recomp_combined in compared_code_parts
+        ]
 
-            # Detach addresses from asm lines for the text diff.
-            orig_asm = [x[1] for x in local_orig_combined]
-            recomp_asm = [x[1] for x in local_recomp_combined]
+        for diff in diffs:
+            unified_diff += diff.diff
 
-            diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm, autojunk=False)
-            local_ratio = diff.ratio()
-
-            if local_ratio != 1.0:
-                # Check whether we can resolve register swaps which are actually
-                # perfect matches modulo compiler entropy.
-                codes = diff.get_opcodes()
-                part_is_effective_match = find_effective_match(
-                    codes, orig_asm, recomp_asm
-                )
-                if not part_is_effective_match:
-                    all_mismatches_are_effective_matches = False
-                local_unified_diff = combined_diff(
-                    diff,
-                    [
-                        (hex(addr) if addr is not None else "", instr)
-                        for addr, instr in local_orig_combined
-                    ],
-                    [
-                        (hex(addr) if addr is not None else "", instr)
-                        for addr, instr in local_recomp_combined
-                    ],
-                    context_size=10,
-                )
-            else:
-                local_unified_diff = []
-
-            unified_diff += local_unified_diff
-            cumulative_ratio += local_ratio * (len(orig_asm) + len(recomp_asm))
-
-        total_ratio = cumulative_ratio / total_lines
-        is_effective_match_overall = (
-            total_ratio <= 0.999 and all_mismatches_are_effective_matches
+        total_ratio = sum(diff.weighted_match_ratio for diff in diffs) / total_lines
+        is_effective_match_overall = total_ratio <= 0.999 and all(
+            diff.is_effective_match for diff in diffs
         )
 
         best_name = match.best_name()
@@ -262,3 +153,130 @@ class FunctionComparator:
             ratio=total_ratio,
             is_effective_match=is_effective_match_overall,
         )
+
+    def _compare_function_part(
+        self, orig: AsmExcerpt, recomp: AsmExcerpt
+    ) -> FunctionPartCompareResult:
+        # Detach addresses from asm lines for the text diff.
+        orig_asm = [x[1] for x in orig]
+        recomp_asm = [x[1] for x in recomp]
+
+        diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm, autojunk=False)
+        local_ratio = diff.ratio()
+
+        if local_ratio != 1.0:
+            # Check whether we can resolve register swaps which are actually
+            # perfect matches modulo compiler entropy.
+            codes = diff.get_opcodes()
+            is_effective = find_effective_match(codes, orig_asm, recomp_asm)
+
+            # Convert the addresses to hex string for the diff output
+            orig_combined_as_strings = [
+                (hex(addr) if addr is not None else "", instr) for addr, instr in orig
+            ]
+            recomp_combined_as_strings = [
+                (hex(addr) if addr is not None else "", instr) for addr, instr in recomp
+            ]
+            unified_diff = combined_diff(
+                diff,
+                orig_combined_as_strings,
+                recomp_combined_as_strings,
+                context_size=10,
+            )
+        else:
+            unified_diff = []
+            is_effective = False
+
+        return FunctionPartCompareResult(
+            unified_diff,
+            is_effective,
+            local_ratio * (len(orig) + len(recomp)),
+        )
+
+    def _collect_line_annotations(self, recomp: AsmExcerpt) -> list[ReccmpMatch]:
+        """
+        Finds all `// LINE:` annotations within the given function
+        and drops any whose order is not consistent between original and recomp.
+        """
+        recomp_start_addr = recomp[0][0]
+        recomp_end_addr = recomp[-1][0]
+        assert recomp_start_addr is not None and recomp_end_addr is not None
+        line_annotations = self.db.get_lines_in_recomp_range(
+            recomp_start_addr, recomp_end_addr
+        )
+
+        # TODO: There likely is a more elegant/efficient way than this
+        line_annotations_monotonous: list[ReccmpMatch] = []
+        last_address = 0
+        for sync_point in line_annotations:
+            if sync_point.recomp_addr > last_address:
+                line_annotations_monotonous.append(sync_point)
+                last_address = sync_point.recomp_addr
+            else:
+                self.report(
+                    ReccmpEvent.WRONG_ORDER,
+                    sync_point.orig_addr,
+                    f"Line annotation '{sync_point.name}' is out of order relative to other line annotations",
+                )
+
+        return line_annotations_monotonous
+
+    def _split_code_on_line_annotations(self, orig_combined: AsmExcerpt, recomp_combined: AsmExcerpt, line_annotations: list[ReccmpMatch]) -> Iterator[tuple[AsmExcerpt, AsmExcerpt]]:
+        """
+        For each given `// LINE:` annotation, splits the code into the part before,
+        the annotated line, and the part after it.
+        """
+        split_points = self._compute_split_points(orig_combined, recomp_combined, line_annotations)
+
+        for (orig_start, recomp_start), (orig_end, recomp_end) in pairwise(split_points):
+            yield (orig_combined[orig_start:orig_end], recomp_combined[recomp_start:recomp_end])
+
+
+    def _compute_split_points(self, orig: AsmExcerpt, recomp: AsmExcerpt, line_annotations: list[ReccmpMatch]) -> list[tuple[int, int]]:
+        """
+        Computes the index pairs into `orig` and `recomp`
+        that correspond to the line annotations given in `line_annotations`.
+        Contains the first index and last index + 1 in order to facilitate iterating over it.
+        """
+        split_points: list[tuple[int, int]] = [(0, 0)]
+
+        for line_annotation in line_annotations:
+            orig_split_index = next(
+                (
+                    i
+                    for i, entry in enumerate(orig)
+                    if entry[0] == line_annotation.orig_addr
+                ),
+                None,
+            )
+            if orig_split_index is None:
+                self.report(
+                    ReccmpEvent.NO_MATCH,
+                    line_annotation.orig_addr,
+                    "Found no code line corresponding to this original address",
+                )
+                continue
+
+            recomp_split_index = next(
+                (
+                    i
+                    for i, entry in enumerate(recomp)
+                    if entry[0] == line_annotation.recomp_addr
+                ),
+                None,
+            )
+            if recomp_split_index is None:
+                self.report(
+                    ReccmpEvent.NO_MATCH,
+                    line_annotation.orig_addr,
+                    f"Found no code line corresponding to recomp address {hex(line_annotation.recomp_addr)}. Recompilation may fix this problem.",
+                )
+                continue
+
+            split_points.append((orig_split_index, recomp_split_index))
+            split_points.append((orig_split_index + 1, recomp_split_index + 1))
+
+        # Add one past the last index to facilitate iterating
+        split_points.append((len(orig), len(recomp)))
+
+        return split_points
