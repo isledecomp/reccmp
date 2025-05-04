@@ -1,5 +1,8 @@
+from dataclasses import dataclass
 from difflib import SequenceMatcher
 from typing_extensions import NotRequired, TypedDict
+
+from reccmp.isledecomp.types import EntityType
 
 CombinedDiffInput = list[tuple[str, str]]
 
@@ -107,3 +110,24 @@ def combined_diff(
         unified_diff.append((diff_slug, subgroups))
 
     return unified_diff
+
+
+@dataclass
+class DiffReport:
+    # pylint: disable=too-many-instance-attributes
+    match_type: EntityType
+    orig_addr: int
+    recomp_addr: int
+    name: str
+    udiff: CombinedDiffOutput | None = None
+    ratio: float = 0.0
+    is_effective_match: bool = False
+    is_stub: bool = False
+
+    @property
+    def effective_ratio(self) -> float:
+        return 1.0 if self.is_effective_match else self.ratio
+
+    def __str__(self) -> str:
+        """For debug purposes. Proper diff printing (with coloring) is in another module."""
+        return f"{self.name} (0x{self.orig_addr:x}) {self.ratio*100:.02f}%{'*' if self.is_effective_match else ''}"

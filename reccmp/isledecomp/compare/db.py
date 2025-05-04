@@ -406,6 +406,27 @@ class EntityDb:
         cur.row_factory = matched_entity_factory
         yield from cur
 
+    def get_lines_in_recomp_range(
+        self, start_recomp_addr: int, end_recomp_addr: int
+    ) -> Iterator[ReccmpMatch]:
+        """Fetches all matched annotations of the form `// LINE: TARGET 0x1234` in the given recomp address range."""
+
+        cur = self._sql.execute(
+            """SELECT orig_addr, recomp_addr, kvstore FROM entities
+            WHERE json_extract(kvstore, '$.type') = ?
+            AND recomp_addr >= ? AND recomp_addr <= ?
+            AND matched = 1
+            ORDER BY orig_addr
+            """,
+            (
+                EntityType.LINE,
+                start_recomp_addr,
+                end_recomp_addr,
+            ),
+        )
+        cur.row_factory = matched_entity_factory
+        yield from cur
+
     def _orig_used(self, addr: int) -> bool:
         cur = self._sql.execute("SELECT 1 FROM entities WHERE orig_addr = ?", (addr,))
         return cur.fetchone() is not None
