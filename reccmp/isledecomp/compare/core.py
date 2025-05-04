@@ -849,6 +849,8 @@ class Compare:
         orig_combined = self.orig_sanitize.parse_asm(orig_raw, match.orig_addr)
         recomp_combined = self.recomp_sanitize.parse_asm(recomp_raw, match.recomp_addr)
 
+        total_lines = len(orig_combined) + len(recomp_combined)
+
         if self.debug:
             self._dump_asm(orig_combined, recomp_combined)
 
@@ -881,7 +883,7 @@ class Compare:
                 sync_points_monotonous.append(sync_point)
                 last_address = sync_point.recomp_addr
             else:
-                # TODO: Clean up message
+                # TODO: Clean up message. No __str__ function
                 logger.warning("LINE annotations out of order: %s", sync_point)
 
         compared_code_parts: list[tuple[AsmExcerpt, AsmExcerpt]] = []
@@ -933,6 +935,8 @@ class Compare:
                 )
             )
 
+            # TODO: Ideally, refactor to use immutable lists
+
             # Remove the added parts from the originals
             # TODO: Does this crash in case this matches the very last entry? We would want an empty list
             orig_combined = orig_combined[orig_split_index + 1 :]
@@ -948,6 +952,7 @@ class Compare:
 
 
         unified_diff = []
+        cumulative_ratio = 0.0
 
         for local_orig_combined, local_recomp_combined in compared_code_parts:
 
@@ -956,10 +961,9 @@ class Compare:
             recomp_asm = [x[1] for x in local_recomp_combined]
 
             diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm, autojunk=False)
-            ratio = diff.ratio()
+            local_ratio = diff.ratio()
 
-            # TODO: cumulative ratio
-            if ratio != 1.0:
+            if local_ratio != 1.0:
                 # Check whether we can resolve register swaps which are actually
                 # perfect matches modulo compiler entropy.
                 codes = diff.get_opcodes()
@@ -981,6 +985,11 @@ class Compare:
                 local_unified_diff = []
 
             unified_diff += local_unified_diff
+            cumulative_ratio += local_ratio * (len(orig_asm) + len(recomp_asm))
+
+        # TODO: fix effective match
+
+        total_ratio = cumulative_ratio / total_lines
 
         best_name = match.best_name()
         assert best_name is not None
@@ -990,7 +999,7 @@ class Compare:
             recomp_addr=match.recomp_addr,
             name=best_name,
             udiff=unified_diff,
-            ratio=ratio,
+            ratio=total_ratio,
             is_effective_match=is_effective_match,
         )
 
