@@ -18,13 +18,11 @@ class DecompCodebase:
 
         parser = DecompParser()
         for filename in filenames:
-            parser.reset()
+            parser.reset_and_set_filename(filename)
             with open(filename, "r", encoding="utf-8") as f:
                 parser.read(f.read())
 
-            for sym in parser.iter_symbols(module):
-                sym.filename = filename
-                self._symbols.append(sym)
+            self._symbols += parser.iter_symbols(module)
 
     def prune_invalid_addrs(
         self, is_valid: Callable[[int], bool]

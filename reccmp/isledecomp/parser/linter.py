@@ -25,8 +25,7 @@ class DecompLinter:
 
     def reset(self, full_reset: bool = False):
         self.alerts = []
-        self._parser.reset()
-        self._filename = ""
+        self._parser.reset_and_set_filename(self._filename)
         self._module = None
 
         if full_reset:
@@ -120,9 +119,9 @@ class DecompLinter:
                 )
 
     def read(self, code: str, filename: str, module=None) -> bool:
-        self.reset(False)
         self._filename = filename
         self._module = module
+        self.reset(False)
 
         self._parser.read(code)
 
