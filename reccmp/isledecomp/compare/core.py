@@ -950,9 +950,9 @@ class Compare:
             )
         )
 
-
         unified_diff = []
         cumulative_ratio = 0.0
+        all_mismatches_are_effective_matches = True
 
         for local_orig_combined, local_recomp_combined in compared_code_parts:
 
@@ -967,7 +967,11 @@ class Compare:
                 # Check whether we can resolve register swaps which are actually
                 # perfect matches modulo compiler entropy.
                 codes = diff.get_opcodes()
-                is_effective_match = find_effective_match(codes, orig_asm, recomp_asm)
+                part_is_effective_match = find_effective_match(
+                    codes, orig_asm, recomp_asm
+                )
+                if not part_is_effective_match:
+                    all_mismatches_are_effective_matches = False
                 local_unified_diff = combined_diff(
                     diff,
                     [
@@ -981,15 +985,15 @@ class Compare:
                     context_size=10,
                 )
             else:
-                is_effective_match = False
                 local_unified_diff = []
 
             unified_diff += local_unified_diff
             cumulative_ratio += local_ratio * (len(orig_asm) + len(recomp_asm))
 
-        # TODO: fix effective match
-
         total_ratio = cumulative_ratio / total_lines
+        is_effective_match_overall = (
+            total_ratio <= 0.999 and all_mismatches_are_effective_matches
+        )
 
         best_name = match.best_name()
         assert best_name is not None
@@ -1000,7 +1004,7 @@ class Compare:
             name=best_name,
             udiff=unified_diff,
             ratio=total_ratio,
-            is_effective_match=is_effective_match,
+            is_effective_match=is_effective_match_overall,
         )
 
     def _compare_vtable(self, match: ReccmpMatch) -> DiffReport:
