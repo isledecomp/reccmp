@@ -122,18 +122,17 @@ class FunctionComparator:
             assert_fixup(orig_combined)
             assert_fixup(recomp_combined)
 
-
         line_annotations = self._collect_line_annotations(recomp_combined)
-
-        compared_code_parts = self._split_code_on_line_annotations(orig_combined, recomp_combined, line_annotations)
-
-        unified_diff = []
+        code_split_by_annotations = self._split_code_on_line_annotations(
+            orig_combined, recomp_combined, line_annotations
+        )
 
         diffs = [
-            self._compare_function_part(local_orig_combined, local_recomp_combined)
-            for local_orig_combined, local_recomp_combined in compared_code_parts
+            self._compare_function_part(orig_block, recomp_block)
+            for orig_block, recomp_block in code_split_by_annotations
         ]
 
+        unified_diff = []
         for diff in diffs:
             unified_diff += diff.diff
 
@@ -205,7 +204,9 @@ class FunctionComparator:
             recomp_start_addr, recomp_end_addr
         )
 
-        # TODO: There likely is a more elegant/efficient way than this
+        # This is a naive/greedy algorithm to remove the non-monotonous entries.
+        # There likely is a "better" way to do this, in the sense that the smallest number
+        # of entries is removed.
         line_annotations_monotonous: list[ReccmpMatch] = []
         last_address = 0
         for sync_point in line_annotations:
@@ -221,18 +222,31 @@ class FunctionComparator:
 
         return line_annotations_monotonous
 
-    def _split_code_on_line_annotations(self, orig_combined: AsmExcerpt, recomp_combined: AsmExcerpt, line_annotations: list[ReccmpMatch]) -> Iterator[tuple[AsmExcerpt, AsmExcerpt]]:
+    def _split_code_on_line_annotations(
+        self,
+        orig_combined: AsmExcerpt,
+        recomp_combined: AsmExcerpt,
+        line_annotations: list[ReccmpMatch],
+    ) -> Iterator[tuple[AsmExcerpt, AsmExcerpt]]:
         """
         For each given `// LINE:` annotation, splits the code into the part before,
         the annotated line, and the part after it.
         """
-        split_points = self._compute_split_points(orig_combined, recomp_combined, line_annotations)
+        split_points = self._compute_split_points(
+            orig_combined, recomp_combined, line_annotations
+        )
 
-        for (orig_start, recomp_start), (orig_end, recomp_end) in pairwise(split_points):
-            yield (orig_combined[orig_start:orig_end], recomp_combined[recomp_start:recomp_end])
+        for (orig_start, recomp_start), (orig_end, recomp_end) in pairwise(
+            split_points
+        ):
+            yield (
+                orig_combined[orig_start:orig_end],
+                recomp_combined[recomp_start:recomp_end],
+            )
 
-
-    def _compute_split_points(self, orig: AsmExcerpt, recomp: AsmExcerpt, line_annotations: list[ReccmpMatch]) -> list[tuple[int, int]]:
+    def _compute_split_points(
+        self, orig: AsmExcerpt, recomp: AsmExcerpt, line_annotations: list[ReccmpMatch]
+    ) -> list[tuple[int, int]]:
         """
         Computes the index pairs into `orig` and `recomp`
         that correspond to the line annotations given in `line_annotations`.
