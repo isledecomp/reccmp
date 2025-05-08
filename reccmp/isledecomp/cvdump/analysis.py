@@ -2,7 +2,7 @@
 
 from reccmp.isledecomp.types import EntityType
 from .demangler import demangle_string_const, demangle_vtable
-from .parser import CvdumpParser
+from .parser import CvdumpParser, LineValue, NodeKey
 from .symbols import SymbolsEntry
 from .types import CvdumpKeyError, CvdumpIntegrityError, TypeInfo
 
@@ -93,30 +93,30 @@ class CvdumpAnalysis:
     """Collects the results from CvdumpParser into a list of nodes (i.e. symbols).
     These can then be analyzed by a downstream tool."""
 
-    verified_lines: dict[tuple[int, int], tuple[str, int]]
+    verified_lines: dict[NodeKey, LineValue]
 
     def __init__(self, parser: CvdumpParser):
         """Read in as much information as we have from the parser.
         The more sections we have, the better our information will be."""
-        node_dict: dict[tuple[int, int], CvdumpNode] = {}
+        node_dict: dict[NodeKey, CvdumpNode] = {}
 
         # PUBLICS is our roadmap for everything that follows.
         for pub in parser.publics:
-            key = (pub.section, pub.offset)
+            key = NodeKey(pub.section, pub.offset)
             if key not in node_dict:
                 node_dict[key] = CvdumpNode(*key)
 
             node_dict[key].set_decorated(pub.name)
 
         for sizeref in parser.sizerefs:
-            key = (sizeref.section, sizeref.offset)
+            key = NodeKey(sizeref.section, sizeref.offset)
             if key not in node_dict:
                 node_dict[key] = CvdumpNode(*key)
 
             node_dict[key].section_contribution = sizeref.size
 
         for glo in parser.globals:
-            key = (glo.section, glo.offset)
+            key = NodeKey(glo.section, glo.offset)
             if key not in node_dict:
                 node_dict[key] = CvdumpNode(*key)
 
@@ -156,7 +156,7 @@ class CvdumpAnalysis:
         }
 
         for sym in parser.symbols:
-            key = (sym.section, sym.offset)
+            key = NodeKey(sym.section, sym.offset)
             if key not in node_dict:
                 node_dict[key] = CvdumpNode(*key)
 

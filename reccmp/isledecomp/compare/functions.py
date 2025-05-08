@@ -48,6 +48,7 @@ def create_bin_lookup(bin_file: PEImage) -> Callable[[int], int | None]:
 
 @dataclass
 class FunctionComparator:
+    # pylint: disable=too-many-instance-attributes
     db: EntityDb
     orig_bin: PEImage
     recomp_bin: PEImage

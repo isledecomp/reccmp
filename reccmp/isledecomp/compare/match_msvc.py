@@ -368,30 +368,34 @@ def match_lines(
             # but it is significantly more effort to detect these false positives.
             #
 
-            line_match = next(
+            line_key = next(
                 (
-                    x
-                    for x in cv.lines.items()
+                    key
+                    for key, value in cv.lines.items()
                     # We match `line + 1` since `line` is the comment itself
-                    if x[1][0] == filename and x[1][1] == line + 1
+                    if value.filename == filename and value.line_number == line + 1
                 ),
                 None,
             )
 
-            if line_match is None:
+            if line_key is None:
                 report(
                     ReccmpEvent.NO_MATCH,
                     orig_addr,
                     f"Found no matching debug symbol for {filename}:{line}",
                 )
             else:
-                # TODO: Enhance batch methods
-                db._sql.execute(
-                    "UPDATE entities SET recomp_addr = ? WHERE orig_addr = ?",
-                    (
-                        recomp_bin.get_abs_addr(line_match[0][0], line_match[0][1]),
-                        orig_addr,
-                    ),
-                )
+                # TODO: Looks like it should work, why does it not?
+                batch.match(orig_addr, recomp_bin.get_abs_addr(line_key.section, line_key.offset))
 
-                # batch.match(orig_addr, recomp_bin.get_abs_addr(line_match[0][0], line_match[0][1]))
+                # TODO: Enhance batch methods. Options:
+                # - Implement a custom batch method (cleaner)
+                # - Abuse bulk insertion of recomps
+                # - Try to fix batch.match() to work with non-existent recomps
+                # db._sql.execute(
+                #     "UPDATE entities SET recomp_addr = ? WHERE orig_addr = ?",
+                #     (
+                #         recomp_bin.get_abs_addr(line_match[0].section, line_match[0].offset),
+                #         orig_addr,
+                #     ),
+                # )
