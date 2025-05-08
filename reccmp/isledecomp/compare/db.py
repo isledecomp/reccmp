@@ -151,6 +151,7 @@ def matched_entity_factory(_, row: object) -> ReccmpMatch:
 logger = logging.getLogger(__name__)
 
 
+# pylint: disable=too-many-instance-attributes
 class EntityBatch:
     base: "EntityDb"
 
@@ -166,6 +167,9 @@ class EntityBatch:
     _orig_to_recomp: dict[int, int]
     _recomp_to_orig: dict[int, int]
 
+    # Set recomp address
+    _recomp_addr: dict[int, int]
+
     def __init__(self, backref: "EntityDb") -> None:
         self.base = backref
         self._orig_insert = {}
@@ -174,6 +178,7 @@ class EntityBatch:
         self._recomp = {}
         self._orig_to_recomp = {}
         self._recomp_to_orig = {}
+        self._recomp_addr = {}
 
     def reset(self):
         """Clear all pending changes"""
@@ -183,6 +188,7 @@ class EntityBatch:
         self._recomp.clear()
         self._orig_to_recomp.clear()
         self._recomp_to_orig.clear()
+        self._recomp_addr.clear()
 
     def insert_orig(self, addr: int, **kwargs):
         self._orig_insert.setdefault(addr, {}).update(kwargs)
@@ -204,6 +210,9 @@ class EntityBatch:
         self._orig_to_recomp[orig] = recomp
         self._recomp_to_orig[recomp] = orig
 
+    def set_recomp_addr(self, orig: int, recomp: int):
+        self._recomp_addr[orig] = recomp
+
     def commit(self):
         # SQL transaction
         with self.base.sql:
@@ -221,6 +230,9 @@ class EntityBatch:
 
             if self._orig_to_recomp:
                 self.base.bulk_match(self._orig_to_recomp.items())
+
+            if self._recomp_addr:
+                self.base.bulk_set_recomp_addr(self._recomp_addr.items())
 
         self.reset()
 
@@ -291,7 +303,7 @@ class EntityDb:
             )
 
     def bulk_match(self, pairs: Iterable[tuple[int, int]]):
-        """Expects iterable of (orig_addr, recomp_addr)."""
+        """Expects iterable of `(orig_addr, recomp_addr)`."""
         # We need to iterate over this multiple times.
         pairlist = list(pairs)
 
@@ -313,6 +325,16 @@ class EntityDb:
                 "UPDATE OR REPLACE entities SET orig_addr = ? WHERE recomp_addr = ? AND orig_addr is null",
                 pairlist,
             )
+
+    def bulk_set_recomp_addr(self, pairs: Iterable[tuple[int, int]]):
+        """Expects iterable of `(orig_addr recomp_addr)`. To be used when the orig information are complete
+        up to the recomp address and there exists no entry on the recomp side."""
+        self._sql.executemany(
+            """UPDATE entities
+                SET recomp_addr = ?
+                WHERE orig_addr = ? and recomp_addr is null""",
+            ((recomp_addr, orig_addr) for orig_addr, recomp_addr in pairs),
+        )
 
     def get_unmatched_strings(self) -> list[str]:
         """Return any strings not already identified by `STRING` markers."""

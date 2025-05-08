@@ -385,17 +385,7 @@ def match_lines(
                     f"Found no matching debug symbol for {filename}:{line}",
                 )
             else:
-                # TODO: Looks like it should work, why does it not?
-                batch.match(orig_addr, recomp_bin.get_abs_addr(line_key.section, line_key.offset))
-
-                # TODO: Enhance batch methods. Options:
-                # - Implement a custom batch method (cleaner)
-                # - Abuse bulk insertion of recomps
-                # - Try to fix batch.match() to work with non-existent recomps
-                # db._sql.execute(
-                #     "UPDATE entities SET recomp_addr = ? WHERE orig_addr = ?",
-                #     (
-                #         recomp_bin.get_abs_addr(line_match[0].section, line_match[0].offset),
-                #         orig_addr,
-                #     ),
-                # )
+                batch.set_recomp_addr(
+                    orig_addr,
+                    recomp_bin.get_abs_addr(line_key.section, line_key.offset),
+                )

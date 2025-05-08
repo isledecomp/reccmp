@@ -86,17 +86,21 @@ class ModuleEntry(NamedTuple):
     lib: str
     obj: str
 
+
 class NodeKey(NamedTuple):
     section: int
     offset: int
+
 
 class LineValue(NamedTuple):
     filename: str
     line_number: int
 
+
 class LinesFunction(NamedTuple):
     filename: str
     section: int
+
 
 class CvdumpParser:
     # pylint: disable=too-many-instance-attributes
