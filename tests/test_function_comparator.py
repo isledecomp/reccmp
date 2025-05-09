@@ -2,7 +2,7 @@ from unittest.mock import Mock
 import pytest
 from reccmp.isledecomp.compare.db import EntityDb, ReccmpMatch
 from reccmp.isledecomp.compare.diff import DiffReport
-from reccmp.isledecomp.compare.event import ReccmpReportProtocol
+from reccmp.isledecomp.compare.event import ReccmpEvent, ReccmpReportProtocol
 from reccmp.isledecomp.compare.functions import FunctionComparator
 from reccmp.isledecomp.formats.pe import PEImage
 from reccmp.isledecomp.types import EntityType
@@ -18,10 +18,14 @@ def fixture_report_mock() -> ReccmpReportProtocol:
     return Mock(spec=ReccmpReportProtocol)
 
 
-def run_diff(
+ORIG_GLOBAL_OFFSET = 0x200
+RECOMP_GLOBAL_OFFSET = 0x400
+
+
+def compare_functions(
     db: EntityDb, orig: bytes, recomp: bytes, report: ReccmpReportProtocol
 ) -> DiffReport:
-    """If no addresses are known, placeholders for direct and indirect lookup must be distinct"""
+    """Executes `FunctionComparator.compare_function` on the provided binary code."""
 
     orig_bin = Mock(PEImage)
     orig_bin.read = Mock(return_value=orig)
@@ -34,18 +38,33 @@ def run_diff(
 
     return comp.compare_function(
         ReccmpMatch(
-            0x200,
-            0x400,
+            ORIG_GLOBAL_OFFSET,
+            RECOMP_GLOBAL_OFFSET,
             f'{{"type":1,"stub":false,"name":"unittest","symbol":"?Unittest","size":{len(recomp)}}}',
         )
     )
+
+
+def add_line_annotation(
+    db: EntityDb,
+    offset_from_function_start_orig: int,
+    offset_from_function_start_recomp: int,
+):
+    """Adds a `// LINE:` annotation to the database."""
+
+    orig_addr = ORIG_GLOBAL_OFFSET + offset_from_function_start_orig
+    recomp_addr = RECOMP_GLOBAL_OFFSET + offset_from_function_start_recomp
+    db.set_recomp_symbol(
+        recomp_addr, name="cppfile.cpp:384", filename="src\\cppfile.cpp", line=384
+    )
+    db.set_pair(orig_addr, recomp_addr, EntityType.LINE)
 
 
 def test_simple_identical_diff(db: EntityDb, report: ReccmpReportProtocol):
     # based on BETA10 0x1013e61d
     code = b"U\x8b\xec\x83\xec,SVWf\xc7E\xf8\x00\x00f\xc7E\xf0\x00\x00\x8bE\x14"
 
-    diffreport = run_diff(db, code, code, report)
+    diffreport = compare_functions(db, code, code, report)
 
     assert diffreport.ratio == 1.0
     assert diffreport.udiff == []
@@ -56,7 +75,7 @@ def test_simple_nontrivial_diff(db: EntityDb, report: ReccmpReportProtocol):
     # one instruction modified
     recm = b"f\xc7E\xf8\x00\x00f\xc7E\xf0\x00\x00\x8b\x51\x14"
 
-    diffreport = run_diff(db, orig, recm, report)
+    diffreport = compare_functions(db, orig, recm, report)
 
     assert diffreport.ratio < 1.0
 
@@ -95,7 +114,7 @@ def test_example_where_diff_mismatches_lines(
 ):
     """The text based diff sometimes misjudges which parts correspond when there are a lot of differences. This tests captures one such case."""
 
-    diffreport = run_diff(
+    diffreport = compare_functions(
         db, LINE_MISMATCH_EXAMPLE_ORIG, LINE_MISMATCH_EXAMPLE_RECOMP, report
     )
 
@@ -170,14 +189,9 @@ def test_example_where_diff_mismatches_lines(
 def test_impact_of_line_annotation(db: EntityDb, report: ReccmpReportProtocol):
     """When text based diff misjudges which parts correspond, a `// LINE` annotation may help. This test uses the same binary, but with such an annotation."""
 
-    orig_addr = 0x200 + 31
-    recomp_addr = 0x400 + 7
-    db.set_recomp_symbol(
-        recomp_addr, name="cppfile.cpp:384", filename="src\\cppfile.cpp", line=384
-    )
-    db.set_pair(orig_addr, recomp_addr, EntityType.LINE)
+    add_line_annotation(db, 31, 7)
 
-    diffreport = run_diff(
+    diffreport = compare_functions(
         db, LINE_MISMATCH_EXAMPLE_ORIG, LINE_MISMATCH_EXAMPLE_RECOMP, report
     )
 
@@ -272,3 +286,47 @@ def test_impact_of_line_annotation(db: EntityDb, report: ReccmpReportProtocol):
             ],
         ),
     ]
+
+
+def test_line_annotation_invalid_orig_address(db: EntityDb, report):
+    # based on BETA10 0x1013e61d
+    code = b"U\x8b\xec\x83\xec,SVWf\xc7E\xf8\x00\x00f\xc7E\xf0\x00\x00\x8bE\x14"
+
+    add_line_annotation(db, 2, 0)
+
+    compare_functions(db, code, code, report)
+
+    report.assert_called_with(
+        ReccmpEvent.NO_MATCH,
+        ORIG_GLOBAL_OFFSET + 2,
+        "Found no code line corresponding to this original address",
+    )
+
+
+def test_line_annotation_invalid_recomp_address(db: EntityDb, report):
+    code = b"U\x8b\xec\x83\xec,SVWf\xc7E\xf8\x00\x00f\xc7E\xf0\x00\x00\x8bE\x14"
+
+    add_line_annotation(db, 1, 2)
+
+    compare_functions(db, code, code, report)
+
+    report.assert_called_with(
+        ReccmpEvent.NO_MATCH,
+        ORIG_GLOBAL_OFFSET + 1,
+        "Found no code line corresponding to recomp address 0x402. Recompilation may fix this problem.",
+    )
+
+
+def test_line_annotation_wrong_order(db: EntityDb, report):
+    code = b"U\x8b\xec\x83\xec,SVWf\xc7E\xf8\x00\x00f\xc7E\xf0\x00\x00\x8bE\x14"
+
+    add_line_annotation(db, 0, 3)
+    add_line_annotation(db, 3, 0)
+
+    compare_functions(db, code, code, report)
+
+    report.assert_called_with(
+        ReccmpEvent.WRONG_ORDER,
+        ORIG_GLOBAL_OFFSET + 3,
+        "Line annotation 'cppfile.cpp:384' is out of order relative to other line annotations.",
+    )

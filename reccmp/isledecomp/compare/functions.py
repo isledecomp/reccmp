@@ -218,7 +218,7 @@ class FunctionComparator:
                 self.report(
                     ReccmpEvent.WRONG_ORDER,
                     sync_point.orig_addr,
-                    f"Line annotation '{sync_point.name}' is out of order relative to other line annotations",
+                    f"Line annotation '{sync_point.name}' is out of order relative to other line annotations.",
                 )
 
         return line_annotations_monotonous
