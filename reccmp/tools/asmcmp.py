@@ -69,7 +69,9 @@ def gen_svg(svg_file, name_svg, icon, svg_implemented_funcs, total_funcs, raw_ac
         svgfile.write(output_data)
 
 
-def print_match_verbose(match: DiffReport, show_both_addrs: bool = False, is_plain: bool = False):
+def print_match_verbose(
+    match: DiffReport, show_both_addrs: bool = False, is_plain: bool = False
+):
     percenttext = percent_string(
         match.effective_ratio, match.is_effective_match, is_plain
     )
@@ -103,7 +105,9 @@ def print_match_verbose(match: DiffReport, show_both_addrs: bool = False, is_pla
         )
 
 
-def print_match_oneline(match: DiffReport, show_both_addrs: bool = False, is_plain: bool = False):
+def print_match_oneline(
+    match: DiffReport, show_both_addrs: bool = False, is_plain: bool = False
+):
     percenttext = percent_string(
         match.effective_ratio, match.is_effective_match, is_plain
     )

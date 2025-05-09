@@ -6,7 +6,6 @@ from reccmp.isledecomp.compare.event import ReccmpReportProtocol
 from reccmp.isledecomp.compare.functions import FunctionComparator
 from reccmp.isledecomp.formats.pe import PEImage
 from reccmp.isledecomp.types import EntityType
-from reccmp.isledecomp.utils import print_combined_diff
 
 
 @pytest.fixture(name="db")
@@ -60,63 +59,216 @@ def test_simple_nontrivial_diff(db: EntityDb, report: ReccmpReportProtocol):
     diffreport = run_diff(db, orig, recm, report)
 
     assert diffreport.ratio < 1.0
-    assert diffreport.udiff is not None
 
-    assert diffreport.udiff[0] == (
-        "@@ -0x200,3 +0x400,3 @@",
-        [
-            {
-                "both": [
-                    ("0x200", "mov word ptr [ebp - 8], 0", "0x400"),
-                    ("0x206", "mov word ptr [ebp - <OFFSET1>], 0", "0x406"),
-                ]
-            },
-            {
-                "orig": [("0x20c", "mov eax, dword ptr [ebp + 0x14]")],
-                "recomp": [("0x40c", "mov edx, dword ptr [ecx + 0x14]")],
-            },
-        ],
+    assert diffreport.udiff == [
+        (
+            "@@ -0x200,3 +0x400,3 @@",
+            [
+                {
+                    "both": [
+                        ("0x200", "mov word ptr [ebp - 8], 0", "0x400"),
+                        ("0x206", "mov word ptr [ebp - <OFFSET1>], 0", "0x406"),
+                    ]
+                },
+                {
+                    "orig": [("0x20c", "mov eax, dword ptr [ebp + 0x14]")],
+                    "recomp": [("0x40c", "mov edx, dword ptr [ecx + 0x14]")],
+                },
+            ],
+        )
+    ]
+
+
+# Based on BETA10 0x1013e673
+LINE_MISMATCH_EXAMPLE_ORIG = (
+    b"+\xc8If\x89M\xd8\xe9\xd1\x01\x00\x00\xe9\x0e\x00\x00\x00\x0f\xbfE\xe8\x0f\xbfM\xd8\x03\xc1f\x89E\xd8\x8bE\xecf\x8b\x00f\x89E\xe8\x83E\xec\x02\x0f\xbfE\xe8\x85\xc0\x0f"
+    + b"\x8c\n\x00\x00\x00\xe9\x9a\x01\x00\x00\xe9h\x00\x00\x00\xf6E\xe9@\x0f\x84\x05"
+)
+LINE_MISMATCH_EXAMPLE_RECOMP = (
+    b"+\xc8If\x89M\xfc\x8bE\xf4f\x8b\x00f\x89E\xf0\x83E\xf4\x02\x0f\xbfE\xf0\x85\xc0\x0f\x8d~\x00\x00\x00\x0f\xbfE\xf0\xf6\xc4@\x0f\x84\x13\x00\x00\x00\x0f\xbfE\xfc\x0f\xbf"
+    + b"M\xf0\x03\xc1f\x89E\xfc\xe9a\x01\x00\x00\x8bE\xf0P\x8bE\xfcP\x8b"
+)
+
+
+def test_example_where_diff_mismatches_lines(
+    db: EntityDb, report: ReccmpReportProtocol
+):
+    """The text based diff sometimes misjudges which parts correspond when there are a lot of differences. This tests captures one such case."""
+
+    diffreport = run_diff(
+        db, LINE_MISMATCH_EXAMPLE_ORIG, LINE_MISMATCH_EXAMPLE_RECOMP, report
     )
 
-def test_diff_with_line_match(db: EntityDb, report: ReccmpReportProtocol):
-    # TODO: WIP
-    # TODO: Replace address by fake one
-    # orig_addr = 269739666 - 0x1013e61d + 0x200
-    orig_addr = 0x200 + 117
-    recomp_addr = 0x400 + 93
-    db.set_recomp_symbol(recomp_addr, name="cppfile.cpp:384", filename="src\\cppfile.cpp", line=384)
+    assert diffreport.ratio < 1.0
+    assert diffreport.udiff == [
+        (
+            "@@ -0x200,19 +0x400,22 @@",
+            [
+                {
+                    "both": [
+                        ("0x200", "sub ecx, eax", "0x400"),
+                        ("0x202", "dec ecx", "0x402"),
+                    ]
+                },
+                {
+                    "orig": [
+                        ("0x203", "mov word ptr [ebp - 0x28], cx"),
+                        ("0x207", "jmp 0x1d1"),
+                        ("0x20c", "jmp 0xe"),
+                        ("0x211", "movsx eax, word ptr [ebp - 0x18]"),
+                        ("0x215", "movsx ecx, word ptr [ebp - 0x28]"),
+                    ],
+                    "recomp": [
+                        ("0x403", "mov word ptr [ebp - 4], cx"),
+                        ("0x407", "mov eax, dword ptr [ebp - 0xc]"),
+                        ("0x40a", "mov ax, word ptr [eax]"),
+                        ("0x40d", "mov word ptr [ebp - 0x10], ax"),
+                        ("0x411", "add dword ptr [ebp - 0xc], 2"),
+                        ("0x415", "movsx eax, word ptr [ebp - 0x10]"),
+                        ("0x419", "test eax, eax"),
+                        ("0x41b", "jge 0x7e"),
+                        ("0x421", "movsx eax, word ptr [ebp - 0x10]"),
+                        ("0x425", "test ah, 0x40"),
+                        ("0x428", "je 0x13"),
+                        ("0x42e", "movsx eax, word ptr [ebp - 4]"),
+                        ("0x432", "movsx ecx, word ptr [ebp - 0x10]"),
+                    ],
+                },
+                {
+                    "both": [
+                        ("0x219", "add eax, ecx", "0x436"),
+                    ]
+                },
+                {
+                    "orig": [
+                        ("0x21b", "mov word ptr [ebp - 0x28], ax"),
+                        ("0x21f", "mov eax, dword ptr [ebp - 0x14]"),
+                        ("0x222", "mov ax, word ptr [eax]"),
+                        ("0x225", "mov word ptr [ebp - 0x18], ax"),
+                        ("0x229", "add dword ptr [ebp - 0x14], 2"),
+                        ("0x22d", "movsx eax, word ptr [ebp - 0x18]"),
+                        ("0x231", "test eax, eax"),
+                        ("0x233", "jl 0xa"),
+                        ("0x239", "jmp 0x19a"),
+                        ("0x23e", "jmp 0x68"),
+                        ("0x243", "test byte ptr [ebp - 0x17], 0x40"),
+                    ],
+                    "recomp": [
+                        ("0x438", "mov word ptr [ebp - 4], ax"),
+                        ("0x43c", "jmp 0x161"),
+                        ("0x441", "mov eax, dword ptr [ebp - 0x10]"),
+                        ("0x444", "push eax"),
+                        ("0x445", "mov eax, dword ptr [ebp - 4]"),
+                        ("0x448", "push eax"),
+                    ],
+                },
+            ],
+        )
+    ]
+
+
+def test_impact_of_line_annotation(db: EntityDb, report: ReccmpReportProtocol):
+    """When text based diff misjudges which parts correspond, a `// LINE` annotation may help. This test uses the same binary, but with such an annotation."""
+
+    orig_addr = 0x200 + 31
+    recomp_addr = 0x400 + 7
+    db.set_recomp_symbol(
+        recomp_addr, name="cppfile.cpp:384", filename="src\\cppfile.cpp", line=384
+    )
     db.set_pair(orig_addr, recomp_addr, EntityType.LINE)
 
-    # orig = b'U\x8b\xec\x83\xec,SVWf\xc7E\xf8\x00\x00f\xc7E\xf0\x00\x00\x8bE\x14f\x8b@\x08f\x89E\xf4f\xc7E\xe8\x00\x00\x0f\xbfE\xf4\x0f\xbfM\xf8\x03\xc1Hf\x89E\xfc\x8bE\x10\x89E\xec\x8bE\xecf\x8b\x00f\x89E\xe0\x83E\xec\x02\x8bE\x143\xc9f\x8bH\n\x0f\xbfE\xf0+\xc8If\x89M\xd8\xe9\xd1\x01\x00\x00\xe9\x0e\x00\x00\x00\x0f\xbfE\xe8\x0f\xbfM\xd8\x03\xc1f\x89E\xd8\x8bE\xecf\x8b\x00f\x89E\xe8\x83E\xec\x02\x0f\xbfE\xe8\x85\xc0\x0f\x8c\n\x00\x00\x00\xe9\x9a\x01\x00\x00\xe9h\x00\x00\x00\xf6E\xe9@\x0f\x84\x05\x00\x00\x00\xe9\xbf\xff\xff\xff\x8bE\xe8P\x8bE\xd8P\x8bE\xfcP\x8bE\x0cP\x8bE\x08P\xe8\xa2\xf6\xff\xff\x83\xc4\x14\x8bE\xecf\x8b\x00f\x89E\xe8\x83E\xec\x02\x0f\xbfE\xe8\x85\xc0\x0f\x85#\x00\x00\x00f\xffM\xd8f\xffM\xe0\x0f\xbfE\xe0\x85\xc0\x0f\x8e\x05\x00\x00\x00\xe9~\xff\xff\xff\xe9-\x01\x00\x00\xe9#\x01\x00\x00f\x8bE\xf8f\x89E\xdc\x8bE\xec3\xc9\x8a\x08\x0f\xbfE\xdc\x03\xc8f\x89M\xdc\xffE\xec\x8bE\xecf\x0f\xbe\x00f\x89E\xe4\xffE\xec\x0f\xbfE\xe4\x0f\xbfM\xe4\x03\xc1f\x89E\xe4\x0f\xbfE\xe4\x85\xc0\x0f\x8ch\x00\x00\x00\x8bE\xe4P\x8bE\xecP\x8bE\xd8P\x8bE\xdcP\x8bE\x0cP\x8bE\x08P\xe8p\xf6\xff\xff\x83\xc4\x18\x0f\xbfE\xe4\x0f\xbfM\xdc\x03\xc1f\x89E\xdc\x0f\xbfE\xe4\x01E\xecf\xffM\xe8\x0f\xbfE\xe8\x85\xc0\x0f\x84\x05\x00\x00\x00\xe9z\xff\xff\xfff\xffM\xd8f\xffM\xe0\x0f\xbfE\xe0\x85\xc0\x0f\x8e\x05\x00\x00\x00\xe9\xcd\xfe\xff\xff\xe9w\x00\x00\x00\x0f\xbfE\xe4\xf7\xd8f\x89E\xe4\x8bE\xec\x89E\xd4\x83E\xec\x02\x0f\xbfE\xe4\xc1\xf8\x01P\x8bE\xd4f\x8b\x00P\x8bE\xd8P\x8bE\xdcP\x8bE\x0cP\x8bE\x08P\xe8\xec\xf7\xff\xff\x83\xc4\x18\x0f\xbfE\xe4\x0f\xbfM\xdc\x03\xc1f\x89E\xdcf\xffM\xe8\x0f\xbfE\xe8\x85\xc0\x0f\x84\x05\x00\x00\x00\xe9\xfe\xfe\xff\xfff\xffM\xd8f\xffM'
-    # recm = b"U\x8b\xec\x83\xec,SVWf\xc7E\xe4\x00\x00f\xc7E\xe0\x00\x00\x8bE\x14f\x8b@\x08f\x89E\xf8f\xc7E\xf0\x00\x00\x0f\xbfE\xf8\x0f\xbfM\xe4\x03\xc1Hf\x89E\xe8\x8bE\x10\x89E\xf4\x8bE\xf4f\x8b\x00f\x89E\xec\x83E\xf4\x02\x8bE\x143\xc9f\x8bH\n\x0f\xbfE\xe0+\xc8If\x89M\xfc\x8bE\xf4f\x8b\x00f\x89E\xf0\x83E\xf4\x02\x0f\xbfE\xf0\x85\xc0\x0f\x8d~\x00\x00\x00\x0f\xbfE\xf0\xf6\xc4@\x0f\x84\x13\x00\x00\x00\x0f\xbfE\xfc\x0f\xbfM\xf0\x03\xc1f\x89E\xfc\xe9a\x01\x00\x00\x8bE\xf0P\x8bE\xfcP\x8bE\xf8P\x8bE\x0cP\x8bE\x08P\xe8\xb3\xf6\xff\xff\x83\xc4\x14\x8bE\xf4f\x8b\x00f\x89E\xf0\x83E\xf4\x02\x0f\xbfE\xf0\x85\xc0\x0f\x85\x1e\x00\x00\x00f\xffM\xfcf\xffM\xec\x0f\xbfE\xec\x85\xc0\x0f\x8f\x05\x00\x00\x00\xe9'\x01\x00\x00\xe9\x05\x00\x00\x00\xe9\x18\x01\x00\x00\xe9\x05\x00\x00\x00\xe9\x0e\x01\x00\x00f\x8bE\xe4f\x89E\xdc\x8bE\xf4\x0f\xbf\x00\x0f\xbfM\xdc\x03\xc1f\x89E\xdc\x83E\xf4\x02\x8bE\xf4f\x0f\xbe\x00f\x89E\xd8\x83E\xf4\x02\x0f\xbfE\xd8\x0f\xbfM\xd8\x03\xc1f\x89E\xd8\x0f\xbfE\xd8\x85\xc0\x0f\x8cQ\x00\x00\x00\x8bE\xd8P\x8bE\xf4P\x8bE\xfcP\x8bE\xdcP\x8bE\x0cP\x8bE\x08P\xe8v\xf6\xff\xff\x83\xc4\x18\x0f\xbfE\xd8\x0f\xbfM\xdc\x03\xc1f\x89E\xdc\x0f\xbfE\xd8\x03\xc0\x01E\xf4f\xffM\xf0\x0f\xbfE\xf0\x85\xc0\x0f\x85\x05\x00\x00\x00\xe9i\x00\x00\x00\xe9_\x00\x00\x00\x0f\xbfE\xd8\xf7\xd8f\x89E\xd8\x8bE\xf4f\x8b\x00f\x89E\xd4\x83E\xf4\x02\x0f\xbfE\xd8\xc1\xf8\x01P\x8bE\xd4P\x8bE\xfcP\x8bE\xdcP\x8bE\x0cP\x8bE\x08P\xe8\x08\xf8\xff\xff\x83\xc4\x18\x0f\xbfE\xd8\x0f\xbfM\xdc\x03\xc1f\x89E\xdcf\xffM\xf0\x0f\xbfE\xf0\x85\xc0\x0f\x85\x05\x00\x00\x00\xe9\x05\x00\x00\x00\xe9\x0e\xff\xff\xfff\xffM\xfcf\xffM\xec\x0f\xbfE\xec\x85\xc0\x0f\x8fU\xfe\xff\xff\xe9\x00\x00\x00\x00_^[\xc9\xc3"
+    diffreport = run_diff(
+        db, LINE_MISMATCH_EXAMPLE_ORIG, LINE_MISMATCH_EXAMPLE_RECOMP, report
+    )
 
-
-    orig_raw = bytearray(b'U\x8b\xec\x83\xec,SVWf\xc7E\xf8\x00\x00f\xc7E\xf0\x00\x00\x8bE\x14f\x8b@\x08f\x89E\xf4f\xc7E\xe8\x00\x00\x0f\xbfE\xf4\x0f\xbfM\xf8\x03\xc1Hf\x89E\xfc\x8bE\x10\x89E\xec\x8bE\xecf\x8b\x00f\x89E\xe0\x83E\xec\x02\x8bE\x143\xc9f\x8bH\n\x0f\xbfE\xf0+\xc8If\x89M\xd8\xe9\xd1\x01\x00\x00\xe9\x0e\x00\x00\x00\x0f\xbfE\xe8\x0f\xbfM\xd8\x03\xc1f\x89E\xd8\x8bE\xecf\x8b\x00f\x89E\xe8\x83E\xec\x02\x0f\xbfE\xe8\x85\xc0\x0f\x8c\n\x00\x00\x00\xe9\x9a\x01\x00\x00\xe9h\x00\x00\x00\xf6E\xe9@\x0f\x84\x05\x00\x00\x00\xe9\xbf\xff\xff\xff\x8bE\xe8P\x8bE\xd8P\x8bE\xfcP\x8bE\x0cP\x8bE\x08P\xe8\xa2\xf6\xff\xff\x83\xc4\x14\x8bE\xecf\x8b\x00f\x89E\xe8\x83E\xec\x02\x0f\xbfE\xe8\x85\xc0\x0f\x85#\x00\x00\x00f\xffM\xd8f\xffM\xe0\x0f\xbfE\xe0\x85\xc0\x0f\x8e\x05\x00\x00\x00\xe9~\xff\xff\xff\xe9-\x01\x00\x00\xe9#\x01\x00\x00f\x8bE\xf8f\x89E\xdc\x8bE\xec3\xc9\x8a\x08\x0f\xbfE\xdc\x03\xc8f\x89M\xdc\xffE\xec\x8bE\xecf\x0f\xbe\x00f\x89E\xe4\xffE\xec\x0f\xbfE\xe4\x0f\xbfM\xe4\x03\xc1f\x89E\xe4\x0f\xbfE\xe4\x85\xc0\x0f\x8ch\x00\x00\x00\x8bE\xe4P\x8bE\xecP\x8bE\xd8P\x8bE\xdcP\x8bE\x0cP\x8bE\x08P\xe8p\xf6\xff\xff\x83\xc4\x18\x0f\xbfE\xe4\x0f\xbfM\xdc\x03\xc1f\x89E\xdc\x0f\xbfE\xe4\x01E\xecf\xffM\xe8\x0f\xbfE\xe8\x85\xc0\x0f\x84\x05\x00\x00\x00\xe9z\xff\xff\xfff\xffM\xd8f\xffM\xe0\x0f\xbfE\xe0\x85\xc0\x0f\x8e\x05\x00\x00\x00\xe9\xcd\xfe\xff\xff\xe9w\x00\x00\x00\x0f\xbfE\xe4\xf7\xd8f\x89E\xe4\x8bE\xec\x89E\xd4\x83E\xec\x02\x0f\xbfE\xe4\xc1\xf8\x01P\x8bE\xd4f\x8b\x00P\x8bE\xd8P\x8bE\xdcP\x8bE\x0cP\x8bE\x08P\xe8\xec\xf7\xff\xff\x83\xc4\x18\x0f\xbfE\xe4\x0f\xbfM\xdc\x03\xc1f\x89E\xdcf\xffM\xe8\x0f\xbfE\xe8\x85\xc0\x0f\x84\x05\x00\x00\x00\xe9\xfe\xfe\xff\xfff\xffM\xd8f\xffM')
-    recomp_raw = bytearray(b"U\x8b\xec\x83\xec,SVWf\xc7E\xe4\x00\x00f\xc7E\xe0\x00\x00\x8bE\x14f\x8b@\x08f\x89E\xf8f\xc7E\xf0\x00\x00\x0f\xbfE\xf8\x0f\xbfM\xe4\x03\xc1Hf\x89E\xe8\x8bE\x10\x89E\xf4\x8bE\xf4f\x8b\x00f\x89E\xec\x83E\xf4\x02\x8bE\x143\xc9f\x8bH\n\x0f\xbfE\xe0+\xc8If\x89M\xfc\x8bE\xf4f\x8b\x00f\x89E\xf0\x83E\xf4\x02\x0f\xbfE\xf0\x85\xc0\x0f\x8d~\x00\x00\x00\x0f\xbfE\xf0\xf6\xc4@\x0f\x84\x13\x00\x00\x00\x0f\xbfE\xfc\x0f\xbfM\xf0\x03\xc1f\x89E\xfc\xe9a\x01\x00\x00\x8bE\xf0P\x8bE\xfcP\x8bE\xf8P\x8bE\x0cP\x8bE\x08P\xe8\xb3\xf6\xff\xff\x83\xc4\x14\x8bE\xf4f\x8b\x00f\x89E\xf0\x83E\xf4\x02\x0f\xbfE\xf0\x85\xc0\x0f\x85\x1e\x00\x00\x00f\xffM\xfcf\xffM\xec\x0f\xbfE\xec\x85\xc0\x0f\x8f\x05\x00\x00\x00\xe9'\x01\x00\x00\xe9\x05\x00\x00\x00\xe9\x18\x01\x00\x00\xe9\x05\x00\x00\x00\xe9\x0e\x01\x00\x00f\x8bE\xe4f\x89E\xdc\x8bE\xf4\x0f\xbf\x00\x0f\xbfM\xdc\x03\xc1f\x89E\xdc\x83E\xf4\x02\x8bE\xf4f\x0f\xbe\x00f\x89E\xd8\x83E\xf4\x02\x0f\xbfE\xd8\x0f\xbfM\xd8\x03\xc1f\x89E\xd8\x0f\xbfE\xd8\x85\xc0\x0f\x8cQ\x00\x00\x00\x8bE\xd8P\x8bE\xf4P\x8bE\xfcP\x8bE\xdcP\x8bE\x0cP\x8bE\x08P\xe8v\xf6\xff\xff\x83\xc4\x18\x0f\xbfE\xd8\x0f\xbfM\xdc\x03\xc1f\x89E\xdc\x0f\xbfE\xd8\x03\xc0\x01E\xf4f\xffM\xf0\x0f\xbfE\xf0\x85\xc0\x0f\x85\x05\x00\x00\x00\xe9i\x00\x00\x00\xe9_\x00\x00\x00\x0f\xbfE\xd8\xf7\xd8f\x89E\xd8\x8bE\xf4f\x8b\x00f\x89E\xd4\x83E\xf4\x02\x0f\xbfE\xd8\xc1\xf8\x01P\x8bE\xd4P\x8bE\xfcP\x8bE\xdcP\x8bE\x0cP\x8bE\x08P\xe8\x08\xf8\xff\xff\x83\xc4\x18\x0f\xbfE\xd8\x0f\xbfM\xdc\x03\xc1f\x89E\xdcf\xffM\xf0\x0f\xbfE\xf0\x85\xc0\x0f\x85\x05\x00\x00\x00\xe9\x05\x00\x00\x00\xe9\x0e\xff\xff\xfff\xffM\xfcf\xffM\xec\x0f\xbfE\xec\x85\xc0\x0f\x8fU\xfe\xff\xff\xe9\x00\x00\x00\x00_^[\xc9\xc3")
-
-    # XXX WIP: Locate the interesting part
-    # Next steps:
-    # - Make the LINE pin work in the unit test
-    # - Make sure the pin still works after cutting off code
-    # - Shorten the code to be as minimal as possible
-    for i in range(86):
-        orig_raw[i] = 0x55
-        recomp_raw[i] = 0x55
-
-    for i in range(150, len(recomp_raw)):
-        orig_raw[i] = 0x55
-        recomp_raw[i] = 0x55
-
-
-    orig_raw = bytes(orig_raw)
-    recomp_raw = bytes(recomp_raw)
-
-    diffreport = run_diff(db, orig_raw, recomp_raw, report)
-
-    assert diffreport.ratio < 1.0
-    assert diffreport.udiff is not None
-
-    print_combined_diff(diffreport.udiff)
-    print("Done")
-
-
+    assert diffreport.udiff == [
+        (
+            "@@ -0x200,9 +0x400,3 @@",
+            [
+                {
+                    "both": [
+                        ("0x200", "sub ecx, eax", "0x400"),
+                        ("0x202", "dec ecx", "0x402"),
+                    ]
+                },
+                {
+                    "orig": [
+                        ("0x203", "mov word ptr [ebp - 0x28], cx"),
+                        ("0x207", "jmp 0x1d1"),
+                        ("0x20c", "jmp cppfile.cpp:384 (LINE)"),
+                        ("0x211", "movsx eax, word ptr [ebp - 0x18]"),
+                        ("0x215", "movsx ecx, word ptr [ebp - 0x28]"),
+                        ("0x219", "add eax, ecx"),
+                        ("0x21b", "mov word ptr [ebp - 0x28], ax"),
+                    ],
+                    "recomp": [
+                        ("0x403", "mov word ptr [ebp - 4], cx"),
+                    ],
+                },
+            ],
+        ),
+        (
+            "@@ -0x21f,1 +0x407,1 @@",
+            [
+                {
+                    "orig": [
+                        ("0x21f", "mov eax, dword ptr [ebp - 0x14]"),
+                    ],
+                    "recomp": [
+                        ("0x407", "mov eax, dword ptr [ebp - 0xc]"),
+                    ],
+                }
+            ],
+        ),
+        (
+            "@@ -0x222,9 +0x40a,18 @@",
+            [
+                {
+                    "both": [
+                        ("0x222", "mov ax, word ptr [eax]", "0x40a"),
+                    ]
+                },
+                {
+                    # Note how these blocks correspond, but but without the // LINE annotation they do not
+                    "orig": [
+                        ("0x225", "mov word ptr [ebp - 0x18], ax"),
+                        ("0x229", "add dword ptr [ebp - 0x14], 2"),
+                        ("0x22d", "movsx eax, word ptr [ebp - 0x18]"),
+                    ],
+                    "recomp": [
+                        ("0x40d", "mov word ptr [ebp - 0x10], ax"),
+                        ("0x411", "add dword ptr [ebp - 0xc], 2"),
+                        ("0x415", "movsx eax, word ptr [ebp - 0x10]"),
+                    ],
+                },
+                {
+                    "both": [
+                        ("0x231", "test eax, eax", "0x419"),
+                    ]
+                },
+                {
+                    "orig": [
+                        ("0x233", "jl 0xa"),
+                        ("0x239", "jmp 0x19a"),
+                        ("0x23e", "jmp 0x68"),
+                        ("0x243", "test byte ptr [ebp - 0x17], 0x40"),
+                    ],
+                    "recomp": [
+                        ("0x41b", "jge 0x7e"),
+                        ("0x421", "movsx eax, word ptr [ebp - 0x10]"),
+                        ("0x425", "test ah, 0x40"),
+                        ("0x428", "je 0x13"),
+                        ("0x42e", "movsx eax, word ptr [ebp - 4]"),
+                        ("0x432", "movsx ecx, word ptr [ebp - 0x10]"),
+                        ("0x436", "add eax, ecx"),
+                        ("0x438", "mov word ptr [ebp - 4], ax"),
+                        ("0x43c", "jmp 0x161"),
+                        ("0x441", "mov eax, dword ptr [ebp - 0x10]"),
+                        ("0x444", "push eax"),
+                        ("0x445", "mov eax, dword ptr [ebp - 4]"),
+                        ("0x448", "push eax"),
+                    ],
+                },
+            ],
+        ),
+    ]
