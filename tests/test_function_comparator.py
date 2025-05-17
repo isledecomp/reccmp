@@ -330,3 +330,14 @@ def test_line_annotation_wrong_order(db: EntityDb, report):
         ORIG_GLOBAL_OFFSET + 3,
         "Line annotation 'cppfile.cpp:384' is out of order relative to other line annotations.",
     )
+
+
+def test_no_assembly_generated(db: EntityDb, report):
+    # `capstone` produces no code for these instructions.
+    # This test checks for correct edge case handling (e.g. no implicit assumptions that there will always be some assembly)
+    code = b"\xcc"
+    recm = b"\xcd"
+
+    diffreport = compare_functions(db, code, recm, report)
+
+    assert diffreport.ratio == 1.0

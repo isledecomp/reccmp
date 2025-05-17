@@ -137,7 +137,9 @@ class FunctionComparator:
         for diff in diffs:
             unified_diff += diff.diff
 
-        total_ratio = sum(diff.weighted_match_ratio for diff in diffs) / total_lines
+        total_ratio = sum(diff.weighted_match_ratio for diff in diffs) / max(
+            total_lines, 1
+        )
         is_effective_match_overall = total_ratio <= 0.999 and all(
             diff.is_effective_match for diff in diffs
         )
@@ -190,7 +192,7 @@ class FunctionComparator:
         return FunctionPartCompareResult(
             unified_diff,
             is_effective,
-            local_ratio * (len(orig) + len(recomp)),
+            local_ratio * max(len(orig) + len(recomp), 1),
         )
 
     def _collect_line_annotations(self, recomp: AsmExcerpt) -> list[ReccmpMatch]:
@@ -198,6 +200,9 @@ class FunctionComparator:
         Finds all `// LINE:` annotations within the given function
         and drops any whose order is not consistent between original and recomp.
         """
+        if len(recomp) == 0:
+            return []
+
         recomp_start_addr = recomp[0][0]
         recomp_end_addr = recomp[-1][0]
         assert recomp_start_addr is not None and recomp_end_addr is not None
