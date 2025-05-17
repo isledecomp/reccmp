@@ -223,7 +223,6 @@ class ParseAsm:
             elif section.type == SectionType.ADDR_TAB:
                 asm.append((None, "Jump table:"))
                 for i, (ofs, _) in enumerate(section.contents):
-                    # TODO: Consider not converting to hex at this point
                     asm.append((ofs, f"Jump_dest_{i}"))
 
             elif section.type == SectionType.DATA_TAB:

@@ -437,7 +437,6 @@ class DecompParser:
                 self._syntax_error(ParserError.INCOMPATIBLE_MARKER)
 
         elif marker.is_line():
-            # TODO: Check if in function
             self._line_marker(marker)
 
         else:
