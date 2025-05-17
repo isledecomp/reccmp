@@ -164,3 +164,13 @@ const char* g_strACTION = "ACTION";
 ```
 
 In this example, there is an `A` at address `0x10102040` and a 32-bit pointer to `0x10102040` at address `0x10102048`.
+
+## Lines
+
+Individual code lines can be annotated using the `LINE` marker:
+```c++
+short token = 0;
+// LINE: BETA10 0x1013e643
+short xmax = xofs + width - 1;
+```
+This may be helpful when the recompiled code does not match the original code very well, or the assembly text diff misdetects which parts correspond to each other. At the moment, this annotation must be followed by a line of code (i.e. not by an empty line or another comment).
