@@ -4,12 +4,8 @@ import difflib
 from pathlib import Path
 import struct
 import uuid
-from dataclasses import dataclass
-from typing import Callable, Iterable, Iterator
-from reccmp.isledecomp.formats.exceptions import (
-    InvalidVirtualAddressError,
-    InvalidVirtualReadError,
-)
+from typing import Iterable, Iterator
+from reccmp.isledecomp.compare.functions import FunctionComparator
 from reccmp.isledecomp.formats.pe import PEImage
 from reccmp.isledecomp.cvdump.demangler import (
     demangle_string_const,
@@ -25,11 +21,9 @@ from reccmp.isledecomp.compare.event import (
     reccmp_report_nop,
     create_logging_wrapper,
 )
-from reccmp.isledecomp.compare.asm import ParseAsm
-from reccmp.isledecomp.compare.asm.replacement import create_name_lookup
-from reccmp.isledecomp.compare.asm.fixes import assert_fixup, find_effective_match
 from reccmp.isledecomp.analysis import find_float_consts
 from .match_msvc import (
+    match_lines,
     match_symbols,
     match_functions,
     match_vtables,
@@ -38,7 +32,7 @@ from .match_msvc import (
     match_strings,
 )
 from .db import EntityDb, ReccmpEntity, ReccmpMatch
-from .diff import combined_diff, CombinedDiffOutput
+from .diff import DiffReport, combined_diff
 from .lines import LinesDb
 
 
@@ -46,49 +40,6 @@ from .lines import LinesDb
 
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class DiffReport:
-    # pylint: disable=too-many-instance-attributes
-    match_type: EntityType
-    orig_addr: int
-    recomp_addr: int
-    name: str
-    udiff: CombinedDiffOutput | None = None
-    ratio: float = 0.0
-    is_effective_match: bool = False
-    is_stub: bool = False
-
-    @property
-    def effective_ratio(self) -> float:
-        return 1.0 if self.is_effective_match else self.ratio
-
-    def __str__(self) -> str:
-        """For debug purposes. Proper diff printing (with coloring) is in another module."""
-        return f"{self.name} (0x{self.orig_addr:x}) {self.ratio*100:.02f}%{'*' if self.is_effective_match else ''}"
-
-
-def create_reloc_lookup(bin_file: PEImage) -> Callable[[int], bool]:
-    """Function generator for relocation table lookup"""
-
-    def lookup(addr: int) -> bool:
-        return addr > bin_file.imagebase and bin_file.is_relocated_addr(addr)
-
-    return lookup
-
-
-def create_bin_lookup(bin_file: PEImage) -> Callable[[int], int | None]:
-    """Function generator to read a pointer from the bin file"""
-
-    def lookup(addr: int) -> int | None:
-        try:
-            (ptr,) = struct.unpack("<L", bin_file.read(addr, 4))
-            return ptr
-        except (struct.error, InvalidVirtualAddressError, InvalidVirtualReadError):
-            return None
-
-    return lookup
 
 
 class Compare:
@@ -135,6 +86,7 @@ class Compare:
         match_static_variables(self._db, report)
         match_variables(self._db, report)
         match_strings(self._db, report)
+        match_lines(self._db, self.cv, self.recomp_bin, report)
 
         self._match_array_elements()
         # Detect floats first to eliminate potential overlap with string data
@@ -146,19 +98,8 @@ class Compare:
         self._find_vtordisp()
         self._unique_names_for_overloaded_functions()
 
-        self.orig_sanitize = ParseAsm(
-            addr_test=create_reloc_lookup(self.orig_bin),
-            name_lookup=create_name_lookup(
-                self._db.get_by_orig, create_bin_lookup(self.orig_bin), "orig_addr"
-            ),
-        )
-        self.recomp_sanitize = ParseAsm(
-            addr_test=create_reloc_lookup(self.recomp_bin),
-            name_lookup=create_name_lookup(
-                self._db.get_by_recomp,
-                create_bin_lookup(self.recomp_bin),
-                "recomp_addr",
-            ),
+        self.function_comparator = FunctionComparator(
+            self._db, self.orig_bin, self.recomp_bin, report, self.runid, self.debug
         )
 
     def _load_cvdump(self):
@@ -179,90 +120,87 @@ class Compare:
         # In the rare case we have duplicate symbols for an address, ignore them.
         seen_addrs = set()
 
-        batch = self._db.batch()
+        with self._db.batch() as batch:
+            for sym in self.cvdump_analysis.nodes:
+                # Skip nodes where we have almost no information.
+                # These probably came from SECTION CONTRIBUTIONS.
+                if sym.name() is None and sym.node_type is None:
+                    continue
 
-        for sym in self.cvdump_analysis.nodes:
-            # Skip nodes where we have almost no information.
-            # These probably came from SECTION CONTRIBUTIONS.
-            if sym.name() is None and sym.node_type is None:
-                continue
+                # The PDB might contain sections that do not line up with the
+                # actual binary. The symbol "__except_list" is one example.
+                # In these cases, just skip this symbol and move on because
+                # we can't do much with it.
+                if not self.recomp_bin.is_valid_section(sym.section):
+                    continue
 
-            # The PDB might contain sections that do not line up with the
-            # actual binary. The symbol "__except_list" is one example.
-            # In these cases, just skip this symbol and move on because
-            # we can't do much with it.
-            if not self.recomp_bin.is_valid_section(sym.section):
-                continue
+                addr = self.recomp_bin.get_abs_addr(sym.section, sym.offset)
+                sym.addr = addr
 
-            addr = self.recomp_bin.get_abs_addr(sym.section, sym.offset)
-            sym.addr = addr
+                if addr in seen_addrs:
+                    continue
 
-            if addr in seen_addrs:
-                continue
+                seen_addrs.add(addr)
 
-            seen_addrs.add(addr)
-
-            # If this symbol is the final one in its section, we were not able to
-            # estimate its size because we didn't have the total size of that section.
-            # We can get this estimate now and assume that the final symbol occupies
-            # the remainder of the section.
-            if sym.estimated_size is None:
-                sym.estimated_size = (
-                    self.recomp_bin.get_section_extent_by_index(sym.section)
-                    - sym.offset
-                )
-
-            if sym.node_type == EntityType.STRING:
-                assert sym.decorated_name is not None
-                string_info = demangle_string_const(sym.decorated_name)
-                if string_info is None:
-                    logger.debug(
-                        "Could not demangle string symbol: %s", sym.decorated_name
+                # If this symbol is the final one in its section, we were not able to
+                # estimate its size because we didn't have the total size of that section.
+                # We can get this estimate now and assume that the final symbol occupies
+                # the remainder of the section.
+                if sym.estimated_size is None:
+                    sym.estimated_size = (
+                        self.recomp_bin.get_section_extent_by_index(sym.section)
+                        - sym.offset
                     )
-                    continue
 
-                # TODO: skip unicode for now. will need to handle these differently.
-                if string_info.is_utf16:
-                    continue
-
-                size = sym.size()
-                assert size is not None
-
-                raw = self.recomp_bin.read(addr, size)
-
-                try:
-                    # We use the string length reported in the mangled symbol as the
-                    # data size, but this is not always accurate with respect to the
-                    # null terminator.
-                    # e.g. ??_C@_0BA@EFDM@MxObjectFactory?$AA@
-                    # reported length: 16 (includes null terminator)
-                    # c.f. ??_C@_03DPKJ@enz?$AA@
-                    # reported length: 3 (does NOT include terminator)
-                    # This will handle the case where the entire string contains "\x00"
-                    # because those are distinct from the empty string of length 0.
-                    decoded_string = raw.decode("latin1")
-                    rstrip_string = decoded_string.rstrip("\x00")
-
-                    # TODO: Hack to exclude a string that contains \x00 bytes
-                    # The proper solution is to escape the text for JSON or use
-                    # base64 encoding for comparing binary values.
-                    # Kicking the can down the road for now.
-                    if "\x00" in decoded_string and rstrip_string == "":
+                if sym.node_type == EntityType.STRING:
+                    assert sym.decorated_name is not None
+                    string_info = demangle_string_const(sym.decorated_name)
+                    if string_info is None:
+                        logger.debug(
+                            "Could not demangle string symbol: %s", sym.decorated_name
+                        )
                         continue
-                    sym.friendly_name = rstrip_string
 
-                except UnicodeDecodeError:
-                    pass
+                    # TODO: skip unicode for now. will need to handle these differently.
+                    if string_info.is_utf16:
+                        continue
 
-            batch.set_recomp(
-                addr,
-                type=sym.node_type,
-                name=sym.name(),
-                symbol=sym.decorated_name,
-                size=sym.size(),
-            )
+                    size = sym.size()
+                    assert size is not None
 
-        batch.commit()
+                    raw = self.recomp_bin.read(addr, size)
+
+                    try:
+                        # We use the string length reported in the mangled symbol as the
+                        # data size, but this is not always accurate with respect to the
+                        # null terminator.
+                        # e.g. ??_C@_0BA@EFDM@MxObjectFactory?$AA@
+                        # reported length: 16 (includes null terminator)
+                        # c.f. ??_C@_03DPKJ@enz?$AA@
+                        # reported length: 3 (does NOT include terminator)
+                        # This will handle the case where the entire string contains "\x00"
+                        # because those are distinct from the empty string of length 0.
+                        decoded_string = raw.decode("latin1")
+                        rstrip_string = decoded_string.rstrip("\x00")
+
+                        # TODO: Hack to exclude a string that contains \x00 bytes
+                        # The proper solution is to escape the text for JSON or use
+                        # base64 encoding for comparing binary values.
+                        # Kicking the can down the road for now.
+                        if "\x00" in decoded_string and rstrip_string == "":
+                            continue
+                        sym.friendly_name = rstrip_string
+
+                    except UnicodeDecodeError:
+                        pass
+
+                batch.set_recomp(
+                    addr,
+                    type=sym.node_type,
+                    name=sym.name(),
+                    symbol=sym.decorated_name,
+                    size=sym.size(),
+                )
 
         for (section, offset), (
             filename,
@@ -370,6 +308,15 @@ class Compare:
                     name=string.name,
                     type=EntityType.STRING,
                     size=len(string.name),
+                )
+
+            for line in codebase.iter_line_symbols():
+                batch.set_orig(
+                    line.offset,
+                    name=line.name,
+                    filename=line.filename,
+                    line=line.line_number,
+                    type=EntityType.LINE,
                 )
 
     def _match_array_elements(self):
@@ -801,84 +748,6 @@ class Compare:
             ((name, addr) for addr, name in updates.items()),
         )
 
-    def _dump_asm(self, orig_combined, recomp_combined):
-        """Append the provided assembly output to the debug files"""
-        with open(f"orig-{self.runid}.txt", "a", encoding="utf-8") as f:
-            for addr, line in orig_combined:
-                f.write(f"{addr}: {line}\n")
-
-        with open(f"recomp-{self.runid}.txt", "a", encoding="utf-8") as f:
-            for addr, line in recomp_combined:
-                f.write(f"{addr}: {line}\n")
-
-    def _compare_function(self, match: ReccmpMatch) -> DiffReport:
-        # Detect when the recomp function size would cause us to read
-        # enough bytes from the original function that we cross into
-        # the next annotated function.
-        next_orig = self._db.get_next_orig_addr(match.orig_addr)
-        if next_orig is not None:
-            orig_size = min(next_orig - match.orig_addr, match.size)
-        else:
-            orig_size = match.size
-
-        orig_raw = self.orig_bin.read(match.orig_addr, orig_size)
-        recomp_raw = self.recomp_bin.read(match.recomp_addr, match.size)
-
-        # It's unlikely that a function other than an adjuster thunk would
-        # start with a SUB instruction, so alert to a possible wrong
-        # annotation here.
-        # There's probably a better place to do this, but we're reading
-        # the function bytes here already.
-        try:
-            if orig_raw[0] == 0x2B and recomp_raw[0] != 0x2B:
-                logger.warning(
-                    "Possible thunk at 0x%x (%s)", match.orig_addr, match.name
-                )
-        except IndexError:
-            pass
-
-        orig_combined = self.orig_sanitize.parse_asm(orig_raw, match.orig_addr)
-        recomp_combined = self.recomp_sanitize.parse_asm(recomp_raw, match.recomp_addr)
-
-        if self.debug:
-            self._dump_asm(orig_combined, recomp_combined)
-
-        # Check for assert calls only if we expect to find them
-        if self.orig_bin.is_debug or self.recomp_bin.is_debug:
-            assert_fixup(orig_combined)
-            assert_fixup(recomp_combined)
-
-        # Detach addresses from asm lines for the text diff.
-        orig_asm = [x[1] for x in orig_combined]
-        recomp_asm = [x[1] for x in recomp_combined]
-
-        diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm, autojunk=False)
-        ratio = diff.ratio()
-
-        if ratio != 1.0:
-            # Check whether we can resolve register swaps which are actually
-            # perfect matches modulo compiler entropy.
-            codes = diff.get_opcodes()
-            is_effective_match = find_effective_match(codes, orig_asm, recomp_asm)
-            unified_diff = combined_diff(
-                diff, orig_combined, recomp_combined, context_size=10
-            )
-        else:
-            is_effective_match = False
-            unified_diff = []
-
-        best_name = match.best_name()
-        assert best_name is not None
-        return DiffReport(
-            match_type=EntityType.FUNCTION,
-            orig_addr=match.orig_addr,
-            recomp_addr=match.recomp_addr,
-            name=best_name,
-            udiff=unified_diff,
-            ratio=ratio,
-            is_effective_match=is_effective_match,
-        )
-
     def _compare_vtable(self, match: ReccmpMatch) -> DiffReport:
         vtable_size = match.size
 
@@ -987,7 +856,7 @@ class Compare:
             )
 
         if match.entity_type == EntityType.FUNCTION:
-            return self._compare_function(match)
+            return self.function_comparator.compare_function(match)
 
         if match.entity_type == EntityType.VTABLE:
             return self._compare_vtable(match)

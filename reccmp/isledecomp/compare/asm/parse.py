@@ -13,6 +13,8 @@ from .instgen import InstructGen, SectionType
 from .replacement import AddrTestProtocol, NameReplacementProtocol
 from .types import DisasmLiteInst
 
+AsmExcerpt = list[tuple[int | None, str]]
+
 ptr_replace_regex = re.compile(r"(?<=\[)(0x[0-9a-f]+)(?=\])")
 
 displace_replace_regex = re.compile(r"(?<= )(0x[0-9a-f]+)(?=\])")
@@ -188,9 +190,9 @@ class ParseAsm:
 
         return (inst.mnemonic, op_str)
 
-    def parse_asm(self, data: bytes, start_addr: int = 0) -> list[tuple[str, str]]:
+    def parse_asm(self, data: bytes, start_addr: int = 0) -> AsmExcerpt:
         self.reset()
-        asm: list[tuple[str, str]] = []
+        asm: AsmExcerpt = []
 
         ig = InstructGen(data, start_addr)
 
@@ -217,15 +219,15 @@ class ParseAsm:
                         result = (inst.mnemonic, inst.op_str)
 
                     # mnemonic + " " + op_str
-                    asm.append((hex(inst.address), " ".join(result)))
+                    asm.append((inst.address, " ".join(result)))
             elif section.type == SectionType.ADDR_TAB:
-                asm.append(("", "Jump table:"))
+                asm.append((None, "Jump table:"))
                 for i, (ofs, _) in enumerate(section.contents):
-                    asm.append((hex(ofs), f"Jump_dest_{i}"))
+                    asm.append((ofs, f"Jump_dest_{i}"))
 
             elif section.type == SectionType.DATA_TAB:
-                asm.append(("", "Data table:"))
+                asm.append((None, "Data table:"))
                 for ofs, b in section.contents:
-                    asm.append((hex(ofs), hex(b)))
+                    asm.append((ofs, hex(b)))
 
         return asm

@@ -23,15 +23,15 @@ class DecompLinter:
         # Module/offset can be repeated for string markers but the strings must match.
         self._strings: dict[tuple[str, int], str] = {}
 
-    def reset(self, full_reset: bool = False):
+    def start_new_file(self, filename: str, module: str | None):
         self.alerts = []
-        self._parser.reset()
-        self._filename = ""
-        self._module = None
+        self._module = module
+        self._filename = filename
+        self._parser.reset_and_set_filename(filename)
 
-        if full_reset:
-            self._offsets_used.clear()
-            self._strings = {}
+    def full_reset(self):
+        self._offsets_used.clear()
+        self._strings = {}
 
     def file_is_header(self):
         return self._filename.lower().endswith(".h")
@@ -120,9 +120,7 @@ class DecompLinter:
                 )
 
     def read(self, code: str, filename: str, module=None) -> bool:
-        self.reset(False)
-        self._filename = filename
-        self._module = module
+        self.start_new_file(filename, module)
 
         self._parser.read(code)
 

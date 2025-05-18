@@ -24,6 +24,11 @@ class ReccmpEvent(enum.Enum):
     # User input (e.g. code annotation) cannot be added to the database
     INVALID_USER_DATA = enum.auto()
 
+    # Some annotations are in an incorrect order
+    WRONG_ORDER = enum.auto()
+
+    GENERAL_WARNING = enum.auto()
+
 
 def event_to_severity(event: ReccmpEvent) -> LoggingSeverity:
     return {

@@ -151,6 +151,7 @@ def matched_entity_factory(_, row: object) -> ReccmpMatch:
 logger = logging.getLogger(__name__)
 
 
+# pylint: disable=too-many-instance-attributes
 class EntityBatch:
     base: "EntityDb"
 
@@ -166,6 +167,9 @@ class EntityBatch:
     _orig_to_recomp: dict[int, int]
     _recomp_to_orig: dict[int, int]
 
+    # Set recomp address
+    _recomp_addr: dict[int, int]
+
     def __init__(self, backref: "EntityDb") -> None:
         self.base = backref
         self._orig_insert = {}
@@ -174,6 +178,7 @@ class EntityBatch:
         self._recomp = {}
         self._orig_to_recomp = {}
         self._recomp_to_orig = {}
+        self._recomp_addr = {}
 
     def reset(self):
         """Clear all pending changes"""
@@ -183,6 +188,7 @@ class EntityBatch:
         self._recomp.clear()
         self._orig_to_recomp.clear()
         self._recomp_to_orig.clear()
+        self._recomp_addr.clear()
 
     def insert_orig(self, addr: int, **kwargs):
         self._orig_insert.setdefault(addr, {}).update(kwargs)
@@ -204,6 +210,9 @@ class EntityBatch:
         self._orig_to_recomp[orig] = recomp
         self._recomp_to_orig[recomp] = orig
 
+    def set_recomp_addr(self, orig: int, recomp: int):
+        self._recomp_addr[orig] = recomp
+
     def commit(self):
         # SQL transaction
         with self.base.sql:
@@ -221,6 +230,9 @@ class EntityBatch:
 
             if self._orig_to_recomp:
                 self.base.bulk_match(self._orig_to_recomp.items())
+
+            if self._recomp_addr:
+                self.base.bulk_set_recomp_addr(self._recomp_addr.items())
 
         self.reset()
 
@@ -291,7 +303,7 @@ class EntityDb:
             )
 
     def bulk_match(self, pairs: Iterable[tuple[int, int]]):
-        """Expects iterable of (orig_addr, recomp_addr)."""
+        """Expects iterable of `(orig_addr, recomp_addr)`."""
         # We need to iterate over this multiple times.
         pairlist = list(pairs)
 
@@ -313,6 +325,16 @@ class EntityDb:
                 "UPDATE OR REPLACE entities SET orig_addr = ? WHERE recomp_addr = ? AND orig_addr is null",
                 pairlist,
             )
+
+    def bulk_set_recomp_addr(self, pairs: Iterable[tuple[int, int]]):
+        """Expects iterable of `(orig_addr recomp_addr)`. To be used when the orig information are complete
+        up to the recomp address and there exists no entry on the recomp side."""
+        self._sql.executemany(
+            """UPDATE entities
+                SET recomp_addr = ?
+                WHERE orig_addr = ? and recomp_addr is null""",
+            ((recomp_addr, orig_addr) for orig_addr, recomp_addr in pairs),
+        )
 
     def get_unmatched_strings(self) -> list[str]:
         """Return any strings not already identified by `STRING` markers."""
@@ -402,6 +424,27 @@ class EntityDb:
             ORDER BY orig_addr NULLS LAST
             """,
             (entity_type,),
+        )
+        cur.row_factory = matched_entity_factory
+        yield from cur
+
+    def get_lines_in_recomp_range(
+        self, start_recomp_addr: int, end_recomp_addr: int
+    ) -> Iterator[ReccmpMatch]:
+        """Fetches all matched annotations of the form `// LINE: TARGET 0x1234` in the given recomp address range."""
+
+        cur = self._sql.execute(
+            """SELECT orig_addr, recomp_addr, kvstore FROM entities
+            WHERE json_extract(kvstore, '$.type') = ?
+            AND recomp_addr >= ? AND recomp_addr <= ?
+            AND matched = 1
+            ORDER BY orig_addr
+            """,
+            (
+                EntityType.LINE,
+                start_recomp_addr,
+                end_recomp_addr,
+            ),
         )
         cur.row_factory = matched_entity_factory
         yield from cur
@@ -623,14 +666,20 @@ class EntityDb:
     def get_next_orig_addr(self, addr: int) -> int | None:
         """Return the original address (matched or not) that follows
         the one given. If our recomp function size would cause us to read
-        too many bytes for the original function, we can adjust it."""
+        too many bytes for the original function, we can adjust it.
+        Skips LINE-type symbols since these these are always contained
+        within functions.
+        """
         result = self._sql.execute(
             """SELECT orig_addr
             FROM entities
-            WHERE orig_addr > ?
+            WHERE
+              orig_addr > ?
+            AND
+              json_extract(kvstore,'$.type') != ?
             ORDER BY orig_addr
             LIMIT 1""",
-            (addr,),
+            (addr, EntityType.LINE),
         ).fetchone()
 
         return result[0] if result is not None else None

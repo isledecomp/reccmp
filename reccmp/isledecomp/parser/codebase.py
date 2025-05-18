@@ -3,6 +3,7 @@
 from typing import Callable, Iterable, Iterator
 from .parser import DecompParser
 from .node import (
+    ParserLineSymbol,
     ParserSymbol,
     ParserFunction,
     ParserVtable,
@@ -17,13 +18,11 @@ class DecompCodebase:
 
         parser = DecompParser()
         for filename in filenames:
-            parser.reset()
+            parser.reset_and_set_filename(filename)
             with open(filename, "r", encoding="utf-8") as f:
                 parser.read(f.read())
 
-            for sym in parser.iter_symbols(module):
-                sym.filename = filename
-                self._symbols.append(sym)
+            self._symbols += parser.iter_symbols(module)
 
     def prune_invalid_addrs(
         self, is_valid: Callable[[int], bool]
@@ -77,3 +76,6 @@ class DecompCodebase:
 
     def iter_strings(self) -> Iterator[ParserString]:
         return (s for s in self._symbols if isinstance(s, ParserString))
+
+    def iter_line_symbols(self) -> Iterator[ParserLineSymbol]:
+        return (s for s in self._symbols if isinstance(s, ParserLineSymbol))

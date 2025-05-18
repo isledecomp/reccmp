@@ -8,7 +8,7 @@ def fixture_linter():
     return DecompLinter()
 
 
-def test_order_in_order(linter):
+def test_order_in_order(linter: DecompLinter):
     """Functions from the same module are in order. No problems here."""
     code = """\
         // FUNCTION: TEST 0x1000
@@ -21,7 +21,7 @@ def test_order_in_order(linter):
     assert linter.read(code, "test.cpp", "TEST") is True
 
 
-def test_order_out_of_order(linter):
+def test_order_out_of_order(linter: DecompLinter):
     """Detect functions that are out of order."""
     code = """\
         // FUNCTION: TEST 0x1000
@@ -39,7 +39,7 @@ def test_order_out_of_order(linter):
     assert linter.alerts[0].line_number == 6
 
 
-def test_order_ignore_lookup_by_name(linter):
+def test_order_ignore_lookup_by_name(linter: DecompLinter):
     """Should ignore lookup-by-name markers when checking order."""
     code = """\
         // FUNCTION: TEST 0x1000
@@ -53,7 +53,7 @@ def test_order_ignore_lookup_by_name(linter):
     assert linter.read(code, "test.h", "TEST") is True
 
 
-def test_order_module_isolation(linter):
+def test_order_module_isolation(linter: DecompLinter):
     """Should check the order of markers from a single module only."""
     code = """\
         // FUNCTION: ALPHA 0x0003
@@ -68,11 +68,11 @@ def test_order_module_isolation(linter):
         """
 
     assert linter.read(code, "test.cpp", "TEST") is True
-    linter.reset(True)
+    linter.full_reset()
     assert linter.read(code, "test.cpp", "ALPHA") is False
 
 
-def test_byname_headers_only(linter):
+def test_byname_headers_only(linter: DecompLinter):
     """Markers that ar referenced by name with cvdump belong in header files only."""
     code = """\
         // FUNCTION: TEST 0x1000
@@ -80,12 +80,12 @@ def test_byname_headers_only(linter):
         """
 
     assert linter.read(code, "test.h", "TEST") is True
-    linter.reset(True)
+    linter.full_reset()
     assert linter.read(code, "test.cpp", "TEST") is False
     assert linter.alerts[0].code == ParserError.BYNAME_FUNCTION_IN_CPP
 
 
-def test_duplicate_offsets_module_scope(linter):
+def test_duplicate_offsets_module_scope(linter: DecompLinter):
     """The linter will retain module/offset pairs found until we do a full reset."""
     code = """\
         // FUNCTION: TEST 0x1000
@@ -103,16 +103,15 @@ def test_duplicate_offsets_module_scope(linter):
     assert len(linter.alerts) == 1
     assert all(a.code == ParserError.DUPLICATE_OFFSET for a in linter.alerts)
 
-    # Partial reset will retain the list of seen offsets.
-    linter.reset(False)
+    # Partial reset (i.e. starting a new file) will retain the list of seen offsets.
     assert linter.read(code, "test.h", "TEST") is False
 
     # Full reset will forget seen offsets.
-    linter.reset(True)
+    linter.full_reset()
     assert linter.read(code, "test.h", "TEST") is True
 
 
-def test_duplicate_offsets_all(linter):
+def test_duplicate_offsets_all(linter: DecompLinter):
     """If we do not specify a module, check everything"""
     code = """\
         // FUNCTION: TEST 0x1000
@@ -126,7 +125,7 @@ def test_duplicate_offsets_all(linter):
     assert all(a.code == ParserError.DUPLICATE_OFFSET for a in linter.alerts)
 
 
-def test_duplicate_offsets_isolation(linter):
+def test_duplicate_offsets_isolation(linter: DecompLinter):
     """Ignore problems in another module unless we ask for them."""
     code = """\
         // FUNCTION: TEST 0x1000
@@ -140,14 +139,14 @@ def test_duplicate_offsets_isolation(linter):
     # No module = check everything
     assert linter.read(code, "test.h", None) is False
 
-    linter.reset(True)
+    linter.full_reset()
     assert linter.read(code, "test.h", "TEST") is False
 
-    linter.reset(True)
+    linter.full_reset()
     assert linter.read(code, "test.h", "HELLO") is True
 
 
-def test_duplicate_strings(linter):
+def test_duplicate_strings(linter: DecompLinter):
     """Duplicate string markers are okay if the string value is the same."""
     string_lines = """\
         // STRING: TEST 0x1000

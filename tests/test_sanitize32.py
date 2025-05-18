@@ -440,7 +440,7 @@ def test_consistent_numbering():
 
     # Assume only the JMP and CMP addresses are known so we can test
     # the placeholder string for the other values.
-    def name_lookup(addr: int, **_) -> str | None:
+    def name_lookup(addr: int, *_, **__) -> str | None:
         return {0x5555: "Test", 0x8000: "Hello"}.get(addr)
 
     # Must be empty before starting

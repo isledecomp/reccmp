@@ -15,7 +15,7 @@ class ParserSymbol:
 
     # The parser doesn't (currently) know about the code filename, but if you
     # wanted to set it here after the fact, here's the spot.
-    filename: str | None = None
+    filename: str
 
     def should_skip(self) -> bool:
         """The default is to compare any symbols we have"""
@@ -59,4 +59,9 @@ class ParserVtable(ParserSymbol):
 
 @dataclass
 class ParserString(ParserSymbol):
+    pass
+
+
+@dataclass
+class ParserLineSymbol(ParserSymbol):
     pass

@@ -1,6 +1,7 @@
 # C++ file parser
 
 import io
+from pathlib import PurePath
 from typing import Iterator
 from enum import Enum
 from .util import (
@@ -19,6 +20,7 @@ from .marker import (
     is_marker_exact,
 )
 from .node import (
+    ParserLineSymbol,
     ParserSymbol,
     ParserFunction,
     ParserVariable,
@@ -154,7 +156,9 @@ class DecompParser:
         self.function_start: int = 0
         self.function_sig: str = ""
 
-    def reset(self):
+        self.filename = ""
+
+    def reset_and_set_filename(self, filename: str):
         self._symbols = []
         self.alerts = []
 
@@ -170,6 +174,8 @@ class DecompParser:
         self.curly_indent_stops = 0
         self.function_start = 0
         self.function_sig = ""
+
+        self.filename = filename
 
         self.curly.reset()
 
@@ -250,6 +256,7 @@ class DecompParser:
                     module=marker.module,
                     offset=marker.offset,
                     name=self.function_sig,
+                    filename=self.filename,
                     lookup_by_name=lookup_by_name,
                     end_line=end_line,
                 )
@@ -273,6 +280,7 @@ class DecompParser:
                     module=marker.module,
                     offset=marker.offset,
                     name=self.curly.get_prefix(class_name),
+                    filename=self.filename,
                     base_class=marker.extra,
                 )
             )
@@ -306,6 +314,7 @@ class DecompParser:
                         module=marker.module,
                         offset=marker.offset,
                         name=string_value,
+                        filename=self.filename,
                     )
                 )
             else:
@@ -333,6 +342,7 @@ class DecompParser:
                         module=marker.module,
                         offset=marker.offset,
                         name=self.curly.get_prefix(variable_name),
+                        filename=self.filename,
                         is_static=is_static,
                         parent_function=parent_function,
                     )
@@ -343,6 +353,19 @@ class DecompParser:
             self.state = ReaderState.IN_FUNC
         else:
             self.state = ReaderState.SEARCH
+
+    def _line_marker(self, marker: DecompMarker):
+        file_path = PurePath(self.filename)
+        self._symbols.append(
+            ParserLineSymbol(
+                type=marker.type,
+                line_number=self.line_number,
+                module=marker.module,
+                offset=marker.offset,
+                name=f"{file_path.name}:{self.line_number}",
+                filename=self.filename,
+            )
+        )
 
     def _handle_marker(self, marker: DecompMarker):
         # Cannot handle any markers between function sig and opening curly brace
@@ -412,6 +435,9 @@ class DecompParser:
                 self._vtable_marker(marker)
             else:
                 self._syntax_error(ParserError.INCOMPATIBLE_MARKER)
+
+        elif marker.is_line():
+            self._line_marker(marker)
 
         else:
             self._syntax_warning(ParserError.BOGUS_MARKER)
