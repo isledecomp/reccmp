@@ -783,7 +783,7 @@ class Compare:
                 recomp = (
                     hex(m.recomp_addr) if m.recomp_addr is not None else "no recomp"
                 )
-                return f"({orig} / {recomp})  :  {m.name}"
+                return f"({orig} / {recomp})  :  {m.best_name()}"
 
             if raw_addr is not None:
                 return f"0x{raw_addr:x} from orig not annotated."
