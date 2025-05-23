@@ -665,6 +665,7 @@ def test_union(parser: CvdumpTypesParser):
     assert union == {
         "type": "LF_UNION",
         "name": "FlagBitfield",
+        "field_list_type": "0x2e84",
         "size": 1,
         "udt": "0x2e85",
     }
