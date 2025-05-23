@@ -86,7 +86,7 @@ class Compare:
         match_static_variables(self._db, report)
         match_variables(self._db, report)
         match_strings(self._db, report)
-        match_lines(self._db, self.cv, self.recomp_bin, report)
+        match_lines(self._db, self._lines_db, report)
 
         self._match_array_elements()
         # Detect floats first to eliminate potential overlap with string data
@@ -202,12 +202,16 @@ class Compare:
                     size=sym.size(),
                 )
 
-        for (section, offset), (
-            filename,
-            line_no,
-        ) in self.cvdump_analysis.verified_lines.items():
-            addr = self.recomp_bin.get_abs_addr(section, offset)
-            self._lines_db.add_line(filename, line_no, addr)
+        for filename, values in self.cvdump_analysis.lines.items():
+            lines = [
+                (v.line_number, self.recomp_bin.get_abs_addr(v.section, v.offset))
+                for v in values
+            ]
+            self._lines_db.add_lines(filename, lines)
+
+        # The seen_addrs set has more than functions, but the intersection of
+        # these addrs and the code lines should be just the functions.
+        self._lines_db.mark_function_starts(tuple(seen_addrs))
 
         # The _entry symbol is referenced in the PE header so we get this match for free.
         with self._db.batch() as batch:
@@ -253,7 +257,7 @@ class Compare:
                 )
 
                 assert fun.filename is not None
-                recomp_addr = self._lines_db.search_line(
+                recomp_addr = self._lines_db.find_function(
                     fun.filename, fun.line_number, fun.end_line
                 )
 

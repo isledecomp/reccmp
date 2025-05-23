@@ -1,4 +1,5 @@
 import re
+from pathlib import PureWindowsPath
 from typing import Iterable, NamedTuple
 from .types import CvdumpTypesParser
 from .symbols import CvdumpSymbolsParser
@@ -93,12 +94,13 @@ class NodeKey(NamedTuple):
 
 
 class LineValue(NamedTuple):
-    filename: str
     line_number: int
+    section: int
+    offset: int
 
 
 class LinesFunction(NamedTuple):
-    filename: str
+    filename: PureWindowsPath
     section: int
 
 
@@ -106,9 +108,9 @@ class CvdumpParser:
     # pylint: disable=too-many-instance-attributes
     def __init__(self) -> None:
         self._section: str = ""
-        self._lines_function = LinesFunction("", 0)
+        self._lines_function = LinesFunction(PureWindowsPath(), 0)
 
-        self.lines: dict[NodeKey, LineValue] = {}
+        self.lines: dict[PureWindowsPath, list[LineValue]] = {}
         self.publics: list[PublicsEntry] = []
         self.sizerefs: list[SizeRefEntry] = []
         self.globals: list[GdataEntry] = []
@@ -130,15 +132,16 @@ class CvdumpParser:
         # Save the section here because it is not given on the lines that follow.
         if (match := _lines_subsection_header.match(line)) is not None:
             self._lines_function = LinesFunction(
-                match.group("filename"),
+                PureWindowsPath(match.group("filename")),
                 int(match.group("section"), 16),
             )
             return
 
         # Match any pairs as we find them
         for line_no, offset in _line_addr_pairs_findall.findall(line):
-            key = NodeKey(self._lines_function.section, int(offset, 16))
-            self.lines[key] = LineValue(self._lines_function.filename, int(line_no))
+            self.lines.setdefault(self._lines_function.filename, []).append(
+                LineValue(int(line_no), self._lines_function.section, int(offset, 16))
+            )
 
     def _publics_section(self, line: str):
         """Match each line from PUBLICS and pull out the symbol information.
