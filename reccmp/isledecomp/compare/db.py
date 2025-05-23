@@ -7,7 +7,6 @@ import json
 from functools import cached_property
 from typing import Any, Iterable, Iterator
 from reccmp.isledecomp.types import EntityType
-from reccmp.isledecomp.cvdump.demangler import get_vtordisp_name
 
 _SETUP_SQL = """
     CREATE TABLE entities (
@@ -553,41 +552,6 @@ class EntityDb:
 
     def skip_compare(self, orig: int):
         self._set_opt_bool(orig, "skip")
-
-    def is_vtordisp(self, recomp_addr: int) -> bool:
-        """Check whether this function is a vtordisp based on its
-        decorated name. If its demangled name is missing the vtordisp
-        indicator, correct that."""
-        row = self._sql.execute(
-            """SELECT json_extract(kvstore,'$.name'), json_extract(kvstore,'$.symbol')
-            FROM entities
-            WHERE recomp_addr = ?""",
-            (recomp_addr,),
-        ).fetchone()
-
-        if row is None:
-            return False
-
-        (name, decorated_name) = row
-        if "`vtordisp" in name:
-            return True
-
-        if decorated_name is None:
-            # happens in debug builds, e.g. for "Thunk of 'LegoAnimActor::ClassName'"
-            return False
-
-        new_name = get_vtordisp_name(decorated_name)
-        if new_name is None:
-            return False
-
-        self._sql.execute(
-            """UPDATE entities
-            SET kvstore = json_set(kvstore, '$.name', ?)
-            WHERE recomp_addr = ?""",
-            (new_name, recomp_addr),
-        )
-
-        return True
 
     def search_symbol(self, symbol: str) -> Iterator[ReccmpEntity]:
         if "symbol" not in self._indexed:
