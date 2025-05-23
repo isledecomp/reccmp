@@ -665,6 +665,7 @@ def test_union(parser: CvdumpTypesParser):
     assert union == {
         "type": "LF_UNION",
         "name": "FlagBitfield",
+        "field_list_type": "0x2e84",
         "size": 1,
         "udt": "0x2e85",
     }
@@ -703,6 +704,7 @@ def test_unnamed_union():
     # Make sure we can parse the members line
     union = parser.keys["0x369e"]
     assert union["size"] == 4
+    assert union["field_list_type"] == "0x369d"
 
 
 ARGLIST_UNKNOWN_TYPE = """

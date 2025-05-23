@@ -736,6 +736,7 @@ class CvdumpTypesParser:
         if match.group("field_type") == "0x0000":
             self._set("is_forward_ref", True)
 
+        self._set("field_list_type", match.group("field_type"))
         self._set("size", int(match.group("size")))
         if match.group("udt") is not None:
             self._set("udt", normalize_type_id(match.group("udt")))
