@@ -703,6 +703,7 @@ def test_unnamed_union():
     # Make sure we can parse the members line
     union = parser.keys["0x369e"]
     assert union["size"] == 4
+    assert union["field_list_type"] == "0x369d"
 
 
 ARGLIST_UNKNOWN_TYPE = """
@@ -729,17 +730,17 @@ def test_arglist_unknown_type():
 
 FUNC_ATTR_EXAMPLES = """
 0x1216 : Length = 26, Leaf = 0x1009 LF_MFUNCTION
-    Return type = 0x1209, Class type = 0x1209, This type = T_NOTYPE(0000), 
+    Return type = 0x1209, Class type = 0x1209, This type = T_NOTYPE(0000),
     Call type = C Near, Func attr = return UDT (C++ style)
     Parms = 1, Arg list type = 0x116f, This adjust = 0
 
 0x122b : Length = 26, Leaf = 0x1009 LF_MFUNCTION
-    Return type = T_VOID(0003), Class type = 0x1226, This type = 0x1228, 
+    Return type = T_VOID(0003), Class type = 0x1226, This type = 0x1228,
     Call type = ThisCall, Func attr = instance constructor
     Parms = 1, Arg list type = 0x122a, This adjust = 0
 
 0x1232 : Length = 26, Leaf = 0x1009 LF_MFUNCTION
-    Return type = T_VOID(0003), Class type = 0x1226, This type = 0x1228, 
+    Return type = T_VOID(0003), Class type = 0x1226, This type = 0x1228,
     Call type = ThisCall, Func attr = ****Warning**** unused field non-zero!
     Parms = 0, Arg list type = 0x1018, This adjust = 0
 """
@@ -776,7 +777,7 @@ def test_union_without_udt():
 
 MFUNCTION_UNK_RETURN_TYPE = """
 0x11d8 : Length = 26, Leaf = 0x1009 LF_MFUNCTION
-    Return type = ???(047C), Class type = 0x1136, This type = T_NOTYPE(0000), 
+    Return type = ???(047C), Class type = 0x1136, This type = T_NOTYPE(0000),
     Call type = C Near, Func attr = none
     Parms = 3, Arg list type = 0x11d7, This adjust = 0
 """
@@ -793,8 +794,8 @@ def test_mfunction_unk_return_type():
 
 CLASS_WITH_UNIQUE_NAME = """
 0x1cf0 : Length = 134, Leaf = 0x1504 LF_CLASS
-    # members = 8,  field list type 0x1cef, CONSTRUCTOR, OVERLOAD, NESTED, OVERLOADED ASSIGNMENT, 
-        CASTING, 
+    # members = 8,  field list type 0x1cef, CONSTRUCTOR, OVERLOAD, NESTED, OVERLOADED ASSIGNMENT,
+        CASTING,
     Derivation list type 0x0000, VT shape type 0x0000
     Size = 8, class name = std::basic_ostream<char,std::char_traits<char> >::sentry, unique name = .?AVsentry@?$basic_ostream@DU?$char_traits@D@std@@@std@@, UDT(0x00001cf0)
 """
