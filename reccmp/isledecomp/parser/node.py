@@ -36,6 +36,8 @@ class ParserFunction(ParserSymbol):
     # referenced by name, but only if this flag is true.
     lookup_by_name: bool = False
 
+    use_linker: bool = False
+
     def should_skip(self) -> bool:
         return self.type == MarkerType.STUB
 
