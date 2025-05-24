@@ -36,6 +36,9 @@ class ParserFunction(ParserSymbol):
     # referenced by name, but only if this flag is true.
     lookup_by_name: bool = False
 
+    # True if the annotation name is the linker name (symbol) for this entity.
+    name_is_symbol: bool = False
+
     def should_skip(self) -> bool:
         return self.type == MarkerType.STUB
 

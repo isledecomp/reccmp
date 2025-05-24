@@ -55,6 +55,13 @@ There are a few cases where two functions of the same name need to be annotated 
 // ?_Construct@@YAXPAPAVROI@@ABQAV1@@Z
 ```
 
+Names that begin with `?` are assumed to be [MSVC-like symbols](https://en.wikiversity.org/wiki/Visual_C%2B%2B_name_mangling). In all other cases, you should specify that the name is a symbol by adding `SYMBOL` after the address. For example:
+
+```c++
+// LIBRARY: TEST 0x10002000 SYMBOL
+// __strlwr
+```
+
 ### Annotation types
 
 #### `FUNCTION`

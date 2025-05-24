@@ -50,6 +50,10 @@ class ParserError(Enum):
     # function marked too, and in the same module.
     ORPHANED_STATIC_VARIABLE = 112
 
+    # WARN: You marked a line-based function annotation with the SYMBOL option.
+    # This makes no sense, so we ignore the option.
+    SYMBOL_OPTION_IGNORED = 113
+
     # This code or higher is an error, not a warning
     DECOMP_ERROR_START = 200
 
