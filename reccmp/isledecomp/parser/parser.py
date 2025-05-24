@@ -249,10 +249,12 @@ class DecompParser:
             end_line -= 1
 
         for marker in self.fun_markers.iter():
-            use_linker = marker.extra is not None and marker.extra.lower() == "symbol"
-            if use_linker and not lookup_by_name:
+            name_is_symbol = (
+                marker.extra is not None and marker.extra.lower() == "symbol"
+            )
+            if name_is_symbol and not lookup_by_name:
                 self._syntax_warning(ParserError.SYMBOL_OPTION_IGNORED)
-                use_linker = False
+                name_is_symbol = False
 
             self._symbols.append(
                 ParserFunction(
@@ -263,7 +265,7 @@ class DecompParser:
                     name=self.function_sig,
                     filename=self.filename,
                     lookup_by_name=lookup_by_name,
-                    use_linker=use_linker,
+                    name_is_symbol=name_is_symbol,
                     end_line=end_line,
                 )
             )

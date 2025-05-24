@@ -800,16 +800,17 @@ def test_function_symbol_option(parser):
 
     assert len(parser.functions) == 3
     assert all(fun.name == "_strcmp" for fun in parser.functions)
-    assert parser.functions[0].use_linker is True
-    assert parser.functions[1].use_linker is True  # Lower-case is okay (for now)
-    assert parser.functions[2].use_linker is False  # Must be "symbol"
+    assert parser.functions[0].name_is_symbol is True
+    assert parser.functions[1].name_is_symbol is True  # Lower-case is okay (for now)
+    assert parser.functions[2].name_is_symbol is False  # Must be "symbol"
     assert len(parser.alerts) == 0
 
 
 def test_function_symbol_option_multiple(parser):
-    """If there are multiple markers for a name-based annotation, enable the use_linker option only
-    for the modules that have it. It doesn't really make sense to do things differently for different
-    modules but *shrug*. We already allow STUB and FUNCTIONs to be set for different modules.
+    """If there are multiple markers for a name-based annotation, name_is_symbol is true only
+    for the modules where the user specified SYMBOL.
+    I don't know if there's a reason to do things differently for different modules but *shrug*.
+    We already allow STUB and FUNCTION to be used on the same annotation.
     """
     parser.read(
         """\
@@ -821,9 +822,9 @@ def test_function_symbol_option_multiple(parser):
 
     assert len(parser.functions) == 2
     assert parser.functions[0].module == "HELLO"
-    assert parser.functions[0].use_linker is True
+    assert parser.functions[0].name_is_symbol is True
     assert parser.functions[1].module == "TEST"
-    assert parser.functions[1].use_linker is False
+    assert parser.functions[1].name_is_symbol is False
 
 
 def test_function_symbol_option_warning(parser):
@@ -836,5 +837,5 @@ def test_function_symbol_option_warning(parser):
     )
 
     assert len(parser.functions) == 1
-    assert parser.functions[0].use_linker is False
+    assert parser.functions[0].name_is_symbol is False
     assert parser.alerts[0].code == ParserError.SYMBOL_OPTION_IGNORED
