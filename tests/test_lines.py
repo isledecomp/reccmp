@@ -11,18 +11,24 @@ def test_lines():
     lines = LinesDb([TEST_PATH])
 
     # We haven't added any addresses yet.
-    assert lines.search_line(TEST_PATH, 1, 10) is None
+    assert lines.find_function(TEST_PATH, 1, 10) is None
 
     # Test search on line 2 only
     lines.add_line(TEST_PATH, 2, 0x1234)
-    assert lines.search_line(TEST_PATH, 2) == 0x1234
+
+    # Should return nothing: we have not marked this addr as the start of a function
+    assert lines.find_function(TEST_PATH, 2) is None
+
+    # Now we get the function
+    lines.mark_function_starts((0x1234,))
+    assert lines.find_function(TEST_PATH, 2) == 0x1234
 
     # Search window
-    assert lines.search_line(TEST_PATH, 1, 2) == 0x1234
+    assert lines.find_function(TEST_PATH, 1, 2) == 0x1234
 
     # Outside of search window
-    assert lines.search_line(TEST_PATH, 1, 1) is None
-    assert lines.search_line(TEST_PATH, 3, 10) is None
+    assert lines.find_function(TEST_PATH, 1, 1) is None
+    assert lines.find_function(TEST_PATH, 3, 10) is None
 
 
 def test_no_files_of_interest():
@@ -31,12 +37,13 @@ def test_no_files_of_interest():
 
     lines = LinesDb([])
     lines.add_line(TEST_PATH, 2, 0x1234)
+    lines.mark_function_starts((0x1234,))
     # The address is ignored because "test.cpp" is not part of the decomp code base.
-    assert lines.search_line(TEST_PATH, 2) is None
+    assert lines.find_function(TEST_PATH, 2) is None
 
 
 def test_multiple_match():
-    """search_line looks for function starts in the range specified.
+    """find_function looks for function starts in the range specified.
     If we find more than one address, the file does not match our data source (PDB or MAP).
     """
 
@@ -44,13 +51,14 @@ def test_multiple_match():
     lines = LinesDb([TEST_PATH])
     lines.add_line(TEST_PATH, 2, 0x1234)
     lines.add_line(TEST_PATH, 3, 0x1235)
+    lines.mark_function_starts((0x1234, 0x1235))
 
     # Both match on their own
-    assert lines.search_line(TEST_PATH, 2) == 0x1234
-    assert lines.search_line(TEST_PATH, 3) == 0x1235
+    assert lines.find_function(TEST_PATH, 2) == 0x1234
+    assert lines.find_function(TEST_PATH, 3) == 0x1235
 
     # Two addresses in this range of line numbers. return None.
-    assert lines.search_line(TEST_PATH, 2, 3) is None
+    assert lines.find_function(TEST_PATH, 2, 3) is None
 
 
 def test_db_hash_windows():
@@ -61,11 +69,12 @@ def test_db_hash_windows():
     path = PureWindowsPath("test.cpp")
     lines = LinesDb([path])
     lines.add_line(path, 2, 0x1234)
+    lines.mark_function_starts((0x1234,))
 
     # Should match any variation
-    assert lines.search_line(path, 2) == 0x1234
-    assert lines.search_line(PureWindowsPath("Test.cpp"), 2) == 0x1234
-    assert lines.search_line(PureWindowsPath("TEST.CPP"), 2) == 0x1234
+    assert lines.find_function(path, 2) == 0x1234
+    assert lines.find_function(PureWindowsPath("Test.cpp"), 2) == 0x1234
+    assert lines.find_function(PureWindowsPath("TEST.CPP"), 2) == 0x1234
 
 
 def test_db_hash_posix():
@@ -76,8 +85,37 @@ def test_db_hash_posix():
     path = PurePosixPath("test.cpp")
     lines = LinesDb([path])
     lines.add_line(path, 2, 0x1234)
+    lines.mark_function_starts((0x1234,))
 
     # Should match only the exact path
-    assert lines.search_line(path, 2) == 0x1234
-    assert lines.search_line(PurePosixPath("Test.cpp"), 2) is None
-    assert lines.search_line(PurePosixPath("TEST.CPP"), 2) is None
+    assert lines.find_function(path, 2) == 0x1234
+    assert lines.find_function(PurePosixPath("Test.cpp"), 2) is None
+    assert lines.find_function(PurePosixPath("TEST.CPP"), 2) is None
+
+
+def test_db_search_line():
+    """search_line() will return any line in the given range
+    unless you restrict to function starts only."""
+
+    lines = LinesDb([TEST_PATH])
+
+    # We haven't added any addresses yet.
+    assert [*lines.search_line(TEST_PATH, 1, 10)] == []
+
+    lines.add_line(TEST_PATH, 2, 0x1234)
+    lines.add_line(TEST_PATH, 5, 0x2000)
+
+    # Return single line if no end range specified
+    assert [*lines.search_line(TEST_PATH, 2)] == [0x1234]
+    assert [*lines.search_line(TEST_PATH, 5)] == [0x2000]
+
+    # Test line range
+    assert [*lines.search_line(TEST_PATH, 2, 4)] == [0x1234]
+    assert [*lines.search_line(TEST_PATH, 2, 5)] == [0x1234, 0x2000]
+    assert [*lines.search_line(TEST_PATH, 3, 5)] == [0x2000]
+
+    # No lines marked as function starts
+    assert [*lines.search_line(TEST_PATH, 2, 5, start_only=True)] == []
+
+    lines.mark_function_starts((0x1234,))
+    assert [*lines.search_line(TEST_PATH, 2, 5, start_only=True)] == [0x1234]
