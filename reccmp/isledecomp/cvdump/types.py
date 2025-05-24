@@ -192,7 +192,9 @@ class CvdumpTypesParser:
     ARRAY_ELEMENT_RE = re.compile(r"^\s+Element type = (?P<type>.*)")
 
     # LF_ARRAY total array size
-    ARRAY_LENGTH_RE = re.compile(r"^\s+length = (?P<length>\d+)")
+    ARRAY_LENGTH_RE = re.compile(
+        r"^\s+length = (?P<number_type>\([\w_]+\) )?(?P<length>\d+)"
+    )
 
     # LF_CLASS/LF_STRUCTURE field list reference
     CLASS_FIELD_RE = re.compile(
