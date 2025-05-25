@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 import colorama
 import reccmp
-from reccmp.isledecomp.dir import walk_source_dir, is_file_cpp
+from reccmp.isledecomp.dir import walk_source_dir, is_file_c_like
 from reccmp.isledecomp.parser import DecompLinter
 from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
 from reccmp.project.detect import RecCmpProject
@@ -113,7 +113,7 @@ def main():
     for path in args.paths:
         if path.is_dir():
             files_to_check.extend(walk_source_dir(path))
-        elif path.is_file() and is_file_cpp(path):
+        elif path.is_file() and is_file_c_like(path):
             files_to_check.append(str(path))
         else:
             logger.error("Invalid path: %s", path)
