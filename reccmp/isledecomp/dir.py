@@ -133,8 +133,18 @@ class PathResolver:
         return self._memo[path_str]
 
 
-def is_file_cpp(filename: Path | str) -> bool:
-    return Path(filename).suffix.lower() in (".h", ".cpp")
+def is_file_c_like(filename: Path | str) -> bool:
+    return Path(filename).suffix.lower() in (
+        ".c",
+        ".h",
+        ".cc",
+        ".hh",
+        ".cxx",
+        ".hxx",
+        ".cpp",
+        ".hpp",
+        ".C",
+    )
 
 
 def walk_source_dir(source: Path, recursive: bool = True) -> Iterator[str]:
@@ -143,7 +153,7 @@ def walk_source_dir(source: Path, recursive: bool = True) -> Iterator[str]:
 
     for subdir, _, files in os.walk(source.absolute()):
         for file in files:
-            if is_file_cpp(file):
+            if is_file_c_like(file):
                 yield os.path.join(subdir, file)
 
         if not recursive:
