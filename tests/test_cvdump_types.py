@@ -365,6 +365,11 @@ def types_parser_fixture():
     return parser
 
 
+@pytest.fixture(name="empty_parser")
+def types_empty_parser_fixture():
+    return CvdumpTypesParser()
+
+
 def test_basic_parsing(parser: CvdumpTypesParser):
     obj = parser.keys["0x4db6"]
     assert obj["type"] == "LF_CLASS"
@@ -695,14 +700,13 @@ UNNAMED_UNION_DATA = """
 """
 
 
-def test_unnamed_union():
+def test_unnamed_union(empty_parser: CvdumpTypesParser):
     """Make sure we can parse anonymous union types without a UDT"""
-    parser = CvdumpTypesParser()
     for line in UNNAMED_UNION_DATA.split("\n"):
-        parser.read_line(line)
+        empty_parser.read_line(line)
 
     # Make sure we can parse the members line
-    union = parser.keys["0x369e"]
+    union = empty_parser.keys["0x369e"]
     assert union["size"] == 4
     assert union["field_list_type"] == "0x369d"
 
@@ -719,44 +723,43 @@ ARGLIST_UNKNOWN_TYPE = """
 """
 
 
-def test_arglist_unknown_type():
+def test_arglist_unknown_type(empty_parser: CvdumpTypesParser):
     """Should parse the ??? types and not fail with an assert."""
-    parser = CvdumpTypesParser()
     for line in ARGLIST_UNKNOWN_TYPE.split("\n"):
-        parser.read_line(line)
+        empty_parser.read_line(line)
 
-    t = parser.keys["0x11f3"]
+    t = empty_parser.keys["0x11f3"]
     assert len(t["args"]) == t["argcount"]
 
 
 FUNC_ATTR_EXAMPLES = """
 0x1216 : Length = 26, Leaf = 0x1009 LF_MFUNCTION
-    Return type = 0x1209, Class type = 0x1209, This type = T_NOTYPE(0000), 
+    Return type = 0x1209, Class type = 0x1209, This type = T_NOTYPE(0000),
     Call type = C Near, Func attr = return UDT (C++ style)
     Parms = 1, Arg list type = 0x116f, This adjust = 0
 
 0x122b : Length = 26, Leaf = 0x1009 LF_MFUNCTION
-    Return type = T_VOID(0003), Class type = 0x1226, This type = 0x1228, 
+    Return type = T_VOID(0003), Class type = 0x1226, This type = 0x1228,
     Call type = ThisCall, Func attr = instance constructor
     Parms = 1, Arg list type = 0x122a, This adjust = 0
 
 0x1232 : Length = 26, Leaf = 0x1009 LF_MFUNCTION
-    Return type = T_VOID(0003), Class type = 0x1226, This type = 0x1228, 
+    Return type = T_VOID(0003), Class type = 0x1226, This type = 0x1228,
     Call type = ThisCall, Func attr = ****Warning**** unused field non-zero!
     Parms = 0, Arg list type = 0x1018, This adjust = 0
 """
 
 
-def test_mfunction_func_attr():
+def test_mfunction_func_attr(empty_parser: CvdumpTypesParser):
     """Should parse "Func attr" values other than 'none'"""
-    parser = CvdumpTypesParser()
     for line in FUNC_ATTR_EXAMPLES.split("\n"):
-        parser.read_line(line)
+        empty_parser.read_line(line)
 
-    assert parser.keys["0x1216"]["func_attr"] == "return UDT (C++ style)"
-    assert parser.keys["0x122b"]["func_attr"] == "instance constructor"
+    assert empty_parser.keys["0x1216"]["func_attr"] == "return UDT (C++ style)"
+    assert empty_parser.keys["0x122b"]["func_attr"] == "instance constructor"
     assert (
-        parser.keys["0x1232"]["func_attr"] == "****Warning**** unused field non-zero!"
+        empty_parser.keys["0x1232"]["func_attr"]
+        == "****Warning**** unused field non-zero!"
     )
 
 
@@ -766,46 +769,67 @@ UNION_UNNAMED_TAG = """
 """
 
 
-def test_union_without_udt():
+def test_union_without_udt(empty_parser: CvdumpTypesParser):
     """Should parse union that is missing the UDT attribute"""
-    parser = CvdumpTypesParser()
     for line in UNION_UNNAMED_TAG.split("\n"):
-        parser.read_line(line)
+        empty_parser.read_line(line)
 
-    assert "udt" not in parser.keys["0x3352"]
-    assert parser.keys["0x3352"]["name"] == "<unnamed-tag>"
+    assert "udt" not in empty_parser.keys["0x3352"]
+    assert empty_parser.keys["0x3352"]["name"] == "<unnamed-tag>"
 
 
 MFUNCTION_UNK_RETURN_TYPE = """
 0x11d8 : Length = 26, Leaf = 0x1009 LF_MFUNCTION
-    Return type = ???(047C), Class type = 0x1136, This type = T_NOTYPE(0000), 
+    Return type = ???(047C), Class type = 0x1136, This type = T_NOTYPE(0000),
     Call type = C Near, Func attr = none
     Parms = 3, Arg list type = 0x11d7, This adjust = 0
 """
 
 
-def test_mfunction_unk_return_type():
+def test_mfunction_unk_return_type(empty_parser: CvdumpTypesParser):
     """Should parse unknown return type as-is"""
-    parser = CvdumpTypesParser()
     for line in MFUNCTION_UNK_RETURN_TYPE.split("\n"):
-        parser.read_line(line)
+        empty_parser.read_line(line)
 
-    assert parser.keys["0x11d8"]["return_type"] == "???(047C)"
+    assert empty_parser.keys["0x11d8"]["return_type"] == "???(047C)"
 
 
 CLASS_WITH_UNIQUE_NAME = """
 0x1cf0 : Length = 134, Leaf = 0x1504 LF_CLASS
-    # members = 8,  field list type 0x1cef, CONSTRUCTOR, OVERLOAD, NESTED, OVERLOADED ASSIGNMENT, 
-        CASTING, 
+    # members = 8,  field list type 0x1cef, CONSTRUCTOR, OVERLOAD, NESTED, OVERLOADED ASSIGNMENT,
+        CASTING,
     Derivation list type 0x0000, VT shape type 0x0000
     Size = 8, class name = std::basic_ostream<char,std::char_traits<char> >::sentry, unique name = .?AVsentry@?$basic_ostream@DU?$char_traits@D@std@@@std@@, UDT(0x00001cf0)
 """
 
 
-def test_class_unique_name():
+def test_class_unique_name(empty_parser: CvdumpTypesParser):
     """Make sure we can parse the UDT when the 'unique name' attribute is present"""
-    parser = CvdumpTypesParser()
     for line in CLASS_WITH_UNIQUE_NAME.split("\n"):
-        parser.read_line(line)
+        empty_parser.read_line(line)
 
-    assert parser.keys["0x1cf0"]["udt"] == "0x1cf0"
+    assert empty_parser.keys["0x1cf0"]["udt"] == "0x1cf0"
+
+
+TWO_FORMATS_FOR_ARRAY_LENGTH = """
+0x62c1 : Length = 14, Leaf = 0x1503 LF_ARRAY
+	Element type = T_RCHAR(0070)
+	Index type = T_SHORT(0011)
+	length = 50
+	Name =
+
+0x62c5 : Length = 18, Leaf = 0x1503 LF_ARRAY
+	Element type = 0x62BE
+	Index type = T_SHORT(0011)
+	length = (LF_ULONG) 131328
+	Name =
+"""
+
+
+def test_two_formats_for_array_length(empty_parser: CvdumpTypesParser):
+    """Make sure we can parse the UDT when the 'unique name' attribute is present"""
+    for line in TWO_FORMATS_FOR_ARRAY_LENGTH.split("\n"):
+        empty_parser.read_line(line)
+
+    assert empty_parser.keys["0x62c1"]["size"] == 50
+    assert empty_parser.keys["0x62c5"]["size"] == 131328
