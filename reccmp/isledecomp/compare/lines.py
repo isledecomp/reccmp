@@ -5,6 +5,7 @@ import logging
 from functools import cache
 from pathlib import Path, PurePath, PureWindowsPath
 from collections.abc import Sequence
+from typing import Iterator
 from reccmp.isledecomp.dir import convert_foreign_path
 
 
@@ -30,23 +31,54 @@ class LinesDb:
         # e.g. for the start and end of a loop.
         self._map: dict[PurePath, list[tuple[int, int]]] = {}
 
-    def add_line(self, foreign_path: str, line_no: int, addr: int):
+        # Addresses for the first line for a function
+        self._function_starts: set[int] = set()
+
+    def add_line(self, foreign_path: PureWindowsPath, line_no: int, addr: int):
         """Connect the remote path to a line number and address pair."""
-        pdb_path = PureWindowsPath(foreign_path)
-        filename = pdb_path.name.lower()
+        return self.add_lines(foreign_path, ((line_no, addr),))
+
+    def add_lines(
+        self, foreign_path: PureWindowsPath, lines: Sequence[tuple[int, int]]
+    ):
+        """Connect the remote path to a line number and address pair."""
+        filename = foreign_path.name.lower()
 
         candidates = self._filenames.get(filename)
         if candidates is None:
             return
 
         # Must convert to tuple (hashable type) so we can use functools.cache
-        sourcepath = self._path_resolver(pdb_path, tuple(candidates))
+        sourcepath = self._path_resolver(foreign_path, tuple(candidates))
         if sourcepath is None:
             return
 
-        self._map.setdefault(sourcepath, []).append((line_no, addr))
+        self._map.setdefault(sourcepath, []).extend(list(lines))
+
+    def mark_function_starts(self, addrs: Sequence[int]):
+        self._function_starts = self._function_starts.union(set(addrs))
 
     def search_line(
+        self,
+        local_path: str | Path | PurePath,
+        line_start: int,
+        line_end: int | None = None,
+        start_only: bool = False,
+    ) -> Iterator[int]:
+        # If there is no end line, search for a single line only
+        if line_end is None:
+            line_end = line_start
+
+        if not isinstance(local_path, PurePath):
+            local_path = PurePath(local_path)
+
+        for line_no, addr in self._map.get(local_path, []):
+            if (line_start <= line_no <= line_end) and (
+                not start_only or addr in self._function_starts
+            ):
+                yield addr
+
+    def find_function(
         self,
         local_path: str | Path | PurePath,
         line_start: int,
@@ -57,21 +89,8 @@ class LinesDb:
         We want to know if exactly one function exists between line start and line end
         in the given file."""
 
-        # We might not capture the end line of a function. If not, search for the start line only.
-        if line_end is None:
-            line_end = line_start
-
-        if not isinstance(local_path, PurePath):
-            local_path = PurePath(local_path)
-
-        lines = self._map.get(local_path)
-        if lines is None:
-            return None
-
-        lines.sort()
-
         possible_functions = [
-            addr for (line_no, addr) in lines if line_start <= line_no <= line_end
+            *self.search_line(local_path, line_start, line_end, start_only=True)
         ]
 
         if len(possible_functions) == 1:
