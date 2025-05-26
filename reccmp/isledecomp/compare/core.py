@@ -522,81 +522,84 @@ class Compare:
 
         # Mark all recomp thunks first. This allows us to use their name
         # when we sanitize the asm.
-        for recomp_thunk, recomp_addr in self.recomp_bin.thunks:
-            recomp_func = self._db.get_by_recomp(recomp_addr)
-            if recomp_func is None:
-                continue
+        with self._db.batch() as batch:
+            for recomp_thunk, recomp_addr in self.recomp_bin.thunks:
+                recomp_func = self._db.get_by_recomp(recomp_addr)
+                if recomp_func is None:
+                    continue
 
-            assert recomp_func.name is not None
-            self._db.create_recomp_thunk(recomp_thunk, recomp_func.name)
+                assert recomp_func.name is not None
+                batch.insert_recomp(
+                    recomp_thunk,
+                    type=EntityType.FUNCTION,
+                    size=5,
+                    name=f"Thunk of '{recomp_func.name}'",
+                )
 
-        # Thunks may be non-unique, so use a list as dict value when
-        # inverting the list of tuples from self.recomp_bin.
-        recomp_thunks: dict[int, list[int]] = {}
-        for thunk_addr, func_addr in self.recomp_bin.thunks:
-            recomp_thunks.setdefault(func_addr, []).append(thunk_addr)
+            # Thunks may be non-unique, so use a list as dict value when
+            # inverting the list of tuples from self.recomp_bin.
+            recomp_thunks: dict[int, list[int]] = {}
+            for thunk_addr, func_addr in self.recomp_bin.thunks:
+                recomp_thunks.setdefault(func_addr, []).append(thunk_addr)
 
-        # Now match the thunks from orig where we can.
-        for orig_thunk, orig_addr in self.orig_bin.thunks:
-            orig_func = self._db.get_by_orig(orig_addr)
-            if orig_func is None or orig_func.recomp_addr is None:
-                continue
+            # Now match the thunks from orig where we can.
+            for orig_thunk, orig_addr in self.orig_bin.thunks:
+                orig_func = self._db.get_by_orig(orig_addr)
+                if orig_func is None or orig_func.recomp_addr is None:
+                    continue
 
-            # Check whether the thunk destination is a matched symbol
-            if orig_func.recomp_addr not in recomp_thunks:
-                assert orig_func.name is not None
-                self._db.create_orig_thunk(orig_thunk, orig_func.name)
-                continue
+                # Check whether the thunk destination is a matched symbol
+                if orig_func.recomp_addr not in recomp_thunks:
+                    assert orig_func.name is not None
+                    batch.insert_orig(
+                        orig_thunk,
+                        type=EntityType.FUNCTION,
+                        size=5,
+                        name=f"Thunk of '{orig_func.name}'",
+                    )
+                    continue
 
-            # If there are multiple thunks, they are already in v.addr order.
-            # Pop the earliest one and match it.
-            recomp_thunk = recomp_thunks[orig_func.recomp_addr].pop(0)
-            if len(recomp_thunks[orig_func.recomp_addr]) == 0:
-                del recomp_thunks[orig_func.recomp_addr]
+                # If there are multiple thunks, they are already in v.addr order.
+                # Pop the earliest one and match it.
+                recomp_thunk = recomp_thunks[orig_func.recomp_addr].pop(0)
+                if len(recomp_thunks[orig_func.recomp_addr]) == 0:
+                    del recomp_thunks[orig_func.recomp_addr]
 
-            self._db.set_function_pair(orig_thunk, recomp_thunk)
+                batch.match(orig_thunk, recomp_thunk)
 
-            # Don't compare thunk functions for now. The comparison isn't
-            # "useful" in the usual sense. We are only looking at the
-            # bytes of the jmp instruction and not the larger context of
-            # where this function is. Also: these will always match 100%
-            # because we are searching for a match to register this as a
-            # function in the first place.
-            self._db.skip_compare(orig_thunk)
+                # Don't compare thunk functions for now. The comparison isn't
+                # "useful" in the usual sense. We are only looking at the
+                # bytes of the jmp instruction and not the larger context of
+                # where this function is. Also: these will always match 100%
+                # because we are searching for a match to register this as a
+                # function in the first place.
+                batch.set_orig(orig_thunk, skip=True)
 
     def _match_exports(self):
         # invert for name lookup
         orig_exports = {y: x for (x, y) in self.orig_bin.exports}
 
-        for recomp_addr, export_name in self.recomp_bin.exports:
-            orig_addr = orig_exports.get(export_name)
-            if orig_addr is None:
-                continue
+        orig_thunks = dict(self.orig_bin.thunks)
+        recomp_thunks = dict(self.recomp_bin.thunks)
 
-            try:
+        with self._db.batch() as batch:
+            for recomp_addr, export_name in self.recomp_bin.exports:
+                orig_addr = orig_exports.get(export_name)
+                if orig_addr is None:
+                    continue
+
                 # Check whether either of the addresses is actually a thunk.
                 # This is a quirk of the debug builds. Technically the export
                 # *is* the thunk, but it's more helpful to mark the actual function.
                 # It could be the case that only one side is a thunk, but we can
                 # deal with that.
-                rel_addr: int
-                (opcode, rel_addr) = struct.unpack(
-                    "<Bl", self.recomp_bin.read(recomp_addr, 5)
-                )
-                if opcode == 0xE9:
-                    recomp_addr += 5 + rel_addr
+                if orig_addr in orig_thunks:
+                    orig_addr = orig_thunks[orig_addr]
 
-                (opcode, rel_addr) = struct.unpack(
-                    "<Bl", self.orig_bin.read(orig_addr, 5)
-                )
-                if opcode == 0xE9:
-                    orig_addr += 5 + rel_addr
-            except ValueError:
-                # Bail out if there's a problem with struct.unpack
-                continue
+                if recomp_addr in recomp_thunks:
+                    recomp_addr = recomp_thunks[recomp_addr]
 
-            if self._db.set_pair_tentative(orig_addr, recomp_addr):
-                logger.debug("Matched export %s", repr(export_name))
+                batch.match(orig_addr, recomp_addr)
 
     def _match_vtordisp(self):
         """Find each vtordisp function in each image and match them using
@@ -673,55 +676,6 @@ class Compare:
                 logger.warning(
                     "Recomp vtable is larger than orig vtable for %s", match.name
                 )
-
-    def _match_vtordisp_in_vtable(self, orig_addr, recomp_addr):
-        thunk_fn = self.get_by_recomp(recomp_addr)
-        assert thunk_fn is not None
-
-        # Read the function bytes here.
-        # In practice, the adjuster thunk will be under 16 bytes.
-        # If we have thunks of unequal size, we can still tell whether they are thunking
-        # the same function by grabbing the JMP instruction at the end.
-        thunk_presumed_size = max(thunk_fn.size, 16)
-
-        # Strip off MSVC padding 0xcc bytes.
-        # This should be safe to do; it is highly unlikely that
-        # the MSB of the jump displacement would be 0xcc. (huge jump)
-        orig_thunk_bin = self.orig_bin.read(orig_addr, thunk_presumed_size).rstrip(
-            b"\xcc"
-        )
-
-        recomp_thunk_bin = self.recomp_bin.read(
-            recomp_addr, thunk_presumed_size
-        ).rstrip(b"\xcc")
-
-        # Read jump opcode and displacement (last 5 bytes)
-        (orig_jmp, orig_disp) = struct.unpack("<Bi", orig_thunk_bin[-5:])
-        (recomp_jmp, recomp_disp) = struct.unpack("<Bi", recomp_thunk_bin[-5:])
-
-        # Make sure it's a JMP
-        if orig_jmp != 0xE9 or recomp_jmp != 0xE9:
-            logger.warning(
-                "Not a jump in vtordisp at (0x%x, 0x%x)", orig_addr, recomp_addr
-            )
-            return
-
-        # Calculate jump destination from the end of the JMP instruction
-        # i.e. the end of the function
-        orig_actual = orig_addr + len(orig_thunk_bin) + orig_disp
-        recomp_actual = recomp_addr + len(recomp_thunk_bin) + recomp_disp
-
-        # If they are thunking the same function, then this must be a match.
-        if self.is_pointer_match(orig_actual, recomp_actual):
-            if len(orig_thunk_bin) != len(recomp_thunk_bin):
-                logger.warning(
-                    "Adjuster thunk %s (0x%x) is not exact",
-                    thunk_fn.name,
-                    orig_addr,
-                )
-            # Use `tentative` because vtordisps can be shared between different vtables.
-            # We get a lot of `address not unique!` debug logs otherwise
-            self._db.set_function_pair_tentative(orig_addr, recomp_addr)
 
     def _unique_names_for_overloaded_functions(self):
         """Our asm sanitize will use the "friendly" name of a function.
