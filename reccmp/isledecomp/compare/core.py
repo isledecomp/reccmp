@@ -266,7 +266,7 @@ class Compare:
                     fun.offset, type=EntityType.FUNCTION, stub=fun.should_skip()
                 )
 
-                if fun.name.startswith("?"):
+                if fun.name.startswith("?") or fun.name_is_symbol:
                     batch.set_orig(fun.offset, symbol=fun.name)
                 else:
                     batch.set_orig(fun.offset, name=fun.name)
