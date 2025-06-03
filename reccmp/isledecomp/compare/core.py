@@ -654,7 +654,8 @@ class Compare:
             )
 
             next_orig = self._db.get_next_orig_addr(match.orig_addr)
-            assert next_orig is not None
+            if next_orig is None:
+                continue
 
             orig_size_upper_limit = next_orig - match.orig_addr
             if orig_size_upper_limit < match.size:

@@ -89,12 +89,13 @@ class LinesDb:
         We want to know if exactly one function exists between line start and line end
         in the given file."""
 
-        possible_functions = [
-            *self.search_line(local_path, line_start, line_end, start_only=True)
-        ]
+        # TODO: Add unit test for this bug
+        possible_functions = set(
+            self.search_line(local_path, line_start, line_end, start_only=True)
+        )
 
         if len(possible_functions) == 1:
-            return possible_functions[0]
+            return next(iter(possible_functions))
 
         # The file has been edited since the last compile.
         if len(possible_functions) > 1:
