@@ -668,6 +668,7 @@ class CvdumpTypesParser:
                     "const Pointer",
                     "L-value",
                     "volatile",
+                    "Type of pointer to member",
                 ]
             ):
                 logger.error("Unrecognized pointer attribute: %s", line[:-1])
@@ -719,6 +720,9 @@ class CvdumpTypesParser:
             return {"is_nested": True}
         if attribute == "FORWARD REF":
             return {"is_forward_ref": True}
+        if attribute == "LOCAL":
+            # Present as early as MSVC 7.00; not sure what is significance is and/or if we need it for anything
+            return {}
         if attribute.startswith("UDT"):
             match = self.LF_ENUM_UDT.match(attribute)
             assert match is not None
