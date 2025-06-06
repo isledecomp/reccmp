@@ -825,3 +825,17 @@ def test_two_formats_for_array_length(empty_parser: CvdumpTypesParser):
 
     assert empty_parser.keys["0x62c1"]["size"] == 50
     assert empty_parser.keys["0x62c5"]["size"] == 131328
+
+
+LF_POINTER_TO_MEMBER = """
+0x1646 : Length = 18, Leaf = 0x1002 LF_POINTER
+    Pointer to member function (NEAR32), Size: 0
+    Element type : 0x1645, Containing class = 0x12BD,
+    Type of pointer to member = Not specified
+"""
+
+
+def test_pointer_to_member(empty_parser: CvdumpTypesParser):
+    """LF_POINTER with optional 'Containing class' attribute."""
+    empty_parser.read_all(LF_POINTER_TO_MEMBER)
+    assert empty_parser.keys["0x1646"]["element_type"] == "0x1645"

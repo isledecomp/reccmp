@@ -204,7 +204,7 @@ class CvdumpTypesParser:
     LF_ARGLIST_ENTRY = re.compile(r"list\[(?P<index>\d+)\] = (?P<arg_type>[?\w()]+)")
 
     LF_POINTER_RE = re.compile(
-        r"\s+(?P<type>.+\S) \(\w+\), Size: \d+\n\s+Element type : (?P<element_type>.+)"
+        r"\s+(?P<type>.+\S) \(\w+\), Size: \d+\n\s+Element type : (?P<element_type>[^\n,]+)[\n,]"
     )
 
     LF_PROCEDURE_RE = re.compile(
@@ -639,6 +639,8 @@ class CvdumpTypesParser:
             "L-value Reference",
             "volatile Pointer",
             "volatile const Pointer",
+            "Pointer to member",
+            "Pointer to member function",
         )
 
         return {"element_type": match.group("element_type")}
