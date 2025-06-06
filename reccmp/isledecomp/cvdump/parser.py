@@ -1,11 +1,9 @@
 import re
 from pathlib import PureWindowsPath
-from typing import Iterable, NamedTuple
+from typing import NamedTuple
 from .types import CvdumpTypesParser
 from .symbols import CvdumpSymbolsParser
 
-# e.g. `*** PUBLICS`
-_section_change_regex = re.compile(r"\*\*\* (?P<section>[A-Z/ ]{2,})")
 
 # e.g. `     27 00034EC0     28 00034EE2     29 00034EE7     30 00034EF4`
 _line_addr_pairs_findall = re.compile(r"\s+(?P<line_no>\d+) (?P<addr>[A-F0-9]{8})")
@@ -107,7 +105,6 @@ class LinesFunction(NamedTuple):
 class CvdumpParser:
     # pylint: disable=too-many-instance-attributes
     def __init__(self) -> None:
-        self._section: str = ""
         self._lines_function = LinesFunction(PureWindowsPath(), 0)
 
         self.lines: dict[PureWindowsPath, list[LineValue]] = {}
@@ -199,32 +196,30 @@ class CvdumpParser:
                 )
             )
 
-    def read_line(self, line: str):
-        if (match := _section_change_regex.match(line)) is not None:
-            self._section = match.group(1)
-            return
+    def read_section(self, name: str, section: str):
+        if name == "TYPES":
+            self.types.read_all(section)
 
-        if self._section == "TYPES":
-            self.types.read_line(line)
+        elif name == "SYMBOLS":
+            for line in section.splitlines():
+                self.symbols_parser.read_line(line)
 
-        elif self._section == "SYMBOLS":
-            self.symbols_parser.read_line(line)
+        elif name == "LINES":
+            for line in section.splitlines():
+                self._lines_section(line)
 
-        elif self._section == "LINES":
-            self._lines_section(line)
+        elif name == "PUBLICS":
+            for line in section.splitlines():
+                self._publics_section(line)
 
-        elif self._section == "PUBLICS":
-            self._publics_section(line)
+        elif name == "SECTION CONTRIBUTIONS":
+            for line in section.splitlines():
+                self._section_contributions(line)
 
-        elif self._section == "SECTION CONTRIBUTIONS":
-            self._section_contributions(line)
+        elif name == "GLOBALS":
+            for line in section.splitlines():
+                self._globals_section(line)
 
-        elif self._section == "GLOBALS":
-            self._globals_section(line)
-
-        elif self._section == "MODULES":
-            self._modules_section(line)
-
-    def read_lines(self, lines: Iterable[str]):
-        for line in lines:
-            self.read_line(line)
+        elif name == "MODULES":
+            for line in section.splitlines():
+                self._modules_section(line)
