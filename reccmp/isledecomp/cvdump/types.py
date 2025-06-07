@@ -160,7 +160,7 @@ class CvdumpTypesParser:
 
     # LF_FIELDLIST class/struct member (1/2)
     LIST_RE = re.compile(
-        r"\s+list\[\d+\] = LF_MEMBER, (?P<scope>\w+), type = (?P<type>.*), offset = (?P<offset>\d+)"
+        r"\s+list\[\d+\] = LF_MEMBER, (?P<scope>\w+), type = (?P<type>[^,]*), offset = (?P<offset>\d+)"
     )
 
     # LF_FIELDLIST vtable indicator
@@ -168,28 +168,28 @@ class CvdumpTypesParser:
 
     # LF_FIELDLIST superclass indicator
     SUPERCLASS_RE = re.compile(
-        r"^\s+list\[\d+\] = LF_BCLASS, (?P<scope>\w+), type = (?P<type>.*), offset = (?P<offset>\d+)"
+        r"^\s+list\[\d+\] = LF_BCLASS, (?P<scope>\w+), type = (?P<type>[^,]*), offset = (?P<offset>\d+)"
     )
 
     # LF_FIELDLIST virtual direct/indirect base pointer, line 1/2
     VBCLASS_RE = re.compile(
-        r"^\s+list\[\d+\] = LF_(?P<indirect>I?)VBCLASS, .* base type = (?P<type>.*)$"
+        r"^\s+list\[\d+\] = LF_(?P<indirect>I?)VBCLASS, .* base type = (?P<type>[^,]*)$"
     )
 
     # LF_FIELDLIST virtual direct/indirect base pointer, line 2/2
     VBCLASS_LINE_2_RE = re.compile(
-        r"^\s+virtual base ptr = .+, vbpoff = (?P<vboffset>\d+), vbind = (?P<vbindex>\d+)$"
+        r"^\s+virtual base ptr = [^,]+, vbpoff = (?P<vboffset>\d+), vbind = (?P<vbindex>\d+)$"
     )
 
     # LF_FIELDLIST member name (2/2)
-    MEMBER_RE = re.compile(r"^\s+member name = '(?P<name>.*)'$")
+    MEMBER_RE = re.compile(r"^\s+member name = '(?P<name>[^,]*)'$")
 
     LF_FIELDLIST_ENUMERATE = re.compile(
         r"^\s+list\[\d+\] = LF_ENUMERATE,.*value = (?P<value>\d+), name = '(?P<name>[^']+)'$"
     )
 
     # LF_ARRAY element type
-    ARRAY_ELEMENT_RE = re.compile(r"^\s+Element type = (?P<type>.*)")
+    ARRAY_ELEMENT_RE = re.compile(r"^\s+Element type = (?P<type>[^,]*)")
 
     # LF_ARRAY total array size
     ARRAY_LENGTH_RE = re.compile(
@@ -207,7 +207,7 @@ class CvdumpTypesParser:
     )
 
     # LF_MODIFIER, type being modified
-    MODIFIES_RE = re.compile(r".*modifies type (?P<type>.*)$")
+    MODIFIES_RE = re.compile(r".*modifies type (?P<type>[^,]*)$")
 
     # LF_ARGLIST number of entries
     LF_ARGLIST_ARGCOUNT = re.compile(r".*argument count = (?P<argcount>\d+)$")
@@ -235,12 +235,12 @@ class CvdumpTypesParser:
         re.compile(
             r"\s*This adjust = (?P<this_adjust>[\w()]+)$"
         ),  # By how much the incoming pointers are shifted in virtual inheritance; hex value without `0x` prefix
-        re.compile(r"\s*Func attr = (?P<func_attr>.+)$"),
+        re.compile(r"\s*Func attr = (?P<func_attr>[^,]+)$"),
     ]
 
     LF_ENUM_ATTRIBUTES = [
         re.compile(r"^\s*# members = (?P<num_members>\d+)$"),
-        re.compile(r"^\s*enum name = (?P<name>.+)$"),
+        re.compile(r"^\s*enum name = (?P<name>[^,]+)$"),
     ]
     LF_ENUM_TYPES = re.compile(
         r"^\s*type = (?P<underlying_type>\S+) field list type (?P<field_type>0x\w{4})$"
