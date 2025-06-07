@@ -218,7 +218,9 @@ class CvdumpTypesParser:
     )
 
     # LF_POINTER element
-    LF_POINTER_ELEMENT = re.compile(r"^\s+Element type : (?P<element_type>.+)$")
+    LF_POINTER_ELEMENT = re.compile(
+        r"^\s+Element type : (?P<element_type>[^,]+)(?:, Containing class = (?P<containing_class>[^,]+),)$"
+    )
 
     # LF_MFUNCTION attribute key-value pairs
     LF_MFUNCTION_ATTRIBUTES = [
@@ -655,7 +657,9 @@ class CvdumpTypesParser:
 
     def read_pointer_line(self, line: str):
         if (match := self.LF_POINTER_ELEMENT.match(line)) is not None:
+            # We currently ignore `match.group("containing_class")`
             self._set("element_type", match.group("element_type"))
+            self._set("containing_class", match.group("containing_class"))
         else:
             stripped_line = line.strip()
             # We don't parse these lines, but we still want to check for exhaustiveness
