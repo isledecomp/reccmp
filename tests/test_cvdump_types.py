@@ -359,8 +359,7 @@ NESTED,     enum name = JukeBox::JukeBoxScript, UDT(0x00003cc2)
 @pytest.fixture(name="parser")
 def types_parser_fixture():
     parser = CvdumpTypesParser()
-    for line in TEST_LINES.split("\n"):
-        parser.read_line(line)
+    parser.read_all(TEST_LINES)
 
     return parser
 
@@ -702,8 +701,7 @@ UNNAMED_UNION_DATA = """
 
 def test_unnamed_union(empty_parser: CvdumpTypesParser):
     """Make sure we can parse anonymous union types without a UDT"""
-    for line in UNNAMED_UNION_DATA.split("\n"):
-        empty_parser.read_line(line)
+    empty_parser.read_all(UNNAMED_UNION_DATA)
 
     # Make sure we can parse the members line
     union = empty_parser.keys["0x369e"]
@@ -725,8 +723,7 @@ ARGLIST_UNKNOWN_TYPE = """
 
 def test_arglist_unknown_type(empty_parser: CvdumpTypesParser):
     """Should parse the ??? types and not fail with an assert."""
-    for line in ARGLIST_UNKNOWN_TYPE.split("\n"):
-        empty_parser.read_line(line)
+    empty_parser.read_all(ARGLIST_UNKNOWN_TYPE)
 
     t = empty_parser.keys["0x11f3"]
     assert len(t["args"]) == t["argcount"]
@@ -752,8 +749,7 @@ FUNC_ATTR_EXAMPLES = """
 
 def test_mfunction_func_attr(empty_parser: CvdumpTypesParser):
     """Should parse "Func attr" values other than 'none'"""
-    for line in FUNC_ATTR_EXAMPLES.split("\n"):
-        empty_parser.read_line(line)
+    empty_parser.read_all(FUNC_ATTR_EXAMPLES)
 
     assert empty_parser.keys["0x1216"]["func_attr"] == "return UDT (C++ style)"
     assert empty_parser.keys["0x122b"]["func_attr"] == "instance constructor"
@@ -771,8 +767,7 @@ UNION_UNNAMED_TAG = """
 
 def test_union_without_udt(empty_parser: CvdumpTypesParser):
     """Should parse union that is missing the UDT attribute"""
-    for line in UNION_UNNAMED_TAG.split("\n"):
-        empty_parser.read_line(line)
+    empty_parser.read_all(UNION_UNNAMED_TAG)
 
     assert "udt" not in empty_parser.keys["0x3352"]
     assert empty_parser.keys["0x3352"]["name"] == "<unnamed-tag>"
@@ -788,8 +783,7 @@ MFUNCTION_UNK_RETURN_TYPE = """
 
 def test_mfunction_unk_return_type(empty_parser: CvdumpTypesParser):
     """Should parse unknown return type as-is"""
-    for line in MFUNCTION_UNK_RETURN_TYPE.split("\n"):
-        empty_parser.read_line(line)
+    empty_parser.read_all(MFUNCTION_UNK_RETURN_TYPE)
 
     assert empty_parser.keys["0x11d8"]["return_type"] == "???(047C)"
 
@@ -805,8 +799,7 @@ CLASS_WITH_UNIQUE_NAME = """
 
 def test_class_unique_name(empty_parser: CvdumpTypesParser):
     """Make sure we can parse the UDT when the 'unique name' attribute is present"""
-    for line in CLASS_WITH_UNIQUE_NAME.split("\n"):
-        empty_parser.read_line(line)
+    empty_parser.read_all(CLASS_WITH_UNIQUE_NAME)
 
     assert empty_parser.keys["0x1cf0"]["udt"] == "0x1cf0"
 
@@ -828,8 +821,21 @@ TWO_FORMATS_FOR_ARRAY_LENGTH = """
 
 def test_two_formats_for_array_length(empty_parser: CvdumpTypesParser):
     """Make sure we can parse the UDT when the 'unique name' attribute is present"""
-    for line in TWO_FORMATS_FOR_ARRAY_LENGTH.split("\n"):
-        empty_parser.read_line(line)
+    empty_parser.read_all(TWO_FORMATS_FOR_ARRAY_LENGTH)
 
     assert empty_parser.keys["0x62c1"]["size"] == 50
     assert empty_parser.keys["0x62c5"]["size"] == 131328
+
+
+LF_POINTER_TO_MEMBER = """
+0x1646 : Length = 18, Leaf = 0x1002 LF_POINTER
+    Pointer to member function (NEAR32), Size: 0
+    Element type : 0x1645, Containing class = 0x12BD,
+    Type of pointer to member = Not specified
+"""
+
+
+def test_pointer_to_member(empty_parser: CvdumpTypesParser):
+    """LF_POINTER with optional 'Containing class' attribute."""
+    empty_parser.read_all(LF_POINTER_TO_MEMBER)
+    assert empty_parser.keys["0x1646"]["element_type"] == "0x1645"
