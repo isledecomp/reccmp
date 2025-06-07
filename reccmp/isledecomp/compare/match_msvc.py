@@ -141,14 +141,17 @@ def match_functions(
                 # If this name was ever matched non-uniquely
                 if name in non_unique_names:
                     matched_symbol = recomp_symbols.get(recomp_addr, "None")
-                    other_symbols = [recomp_symbols.get(recomp_addr, "None") for recomp_addr in name_index.get(name)]
+                    other_symbols = [
+                        recomp_symbols.get(recomp_addr, "None")
+                        for recomp_addr in name_index.get(name)
+                    ]
                     report(
                         ReccmpEvent.AMBIGUOUS_MATCH,
                         orig_addr,
-                        msg=f"Ambiguous match 0x{orig_addr:x} on name '{name}' to\n" +
-                        f"'{matched_symbol}'\n" +
-                        "Other candidates:\n" +
-                        f"{",\n".join(f"'{candidate}'" for candidate in other_symbols)}",
+                        msg=f"Ambiguous match 0x{orig_addr:x} on name '{name}' to\n"
+                        + f"'{matched_symbol}'\n"
+                        + "Other candidates:\n"
+                        + ",\n".join(f"'{candidate}'" for candidate in other_symbols),
                     )
 
                 batch.match(orig_addr, recomp_addr)
