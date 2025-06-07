@@ -228,7 +228,8 @@ class CvdumpTypesParser:
 
     LF_ENUM_ATTRIBUTES = [
         re.compile(r"^\s*# members = (?P<num_members>\d+)$"),
-        re.compile(r"^\s*enum name = (?P<name>[^,]+)$"),
+        # the enum name can have both commas and whitespace, so '.+' is okay
+        re.compile(r"^\s*enum name = (?P<name>.+)$"),
     ]
     LF_ENUM_TYPES = re.compile(
         r"^\s*type = (?P<underlying_type>\S+) field list type (?P<field_type>0x\w{4})$"
@@ -648,6 +649,7 @@ class CvdumpTypesParser:
 
         return {
             "element_type": match.group("element_type"),
+            # `containing_class` is set to `None` if not present
             "containing_class": match.group("containing_class"),
         }
 

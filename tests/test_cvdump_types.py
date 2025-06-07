@@ -880,3 +880,46 @@ def test_enum_with_containing_class_and_type_of_pointed_to(
         "type": "LF_POINTER",
         "containing_class": "0x1165",
     }
+
+
+POINTER_WITHOUT_CONTAINING_CLASS = """
+0x534e : Length = 10, Leaf = 0x1002 LF_POINTER
+	Pointer (NEAR32), Size: 0
+	Element type : 0x2505
+"""
+
+
+def test_pointer_without_containing_class(
+    empty_parser: CvdumpTypesParser,
+):
+    for line in POINTER_WITHOUT_CONTAINING_CLASS.split("\n"):
+        empty_parser.read_line(line)
+
+    assert empty_parser.keys["0x534e"] == {
+        "containing_class": None,
+        "element_type": "0x2505",
+        "type": "LF_POINTER",
+    }
+
+
+ENUM_WITH_WHITESPACE_AND_COMMA = """
+0x4dc2 : Length = 58, Leaf = 0x1507 LF_ENUM
+	# members = 1,  type = T_INT4(0074) field list type 0x2588
+NESTED, 	enum name = CPool<CTask,signed char [128]>::__unnamed
+"""
+
+
+def test_enum_with_whitespace_and_comma(
+    empty_parser: CvdumpTypesParser,
+):
+    for line in ENUM_WITH_WHITESPACE_AND_COMMA.split("\n"):
+        empty_parser.read_line(line)
+
+    assert empty_parser.keys["0x4dc2"] == {
+        "field_type": "0x2588",
+        "is_nested": True,
+        "name": "CPool<CTask,signed char [128]>::__unnamed",
+        "num_members": "1",
+        "type": "LF_ENUM",
+        "underlying_type": "T_INT4",
+    }
