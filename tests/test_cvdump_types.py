@@ -839,3 +839,44 @@ def test_pointer_to_member(empty_parser: CvdumpTypesParser):
     """LF_POINTER with optional 'Containing class' attribute."""
     empty_parser.read_all(LF_POINTER_TO_MEMBER)
     assert empty_parser.keys["0x1646"]["element_type"] == "0x1645"
+
+
+MSVC700_ENUM_WITH_LOCAL_FLAG = """
+0x26ba : Length = 62, Leaf = 0x1507 LF_ENUM
+	# members = 3,  type = T_INT4(0074) field list type 0x26b9
+LOCAL, 	enum name = SomeEnumType::SomeEnumInternalName::__l2::__unnamed
+"""
+
+
+def test_enum_with_local_flag(empty_parser: CvdumpTypesParser):
+    """Make sure we can parse an enum with the LOCAL flag set. At the moment, the flag is ignored."""
+    empty_parser.read_all(MSVC700_ENUM_WITH_LOCAL_FLAG)
+
+    assert empty_parser.keys["0x26ba"] == {
+        "field_type": "0x26b9",
+        "name": "SomeEnumType::SomeEnumInternalName::__l2::__unnamed",
+        "num_members": "3",
+        "type": "LF_ENUM",
+        "underlying_type": "T_INT4",
+    }
+
+
+MSVC700_POINTER_CONTAINING_CLASS_TYPE_OF_POINTED_TO = """
+0x64ca : Length = 18, Leaf = 0x1002 LF_POINTER
+	Pointer to member function (NEAR32), Size: 0
+	Element type : 0x2FD1, Containing class = 0x1165,
+	Type of pointer to member = Not specified
+"""
+
+
+def test_enum_with_containing_class_and_type_of_pointed_to(
+    empty_parser: CvdumpTypesParser,
+):
+    """Make sure that a pointer with these attributes is parsed correctly. 'Type of pointed to' is currently ignored."""
+    empty_parser.read_all(MSVC700_POINTER_CONTAINING_CLASS_TYPE_OF_POINTED_TO)
+
+    assert empty_parser.keys["0x64ca"] == {
+        "element_type": "0x2FD1",
+        "type": "LF_POINTER",
+        "containing_class": "0x1165",
+    }

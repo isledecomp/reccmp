@@ -204,7 +204,7 @@ class CvdumpTypesParser:
     LF_ARGLIST_ENTRY = re.compile(r"list\[(?P<index>\d+)\] = (?P<arg_type>[?\w()]+)")
 
     LF_POINTER_RE = re.compile(
-        r"\s+(?P<type>.+\S) \(\w+\), Size: \d+\n\s+Element type : (?P<element_type>[^\n,]+)[\n,]"
+        r"\s+(?P<type>.+\S) \(\w+\), Size: \d+\n\s+Element type : (?P<element_type>[^\n,]+)(?:, Containing class = (?P<containing_class>[^,]+),)?[\n,]"
     )
 
     LF_PROCEDURE_RE = re.compile(
@@ -643,7 +643,10 @@ class CvdumpTypesParser:
             "Pointer to member function",
         )
 
-        return {"element_type": match.group("element_type")}
+        return {
+            "element_type": match.group("element_type"),
+            "containing_class": match.group("containing_class"),
+        }
 
     def read_mfunction(self, leaf: str) -> dict[str, Any]:
         match = self.LF_MFUNCTION_RE.search(leaf)
