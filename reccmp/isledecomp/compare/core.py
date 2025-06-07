@@ -655,6 +655,7 @@ class Compare:
 
             next_orig = self._db.get_next_orig_addr(match.orig_addr)
             if next_orig is None:
+                # this vtable is the last annotation in the project
                 continue
 
             orig_size_upper_limit = next_orig - match.orig_addr
@@ -885,15 +886,6 @@ class Compare:
             diff = self._compare_match(match)
             if diff is not None:
                 yield diff
-
-    def compare_variables(self):
-        pass
-
-    def compare_pointers(self):
-        pass
-
-    def compare_strings(self):
-        pass
 
     def compare_vtables(self) -> Iterable[DiffReport]:
         for match in self.get_vtables():
