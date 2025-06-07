@@ -712,10 +712,12 @@ class CvdumpTypesParser:
                 continue
             obj |= self.parse_enum_attribute(pair)
 
+    # pylint: disable=too-many-return-statements
     def parse_enum_attribute(self, attribute: str) -> dict[str, Any]:
         for attribute_regex in self.LF_ENUM_ATTRIBUTES:
             if (match := attribute_regex.match(attribute)) is not None:
                 return match.groupdict()
+
         if attribute == "NESTED":
             return {"is_nested": True}
         if attribute == "FORWARD REF":
@@ -731,6 +733,7 @@ class CvdumpTypesParser:
             result = match.groupdict()
             result["underlying_type"] = normalize_type_id(result["underlying_type"])
             return result
+
         logger.error("Unknown attribute in enum: %s", attribute)
         return {}
 
