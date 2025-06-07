@@ -160,7 +160,7 @@ class CvdumpTypesParser:
 
     # LF_FIELDLIST class/struct member (1/2)
     LIST_RE = re.compile(
-        r"\s+list\[\d+\] = LF_MEMBER, (?P<scope>\w+), type = (?P<type>.*), offset = (?P<offset>\d+)"
+        r"\s+list\[\d+\] = LF_MEMBER, (?P<scope>\w+), type = (?P<type>[^,]*), offset = (?P<offset>\d+)"
     )
 
     # LF_FIELDLIST vtable indicator
@@ -168,28 +168,28 @@ class CvdumpTypesParser:
 
     # LF_FIELDLIST superclass indicator
     SUPERCLASS_RE = re.compile(
-        r"^\s+list\[\d+\] = LF_BCLASS, (?P<scope>\w+), type = (?P<type>.*), offset = (?P<offset>\d+)"
+        r"^\s+list\[\d+\] = LF_BCLASS, (?P<scope>\w+), type = (?P<type>[^,]*), offset = (?P<offset>\d+)"
     )
 
     # LF_FIELDLIST virtual direct/indirect base pointer, line 1/2
     VBCLASS_RE = re.compile(
-        r"^\s+list\[\d+\] = LF_(?P<indirect>I?)VBCLASS, .* base type = (?P<type>.*)$"
+        r"^\s+list\[\d+\] = LF_(?P<indirect>I?)VBCLASS, .* base type = (?P<type>[^,]*)$"
     )
 
     # LF_FIELDLIST virtual direct/indirect base pointer, line 2/2
     VBCLASS_LINE_2_RE = re.compile(
-        r"^\s+virtual base ptr = .+, vbpoff = (?P<vboffset>\d+), vbind = (?P<vbindex>\d+)$"
+        r"^\s+virtual base ptr = [^,]+, vbpoff = (?P<vboffset>\d+), vbind = (?P<vbindex>\d+)$"
     )
 
     # LF_FIELDLIST member name (2/2)
-    MEMBER_RE = re.compile(r"^\s+member name = '(?P<name>.*)'$")
+    MEMBER_RE = re.compile(r"^\s+member name = '(?P<name>[\S]+)'$")
 
     LF_FIELDLIST_ENUMERATE = re.compile(
         r"^\s+list\[\d+\] = LF_ENUMERATE,.*value = (?P<value>\d+), name = '(?P<name>[^']+)'$"
     )
 
     # LF_ARRAY element type
-    ARRAY_ELEMENT_RE = re.compile(r"^\s+Element type = (?P<type>.*)")
+    ARRAY_ELEMENT_RE = re.compile(r"^\s+Element type = (?P<type>[^,]*)")
 
     # LF_ARRAY total array size
     ARRAY_LENGTH_RE = re.compile(
@@ -203,11 +203,11 @@ class CvdumpTypesParser:
 
     # LF_CLASS/LF_STRUCTURE name and other info
     CLASS_NAME_RE = re.compile(
-        r"^\s+Size = (?P<size>\d+), class name = (?P<name>(?:[^,]|,\S)+)(?:, unique name = [^,]+)?(?:, UDT\((?P<udt>0x\w+)\))?"
+        r"^\s+Size = (?P<number_type>\([\w_]+\) )?(?P<size>\d+), class name = (?P<name>(?:[^,]|,\S)+)(?:, unique name = [^,]+)?(?:, UDT\((?P<udt>0x\w+)\))?"
     )
 
     # LF_MODIFIER, type being modified
-    MODIFIES_RE = re.compile(r".*modifies type (?P<type>.*)$")
+    MODIFIES_RE = re.compile(r".*modifies type (?P<type>[^,]*)$")
 
     # LF_ARGLIST number of entries
     LF_ARGLIST_ARGCOUNT = re.compile(r".*argument count = (?P<argcount>\d+)$")
@@ -218,7 +218,9 @@ class CvdumpTypesParser:
     )
 
     # LF_POINTER element
-    LF_POINTER_ELEMENT = re.compile(r"^\s+Element type : (?P<element_type>.+)$")
+    LF_POINTER_ELEMENT = re.compile(
+        r"^\s+Element type : (?P<element_type>[^,]+)(?:, Containing class = (?P<containing_class>[^,]+),)?$"
+    )
 
     # LF_MFUNCTION attribute key-value pairs
     LF_MFUNCTION_ATTRIBUTES = [
@@ -233,11 +235,12 @@ class CvdumpTypesParser:
         re.compile(
             r"\s*This adjust = (?P<this_adjust>[\w()]+)$"
         ),  # By how much the incoming pointers are shifted in virtual inheritance; hex value without `0x` prefix
-        re.compile(r"\s*Func attr = (?P<func_attr>.+)$"),
+        re.compile(r"\s*Func attr = (?P<func_attr>[^,]+)$"),
     ]
 
     LF_ENUM_ATTRIBUTES = [
         re.compile(r"^\s*# members = (?P<num_members>\d+)$"),
+        # the enum name can have both commas and whitespace, so '.+' is okay
         re.compile(r"^\s*enum name = (?P<name>.+)$"),
     ]
     LF_ENUM_TYPES = re.compile(
@@ -656,6 +659,8 @@ class CvdumpTypesParser:
     def read_pointer_line(self, line: str):
         if (match := self.LF_POINTER_ELEMENT.match(line)) is not None:
             self._set("element_type", match.group("element_type"))
+            # set to `None` if not present
+            self._set("containing_class", match.group("containing_class"))
         else:
             stripped_line = line.strip()
             # We don't parse these lines, but we still want to check for exhaustiveness
@@ -668,6 +673,7 @@ class CvdumpTypesParser:
                     "const Pointer",
                     "L-value",
                     "volatile",
+                    "Type of pointer to member",
                 ]
             ):
                 logger.error("Unrecognized pointer attribute: %s", line[:-1])
@@ -711,14 +717,19 @@ class CvdumpTypesParser:
                 continue
             obj |= self.parse_enum_attribute(pair)
 
+    # pylint: disable=too-many-return-statements
     def parse_enum_attribute(self, attribute: str) -> dict[str, Any]:
         for attribute_regex in self.LF_ENUM_ATTRIBUTES:
             if (match := attribute_regex.match(attribute)) is not None:
                 return match.groupdict()
+
         if attribute == "NESTED":
             return {"is_nested": True}
         if attribute == "FORWARD REF":
             return {"is_forward_ref": True}
+        if attribute == "LOCAL":
+            # Present as early as MSVC 7.00; not sure what is significance is and/or if we need it for anything
+            return {}
         if attribute.startswith("UDT"):
             match = self.LF_ENUM_UDT.match(attribute)
             assert match is not None
@@ -727,6 +738,7 @@ class CvdumpTypesParser:
             result = match.groupdict()
             result["underlying_type"] = normalize_type_id(result["underlying_type"])
             return result
+
         logger.error("Unknown attribute in enum: %s", attribute)
         return {}
 

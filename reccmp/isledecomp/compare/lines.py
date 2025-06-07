@@ -89,26 +89,25 @@ class LinesDb:
         We want to know if exactly one function exists between line start and line end
         in the given file."""
 
-        possible_functions = [
-            *self.search_line(local_path, line_start, line_end, start_only=True)
-        ]
+        possible_functions = set(
+            self.search_line(local_path, line_start, line_end, start_only=True)
+        )
 
         if len(possible_functions) == 1:
-            return possible_functions[0]
+            return next(iter(possible_functions))
 
-        # The file has been edited since the last compile.
+        # The functions in the code do not match the PDB, likely because the file has been edited since the last compile.
         if len(possible_functions) > 1:
             logger.error(
-                "Debug data out of sync with function near: %s:%d",
+                "Debug data out of sync with function near: %s:%d. Try to recompile to fix this problem.",
                 local_path,
                 line_start,
             )
             return None
 
-        # No functions matched. This could mean the file is out of sync, or that
-        # the function was eliminated or inlined by compiler optimizations.
         logger.error(
-            "Failed to find function symbol with filename and line: %s:%d",
+            "Failed to find function symbol with filename and line: %s:%d. "
+            + "If this issue persists after a recompile, the compiler has probably inlined this function.",
             local_path,
             line_start,
         )

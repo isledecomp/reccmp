@@ -61,6 +61,19 @@ def test_multiple_match():
     assert lines.find_function(TEST_PATH, 2, 3) is None
 
 
+def test_lines_duplicate_reference():
+    """
+    In MSVC versions as early as MSVC 7.00, the same function can be referenced on multiple lines.
+    This should not cause an error to be thrown.
+    """
+    lines = LinesDb([TEST_PATH])
+    lines.add_line(TEST_PATH, 2, 0x1234)
+    lines.add_line(TEST_PATH, 4, 0x1234)
+    lines.mark_function_starts((0x1234,))
+
+    assert lines.find_function(TEST_PATH, 2, 4) == 0x1234
+
+
 def test_db_hash_windows():
     """Our DB uses PurePath as the key, so we rely on
     the equality check for whichever platform you are running on.
