@@ -168,20 +168,23 @@ class CvdumpTypesParser:
 
     # LF_FIELDLIST superclass indicator
     SUPERCLASS_RE = re.compile(
-        r"list\[\d+\] = LF_BCLASS, (?P<scope>\w+), type = (?P<type>.*), offset = (?P<offset>\d+)"
+        r"list\[\d+\] = LF_BCLASS, (?P<scope>\w+), type = (?P<type>[^,]*), offset = (?P<offset>\d+)"
     )
 
     # LF_FIELDLIST virtual direct/indirect base pointer
     VBCLASS_RE = re.compile(
-        r"list\[\d+\] = LF_(?P<indirect>I?)VBCLASS, .* base type = (?P<type>.*)\n\s+virtual base ptr = .+, vbpoff = (?P<vboffset>\d+), vbind = (?P<vbindex>\d+)"
+        r"list\[\d+\] = LF_(?P<indirect>I?)VBCLASS, .* base type = (?P<type>[^,]*)\n\s+virtual base ptr = [^,]+, vbpoff = (?P<vboffset>\d+), vbind = (?P<vbindex>\d+)"
     )
+
+    # LF_FIELDLIST member name (2/2)
+    MEMBER_RE = re.compile(r"^\s+member name = '(?P<name>.*)'$")
 
     LF_FIELDLIST_ENUMERATE = re.compile(
         r"list\[\d+\] = LF_ENUMERATE,.*value = (?P<value>\d+), name = '(?P<name>[^']+)'"
     )
 
     LF_ARRAY_RE = re.compile(
-        r"\s+Element type = (?P<type>[^\n]+)\n\s+Index type = [^\n]+\n\s+length = (?:[\w()]+ )?(?P<length>\d+)\n"
+        r"\s+Element type = (?P<type>[^\n,]+)\n\s+Index type = [^\n]+\n\s+length = (?:[\w()]+ )?(?P<length>\d+)\n"
     )
 
     # LF_CLASS/LF_STRUCTURE field list reference
@@ -195,7 +198,7 @@ class CvdumpTypesParser:
     )
 
     # LF_MODIFIER, type being modified
-    MODIFIES_RE = re.compile(r"\s+modifies type (?P<type>.*)")
+    MODIFIES_RE = re.compile(r"\s+modifies type (?P<type>[^,]*)")
 
     # LF_ARGLIST number of entries
     LF_ARGLIST_ARGCOUNT = re.compile(r".*argument count = (?P<argcount>\d+)")
@@ -218,14 +221,14 @@ class CvdumpTypesParser:
     LF_MFUNCTION_RE = re.compile(
         (
             r"\s+Return type = (?P<return_type>[^,]+), Class type = (?P<class_type>[^,]+), This type = (?P<this_type>[^,]+),\s*\n"
-            r"\s+Call type = (?P<call_type>[^,]+), Func attr = (?P<func_attr>[^\n]+)\n"
+            r"\s+Call type = (?P<call_type>[^,]+), Func attr = (?P<func_attr>[^\n,]+)\n"
             r"\s+Parms = (?P<num_params>\d+), Arg list type = (?P<arg_list_type>\w+), This adjust = (?P<this_adjust>[0-9a-f]+)"
         )
     )
 
     LF_ENUM_ATTRIBUTES = [
         re.compile(r"^\s*# members = (?P<num_members>\d+)$"),
-        re.compile(r"^\s*enum name = (?P<name>.+)$"),
+        re.compile(r"^\s*enum name = (?P<name>[^,]+)$"),
     ]
     LF_ENUM_TYPES = re.compile(
         r"^\s*type = (?P<underlying_type>\S+) field list type (?P<field_type>0x\w{4})$"
