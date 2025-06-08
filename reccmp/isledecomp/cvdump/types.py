@@ -198,7 +198,7 @@ class CvdumpTypesParser:
     )
 
     # LF_MODIFIER, type being modified
-    MODIFIES_RE = re.compile(r"\s+modifies type (?P<type>[^,]*)")
+    MODIFIES_RE = re.compile(r"\s+modifies type (?P<type>[^\n,]*)")
 
     # LF_ARGLIST number of entries
     LF_ARGLIST_ARGCOUNT = re.compile(r".*argument count = (?P<argcount>\d+)")

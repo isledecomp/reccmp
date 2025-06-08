@@ -892,8 +892,7 @@ POINTER_WITHOUT_CONTAINING_CLASS = """
 def test_pointer_without_containing_class(
     empty_parser: CvdumpTypesParser,
 ):
-    for line in POINTER_WITHOUT_CONTAINING_CLASS.split("\n"):
-        empty_parser.read_line(line)
+    empty_parser.read_all(POINTER_WITHOUT_CONTAINING_CLASS)
 
     assert empty_parser.keys["0x534e"] == {
         "containing_class": None,
@@ -912,8 +911,7 @@ NESTED, 	enum name = CPool<CTask,signed char [128]>::__unnamed
 def test_enum_with_whitespace_and_comma(
     empty_parser: CvdumpTypesParser,
 ):
-    for line in ENUM_WITH_WHITESPACE_AND_COMMA.split("\n"):
-        empty_parser.read_line(line)
+    empty_parser.read_all(ENUM_WITH_WHITESPACE_AND_COMMA)
 
     assert empty_parser.keys["0x4dc2"] == {
         "field_type": "0x2588",

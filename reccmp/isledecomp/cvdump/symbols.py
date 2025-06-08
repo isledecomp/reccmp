@@ -107,7 +107,9 @@ class CvdumpSymbolsParser:
         self.block_level: int = 0
 
     def read_line(self, line: str):
-        if (match := self._symbol_line_generic_regex.match(line)) is not None:
+        if len(line) == 0:
+            pass
+        elif (match := self._symbol_line_generic_regex.match(line)) is not None:
             self._parse_generic_case(line, match)
         elif (match := self._parent_end_next_regex.match(line)) is not None:
             # We do not need this info at the moment, might be useful in the future
