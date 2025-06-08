@@ -176,9 +176,6 @@ class CvdumpTypesParser:
         r"list\[\d+\] = LF_(?P<indirect>I?)VBCLASS, .* base type = (?P<type>[^,]*)\n\s+virtual base ptr = [^,]+, vbpoff = (?P<vboffset>\d+), vbind = (?P<vbindex>\d+)"
     )
 
-    # LF_FIELDLIST member name (2/2)
-    MEMBER_RE = re.compile(r"^\s+member name = '(?P<name>.*)'$")
-
     LF_FIELDLIST_ENUMERATE = re.compile(
         r"list\[\d+\] = LF_ENUMERATE,.*value = (?P<value>\d+), name = '(?P<name>[^']+)'"
     )
