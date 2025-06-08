@@ -85,17 +85,18 @@ def test_db_hash_windows():
     the equality check for whichever platform you are running on.
     Windows paths are not case-sensitive."""
 
-    local_path = PureWindowsPath("test.cpp")
+    local_path = PureWindowsPath("code\\test.cpp")
     lines = LinesDb([local_path])
 
-    pdb_path = PureWindowsPath("test.cpp")
+    pdb_path = PureWindowsPath("code\\test.cpp")
     lines.add_line(pdb_path, 2, 0x1234)
     lines.mark_function_starts((0x1234,))
 
     # Should match any variation
     assert lines.find_function(local_path, 2) == 0x1234
-    assert lines.find_function(PureWindowsPath("Test.cpp"), 2) == 0x1234
-    assert lines.find_function(PureWindowsPath("TEST.CPP"), 2) == 0x1234
+    assert lines.find_function(PureWindowsPath("code\\Test.cpp"), 2) == 0x1234
+    assert lines.find_function(PureWindowsPath("code\\TEST.CPP"), 2) == 0x1234
+    assert lines.find_function(PureWindowsPath("Code\\test.cpp"), 2) == 0x1234
 
 
 def test_db_hash_posix():
@@ -103,17 +104,18 @@ def test_db_hash_posix():
     The goal here is to show that we are not taking liberties with PurePath
     and when it can be expected to match."""
 
-    local_path = PurePosixPath("test.cpp")
+    local_path = PurePosixPath("code/test.cpp")
     lines = LinesDb([local_path])
 
-    pdb_path = PureWindowsPath("test.cpp")
+    pdb_path = PureWindowsPath("code\\test.cpp")
     lines.add_line(pdb_path, 2, 0x1234)
     lines.mark_function_starts((0x1234,))
 
     # Should match only the exact path
     assert lines.find_function(local_path, 2) == 0x1234
-    assert lines.find_function(PurePosixPath("Test.cpp"), 2) is None
-    assert lines.find_function(PurePosixPath("TEST.CPP"), 2) is None
+    assert lines.find_function(PurePosixPath("code/Test.cpp"), 2) is None
+    assert lines.find_function(PurePosixPath("code/TEST.CPP"), 2) is None
+    assert lines.find_function(PurePosixPath("Code/test.cpp"), 2) is None
 
 
 @pytest.mark.parametrize("local_path", LOCAL_PATHS)
