@@ -80,17 +80,18 @@ def test_multiple_match(local_path: PureWindowsPath | PurePosixPath):
     assert lines.find_function(local_path, 2, 3) is None
 
 
-def test_lines_duplicate_reference():
+@pytest.mark.parametrize("local_path", LOCAL_PATHS)
+def test_lines_duplicate_reference(local_path: PureWindowsPath | PurePosixPath):
     """
     In MSVC versions as early as MSVC 7.00, the same function can be referenced on multiple lines.
     This should not cause an error to be thrown.
     """
-    lines = LinesDb([TEST_PATH])
-    lines.add_line(TEST_PATH, 2, 0x1234)
-    lines.add_line(TEST_PATH, 4, 0x1234)
+    lines = LinesDb([local_path])
+    lines.add_line(PDB_PATH, 2, 0x1234)
+    lines.add_line(PDB_PATH, 4, 0x1234)
     lines.mark_function_starts((0x1234,))
 
-    assert lines.find_function(TEST_PATH, 2, 4) == 0x1234
+    assert lines.find_function(local_path, 2, 4) == 0x1234
 
 
 def test_db_hash_windows():
