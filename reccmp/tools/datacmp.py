@@ -9,6 +9,7 @@ from struct import unpack
 import colorama
 import reccmp
 from reccmp.isledecomp.formats.detect import detect_image
+from reccmp.isledecomp.formats.exceptions import InvalidVirtualReadError
 from reccmp.isledecomp.formats.pe import PEImage
 from reccmp.isledecomp.compare import Compare as IsleCompare
 from reccmp.isledecomp.compare.db import ReccmpMatch
@@ -194,7 +195,15 @@ def do_the_comparison(target: RecCmpBuiltTarget) -> Iterable[ComparisonItem]:
                 continue
 
         assert data_size is not None
-        orig_raw = origfile.read(var.orig_addr, data_size)
+
+        try:
+            orig_raw = origfile.read(var.orig_addr, data_size)
+        except InvalidVirtualReadError as ex:
+            # Reading from orig can fail if the recomp variable is too large
+            yield create_comparison_item(var, error=repr(ex))
+            continue
+
+        # Reading from recomp should never fail, so if it does, raising an exception is correct
         recomp_raw = recompfile.read(var.recomp_addr, data_size)
 
         orig_is_null = all(b == 0 for b in orig_raw)

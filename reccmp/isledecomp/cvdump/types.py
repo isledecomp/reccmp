@@ -168,12 +168,12 @@ class CvdumpTypesParser:
 
     # LF_FIELDLIST superclass indicator
     SUPERCLASS_RE = re.compile(
-        r"list\[\d+\] = LF_BCLASS, (?P<scope>\w+), type = (?P<type>.*), offset = (?P<offset>\d+)"
+        r"list\[\d+\] = LF_BCLASS, (?P<scope>\w+), type = (?P<type>[^,]*), offset = (?P<offset>\d+)"
     )
 
     # LF_FIELDLIST virtual direct/indirect base pointer
     VBCLASS_RE = re.compile(
-        r"list\[\d+\] = LF_(?P<indirect>I?)VBCLASS, .* base type = (?P<type>.*)\n\s+virtual base ptr = .+, vbpoff = (?P<vboffset>\d+), vbind = (?P<vbindex>\d+)"
+        r"list\[\d+\] = LF_(?P<indirect>I?)VBCLASS, .* base type = (?P<type>[^,]*)\n\s+virtual base ptr = [^,]+, vbpoff = (?P<vboffset>\d+), vbind = (?P<vbindex>\d+)"
     )
 
     LF_FIELDLIST_ENUMERATE = re.compile(
@@ -181,7 +181,7 @@ class CvdumpTypesParser:
     )
 
     LF_ARRAY_RE = re.compile(
-        r"\s+Element type = (?P<type>[^\n]+)\n\s+Index type = [^\n]+\n\s+length = (?:[\w()]+ )?(?P<length>\d+)\n"
+        r"\s+Element type = (?P<type>[^\n,]+)\n\s+Index type = [^\n]+\n\s+length = (?:[\w()]+ )?(?P<length>\d+)\n"
     )
 
     # LF_CLASS/LF_STRUCTURE field list reference
@@ -191,11 +191,11 @@ class CvdumpTypesParser:
 
     # LF_CLASS/LF_STRUCTURE name and other info
     CLASS_NAME_RE = re.compile(
-        r"\s+Size = (?P<size>\d+), class name = (?P<name>(?:[^\n,]|,\S)+)(?:, unique name = [^\n,]+)?(?:, UDT\((?P<udt>0x\w+)\))?"
+        r"\s+Size = (?P<number_type>\([\w_]+\) )?(?P<size>\d+), class name = (?P<name>(?:[^\n,]|,\S)+)(?:, unique name = [^\n,]+)?(?:, UDT\((?P<udt>0x\w+)\))?"
     )
 
     # LF_MODIFIER, type being modified
-    MODIFIES_RE = re.compile(r"\s+modifies type (?P<type>.*)")
+    MODIFIES_RE = re.compile(r"\s+modifies type (?P<type>[^\n,]*)")
 
     # LF_ARGLIST number of entries
     LF_ARGLIST_ARGCOUNT = re.compile(r".*argument count = (?P<argcount>\d+)")
@@ -204,7 +204,7 @@ class CvdumpTypesParser:
     LF_ARGLIST_ENTRY = re.compile(r"list\[(?P<index>\d+)\] = (?P<arg_type>[?\w()]+)")
 
     LF_POINTER_RE = re.compile(
-        r"\s+(?P<type>.+\S) \(\w+\), Size: \d+\n\s+Element type : (?P<element_type>[^\n,]+)[\n,]"
+        r"\s+(?P<type>.+\S) \(\w+\), Size: \d+\n\s+Element type : (?P<element_type>[^\n,]+)(?:, Containing class = (?P<containing_class>[^,]+),)?[\n,]"
     )
 
     LF_PROCEDURE_RE = re.compile(
@@ -218,13 +218,14 @@ class CvdumpTypesParser:
     LF_MFUNCTION_RE = re.compile(
         (
             r"\s+Return type = (?P<return_type>[^,]+), Class type = (?P<class_type>[^,]+), This type = (?P<this_type>[^,]+),\s*\n"
-            r"\s+Call type = (?P<call_type>[^,]+), Func attr = (?P<func_attr>[^\n]+)\n"
+            r"\s+Call type = (?P<call_type>[^,]+), Func attr = (?P<func_attr>[^\n,]+)\n"
             r"\s+Parms = (?P<num_params>\d+), Arg list type = (?P<arg_list_type>\w+), This adjust = (?P<this_adjust>[0-9a-f]+)"
         )
     )
 
     LF_ENUM_ATTRIBUTES = [
         re.compile(r"^\s*# members = (?P<num_members>\d+)$"),
+        # the enum name can have both commas and whitespace, so '.+' is okay
         re.compile(r"^\s*enum name = (?P<name>.+)$"),
     ]
     LF_ENUM_TYPES = re.compile(
@@ -643,7 +644,11 @@ class CvdumpTypesParser:
             "Pointer to member function",
         )
 
-        return {"element_type": match.group("element_type")}
+        return {
+            "element_type": match.group("element_type"),
+            # `containing_class` is set to `None` if not present
+            "containing_class": match.group("containing_class"),
+        }
 
     def read_mfunction(self, leaf: str) -> dict[str, Any]:
         match = self.LF_MFUNCTION_RE.search(leaf)
@@ -674,14 +679,19 @@ class CvdumpTypesParser:
 
         return obj
 
+    # pylint: disable=too-many-return-statements
     def parse_enum_attribute(self, attribute: str) -> dict[str, Any]:
         for attribute_regex in self.LF_ENUM_ATTRIBUTES:
             if (match := attribute_regex.match(attribute)) is not None:
                 return match.groupdict()
+
         if attribute == "NESTED":
             return {"is_nested": True}
         if attribute == "FORWARD REF":
             return {"is_forward_ref": True}
+        if attribute == "LOCAL":
+            # Present as early as MSVC 7.00; not sure what is significance is and/or if we need it for anything
+            return {}
         if attribute.startswith("UDT"):
             match = self.LF_ENUM_UDT.match(attribute)
             assert match is not None
@@ -690,6 +700,7 @@ class CvdumpTypesParser:
             result = match.groupdict()
             result["underlying_type"] = normalize_type_id(result["underlying_type"])
             return result
+
         logger.error("Unknown attribute in enum: %s", attribute)
         return {}
 
