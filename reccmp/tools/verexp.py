@@ -3,11 +3,10 @@
 import argparse
 import difflib
 import logging
-import subprocess
-import os
+from pathlib import Path
 
 import reccmp
-from reccmp.bin import lib_path_join
+from reccmp.isledecomp.formats import detect_image, PEImage
 from reccmp.isledecomp.utils import print_diff
 from reccmp.project.detect import (
     RecCmpProjectException,
@@ -43,35 +42,12 @@ def main():
         logger.error("%s", e.args[0])
         return 1
 
-    def get_exports(file):
-        call = [lib_path_join("DUMPBIN.EXE"), "/EXPORTS"]
+    def get_exports(filepath: Path) -> list[str]:
+        img = detect_image(filepath=filepath)
+        if not isinstance(img, PEImage):
+            raise ValueError(f"{filepath} is not a PE executable")
 
-        if os.name != "nt":
-            call.insert(0, "wine")
-            file = (
-                subprocess.check_output(["winepath", "-w", file])
-                .decode("utf-8")
-                .strip()
-            )
-
-        call.append(file)
-
-        raw = subprocess.check_output(call).decode("utf-8").split("\r\n")
-        exports = []
-
-        start = False
-
-        for line in raw:
-            if not start:
-                if line == "            ordinal hint   name":
-                    start = True
-            else:
-                if line:
-                    exports.append(line[27 : line.rindex("  (")])
-                elif exports:
-                    break
-
-        return exports
+        return [symbol.decode("ascii") for _, symbol in img.exports]
 
     og_exp = get_exports(target.original_path)
     re_exp = get_exports(target.recompiled_path)
