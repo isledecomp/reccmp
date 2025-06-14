@@ -347,7 +347,7 @@ class EntityDb:
 
     def get_all(self) -> Iterator[ReccmpEntity]:
         cur = self._sql.execute(
-            "SELECT orig_addr, recomp_addr, kvstore FROM entities ORDER BY orig_addr NULLS LAST"
+            "SELECT orig_addr, recomp_addr, kvstore FROM entities ORDER BY orig_addr NULLS LAST, recomp_addr"
         )
         cur.row_factory = entity_factory
         yield from cur
@@ -356,7 +356,7 @@ class EntityDb:
         cur = self._sql.execute(
             """SELECT orig_addr, recomp_addr, kvstore FROM entities
             WHERE matched = 1
-            ORDER BY orig_addr NULLS LAST
+            ORDER BY orig_addr
             """,
         )
         cur.row_factory = matched_entity_factory
@@ -420,7 +420,7 @@ class EntityDb:
             """SELECT orig_addr, recomp_addr, kvstore FROM entities
             WHERE json_extract(kvstore, '$.type') = ?
             AND matched = 1
-            ORDER BY orig_addr NULLS LAST
+            ORDER BY orig_addr
             """,
             (entity_type,),
         )

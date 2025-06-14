@@ -46,6 +46,32 @@ def test_db_count(db):
     assert db.count() == 1
 
 
+def test_db_all_order(db):
+    """get_all() returns matched and unmatched entities. The order should be:
+    1. Matched and unmatched entities by orig_addr, ascending.
+    2. Unmatched entities with only a recomp_addr. Order by recomp_addr, ascending."""
+    with db.batch() as batch:
+        for addr in (600, 500, 300, 200):
+            batch.set_recomp(addr)
+
+        for addr in (400, 300, 200, 100):
+            batch.set_orig(addr)
+
+        batch.match(200, 200)
+        batch.match(300, 300)
+
+    addrs = [(e.orig_addr, e.recomp_addr) for e in db.get_all()]
+
+    assert addrs == [
+        (100, None),
+        (200, 200),
+        (300, 300),
+        (400, None),
+        (None, 500),
+        (None, 600),
+    ]
+
+
 #### Testing new batch API ####
 
 
