@@ -15,8 +15,9 @@ from .types import DisasmLiteInst
 
 AsmExcerpt = list[tuple[int | None, str]]
 
-# TODO: Allow optional prefix like `eax*4 + `
-ptr_replace_regex = re.compile(r"(?P<prefix>\[(?:\w+\*\d+\s\+\s)?)(?P<address>0x[0-9a-f]+)(?P<postfix>\])")
+ptr_replace_regex = re.compile(
+    r"(?P<prefix>\[(?:\w+\*\d+\s\+\s)?)(?P<address>0x[0-9a-f]+)(?P<postfix>\])"
+)
 
 displace_replace_regex = re.compile(r"(?<= )(0x[0-9a-f]+)(?=\])")
 

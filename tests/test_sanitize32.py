@@ -40,6 +40,8 @@ POINTER_INSTRUCTIONS = (
     # Two operands
     DisasmLiteInst(0x1000, 5, "mov", "eax, dword ptr [0x1234]"),
     DisasmLiteInst(0x1000, 5, "mov", "dword ptr [0x1234], eax"),
+    DisasmLiteInst(0x1000, 7, "mov", "dword ptr [eax*4 + 0x1234], esi"),
+    DisasmLiteInst(0x1000, 7, "mov", "esi, dword ptr [eax*4 + 0x1234]"),
 )
 
 
@@ -53,8 +55,8 @@ def test_pointer_instructions(inst: DisasmLiteInst):
 
     # We always replace pointers. No need to verify the address.
     addr_test.assert_not_called()
-    assert "[0x1234]" not in op_str
-    assert "[<OFFSET1>]" in op_str
+    assert "0x1234]" not in op_str
+    assert "<OFFSET1>]" in op_str
 
 
 @pytest.mark.parametrize("inst", POINTER_INSTRUCTIONS)
