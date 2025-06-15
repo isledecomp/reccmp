@@ -25,7 +25,11 @@ class FunctionPartCompareResult(NamedTuple):
     weighted_match_ratio: float
 
 
-def create_valid_addr_lookup(db_getter: Callable[[int, bool], ReccmpEntity | None], is_recomp: bool, bin_file: PEImage) -> Callable[[int], bool]:
+def create_valid_addr_lookup(
+    db_getter: Callable[[int, bool], ReccmpEntity | None],
+    is_recomp: bool,
+    bin_file: PEImage,
+) -> Callable[[int], bool]:
     """Function generator for a lookup whether an address from a call is valid (either )"""
 
     @cache
@@ -74,13 +78,17 @@ class FunctionComparator:
 
     def __post_init__(self):
         self.orig_sanitize = ParseAsm(
-            addr_test=create_valid_addr_lookup(self.db.get_by_orig, False, self.orig_bin),
+            addr_test=create_valid_addr_lookup(
+                self.db.get_by_orig, False, self.orig_bin
+            ),
             name_lookup=create_name_lookup(
                 self.db.get_by_orig, create_bin_lookup(self.orig_bin), "orig_addr"
             ),
         )
         self.recomp_sanitize = ParseAsm(
-            addr_test=create_valid_addr_lookup(self.db.get_by_recomp, True, self.recomp_bin),
+            addr_test=create_valid_addr_lookup(
+                self.db.get_by_recomp, True, self.recomp_bin
+            ),
             name_lookup=create_name_lookup(
                 self.db.get_by_recomp,
                 create_bin_lookup(self.recomp_bin),

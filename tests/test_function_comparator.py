@@ -375,11 +375,9 @@ def test_displacement_with_match(db: EntityDb, report: ReccmpReportProtocol):
     orig = b"\x89\x3c\x85\xa8\x15\xc8\x00"
     recm = b"\x89\x3c\x85\xa8\x15\xd0\x00"
 
-    orig_addr = 0xc815a8
-    recomp_addr = 0xd015a8
-    db.set_recomp_symbol(
-        recomp_addr, name="some_global"
-    )
+    orig_addr = 0xC815A8
+    recomp_addr = 0xD015A8
+    db.set_recomp_symbol(recomp_addr, name="some_global")
     db.set_pair(orig_addr, recomp_addr, EntityType.DATA)
 
     diffreport = compare_functions(db, orig, recm, report)
