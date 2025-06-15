@@ -15,7 +15,8 @@ from .types import DisasmLiteInst
 
 AsmExcerpt = list[tuple[int | None, str]]
 
-ptr_replace_regex = re.compile(r"(?<=\[)(0x[0-9a-f]+)(?=\])")
+# TODO: Allow optional prefix like `eax*4 + `
+ptr_replace_regex = re.compile(r"(?P<prefix>\[(?:\w+\*\d+\s\+\s)?)(?P<address>0x[0-9a-f]+)(?P<postfix>\])")
 
 displace_replace_regex = re.compile(r"(?<= )(0x[0-9a-f]+)(?=\])")
 
@@ -100,8 +101,9 @@ class ParseAsm:
 
     def hex_replace_always(self, match: re.Match) -> str:
         """If a pointer value was matched, always insert a placeholder"""
-        value = int(match.group(1), 16)
-        return self.replace(value)
+        value = int(match.group("address"), 16)
+        # return self.replace(value)
+        return f'{match.group("prefix")}{self.replace(value)}{match.group("postfix")}'
 
     def hex_replace_relocated(self, match: re.Match) -> str:
         """For replacing immediate value operands. We only want to
@@ -129,8 +131,8 @@ class ParseAsm:
         So we go to that location in the binary to get the address.
         If we cannot identify the indirect address, fall back to a lookup
         on the original pointer value so we might display something useful."""
-        value = int(match.group(1), 16)
-        return self.indirect_replace(value)
+        value = int(match.group("address"), 16)
+        return f'{match.group("prefix")}{self.indirect_replace(value)}{match.group("postfix")}'
 
     def sanitize(self, inst: DisasmLiteInst) -> tuple[str, str]:
         # For jumps or calls, if the entire op_str is a hex number, the value
