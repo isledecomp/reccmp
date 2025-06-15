@@ -53,8 +53,8 @@ def test_pointer_instructions(inst: DisasmLiteInst):
 
     # We always replace pointers. No need to verify the address.
     addr_test.assert_not_called()
-    assert "0x1234]" not in op_str
-    assert "<OFFSET1>]" in op_str
+    assert "[0x1234]" not in op_str
+    assert "[<OFFSET1>]" in op_str
 
 
 @pytest.mark.parametrize("inst", POINTER_INSTRUCTIONS)
