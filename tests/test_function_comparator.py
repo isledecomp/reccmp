@@ -4,7 +4,6 @@ from reccmp.isledecomp.compare.db import EntityDb, ReccmpMatch
 from reccmp.isledecomp.compare.diff import DiffReport
 from reccmp.isledecomp.compare.event import ReccmpEvent, ReccmpReportProtocol
 from reccmp.isledecomp.compare.functions import FunctionComparator
-from reccmp.isledecomp.formats.pe import PEImage
 from reccmp.isledecomp.types import EntityType
 
 
@@ -27,12 +26,19 @@ def compare_functions(
 ) -> DiffReport:
     """Executes `FunctionComparator.compare_function` on the provided binary code."""
 
-    orig_bin = Mock(PEImage)
+    # Do not use `spec=PEImage`. It may have default implementations that don't do what you expect
+    # (like functions that always return `True`).
+    orig_bin = Mock(spec=[])
     orig_bin.read = Mock(return_value=orig)
     orig_bin.imagebase = 0
-    recomp_bin = Mock(PEImage)
+    orig_bin.is_relocated_addr = Mock(return_value=False)
+    orig_bin.is_debug = Mock(return_value=False)
+
+    recomp_bin = Mock(spec=[])
     recomp_bin.read = Mock(return_value=recomp)
     recomp_bin.imagebase = 0
+    recomp_bin.is_relocated_addr = Mock(return_value=False)
+    recomp_bin.is_debug = Mock(return_value=False)
 
     comp = FunctionComparator(db, orig_bin, recomp_bin, report, "unittest")
 
@@ -86,7 +92,7 @@ def test_simple_nontrivial_diff(db: EntityDb, report: ReccmpReportProtocol):
                 {
                     "both": [
                         ("0x200", "mov word ptr [ebp - 8], 0", "0x400"),
-                        ("0x206", "mov word ptr [ebp - <OFFSET1>], 0", "0x406"),
+                        ("0x206", "mov word ptr [ebp - 0x10], 0", "0x406"),
                     ]
                 },
                 {
@@ -339,5 +345,43 @@ def test_no_assembly_generated(db: EntityDb, report):
     recm = b"\xcd"
 
     diffreport = compare_functions(db, code, recm, report)
+
+    assert diffreport.ratio == 1.0
+
+
+def test_displacement_without_match(db: EntityDb, report: ReccmpReportProtocol):
+    orig = b"\x89\x3c\x85\xa8\x15\xc8\x00"
+    recm = b"\x89\x3c\x85\xa8\x15\xd0\x00"
+
+    diffreport = compare_functions(db, orig, recm, report)
+
+    assert diffreport.ratio < 1.0
+
+    assert diffreport.udiff == [
+        (
+            "@@ -0x200,1 +0x400,1 @@",
+            [
+                {
+                    "orig": [("0x200", "mov dword ptr [eax*4 + 0xc815a8], edi")],
+                    "recomp": [("0x400", "mov dword ptr [eax*4 + 0xd015a8], edi")],
+                }
+            ],
+        )
+    ]
+
+
+def test_displacement_with_match(db: EntityDb, report: ReccmpReportProtocol):
+    # mov dword ptr [eax*4 + 0xc815a8], edi
+    orig = b"\x89\x3c\x85\xa8\x15\xc8\x00"
+    recm = b"\x89\x3c\x85\xa8\x15\xd0\x00"
+
+    orig_addr = 0xc815a8
+    recomp_addr = 0xd015a8
+    db.set_recomp_symbol(
+        recomp_addr, name="some_global"
+    )
+    db.set_pair(orig_addr, recomp_addr, EntityType.DATA)
+
+    diffreport = compare_functions(db, orig, recm, report)
 
     assert diffreport.ratio == 1.0
