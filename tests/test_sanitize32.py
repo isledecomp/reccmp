@@ -40,8 +40,6 @@ POINTER_INSTRUCTIONS = (
     # Two operands
     DisasmLiteInst(0x1000, 5, "mov", "eax, dword ptr [0x1234]"),
     DisasmLiteInst(0x1000, 5, "mov", "dword ptr [0x1234], eax"),
-    DisasmLiteInst(0x1000, 7, "mov", "dword ptr [eax*4 + 0x1234], esi"),
-    DisasmLiteInst(0x1000, 7, "mov", "esi, dword ptr [eax*4 + 0x1234]"),
 )
 
 
@@ -88,6 +86,8 @@ DISPLACE_INSTRUCTIONS = (
     # Two operands
     DisasmLiteInst(0x1000, 6, "mov", "eax, dword ptr [ecx + 0x1234]"),
     DisasmLiteInst(0x1000, 6, "mov", "dword ptr [ecx + 0x1234], eax"),
+    DisasmLiteInst(0x1000, 7, "mov", "dword ptr [eax*4 + 0x1234], esi"),
+    DisasmLiteInst(0x1000, 7, "mov", "esi, dword ptr [eax*4 + 0x1234]"),
     # Jump table
     DisasmLiteInst(0x1000, 7, "jmp", "dword ptr [eax*4 + 0x1234]"),
 )
