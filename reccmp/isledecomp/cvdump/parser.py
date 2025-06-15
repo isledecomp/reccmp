@@ -1,10 +1,9 @@
 import re
-from typing import Iterable, NamedTuple
+from pathlib import PureWindowsPath
+from typing import NamedTuple
 from .types import CvdumpTypesParser
 from .symbols import CvdumpSymbolsParser
 
-# e.g. `*** PUBLICS`
-_section_change_regex = re.compile(r"\*\*\* (?P<section>[A-Z/ ]{2,})")
 
 # e.g. `     27 00034EC0     28 00034EE2     29 00034EE7     30 00034EF4`
 _line_addr_pairs_findall = re.compile(r"\s+(?P<line_no>\d+) (?P<addr>[A-F0-9]{8})")
@@ -93,22 +92,22 @@ class NodeKey(NamedTuple):
 
 
 class LineValue(NamedTuple):
-    filename: str
     line_number: int
+    section: int
+    offset: int
 
 
 class LinesFunction(NamedTuple):
-    filename: str
+    filename: PureWindowsPath
     section: int
 
 
 class CvdumpParser:
     # pylint: disable=too-many-instance-attributes
     def __init__(self) -> None:
-        self._section: str = ""
-        self._lines_function = LinesFunction("", 0)
+        self._lines_function = LinesFunction(PureWindowsPath(), 0)
 
-        self.lines: dict[NodeKey, LineValue] = {}
+        self.lines: dict[PureWindowsPath, list[LineValue]] = {}
         self.publics: list[PublicsEntry] = []
         self.sizerefs: list[SizeRefEntry] = []
         self.globals: list[GdataEntry] = []
@@ -130,15 +129,16 @@ class CvdumpParser:
         # Save the section here because it is not given on the lines that follow.
         if (match := _lines_subsection_header.match(line)) is not None:
             self._lines_function = LinesFunction(
-                match.group("filename"),
+                PureWindowsPath(match.group("filename")),
                 int(match.group("section"), 16),
             )
             return
 
         # Match any pairs as we find them
         for line_no, offset in _line_addr_pairs_findall.findall(line):
-            key = NodeKey(self._lines_function.section, int(offset, 16))
-            self.lines[key] = LineValue(self._lines_function.filename, int(line_no))
+            self.lines.setdefault(self._lines_function.filename, []).append(
+                LineValue(int(line_no), self._lines_function.section, int(offset, 16))
+            )
 
     def _publics_section(self, line: str):
         """Match each line from PUBLICS and pull out the symbol information.
@@ -196,32 +196,30 @@ class CvdumpParser:
                 )
             )
 
-    def read_line(self, line: str):
-        if (match := _section_change_regex.match(line)) is not None:
-            self._section = match.group(1)
-            return
+    def read_section(self, name: str, section: str):
+        if name == "TYPES":
+            self.types.read_all(section)
 
-        if self._section == "TYPES":
-            self.types.read_line(line)
+        elif name == "SYMBOLS":
+            for line in section.splitlines():
+                self.symbols_parser.read_line(line)
 
-        elif self._section == "SYMBOLS":
-            self.symbols_parser.read_line(line)
+        elif name == "LINES":
+            for line in section.splitlines():
+                self._lines_section(line)
 
-        elif self._section == "LINES":
-            self._lines_section(line)
+        elif name == "PUBLICS":
+            for line in section.splitlines():
+                self._publics_section(line)
 
-        elif self._section == "PUBLICS":
-            self._publics_section(line)
+        elif name == "SECTION CONTRIBUTIONS":
+            for line in section.splitlines():
+                self._section_contributions(line)
 
-        elif self._section == "SECTION CONTRIBUTIONS":
-            self._section_contributions(line)
+        elif name == "GLOBALS":
+            for line in section.splitlines():
+                self._globals_section(line)
 
-        elif self._section == "GLOBALS":
-            self._globals_section(line)
-
-        elif self._section == "MODULES":
-            self._modules_section(line)
-
-    def read_lines(self, lines: Iterable[str]):
-        for line in lines:
-            self.read_line(line)
+        elif name == "MODULES":
+            for line in section.splitlines():
+                self._modules_section(line)

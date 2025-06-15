@@ -1,7 +1,6 @@
-from reccmp.isledecomp.cvdump.parser import CvdumpParser
-from reccmp.isledecomp.formats.pe import PEImage
 from reccmp.isledecomp.types import EntityType
 from reccmp.isledecomp.compare.db import EntityDb
+from reccmp.isledecomp.compare.lines import LinesDb
 from reccmp.isledecomp.compare.event import (
     ReccmpEvent,
     ReccmpReportProtocol,
@@ -22,6 +21,9 @@ class EntityIndex:
 
     def add(self, key: str, value: int):
         self._dict.setdefault(key, []).append(value)
+
+    def get(self, key: str) -> list[int]:
+        return self._dict.get(key, [])
 
     def count(self, key: str) -> int:
         return len(self._dict.get(key, []))
@@ -138,11 +140,18 @@ def match_functions(
 
                 # If this name was ever matched non-uniquely
                 if name in non_unique_names:
-                    symbol = recomp_symbols.get(recomp_addr, "None")
+                    matched_symbol = recomp_symbols.get(recomp_addr, "None")
+                    other_symbols = [
+                        recomp_symbols.get(recomp_addr, "None")
+                        for recomp_addr in name_index.get(name)
+                    ]
                     report(
                         ReccmpEvent.AMBIGUOUS_MATCH,
                         orig_addr,
-                        msg=f"Ambiguous match 0x{orig_addr:x} on name '{name}' to '{symbol}'",
+                        msg=f"Ambiguous match 0x{orig_addr:x} on name '{name}' to\n"
+                        + f"'{matched_symbol}'\n"
+                        + "Other candidates:\n"
+                        + ",\n".join(f"'{candidate}'" for candidate in other_symbols),
                     )
 
                 batch.match(orig_addr, recomp_addr)
@@ -334,8 +343,7 @@ def match_strings(db: EntityDb, report: ReccmpReportProtocol = reccmp_report_nop
 
 def match_lines(
     db: EntityDb,
-    cv: CvdumpParser,
-    recomp_bin: PEImage,
+    lines: LinesDb,
     report: ReccmpReportProtocol = reccmp_report_nop,
 ):
     """
@@ -368,24 +376,14 @@ def match_lines(
             # but it is significantly more effort to detect these false positives.
             #
 
-            line_key = next(
-                (
-                    key
-                    for key, value in cv.lines.items()
-                    # We match `line + 1` since `line` is the comment itself
-                    if value.filename == filename and value.line_number == line + 1
-                ),
-                None,
-            )
-
-            if line_key is None:
+            # We match `line + 1` since `line` is the comment itself
+            for recomp_addr in lines.search_line(filename, line + 1):
+                batch.set_recomp_addr(orig_addr, recomp_addr)
+                break
+            else:
+                # No results
                 report(
                     ReccmpEvent.NO_MATCH,
                     orig_addr,
                     f"Found no matching debug symbol for {filename}:{line}",
-                )
-            else:
-                batch.set_recomp_addr(
-                    orig_addr,
-                    recomp_bin.get_abs_addr(line_key.section, line_key.offset),
                 )

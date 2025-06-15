@@ -359,10 +359,14 @@ NESTED,     enum name = JukeBox::JukeBoxScript, UDT(0x00003cc2)
 @pytest.fixture(name="parser")
 def types_parser_fixture():
     parser = CvdumpTypesParser()
-    for line in TEST_LINES.split("\n"):
-        parser.read_line(line)
+    parser.read_all(TEST_LINES)
 
     return parser
+
+
+@pytest.fixture(name="empty_parser")
+def types_empty_parser_fixture():
+    return CvdumpTypesParser()
 
 
 def test_basic_parsing(parser: CvdumpTypesParser):
@@ -695,14 +699,12 @@ UNNAMED_UNION_DATA = """
 """
 
 
-def test_unnamed_union():
+def test_unnamed_union(empty_parser: CvdumpTypesParser):
     """Make sure we can parse anonymous union types without a UDT"""
-    parser = CvdumpTypesParser()
-    for line in UNNAMED_UNION_DATA.split("\n"):
-        parser.read_line(line)
+    empty_parser.read_all(UNNAMED_UNION_DATA)
 
     # Make sure we can parse the members line
-    union = parser.keys["0x369e"]
+    union = empty_parser.keys["0x369e"]
     assert union["size"] == 4
     assert union["field_list_type"] == "0x369d"
 
@@ -719,44 +721,41 @@ ARGLIST_UNKNOWN_TYPE = """
 """
 
 
-def test_arglist_unknown_type():
+def test_arglist_unknown_type(empty_parser: CvdumpTypesParser):
     """Should parse the ??? types and not fail with an assert."""
-    parser = CvdumpTypesParser()
-    for line in ARGLIST_UNKNOWN_TYPE.split("\n"):
-        parser.read_line(line)
+    empty_parser.read_all(ARGLIST_UNKNOWN_TYPE)
 
-    t = parser.keys["0x11f3"]
+    t = empty_parser.keys["0x11f3"]
     assert len(t["args"]) == t["argcount"]
 
 
 FUNC_ATTR_EXAMPLES = """
 0x1216 : Length = 26, Leaf = 0x1009 LF_MFUNCTION
-    Return type = 0x1209, Class type = 0x1209, This type = T_NOTYPE(0000), 
+    Return type = 0x1209, Class type = 0x1209, This type = T_NOTYPE(0000),
     Call type = C Near, Func attr = return UDT (C++ style)
     Parms = 1, Arg list type = 0x116f, This adjust = 0
 
 0x122b : Length = 26, Leaf = 0x1009 LF_MFUNCTION
-    Return type = T_VOID(0003), Class type = 0x1226, This type = 0x1228, 
+    Return type = T_VOID(0003), Class type = 0x1226, This type = 0x1228,
     Call type = ThisCall, Func attr = instance constructor
     Parms = 1, Arg list type = 0x122a, This adjust = 0
 
 0x1232 : Length = 26, Leaf = 0x1009 LF_MFUNCTION
-    Return type = T_VOID(0003), Class type = 0x1226, This type = 0x1228, 
+    Return type = T_VOID(0003), Class type = 0x1226, This type = 0x1228,
     Call type = ThisCall, Func attr = ****Warning**** unused field non-zero!
     Parms = 0, Arg list type = 0x1018, This adjust = 0
 """
 
 
-def test_mfunction_func_attr():
+def test_mfunction_func_attr(empty_parser: CvdumpTypesParser):
     """Should parse "Func attr" values other than 'none'"""
-    parser = CvdumpTypesParser()
-    for line in FUNC_ATTR_EXAMPLES.split("\n"):
-        parser.read_line(line)
+    empty_parser.read_all(FUNC_ATTR_EXAMPLES)
 
-    assert parser.keys["0x1216"]["func_attr"] == "return UDT (C++ style)"
-    assert parser.keys["0x122b"]["func_attr"] == "instance constructor"
+    assert empty_parser.keys["0x1216"]["func_attr"] == "return UDT (C++ style)"
+    assert empty_parser.keys["0x122b"]["func_attr"] == "instance constructor"
     assert (
-        parser.keys["0x1232"]["func_attr"] == "****Warning**** unused field non-zero!"
+        empty_parser.keys["0x1232"]["func_attr"]
+        == "****Warning**** unused field non-zero!"
     )
 
 
@@ -766,46 +765,159 @@ UNION_UNNAMED_TAG = """
 """
 
 
-def test_union_without_udt():
+def test_union_without_udt(empty_parser: CvdumpTypesParser):
     """Should parse union that is missing the UDT attribute"""
-    parser = CvdumpTypesParser()
-    for line in UNION_UNNAMED_TAG.split("\n"):
-        parser.read_line(line)
+    empty_parser.read_all(UNION_UNNAMED_TAG)
 
-    assert "udt" not in parser.keys["0x3352"]
-    assert parser.keys["0x3352"]["name"] == "<unnamed-tag>"
+    assert "udt" not in empty_parser.keys["0x3352"]
+    assert empty_parser.keys["0x3352"]["name"] == "<unnamed-tag>"
 
 
 MFUNCTION_UNK_RETURN_TYPE = """
 0x11d8 : Length = 26, Leaf = 0x1009 LF_MFUNCTION
-    Return type = ???(047C), Class type = 0x1136, This type = T_NOTYPE(0000), 
+    Return type = ???(047C), Class type = 0x1136, This type = T_NOTYPE(0000),
     Call type = C Near, Func attr = none
     Parms = 3, Arg list type = 0x11d7, This adjust = 0
 """
 
 
-def test_mfunction_unk_return_type():
+def test_mfunction_unk_return_type(empty_parser: CvdumpTypesParser):
     """Should parse unknown return type as-is"""
-    parser = CvdumpTypesParser()
-    for line in MFUNCTION_UNK_RETURN_TYPE.split("\n"):
-        parser.read_line(line)
+    empty_parser.read_all(MFUNCTION_UNK_RETURN_TYPE)
 
-    assert parser.keys["0x11d8"]["return_type"] == "???(047C)"
+    assert empty_parser.keys["0x11d8"]["return_type"] == "???(047C)"
 
 
 CLASS_WITH_UNIQUE_NAME = """
 0x1cf0 : Length = 134, Leaf = 0x1504 LF_CLASS
-    # members = 8,  field list type 0x1cef, CONSTRUCTOR, OVERLOAD, NESTED, OVERLOADED ASSIGNMENT, 
-        CASTING, 
+    # members = 8,  field list type 0x1cef, CONSTRUCTOR, OVERLOAD, NESTED, OVERLOADED ASSIGNMENT,
+        CASTING,
     Derivation list type 0x0000, VT shape type 0x0000
     Size = 8, class name = std::basic_ostream<char,std::char_traits<char> >::sentry, unique name = .?AVsentry@?$basic_ostream@DU?$char_traits@D@std@@@std@@, UDT(0x00001cf0)
 """
 
 
-def test_class_unique_name():
+def test_class_unique_name(empty_parser: CvdumpTypesParser):
     """Make sure we can parse the UDT when the 'unique name' attribute is present"""
-    parser = CvdumpTypesParser()
-    for line in CLASS_WITH_UNIQUE_NAME.split("\n"):
-        parser.read_line(line)
+    empty_parser.read_all(CLASS_WITH_UNIQUE_NAME)
 
-    assert parser.keys["0x1cf0"]["udt"] == "0x1cf0"
+    assert empty_parser.keys["0x1cf0"]["udt"] == "0x1cf0"
+
+
+TWO_FORMATS_FOR_ARRAY_LENGTH = """
+0x62c1 : Length = 14, Leaf = 0x1503 LF_ARRAY
+	Element type = T_RCHAR(0070)
+	Index type = T_SHORT(0011)
+	length = 50
+	Name =
+
+0x62c5 : Length = 18, Leaf = 0x1503 LF_ARRAY
+	Element type = 0x62BE
+	Index type = T_SHORT(0011)
+	length = (LF_ULONG) 131328
+	Name =
+"""
+
+
+def test_two_formats_for_array_length(empty_parser: CvdumpTypesParser):
+    """Make sure we can parse the UDT when the 'unique name' attribute is present"""
+    empty_parser.read_all(TWO_FORMATS_FOR_ARRAY_LENGTH)
+
+    assert empty_parser.keys["0x62c1"]["size"] == 50
+    assert empty_parser.keys["0x62c5"]["size"] == 131328
+
+
+LF_POINTER_TO_MEMBER = """
+0x1646 : Length = 18, Leaf = 0x1002 LF_POINTER
+    Pointer to member function (NEAR32), Size: 0
+    Element type : 0x1645, Containing class = 0x12BD,
+    Type of pointer to member = Not specified
+"""
+
+
+def test_pointer_to_member(empty_parser: CvdumpTypesParser):
+    """LF_POINTER with optional 'Containing class' attribute."""
+    empty_parser.read_all(LF_POINTER_TO_MEMBER)
+    assert empty_parser.keys["0x1646"]["element_type"] == "0x1645"
+
+
+MSVC700_ENUM_WITH_LOCAL_FLAG = """
+0x26ba : Length = 62, Leaf = 0x1507 LF_ENUM
+	# members = 3,  type = T_INT4(0074) field list type 0x26b9
+LOCAL, 	enum name = SomeEnumType::SomeEnumInternalName::__l2::__unnamed
+"""
+
+
+def test_enum_with_local_flag(empty_parser: CvdumpTypesParser):
+    """Make sure we can parse an enum with the LOCAL flag set. At the moment, the flag is ignored."""
+    empty_parser.read_all(MSVC700_ENUM_WITH_LOCAL_FLAG)
+
+    assert empty_parser.keys["0x26ba"] == {
+        "field_type": "0x26b9",
+        "name": "SomeEnumType::SomeEnumInternalName::__l2::__unnamed",
+        "num_members": "3",
+        "type": "LF_ENUM",
+        "underlying_type": "T_INT4",
+    }
+
+
+MSVC700_POINTER_CONTAINING_CLASS_TYPE_OF_POINTED_TO = """
+0x64ca : Length = 18, Leaf = 0x1002 LF_POINTER
+	Pointer to member function (NEAR32), Size: 0
+	Element type : 0x2FD1, Containing class = 0x1165,
+	Type of pointer to member = Not specified
+"""
+
+
+def test_enum_with_containing_class_and_type_of_pointed_to(
+    empty_parser: CvdumpTypesParser,
+):
+    """Make sure that a pointer with these attributes is parsed correctly. 'Type of pointed to' is currently ignored."""
+    empty_parser.read_all(MSVC700_POINTER_CONTAINING_CLASS_TYPE_OF_POINTED_TO)
+
+    assert empty_parser.keys["0x64ca"] == {
+        "element_type": "0x2FD1",
+        "type": "LF_POINTER",
+        "containing_class": "0x1165",
+    }
+
+
+POINTER_WITHOUT_CONTAINING_CLASS = """
+0x534e : Length = 10, Leaf = 0x1002 LF_POINTER
+	Pointer (NEAR32), Size: 0
+	Element type : 0x2505
+"""
+
+
+def test_pointer_without_containing_class(
+    empty_parser: CvdumpTypesParser,
+):
+    empty_parser.read_all(POINTER_WITHOUT_CONTAINING_CLASS)
+
+    assert empty_parser.keys["0x534e"] == {
+        "containing_class": None,
+        "element_type": "0x2505",
+        "type": "LF_POINTER",
+    }
+
+
+ENUM_WITH_WHITESPACE_AND_COMMA = """
+0x4dc2 : Length = 58, Leaf = 0x1507 LF_ENUM
+	# members = 1,  type = T_INT4(0074) field list type 0x2588
+NESTED, 	enum name = CPool<CTask,signed char [128]>::__unnamed
+"""
+
+
+def test_enum_with_whitespace_and_comma(
+    empty_parser: CvdumpTypesParser,
+):
+    empty_parser.read_all(ENUM_WITH_WHITESPACE_AND_COMMA)
+
+    assert empty_parser.keys["0x4dc2"] == {
+        "field_type": "0x2588",
+        "is_nested": True,
+        "name": "CPool<CTask,signed char [128]>::__unnamed",
+        "num_members": "1",
+        "type": "LF_ENUM",
+        "underlying_type": "T_INT4",
+    }

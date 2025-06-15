@@ -781,3 +781,61 @@ def test_namespace_in_comment(parser):
     assert len(parser.vtables) == 2
     assert parser.vtables[0].name == "Tgl::Object"
     assert parser.vtables[1].name == "TglImpl::RendererImpl<D3DRMImpl::D3DRM>"
+
+
+def test_function_symbol_option(parser):
+    """Indicate that the name for this name-based function marker is the function's symbol (linker name)."""
+    parser.read(
+        """\
+        // LIBRARY: HELLO 0x1234 SYMBOL
+        // _strcmp
+
+        // LIBRARY: HOWDY 0x5555 symbol
+        // _strcmp
+
+        // LIBRARY: TEST 0x5555 SYMB
+        // _strcmp
+        """
+    )
+
+    assert len(parser.functions) == 3
+    assert all(fun.name == "_strcmp" for fun in parser.functions)
+    assert parser.functions[0].name_is_symbol is True
+    assert parser.functions[1].name_is_symbol is True  # Lower-case is okay (for now)
+    assert parser.functions[2].name_is_symbol is False  # Must be "symbol"
+    assert len(parser.alerts) == 0
+
+
+def test_function_symbol_option_multiple(parser):
+    """If there are multiple markers for a name-based annotation, name_is_symbol is true only
+    for the modules where the user specified SYMBOL.
+    I don't know if there's a reason to do things differently for different modules but *shrug*.
+    We already allow STUB and FUNCTION to be used on the same annotation.
+    """
+    parser.read(
+        """\
+        // LIBRARY: HELLO 0x1234 SYMBOL
+        // LIBRARY: TEST 0x1234
+        // _strcmp
+        """
+    )
+
+    assert len(parser.functions) == 2
+    assert parser.functions[0].module == "HELLO"
+    assert parser.functions[0].name_is_symbol is True
+    assert parser.functions[1].module == "TEST"
+    assert parser.functions[1].name_is_symbol is False
+
+
+def test_function_symbol_option_warning(parser):
+    """Marking a line-based function with SYMBOL should be ignored."""
+    parser.read(
+        """\
+        // FUNCTION: HELLO 0x1234 SYMBOL
+        int test() { return 5; }
+        """
+    )
+
+    assert len(parser.functions) == 1
+    assert parser.functions[0].name_is_symbol is False
+    assert parser.alerts[0].code == ParserError.SYMBOL_OPTION_IGNORED

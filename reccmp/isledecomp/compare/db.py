@@ -347,7 +347,7 @@ class EntityDb:
 
     def get_all(self) -> Iterator[ReccmpEntity]:
         cur = self._sql.execute(
-            "SELECT orig_addr, recomp_addr, kvstore FROM entities ORDER BY orig_addr NULLS LAST"
+            "SELECT orig_addr, recomp_addr, kvstore FROM entities ORDER BY orig_addr NULLS LAST, recomp_addr"
         )
         cur.row_factory = entity_factory
         yield from cur
@@ -356,7 +356,7 @@ class EntityDb:
         cur = self._sql.execute(
             """SELECT orig_addr, recomp_addr, kvstore FROM entities
             WHERE matched = 1
-            ORDER BY orig_addr NULLS LAST
+            ORDER BY orig_addr
             """,
         )
         cur.row_factory = matched_entity_factory
@@ -420,7 +420,7 @@ class EntityDb:
             """SELECT orig_addr, recomp_addr, kvstore FROM entities
             WHERE json_extract(kvstore, '$.type') = ?
             AND matched = 1
-            ORDER BY orig_addr NULLS LAST
+            ORDER BY orig_addr
             """,
             (entity_type,),
         )
@@ -469,89 +469,6 @@ class EntityDb:
         )
 
         return cur.rowcount > 0
-
-    def set_pair_tentative(
-        self, orig: int, recomp: int, entity_type: EntityType | None = None
-    ) -> bool:
-        """Declare a match for the original and recomp addresses given, but only if:
-        1. The original address is not used elsewhere (as with set_pair)
-        2. The recomp address has not already been matched
-        If the entity_type is given, update this also, but only if NULL in the db.
-
-        The purpose here is to set matches found via some automated analysis
-        but to not overwrite a match provided by the human operator."""
-        if self._orig_used(orig):
-            # Probable and expected situation. Just ignore it.
-            return False
-
-        cur = self._sql.execute(
-            """UPDATE entities
-            SET orig_addr = ?, kvstore = json_insert(kvstore,'$.type',?)
-            WHERE recomp_addr = ?
-            AND orig_addr IS NULL""",
-            (orig, entity_type, recomp),
-        )
-
-        return cur.rowcount > 0
-
-    def set_function_pair(self, orig: int, recomp: int) -> bool:
-        """For lineref match or _entry"""
-        return self.set_pair(orig, recomp, EntityType.FUNCTION)
-
-    def set_function_pair_tentative(self, orig: int, recomp: int) -> bool:
-        """For lineref match or _entry"""
-        return self.set_pair_tentative(orig, recomp, EntityType.FUNCTION)
-
-    def create_orig_thunk(self, addr: int, name: str) -> bool:
-        """Create a thunk function reference using the orig address.
-        We are here because we have a match on the thunked function,
-        but it is not thunked in the recomp build."""
-
-        if self._orig_used(addr):
-            return False
-
-        thunk_name = f"Thunk of '{name}'"
-
-        # Assuming relative jump instruction for thunks (5 bytes)
-        cur = self._sql.execute(
-            """INSERT INTO entities (orig_addr, kvstore)
-            VALUES (:addr, json_insert('{}', '$.type', :type, '$.name', :name, '$.size', :size))""",
-            {"addr": addr, "type": EntityType.FUNCTION, "name": thunk_name, "size": 5},
-        )
-
-        return cur.rowcount > 0
-
-    def create_recomp_thunk(self, addr: int, name: str) -> bool:
-        """Create a thunk function reference using the recomp address.
-        We start from the recomp side for this because we are guaranteed
-        to have full information from the PDB. We can use a regular function
-        match later to pull in the orig address."""
-
-        if self._recomp_used(addr):
-            return False
-
-        thunk_name = f"Thunk of '{name}'"
-
-        # Assuming relative jump instruction for thunks (5 bytes)
-        cur = self._sql.execute(
-            """INSERT INTO entities (recomp_addr, kvstore)
-            VALUES (:addr, json_insert('{}', '$.type', :type, '$.name', :name, '$.size', :size))""",
-            {"addr": addr, "type": EntityType.FUNCTION, "name": thunk_name, "size": 5},
-        )
-
-        return cur.rowcount > 0
-
-    def _set_opt_bool(self, addr: int, option: str, enabled: bool = True):
-        self._sql.execute(
-            "UPDATE entities SET kvstore = json_patch(kvstore,?) where orig_addr = ?",
-            (json.dumps({option: enabled}), addr),
-        )
-
-    def mark_stub(self, orig: int):
-        self._set_opt_bool(orig, "stub")
-
-    def skip_compare(self, orig: int):
-        self._set_opt_bool(orig, "skip")
 
     def search_symbol(self, symbol: str) -> Iterator[ReccmpEntity]:
         if "symbol" not in self._indexed:
