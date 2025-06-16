@@ -30,7 +30,10 @@ def create_valid_addr_lookup(
     is_recomp: bool,
     bin_file: PEImage,
 ) -> Callable[[int], bool]:
-    """Function generator for a lookup whether an address from a call is valid (either )"""
+    """
+    Function generator for a lookup whether an address from a call is valid
+    (either a relocation or pointing to something else we know, like a global variable)
+    """
 
     @cache
     def lookup(addr: int) -> bool:
