@@ -1,12 +1,13 @@
 from dataclasses import dataclass
 import difflib
+from functools import cache
 import struct
 from itertools import pairwise
 from typing import Callable, Iterator, NamedTuple
 from reccmp.isledecomp.compare.asm.fixes import assert_fixup, find_effective_match
 from reccmp.isledecomp.compare.asm.parse import AsmExcerpt, ParseAsm
 from reccmp.isledecomp.compare.asm.replacement import create_name_lookup
-from reccmp.isledecomp.compare.db import EntityDb, ReccmpMatch
+from reccmp.isledecomp.compare.db import EntityDb, ReccmpEntity, ReccmpMatch
 from reccmp.isledecomp.compare.diff import CombinedDiffOutput, DiffReport, combined_diff
 from reccmp.isledecomp.compare.event import ReccmpEvent, ReccmpReportProtocol
 from reccmp.isledecomp.formats.exceptions import (
@@ -24,11 +25,33 @@ class FunctionPartCompareResult(NamedTuple):
     weighted_match_ratio: float
 
 
-def create_reloc_lookup(bin_file: PEImage) -> Callable[[int], bool]:
-    """Function generator for relocation table lookup"""
+def create_valid_addr_lookup(
+    db_getter: Callable[[int, bool], ReccmpEntity | None],
+    is_recomp: bool,
+    bin_file: PEImage,
+) -> Callable[[int], bool]:
+    """
+    Function generator for a lookup whether an address from a call is valid
+    (either a relocation or pointing to something else we know, like a global variable)
+    """
 
+    @cache
     def lookup(addr: int) -> bool:
-        return addr > bin_file.imagebase and bin_file.is_relocated_addr(addr)
+        # Check if in relocation table
+        if addr > bin_file.imagebase and bin_file.is_relocated_addr(addr):
+            return True
+
+        # Check whether the address points to valid data
+        entity = db_getter(addr, False)
+        if entity is None:
+            return False
+        base_addr = entity.recomp_addr if is_recomp else entity.orig_addr
+        if base_addr is None:
+            # should never happen
+            return False
+
+        address_is_contained_in_entity = addr <= base_addr + entity.size
+        return address_is_contained_in_entity
 
     return lookup
 
@@ -58,13 +81,17 @@ class FunctionComparator:
 
     def __post_init__(self):
         self.orig_sanitize = ParseAsm(
-            addr_test=create_reloc_lookup(self.orig_bin),
+            addr_test=create_valid_addr_lookup(
+                self.db.get_by_orig, False, self.orig_bin
+            ),
             name_lookup=create_name_lookup(
                 self.db.get_by_orig, create_bin_lookup(self.orig_bin), "orig_addr"
             ),
         )
         self.recomp_sanitize = ParseAsm(
-            addr_test=create_reloc_lookup(self.recomp_bin),
+            addr_test=create_valid_addr_lookup(
+                self.db.get_by_recomp, True, self.recomp_bin
+            ),
             name_lookup=create_name_lookup(
                 self.db.get_by_recomp,
                 create_bin_lookup(self.recomp_bin),
