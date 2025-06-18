@@ -58,33 +58,33 @@ class ParserError(Enum):
     DECOMP_ERROR_START = 200
 
     # ERROR: We found a marker unexpectedly
-    UNEXPECTED_MARKER = 200
+    UNEXPECTED_MARKER = 201
 
     # ERROR: We found a marker where we expected to find one, but it is incompatible
     # with the preceding markers.
     # For example, a GLOBAL cannot follow FUNCTION/STUB
-    INCOMPATIBLE_MARKER = 201
+    INCOMPATIBLE_MARKER = 202
 
     # ERROR: The line following an explicit by-name marker was not a comment
     # We assume a syntax error here rather than try to use the next line
-    BAD_NAMEREF = 202
+    BAD_NAMEREF = 203
 
     # ERROR: This function offset comes before the previous offset from the same module
     # This hopefully gives some hint about which functions need to be rearranged.
-    FUNCTION_OUT_OF_ORDER = 203
+    FUNCTION_OUT_OF_ORDER = 204
 
     # ERROR: The line following an explicit by-name marker that does _not_ expect
     # a comment -- i.e. VTABLE or GLOBAL -- could not extract the name
-    NO_SUITABLE_NAME = 204
+    NO_SUITABLE_NAME = 205
 
     # ERROR: Two STRING markers have the same module and offset, but the strings
     # they annotate are different.
-    WRONG_STRING = 205
+    WRONG_STRING = 206
 
     # ERROR: This lineref FUNCTION marker is next to a function declaration or
     # forward reference. The correct place for the marker is where the function
     # is implemented so we can match with the PDB.
-    NO_IMPLEMENTATION = 206
+    NO_IMPLEMENTATION = 207
 
 
 @dataclass

@@ -839,3 +839,39 @@ def test_function_symbol_option_warning(parser):
     assert len(parser.functions) == 1
     assert parser.functions[0].name_is_symbol is False
     assert parser.alerts[0].code == ParserError.SYMBOL_OPTION_IGNORED
+
+
+def test_unexpected_marker(parser):
+    """The unexpected_marker error occurs when:
+    1. We read 1-to-N line-based function annotations (// FUNCTION or // STUB)
+    2. We begin our search for the opening curly bracket { of the function
+    3. We are interrupted by another annotation of any type"""
+    parser.read(
+        """\
+        // FUNCTION: HELLO 0x1234
+        int test()
+        // STUB: TEST 0x5555
+        {
+            return 5;
+        }
+        """
+    )
+
+    assert len(parser.functions) == 0
+    assert len(parser.alerts) == 1
+    assert parser.alerts[0].code == ParserError.UNEXPECTED_MARKER
+
+
+def test_issue_137(parser):
+    """GH issue #137: unexpected_marker error displayed as decomp_error_start"""
+    parser.read(
+        """\
+        // FUNCTION: HELLO 0x1234
+        int test()
+        // STUB: TEST 0x5555
+        """
+    )
+
+    assert len(parser.alerts) == 1
+    assert parser.alerts[0].code == ParserError.UNEXPECTED_MARKER
+    assert parser.alerts[0].code.name == "UNEXPECTED_MARKER"
