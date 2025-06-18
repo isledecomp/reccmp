@@ -3,7 +3,6 @@ import logging
 import difflib
 from pathlib import Path
 import struct
-import uuid
 from typing import Iterable, Iterator
 from reccmp.isledecomp.compare.functions import FunctionComparator
 from reccmp.isledecomp.formats.pe import PEImage
@@ -66,8 +65,7 @@ class Compare:
             self.target_id = self.target_id.upper()
             logger.warning('Assuming id="%s"', self.target_id)
         # Controls whether we dump the asm output to a file
-        self.debug: bool = False
-        self.runid: str = uuid.uuid4().hex[:8]
+        self._debug: bool = False
 
         code_files = [Path(p) for p in walk_source_dir(self.code_dir)]
         self._lines_db = LinesDb(code_files)
@@ -100,8 +98,17 @@ class Compare:
         self._unique_names_for_overloaded_functions()
 
         self.function_comparator = FunctionComparator(
-            self._db, self.orig_bin, self.recomp_bin, report, self.runid, self.debug
+            self._db, self.orig_bin, self.recomp_bin, report
         )
+
+    @property
+    def debug(self) -> bool:
+        return self._debug
+
+    @debug.setter
+    def debug(self, debug: bool):
+        self._debug = debug
+        self.function_comparator.debug = debug
 
     def _load_cvdump(self):
         logger.info("Parsing %s ...", self.pdb_file)

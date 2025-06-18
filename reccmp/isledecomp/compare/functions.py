@@ -1,3 +1,4 @@
+from datetime import datetime
 from dataclasses import dataclass
 import difflib
 from functools import cache
@@ -23,6 +24,10 @@ class FunctionPartCompareResult(NamedTuple):
     is_effective_match: bool
     # The match ratio multiplied by the combined number of instructions in orig and recomp
     weighted_match_ratio: float
+
+
+def timestamp_string() -> str:
+    return datetime.now().strftime("%Y%m%d-%H%M%S")
 
 
 def create_valid_addr_lookup(
@@ -76,7 +81,7 @@ class FunctionComparator:
     orig_bin: PEImage
     recomp_bin: PEImage
     report: ReccmpReportProtocol
-    runid: str
+    runid: str = timestamp_string()
     debug: bool = False
 
     def __post_init__(self):
@@ -101,13 +106,19 @@ class FunctionComparator:
 
     def _dump_asm(self, orig_combined, recomp_combined):
         """Append the provided assembly output to the debug files"""
-        with open(f"orig-{self.runid}.txt", "a", encoding="utf-8") as f:
+        with open(f"reccmp-{self.runid}-orig.txt", "a", encoding="utf-8") as f:
             for addr, line in orig_combined:
-                f.write(f"{addr}: {line}\n")
+                if addr:
+                    f.write(f"{addr:8x}: {line}\n")
+                else:
+                    f.write(f"        : {line}\n")
 
-        with open(f"recomp-{self.runid}.txt", "a", encoding="utf-8") as f:
+        with open(f"reccmp-{self.runid}-recomp.txt", "a", encoding="utf-8") as f:
             for addr, line in recomp_combined:
-                f.write(f"{addr}: {line}\n")
+                if addr:
+                    f.write(f"{addr:8x}: {line}\n")
+                else:
+                    f.write(f"        : {line}\n")
 
     def compare_function(self, match: ReccmpMatch) -> DiffReport:
         # Detect when the recomp function size would cause us to read
