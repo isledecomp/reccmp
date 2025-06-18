@@ -195,6 +195,8 @@ class Compare:
                     except UnicodeDecodeError:
                         pass
 
+                    # Special handling for string entities.
+                    # Make sure the entity size includes the string null-terminator.
                     batch.set_recomp(
                         addr,
                         type=sym.node_type,
@@ -203,6 +205,7 @@ class Compare:
                         size=len(rstrip_string) + 1,
                     )
                 else:
+                    # Non-string entities.
                     batch.set_recomp(
                         addr,
                         type=sym.node_type,
