@@ -195,13 +195,24 @@ class Compare:
                     except UnicodeDecodeError:
                         pass
 
-                batch.set_recomp(
-                    addr,
-                    type=sym.node_type,
-                    name=sym.name(),
-                    symbol=sym.decorated_name,
-                    size=sym.size(),
-                )
+                    # Special handling for string entities.
+                    # Make sure the entity size includes the string null-terminator.
+                    batch.set_recomp(
+                        addr,
+                        type=sym.node_type,
+                        name=sym.name(),
+                        symbol=sym.decorated_name,
+                        size=len(rstrip_string) + 1,
+                    )
+                else:
+                    # Non-string entities.
+                    batch.set_recomp(
+                        addr,
+                        type=sym.node_type,
+                        name=sym.name(),
+                        symbol=sym.decorated_name,
+                        size=sym.size(),
+                    )
 
         for filename, values in self.cvdump_analysis.lines.items():
             lines = [
@@ -312,7 +323,7 @@ class Compare:
                     string.offset,
                     name=string.name,
                     type=EntityType.STRING,
-                    size=len(string.name),
+                    size=len(string.name) + 1,
                 )
 
             for line in codebase.iter_line_symbols():
@@ -449,13 +460,19 @@ class Compare:
                 for addr, string in self.orig_bin.iter_string("latin1"):
                     if is_real_string(string):
                         batch.insert_orig(
-                            addr, type=EntityType.STRING, name=string, size=len(string)
+                            addr,
+                            type=EntityType.STRING,
+                            name=string,
+                            size=len(string) + 1,
                         )
 
                 for addr, string in self.recomp_bin.iter_string("latin1"):
                     if is_real_string(string):
                         batch.insert_recomp(
-                            addr, type=EntityType.STRING, name=string, size=len(string)
+                            addr,
+                            type=EntityType.STRING,
+                            name=string,
+                            size=len(string) + 1,
                         )
 
     def _find_float_const(self):
