@@ -598,12 +598,22 @@ def test_match_strings_type_required(db):
 
 
 def test_match_strings_no_match_report(db, report):
-    """Should report if we cannot match a string on the orig side."""
+    """Should report if we cannot match a string on the orig side.
+    However: only alert if the string is 'verified' by user input,
+    a symbol in the PDB, or some (future) heuristic."""
     with db.batch() as batch:
         batch.set_orig(123, name="test", type=EntityType.STRING)
 
     match_strings(db, report)
 
+    # Not verified: no alert for failed match
+    report.assert_not_called()
+
+    # Should alert after we mark the string as verified
+    with db.batch() as batch:
+        batch.set_orig(123, verified=True)
+
+    match_strings(db, report)
     report.assert_called_with(ReccmpEvent.NO_MATCH, 123, msg=ANY)
 
 

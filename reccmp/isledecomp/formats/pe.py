@@ -501,9 +501,6 @@ class PEImage(Image):
         default_factory=list, repr=False
     )
     thunks: list[tuple[int, int]] = dataclasses.field(default_factory=list, repr=False)
-    _potential_strings: dict[int, set[int]] = dataclasses.field(
-        default_factory=dict, repr=False
-    )
 
     @classmethod
     def from_memory(
@@ -542,7 +539,6 @@ class PEImage(Image):
             sections=sections,
         )
         image.load()
-        image.prepare_string_search()
         return image
 
     def load(self):
@@ -556,12 +552,6 @@ class PEImage(Image):
         self._populate_thunks()
         # Export dir is always first
         self._populate_exports()
-
-        # # This is a (semi) expensive lookup that is not necessary in every case.
-        # # We can find strings in the original if we have coverage using STRING markers.
-        # # For the recomp, we can find strings using the PDB.
-        # if self.find_str:
-        #     self._prepare_string_search()
 
         return self
 
@@ -628,50 +618,8 @@ class PEImage(Image):
     def get_relocated_addresses(self) -> list[int]:
         return sorted(self._relocated_addrs)
 
-    def find_string(self, target: bytes) -> int | None:
-        # Pad with null terminator to make sure we don't
-        # match on a subset of the full string
-        if not target.endswith(b"\x00"):
-            target += b"\x00"
-
-        c = target[0]
-        if c not in self._potential_strings:
-            return None
-
-        for addr in self._potential_strings[c]:
-            if target == self.read(addr, len(target)):
-                return addr
-
-        return None
-
     def is_relocated_addr(self, vaddr) -> bool:
         return vaddr in self._relocated_addrs
-
-    def prepare_string_search(self):
-        """We are interested in deduplicated string constants found in the
-        .rdata and .data sections. For each relocated address in these sections,
-        read the first byte and save the address if that byte is an ASCII character.
-        When we search for an arbitrary string later, we can narrow down the list
-        of potential locations by a lot."""
-
-        def is_ascii(b):
-            return b" " <= b < b"\x7f"
-
-        sect_data = self.get_section_by_name(".data")
-        sect_rdata = self.get_section_by_name(".rdata")
-        potentials = filter(
-            lambda a: sect_data.contains_vaddr(a) or sect_rdata.contains_vaddr(a),
-            self.get_relocated_addresses(),
-        )
-
-        for addr in potentials:
-            c = self.read(addr, 1)
-            if c is not None and is_ascii(c):
-                k = ord(c)
-                if k not in self._potential_strings:
-                    self._potential_strings[k] = set()
-
-                self._potential_strings[k].add(addr)
 
     def get_sections_in_data_directory(
         self, t: PEDataDirectoryItemType
@@ -884,19 +832,22 @@ class PEImage(Image):
 
     def iter_string(self, encoding: str = "ascii") -> Iterator[tuple[int, str]]:
         """Search for possible strings at each verified address in .data."""
-        section = self.get_section_by_name(".data")
-        for addr in self._relocated_addrs:
-            if section.contains_vaddr(addr):
-                raw = self.read_string(addr)
-                if raw is None:
-                    continue
+        for section in (
+            self.get_section_by_name(".data"),
+            self.get_section_by_name(".rdata"),
+        ):
+            for addr in self._relocated_addrs:
+                if section.contains_vaddr(addr):
+                    raw = self.read_string(addr)
+                    if raw is None:
+                        continue
 
-                try:
-                    string = raw.decode(encoding)
-                except UnicodeDecodeError:
-                    continue
+                    try:
+                        string = raw.decode(encoding)
+                    except UnicodeDecodeError:
+                        continue
 
-                yield addr, string
+                    yield addr, string
 
     def get_section_by_name(self, name: str) -> PESection:
         try:
