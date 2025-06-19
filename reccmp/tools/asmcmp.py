@@ -23,8 +23,6 @@ from reccmp.isledecomp.compare.report import (
     deserialize_reccmp_report,
     serialize_reccmp_report,
 )
-from reccmp.isledecomp.formats.detect import detect_image
-from reccmp.isledecomp.formats.pe import PEImage
 from reccmp.isledecomp.types import EntityType
 from reccmp.assets import get_asset_file
 from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
@@ -206,21 +204,7 @@ def main():
 
     logging.basicConfig(level=args.loglevel, format="[%(levelname)s] %(message)s")
 
-    origfile = detect_image(filepath=target.original_path)
-    if not isinstance(origfile, PEImage):
-        raise ValueError(f"{target.original_path} is not a PE executable")
-
-    recompfile = detect_image(filepath=target.recompiled_path)
-    if not isinstance(recompfile, PEImage):
-        raise ValueError(f"{target.recompiled_path} is not a PE executable")
-
-    isle_compare = IsleCompare(
-        origfile,
-        recompfile,
-        target.recompiled_pdb,
-        target.source_root,
-        target_id=target.target_id,
-    )
+    isle_compare = IsleCompare.from_target(target)
 
     if args.loglevel == logging.DEBUG:
         isle_compare.debug = True
