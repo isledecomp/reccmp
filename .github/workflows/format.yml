@@ -29,4 +29,4 @@ jobs:
 
     - name: Run mypy
       shell: bash
-      run: mypy ./reccmp
+      run: mypy ./reccmp ./tests

@@ -37,7 +37,7 @@ def _count_matching_path_parts(
 
 
 def convert_foreign_path(
-    foreign_path: PurePath, local_paths: tuple[PurePath]
+    foreign_path: PurePath, local_paths: tuple[PurePath, ...]
 ) -> PurePath | None:
     """Connect the given foreign_path to the best match from the list of local_paths.
     For best performance, you should narrow down the starting list to paths
