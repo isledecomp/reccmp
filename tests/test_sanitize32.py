@@ -340,7 +340,9 @@ def test_replacement_numbering():
     def substitute_1234(addr: int, **_) -> str | None:
         return "Hello" if addr == 0x1234 else None
 
-    p = ParseAsm(name_lookup=substitute_1234)
+    substitute_1234_mock = Mock(side_effect=substitute_1234)
+
+    p = ParseAsm(name_lookup=substitute_1234_mock)
 
     (_, op_str) = p.sanitize(DisasmLiteInst(0x1000, 6, "inc", "dword ptr [0x1234]"))
     assert op_str == "dword ptr [Hello]"
@@ -372,11 +374,13 @@ def test_direct_and_indirect_different_names():
     def lookup(_, indirect: bool = False, **__) -> str:
         return "Indirect" if indirect else "Direct"
 
+    lookup_mock = Mock(side_effect=lookup)
+
     indirect_inst = DisasmLiteInst(0x1000, 5, "call", "dword ptr [0x1234]")
     direct_inst = DisasmLiteInst(0x1000, 5, "mov", "eax, dword ptr [0x1234]")
 
     # Indirect first
-    p = ParseAsm(name_lookup=lookup)
+    p = ParseAsm(name_lookup=lookup_mock)
     (_, op_str) = p.sanitize(indirect_inst)
     assert op_str == "dword ptr [Indirect]"
 
@@ -384,7 +388,7 @@ def test_direct_and_indirect_different_names():
     assert op_str == "eax, dword ptr [Direct]"
 
     # Direct first
-    p = ParseAsm(name_lookup=lookup)
+    p = ParseAsm(name_lookup=lookup_mock)
     (_, op_str) = p.sanitize(direct_inst)
     assert op_str == "eax, dword ptr [Direct]"
 

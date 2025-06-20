@@ -188,14 +188,17 @@ def test_get_string_contents(line: str, string: str):
 def test_marker_extra_spaces():
     """The extra field can contain spaces"""
     marker = match_marker("// VTABLE: TEST 0x1234 S p a c e s")
+    assert marker is not None
     assert marker.extra == "S p a c e s"
 
     # Trailing spaces removed
     marker = match_marker("// VTABLE: TEST 0x8888 spaces    ")
+    assert marker is not None
     assert marker.extra == "spaces"
 
     # Trailing newline removed if present
     marker = match_marker("// VTABLE: TEST 0x5555 newline\n")
+    assert marker is not None
     assert marker.extra == "newline"
 
 

@@ -23,6 +23,7 @@ string_demangle_cases = [
 @pytest.mark.parametrize("symbol, strlen, is_utf16", string_demangle_cases)
 def test_strings(symbol, is_utf16, strlen):
     s = demangle_string_const(symbol)
+    assert s is not None
     assert s.len == strlen
     assert s.is_utf16 == is_utf16
 

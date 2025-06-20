@@ -1,5 +1,5 @@
 pytest==7.*
 black==25.1.0
 pylint==3.2.7
-mypy==1.14.0
+mypy==1.16.1
 types-colorama>=0.4.6

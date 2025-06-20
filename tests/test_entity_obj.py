@@ -20,37 +20,42 @@ def test_match_name_none():
 def test_match_name_no_type():
     """If we have a name, the entity_type is included in the match_name().
     If type is None, the type string is 'UNK'"""
-    e = create_entity(100, 200, name="Test")
-    assert "Test" in e.match_name()
-    assert "UNK" in e.match_name()
+    name = create_entity(100, 200, name="Test").match_name()
+    assert name is not None
+    assert "Test" in name
+    assert "UNK" in name
 
 
 def test_match_name_with_type():
     """Use all-caps representation of entity type in the match name"""
-    e = create_entity(100, 200, type=EntityType.FUNCTION, name="Test")
-    assert "Test" in e.match_name()
-    assert "FUNCTION" in e.match_name()
+    name = create_entity(100, 200, type=EntityType.FUNCTION, name="Test").match_name()
+    assert name is not None
+    assert "Test" in name
+    assert "FUNCTION" in name
 
 
 def test_match_name_computed_name():
     """Use the 'computed_name' field if present"""
-    e = create_entity(100, 200, computed_name="Hello")
-    assert "Hello" in e.match_name()
+    name = create_entity(100, 200, computed_name="Hello").match_name()
+    assert name is not None
+    assert "Hello" in name
 
 
 def test_match_name_priority():
     """Prefer 'computed_name' over 'name'"""
-    e = create_entity(100, 200, computed_name="Hello", name="Test")
-    assert "Hello" in e.match_name()
+    name = create_entity(100, 200, computed_name="Hello", name="Test").match_name()
+    assert name is not None
+    assert "Hello" in name
 
 
 def test_computed_name_string():
     """Ignore 'computed_name' if entity is a string"""
 
-    e = create_entity(
+    name = create_entity(
         100, 200, computed_name="Hello", name="Test", type=EntityType.STRING
-    )
-    assert "Test" in e.match_name()
+    ).match_name()
+    assert name is not None
+    assert "Test" in name
 
 
 def test_match_name_string():
@@ -61,6 +66,7 @@ def test_match_name_string():
     with
     newlines"""
 
-    e = create_entity(100, None, type=EntityType.STRING, name=string)
-    assert "\n" not in e.match_name()
-    assert "\\n" in e.match_name()
+    name = create_entity(100, None, type=EntityType.STRING, name=string).match_name()
+    assert name is not None
+    assert "\n" not in name
+    assert "\\n" in name
