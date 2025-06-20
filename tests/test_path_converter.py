@@ -1,5 +1,6 @@
 """Tests for foreign path conversion, used to resolve PDB paths from a build run on
 another system or on a non-Windows host using Wine."""
+
 from pathlib import PurePosixPath, PureWindowsPath
 from reccmp.isledecomp.dir import convert_foreign_path as resolve
 

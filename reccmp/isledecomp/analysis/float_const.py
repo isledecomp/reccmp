@@ -9,6 +9,7 @@ We are interested in floating point constants, so we want to exclude instruction
 
 Then filter on pointers into read-only sections.
 """
+
 import re
 import struct
 from typing import Iterator, NamedTuple
