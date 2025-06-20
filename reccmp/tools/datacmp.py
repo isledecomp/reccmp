@@ -8,9 +8,7 @@ from typing import Iterable, NamedTuple
 from struct import unpack
 import colorama
 import reccmp
-from reccmp.isledecomp.formats.detect import detect_image
 from reccmp.isledecomp.formats.exceptions import InvalidVirtualReadError
-from reccmp.isledecomp.formats.pe import PEImage
 from reccmp.isledecomp.compare import Compare as IsleCompare
 from reccmp.isledecomp.compare.db import ReccmpMatch
 from reccmp.isledecomp.cvdump import Cvdump
@@ -147,21 +145,9 @@ def do_the_comparison(target: RecCmpBuiltTarget) -> Iterable[ComparisonItem]:
     # pylint: disable=too-many-locals
     """Run through each variable in our compare DB, then do the comparison
     according to the variable's type. Emit the result."""
-    origfile = detect_image(filepath=target.original_path)
-    if not isinstance(origfile, PEImage):
-        raise ValueError(f"{target.original_path} is not a PE executable")
-
-    recompfile = detect_image(filepath=target.recompiled_path)
-    if not isinstance(recompfile, PEImage):
-        raise ValueError(f"{target.recompiled_path} is not a PE executable")
-
-    isle_compare = IsleCompare(
-        origfile,
-        recompfile,
-        target.recompiled_pdb,
-        target.source_root,
-        target_id=target.target_id,
-    )
+    isle_compare = IsleCompare.from_target(target)
+    origfile = isle_compare.orig_bin
+    recompfile = isle_compare.recomp_bin
 
     # TODO: We don't currently retain the type information of each variable
     # in our compare DB. To get those, we build this mini-lookup table that
