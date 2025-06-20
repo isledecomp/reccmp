@@ -4,7 +4,9 @@ import difflib
 from pathlib import Path
 import struct
 from typing import Iterable, Iterator
+from reccmp.project.detect import RecCmpBuiltTarget
 from reccmp.isledecomp.compare.functions import FunctionComparator
+from reccmp.isledecomp.formats.detect import detect_image
 from reccmp.isledecomp.formats.pe import PEImage
 from reccmp.isledecomp.cvdump.demangler import (
     demangle_string_const,
@@ -104,6 +106,24 @@ class Compare:
 
         self.function_comparator = FunctionComparator(
             self._db, self.orig_bin, self.recomp_bin, report
+        )
+
+    @classmethod
+    def from_target(cls, target: RecCmpBuiltTarget):
+        origfile = detect_image(filepath=target.original_path)
+        if not isinstance(origfile, PEImage):
+            raise ValueError(f"{target.original_path} is not a PE executable")
+
+        recompfile = detect_image(filepath=target.recompiled_path)
+        if not isinstance(recompfile, PEImage):
+            raise ValueError(f"{target.recompiled_path} is not a PE executable")
+
+        return cls(
+            origfile,
+            recompfile,
+            target.recompiled_pdb,
+            target.source_root,
+            target_id=target.target_id,
         )
 
     @property
