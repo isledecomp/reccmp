@@ -461,6 +461,10 @@ class Compare:
         will be mistakenly identified as short strings."""
         with self._db.batch() as batch:
             for addr, string in self.orig_bin.iter_string("latin1"):
+                # If the address is the site of a relocation, this is a pointer, not a string.
+                if addr in self.orig_bin.relocations:
+                    continue
+
                 if is_likely_latin1(string):
                     batch.insert_orig(
                         addr,
@@ -470,6 +474,9 @@ class Compare:
                     )
 
             for addr, string in self.recomp_bin.iter_string("latin1"):
+                if addr in self.recomp_bin.relocations:
+                    continue
+
                 if is_likely_latin1(string):
                     batch.insert_recomp(
                         addr,
