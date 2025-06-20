@@ -66,12 +66,10 @@ class PdbFunctionImporter(ABC):
         )
 
     @abstractmethod
-    def matches_ghidra_function(self, ghidra_function: Function) -> bool:
-        ...
+    def matches_ghidra_function(self, ghidra_function: Function) -> bool: ...
 
     @abstractmethod
-    def overwrite_ghidra_function(self, ghidra_function: Function):
-        ...
+    def overwrite_ghidra_function(self, ghidra_function: Function): ...
 
 
 class ThunkPdbFunctionImport(PdbFunctionImporter):

@@ -39,11 +39,17 @@ def test_name_replacement(db):
         batch.set_orig(300)  # No name
 
     lookup = create_lookup(db)
+    entity_100 = lookup(100)
+    entity_200 = lookup(200)
 
+    assert entity_100 is not None
     # Using "in" here because the returned string may contain other information.
     # e.g. the entity type
-    assert "Test" in lookup(100)
-    assert "Hello" in lookup(200)
+    assert "Test" in entity_100
+
+    assert entity_200 is not None
+    assert "Hello" in entity_200
+
     assert lookup(300) is None
 
 
@@ -54,10 +60,13 @@ def test_name_hierarchy(db):
         batch.set_orig(100, name="Test", computed_name="Hello")
 
     lookup = create_lookup(db)
+    entity = lookup(100)
+
+    assert entity is not None
 
     # Should prefer 'computed_name' over 'name'
-    assert "Hello" in lookup(100)
-    assert "Test" not in lookup(100)
+    assert "Hello" in entity
+    assert "Test" not in entity
 
 
 def test_string_escape_newlines(db):
@@ -69,8 +78,10 @@ def test_string_escape_newlines(db):
         batch.set_orig(100, name="Test\nTest", type=EntityType.STRING)
 
     lookup = create_lookup(db)
+    entity = lookup(100)
 
-    assert "\n" not in lookup(100)
+    assert entity is not None
+    assert "\n" not in entity
 
 
 def test_offset_name(db):
@@ -142,10 +153,11 @@ def test_indirect_function(db):
 
     # No entity at 200
     assert lookup(200) is None
-    assert lookup(200, indirect=True) is not None
+    entity = lookup(200, indirect=True)
+    assert entity is not None
 
     # Imitating ghidra asm display. Not every indirect lookup gets the arrow.
-    assert "->" in lookup(200, indirect=True)
+    assert "->" in entity
 
 
 def test_indirect_function_variable(db):

@@ -5,15 +5,13 @@ from reccmp.isledecomp.types import EntityType
 
 
 class AddrTestProtocol(Protocol):
-    def __call__(self, addr: int, /) -> bool:
-        ...
+    def __call__(self, addr: int, /) -> bool: ...
 
 
 class NameReplacementProtocol(Protocol):
     def __call__(
         self, addr: int, exact: bool = False, indirect: bool = False
-    ) -> str | None:
-        ...
+    ) -> str | None: ...
 
 
 def create_name_lookup(

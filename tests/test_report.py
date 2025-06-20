@@ -1,4 +1,5 @@
 """Reccmp reports: files that contain the comparison result from asmcmp."""
+
 import pytest
 from reccmp.isledecomp.compare.report import (
     ReccmpStatusReport,
@@ -9,7 +10,7 @@ from reccmp.isledecomp.compare.report import (
 
 
 def create_report(
-    entities: list[tuple[str, float]] | None = None
+    entities: list[tuple[str, float]] | None = None,
 ) -> ReccmpStatusReport:
     """Helper to quickly set up a report to be customized further for each test."""
     report = ReccmpStatusReport(filename="test.exe")

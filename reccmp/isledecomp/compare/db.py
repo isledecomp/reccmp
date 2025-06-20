@@ -1,5 +1,6 @@
 """Wrapper for database (here an in-memory sqlite database) that collects the
-addresses/symbols that we want to compare between the original and recompiled binaries."""
+addresses/symbols that we want to compare between the original and recompiled binaries.
+"""
 
 import sqlite3
 import logging

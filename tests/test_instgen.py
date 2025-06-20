@@ -1,4 +1,5 @@
 from reccmp.isledecomp.compare.asm.instgen import InstructGen, SectionType
+from reccmp.isledecomp.compare.asm.types import DisasmLiteInst
 
 
 def test_ret():
@@ -40,6 +41,7 @@ def test_score_notify():
 
     # CODE section stopped at correct place?
     instructions = ig.sections[0].contents
+    assert isinstance(instructions[-1], DisasmLiteInst)
     assert instructions[-1].address == 0x100014D2
     # n.b. 0x100014d2 is the dummy instruction `mov edi, edi`
     # Ghidra does more thorough analysis and ignores this.
@@ -71,6 +73,7 @@ def test_smack_case():
     assert ig.sections[0].type == ig.sections[2].type == SectionType.CODE
 
     # Make sure we captured the instruction immediately after
+    assert isinstance(ig.sections[2].contents[0], DisasmLiteInst)
     assert ig.sections[2].contents[0].mnemonic == "mov"
 
 
@@ -97,6 +100,7 @@ def test_beta_case():
     assert ig.sections[0].type == ig.sections[2].type == SectionType.CODE
 
     # Make sure we captured the instruction immediately after
+    assert isinstance(ig.sections[2].contents[0], DisasmLiteInst)
     assert ig.sections[2].contents[0].mnemonic == "mov"
 
 
