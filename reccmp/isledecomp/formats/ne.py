@@ -3,6 +3,7 @@ Based on the following resources:
 - https://github.com/bitwiseworks/os2tk45/blob/master/h/newexe.h
 - https://github.com/qb40/exe-format/blob/master/README.txt
 """
+
 import dataclasses
 import struct
 from pathlib import Path

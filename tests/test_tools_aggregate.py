@@ -1,4 +1,5 @@
 """Testing command-line input for the reccmp-aggregate tool."""
+
 import pytest
 from reccmp.tools.aggregate import parse_args
 

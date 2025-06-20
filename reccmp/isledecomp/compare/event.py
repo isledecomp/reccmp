@@ -40,8 +40,7 @@ def event_to_severity(event: ReccmpEvent) -> LoggingSeverity:
 
 
 class ReccmpReportProtocol(Protocol):
-    def __call__(self, event: ReccmpEvent, orig_addr: int, /, msg: str = ""):
-        ...
+    def __call__(self, event: ReccmpEvent, orig_addr: int, /, msg: str = ""): ...
 
 
 def reccmp_report_nop(*_, **__):

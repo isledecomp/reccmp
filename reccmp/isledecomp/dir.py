@@ -1,4 +1,5 @@
 """Utility functions and modules for path resolution and traversal"""
+
 import os
 import subprocess
 from typing import Iterator

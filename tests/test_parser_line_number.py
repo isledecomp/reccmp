@@ -1,4 +1,5 @@
 """Verify that the reported line number of each decomp item matches expectations."""
+
 from textwrap import dedent  # Indenting is important here.
 import pytest
 from reccmp.isledecomp.parser.parser import DecompParser
