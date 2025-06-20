@@ -1,5 +1,6 @@
 """Wrapper for database (here an in-memory sqlite database) that collects the
-addresses/symbols that we want to compare between the original and recompiled binaries."""
+addresses/symbols that we want to compare between the original and recompiled binaries.
+"""
 
 import sqlite3
 import logging
@@ -590,9 +591,11 @@ class EntityDb:
                     addr,
                     escaped,
                     repr(already_present.name),
-                    repr(EntityType(already_present.entity_type))
-                    if already_present.entity_type is not None
-                    else "<None>",
+                    (
+                        repr(EntityType(already_present.entity_type))
+                        if already_present.entity_type is not None
+                        else "<None>"
+                    ),
                 )
 
         return did_match
