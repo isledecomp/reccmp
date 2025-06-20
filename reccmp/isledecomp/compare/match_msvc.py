@@ -324,8 +324,9 @@ def match_strings(db: EntityDb, report: ReccmpReportProtocol = reccmp_report_nop
         string_index.add(text, recomp_addr)
 
     with db.batch() as batch:
-        for orig_addr, text in db.sql.execute(
-            """SELECT orig_addr, json_extract(kvstore, '$.name') as name
+        for orig_addr, text, verified in db.sql.execute(
+            """SELECT orig_addr, json_extract(kvstore, '$.name') as name,
+            coalesce(json_extract(kvstore,'$.verified'), 0)
             from orig_unmatched where name is not null
             and json_extract(kvstore,'$.type') = ?""",
             (EntityType.STRING,),
@@ -334,11 +335,12 @@ def match_strings(db: EntityDb, report: ReccmpReportProtocol = reccmp_report_nop
                 recomp_addr = string_index.pop(text)
                 batch.match(orig_addr, recomp_addr)
             else:
-                report(
-                    ReccmpEvent.NO_MATCH,
-                    orig_addr,
-                    msg=f"Failed to match string {repr(text)} at 0x{orig_addr:x}",
-                )
+                if verified:
+                    report(
+                        ReccmpEvent.NO_MATCH,
+                        orig_addr,
+                        msg=f"Failed to match string {repr(text)} at 0x{orig_addr:x}",
+                    )
 
 
 def match_lines(

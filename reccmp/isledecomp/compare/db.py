@@ -251,7 +251,6 @@ class EntityDb:
     def __init__(self):
         self._sql = sqlite3.connect(":memory:")
         self._sql.executescript(_SETUP_SQL)
-        self._indexed = set()
 
     @property
     def sql(self) -> sqlite3.Connection:
@@ -471,80 +470,6 @@ class EntityDb:
 
         return cur.rowcount > 0
 
-    def search_symbol(self, symbol: str) -> Iterator[ReccmpEntity]:
-        if "symbol" not in self._indexed:
-            self._sql.execute(
-                "CREATE index idx_symbol on entities(json_extract(kvstore, '$.symbol'))"
-            )
-            self._indexed.add("symbol")
-
-        cur = self._sql.execute(
-            """SELECT orig_addr, recomp_addr, kvstore FROM entities
-            WHERE json_extract(kvstore, '$.symbol') = ?""",
-            (symbol,),
-        )
-        cur.row_factory = entity_factory
-        yield from cur
-
-    def search_name(self, name: str, entity_type: EntityType) -> Iterator[ReccmpEntity]:
-        if "name" not in self._indexed:
-            self._sql.execute(
-                "CREATE index idx_name on entities(json_extract(kvstore, '$.name'))"
-            )
-            self._indexed.add("name")
-
-        # n.b. If the name matches and the type is not set, we will return the row.
-        # Ideally we would have perfect information on the recomp side and not need to do this
-        cur = self._sql.execute(
-            """SELECT orig_addr, recomp_addr, kvstore FROM entities
-            WHERE json_extract(kvstore, '$.name') = ?
-            AND (json_extract(kvstore, '$.type') IS NULL OR json_extract(kvstore, '$.type') = ?)""",
-            (name, entity_type),
-        )
-        cur.row_factory = entity_factory
-        yield from cur
-
-    def _match_on(self, entity_type: EntityType, addr: int, name: str) -> bool:
-        """Search the program listing for the given name and type, then assign the
-        given address to the first unmatched result."""
-        # If we identify the name as a linker symbol, search for that instead.
-        # TODO: Will need a customizable "name_is_symbol" function for other platforms
-        if entity_type != EntityType.STRING and name.startswith("?"):
-            for obj in self.search_symbol(name):
-                if obj.orig_addr is None and obj.recomp_addr is not None:
-                    return self.set_pair(addr, obj.recomp_addr, entity_type)
-
-            return False
-
-        # Truncate the name to 255 characters. It will not be possible to match a name
-        # longer than that because MSVC truncates to this length.
-        # See also: warning C4786.
-        name = name[:255]
-
-        for obj in self.search_name(name, entity_type):
-            if obj.orig_addr is None and obj.recomp_addr is not None:
-                matched = self.set_pair(addr, obj.recomp_addr, entity_type)
-
-                # Type field has been set by set_pair, so we can use it in our count query:
-                (count,) = self._sql.execute(
-                    """SELECT count(rowid) from entities
-                    where json_extract(kvstore,'$.name') = ?
-                    AND json_extract(kvstore,'$.type') = ?""",
-                    (name, entity_type),
-                ).fetchone()
-
-                if matched and count > 1:
-                    logger.warning(
-                        "Ambiguous match 0x%x on name '%s' to '%s'",
-                        addr,
-                        name,
-                        obj.get("symbol"),
-                    )
-
-                return matched
-
-        return False
-
     def get_next_orig_addr(self, addr: int) -> int | None:
         """Return the original address (matched or not) that follows
         the one given. If our recomp function size would cause us to read
@@ -565,37 +490,3 @@ class EntityDb:
         ).fetchone()
 
         return result[0] if result is not None else None
-
-    def match_string(self, addr: int, value: str) -> bool:
-        did_match = self._match_on(EntityType.STRING, addr, value)
-        if not did_match:
-            already_present = self.get_by_orig(addr, exact=True)
-            escaped = repr(value)
-
-            if already_present is None:
-                logger.error(
-                    "Failed to find string annotated with 0x%x: %s", addr, escaped
-                )
-            elif (
-                already_present.entity_type == EntityType.STRING
-                and already_present.name == value
-            ):
-                logger.debug(
-                    "String annotated with 0x%x is annotated multiple times: %s",
-                    addr,
-                    escaped,
-                )
-            else:
-                logger.error(
-                    "Multiple annotations of 0x%x disagree: %s (STRING) vs. %s (%s)",
-                    addr,
-                    escaped,
-                    repr(already_present.name),
-                    (
-                        repr(EntityType(already_present.entity_type))
-                        if already_present.entity_type is not None
-                        else "<None>"
-                    ),
-                )
-
-        return did_match

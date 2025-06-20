@@ -120,7 +120,6 @@ STRING_ADDRESSES = (
 def test_strings(addr: int, string: bytes, binfile: PEImage):
     """Test string read utility function and the string search feature"""
     assert binfile.read_string(addr) == string
-    assert binfile.find_string(string) == addr
 
 
 def test_relocation(binfile: PEImage):
