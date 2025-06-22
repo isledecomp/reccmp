@@ -317,23 +317,7 @@ def main():
         logging.getLogger("isledecomp.cvdump.symbols").setLevel(logging.WARNING)
 
     logger.info("Starting comparison")
-
-    origfile = detect_image(target.original_path)
-    if not isinstance(origfile, PEImage):
-        raise ValueError
-
-    recompfile = detect_image(target.recompiled_path)
-    if not isinstance(recompfile, PEImage):
-        raise ValueError
-
-    isle_compare = IsleCompare(
-        origfile,
-        recompfile,
-        target.recompiled_pdb,
-        target.source_root,
-        target_id=target.target_id,
-    )
-
+    isle_compare = IsleCompare.from_target(target)
     logger.info("Comparison complete.")
 
     # try to acquire matched functions
@@ -361,11 +345,6 @@ try:
     from reccmp.project.common import RECCMP_BUILD_CONFIG, RECCMP_PROJECT_CONFIG
     from reccmp.project.detect import RecCmpBuiltProject, RecCmpBuiltTarget
     from reccmp.project.error import RecCmpProjectNotFoundException
-
-    reload_module("reccmp.isledecomp.formats")
-    reload_module("reccmp.isledecomp")
-    from reccmp.isledecomp import detect_image
-    from reccmp.isledecomp import PEImage
 
     reload_module("reccmp.isledecomp.compare")
     from reccmp.isledecomp.compare import Compare as IsleCompare
