@@ -1,0 +1,47 @@
+{
+    "$schema": "https://json-schema.org/draft-07/schema#",
+    "title": "reccmp build",
+    "description": "reccmp build file",
+    "type": "object",
+    "properties": {
+        "project": {
+            "type": "string",
+            "description": "Base path of the project"
+        },
+        "targets": {
+            "description": "List of targets",
+            "type": "object",
+            "patternProperties": {
+                "^.*$": {
+                    "$ref": "#/$defs/target",
+                    "description": "singular target"
+                }
+            },
+            "additionalProperties": false
+        }
+    },
+    "$defs": {
+        "target": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "description": "Path to the recompiled executable file",
+                    "type": "string"
+                },
+                "pdb": {
+                    "description": "Path to the PDB file",
+                    "type": "string"
+                }
+            },
+            "required": [
+                "path",
+                "pdb"
+            ],
+            "additionalProperties": false
+        }
+    },
+    "required": [
+        "project",
+        "targets"
+    ]
+}

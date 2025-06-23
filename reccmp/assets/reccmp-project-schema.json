@@ -1,0 +1,94 @@
+{
+    "$schema": "https://json-schema.org/draft-07/schema#",
+    "title": "reccmp project",
+    "description": "reccmp project file",
+    "type": "object",
+    "properties": {
+        "targets": {
+            "description": "List of targets",
+            "type": "object",
+            "patternProperties": {
+                "^.*$": {
+                    "$ref": "#/$defs/target",
+                    "description": "Singular target"
+                }
+            },
+            "additionalProperties": false
+        }
+    },
+    "$defs": {
+        "target": {
+            "type": "object",
+            "properties": {
+                "filename": {
+                    "description": "Name of the executable file",
+                    "type": "string"
+                },
+                "hash": {
+                    "$ref": "#/$defs/hash"
+                },
+                "ghidra": {
+                    "$ref": "#/$defs/ghidra"
+                }
+            },
+            "patternProperties": {
+                "source[-_]root": {
+                    "description": "Base of the source code",
+                    "type": "string"
+                }
+            },
+            "required": [
+                "filename",
+                "hash"
+            ],
+            "oneOf": [
+                {
+                    "anyOf": [
+                        {
+                            "required": [
+                                "source_root"
+                            ]
+                        },
+                        {
+                            "required": [
+                                "source-root"
+                            ]
+                        }
+                    ]
+                }
+            ],
+            "additionalProperties": false
+        },
+        "hash": {
+            "type": "object",
+            "description": "Hashes of the original binary",
+            "properties": {
+                "sha256": {
+                    "type": "string",
+                    "description": "SHA256 of the original binary"
+                }
+            },
+            "required": [
+                "sha256"
+            ],
+            "additionalProperties": false
+        },
+        "ghidra": {
+            "type": "object",
+            "description": "Ghidra-specific settings",
+            "patternProperties": {
+                "ignore[_-]types": {
+                    "type": "array",
+                    "description": "Names of types to ignore"
+                },
+                "ignore[_-]functions": {
+                    "type": "array",
+                    "description": "Names of functions to ignore"
+                }
+            }
+        }
+    },
+    "required": [
+        "targets"
+    ]
+}

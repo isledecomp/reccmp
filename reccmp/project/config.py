@@ -7,13 +7,17 @@ from pydantic import AliasChoices, BaseModel, Field
 
 
 class GhidraConfig(BaseModel):
+    """Ghidra-specific settings"""
+
     ignore_types: list[str] = Field(
         default_factory=list,
         validation_alias=AliasChoices("ignore-types", "ignore_types"),
+        description="Names of types to ignore",
     )
     ignore_functions: list[int] = Field(
         default_factory=list,
         validation_alias=AliasChoices("ignore-functions", "ignore_functions"),
+        description="Addresses of functions to ignore",
     )
 
     @classmethod
@@ -53,15 +57,22 @@ class RecCmpBuiltTarget(RecCmpTarget):
 
 
 class Hash(BaseModel):
-    sha256: str
+    """Hashes of the original binary"""
+
+    sha256: str = Field(
+        description="SHA256 hash of the original binary",
+    )
 
 
 class ProjectFileTarget(BaseModel):
     """Target schema for project.yml"""
 
-    filename: str
+    filename: str = Field(
+        description="Name of the executable file",
+    )
     source_root: Path = Field(
-        validation_alias=AliasChoices("source-root", "source_root")
+        validation_alias=AliasChoices("source-root", "source_root"),
+        description="Base of the source code",
     )
     hash: Hash
     ghidra: GhidraConfig = Field(default_factory=GhidraConfig.default)
@@ -70,30 +81,44 @@ class ProjectFileTarget(BaseModel):
 class ProjectFile(BaseModel):
     """File schema for project.yml"""
 
-    targets: dict[str, ProjectFileTarget]
+    targets: dict[str, ProjectFileTarget] = Field(
+        description="List of targets",
+    )
 
 
 class UserFileTarget(BaseModel):
     """Target schema for user.yml"""
 
-    path: Path
+    path: Path = Field(
+        description="Path to the original executable file",
+    )
 
 
 class UserFile(BaseModel):
     """File schema for user.yml"""
 
-    targets: dict[str, UserFileTarget]
+    targets: dict[str, UserFileTarget] = Field(
+        description="List of targets",
+    )
 
 
 class BuildFileTarget(BaseModel):
     """Target schema for build.yml"""
 
-    path: Path
-    pdb: Path
+    path: Path = Field(
+        description="Path to the recompiled executable file, relative to the project path",
+    )
+    pdb: Path = Field(
+        description="Path to the PDB file, relative to the project path",
+    )
 
 
 class BuildFile(BaseModel):
     """File schema for build.yml"""
 
-    project: Path
-    targets: dict[str, BuildFileTarget]
+    project: Path = Field(
+        description="Path of the project directory"
+    )
+    targets: dict[str, BuildFileTarget] = Field(
+        description="List of targets",
+    )
