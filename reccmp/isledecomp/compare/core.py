@@ -356,7 +356,7 @@ class Compare:
                     string.offset,
                     name=string.name,
                     type=EntityType.STRING,
-                    size=len(string.name) + 1,
+                    size=len(string.name) + 1,  # including null-terminator
                     verified=True,
                 )
 
@@ -470,7 +470,7 @@ class Compare:
                         addr,
                         type=EntityType.STRING,
                         name=string,
-                        size=len(string) + 1,
+                        size=len(string) + 1,  # including null-terminator
                     )
 
             for addr, string in self.recomp_bin.iter_string("latin1"):
@@ -482,7 +482,7 @@ class Compare:
                         addr,
                         type=EntityType.STRING,
                         name=string,
-                        size=len(string) + 1,
+                        size=len(string) + 1,  # including null-terminator
                     )
 
     def _find_float_const(self):

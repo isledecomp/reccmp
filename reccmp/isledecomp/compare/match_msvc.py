@@ -334,13 +334,12 @@ def match_strings(db: EntityDb, report: ReccmpReportProtocol = reccmp_report_nop
             if text in string_index:
                 recomp_addr = string_index.pop(text)
                 batch.match(orig_addr, recomp_addr)
-            else:
-                if verified:
-                    report(
-                        ReccmpEvent.NO_MATCH,
-                        orig_addr,
-                        msg=f"Failed to match string {repr(text)} at 0x{orig_addr:x}",
-                    )
+            elif verified:
+                report(
+                    ReccmpEvent.NO_MATCH,
+                    orig_addr,
+                    msg=f"Failed to match string {repr(text)} at 0x{orig_addr:x}",
+                )
 
 
 def match_lines(
