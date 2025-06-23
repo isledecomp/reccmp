@@ -4,8 +4,6 @@ from pathlib import Path
 import shutil
 import textwrap
 
-import ruamel.yaml
-
 from reccmp.assets import get_asset_file
 from .config import (
     Hash,
@@ -230,9 +228,7 @@ def create_project(
 
     # Write project YAML file
     logger.debug("Creating %s...", project_config_path)
-    with project_config_path.open("w") as f:
-        yaml = ruamel.yaml.YAML()
-        yaml.dump(data=project_config_data.model_dump(mode="json"), stream=f)
+    project_config_data.write_file(project_config_path)
 
     # The user YAML file has the path to the original binary for each target
     user_config_data = UserFile(
@@ -242,10 +238,8 @@ def create_project(
     )
 
     # Write user YAML file
-    logger.debug("Creating %s...", user_config_data)
-    with user_config_path.open("w") as f:
-        yaml = ruamel.yaml.YAML()
-        yaml.dump(data=user_config_data.model_dump(mode="json"), stream=f)
+    logger.debug("Creating %s...", user_config_path)
+    user_config_data.write_file(user_config_path)
 
     if scm:
         # Update existing .gitignore to skip build.yml and user.yml.

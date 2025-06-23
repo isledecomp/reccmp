@@ -4,6 +4,25 @@ from pathlib import Path
 from dataclasses import dataclass
 
 from pydantic import AliasChoices, BaseModel, Field
+import ruamel.yaml
+
+
+_yaml = ruamel.yaml.YAML()
+
+
+class YmlFileModel(BaseModel):
+    @classmethod
+    def from_file(cls, filename: Path):
+        with filename.open("r") as f:
+            return cls.model_validate(_yaml.load(f))
+
+    @classmethod
+    def from_str(cls, yaml: str):
+        return cls.model_validate(_yaml.load(yaml))
+
+    def write_file(self, filename: Path):
+        with filename.open("w") as f:
+            _yaml.dump(data=self.model_dump(mode="json"), stream=f)
 
 
 class YmlGhidraConfig(BaseModel):
@@ -37,7 +56,7 @@ class ProjectFileTarget(BaseModel):
     ghidra: YmlGhidraConfig = Field(default_factory=YmlGhidraConfig.default)
 
 
-class ProjectFile(BaseModel):
+class ProjectFile(YmlFileModel):
     """File schema for project.yml"""
 
     targets: dict[str, ProjectFileTarget]
@@ -50,7 +69,7 @@ class UserFileTarget:
     path: Path
 
 
-class UserFile(BaseModel):
+class UserFile(YmlFileModel):
     """File schema for user.yml"""
 
     targets: dict[str, UserFileTarget]
@@ -64,7 +83,7 @@ class BuildFileTarget:
     pdb: Path
 
 
-class BuildFile(BaseModel):
+class BuildFile(YmlFileModel):
     """File schema for build.yml"""
 
     project: Path
