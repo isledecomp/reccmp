@@ -14,7 +14,7 @@ import statistics
 import bisect
 from typing import Iterator, NamedTuple
 import reccmp
-from reccmp.isledecomp import PEImage, detect_image
+from reccmp.isledecomp import PEImage
 from reccmp.isledecomp.compare.db import ReccmpEntity
 from reccmp.isledecomp.cvdump import Cvdump
 from reccmp.isledecomp.compare import Compare as IsleCompare
@@ -387,19 +387,9 @@ def main() -> int:
         logger.error(e.args[0])
         return 1
 
-    orig_bin = detect_image(target.original_path)
-    assert isinstance(orig_bin, PEImage)
-
-    recomp_bin = detect_image(target.recompiled_path)
-    assert isinstance(recomp_bin, PEImage)
-
-    engine = IsleCompare(
-        orig_bin,
-        recomp_bin,
-        target.recompiled_pdb,
-        target.source_root,
-        target_id=target.target_id,
-    )
+    engine = IsleCompare.from_target(target)
+    orig_bin = engine.orig_bin
+    recomp_bin = engine.recomp_bin
 
     module_map = ModuleMap(target.recompiled_pdb, recomp_bin)
 

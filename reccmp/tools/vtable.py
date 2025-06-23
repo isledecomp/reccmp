@@ -4,7 +4,6 @@ import argparse
 import logging
 import colorama
 import reccmp
-from reccmp.isledecomp import PEImage, detect_image
 from reccmp.isledecomp.compare import Compare as IsleCompare
 from reccmp.isledecomp.utils import print_combined_diff
 from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
@@ -68,18 +67,7 @@ def main():
         logger.error(e.args[0])
         return 1
 
-    orig_bin = detect_image(target.original_path)
-    assert isinstance(orig_bin, PEImage)
-
-    recomp_bin = detect_image(target.recompiled_path)
-    assert isinstance(recomp_bin, PEImage)
-    engine = IsleCompare(
-        orig_bin,
-        recomp_bin,
-        target.recompiled_pdb,
-        target.source_root,
-        target_id=target.target_id,
-    )
+    engine = IsleCompare.from_target(target)
 
     for tbl_match in engine.compare_vtables():
         vtable_count += 1
