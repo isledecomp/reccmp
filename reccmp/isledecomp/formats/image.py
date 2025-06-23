@@ -7,6 +7,3 @@ class Image:
     filepath: Path
     view: memoryview = dataclasses.field(repr=False)
     data: bytes = dataclasses.field(repr=False)
-
-    def prepare_string_search(self):
-        pass
