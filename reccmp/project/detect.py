@@ -1,6 +1,7 @@
 import argparse
 import enum
 import logging
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Sequence
 
@@ -9,11 +10,8 @@ import ruamel.yaml
 from .config import (
     BuildFile,
     BuildFileTarget,
-    GhidraConfig,
     ProjectFile,
     ProjectFileTarget,
-    RecCmpBuiltTarget,
-    RecCmpTarget,
     UserFile,
     UserFileTarget,
 )
@@ -67,6 +65,43 @@ def find_filename_recursively(directory: Path, filename: str) -> Path | None:
     return None
 
 
+@dataclass
+class GhidraConfig:
+    ignore_types: list[str] = field(default_factory=list)
+    ignore_functions: list[int] = field(default_factory=list)
+
+
+@dataclass
+class RecCmpTarget:
+    """Partial information for a target (binary file) in the decomp project
+    This contains only the static information (same for all users).
+    Saved to project.yml. (See ProjectFileTarget)"""
+
+    # Unique ID for grouping the metadata.
+    # If none is given we will use the base filename minus the file extension.
+    target_id: str | None
+
+    # Base filename (not a path) of the binary for this target.
+    # "reccmp-project detect" uses this to search for the original and recompiled binaries
+    # when creating the user.yml file.
+    filename: str
+
+    # Relative (to project root) directory of source code files for this target.
+    source_root: Path
+
+    # Ghidra-specific options for this target.
+    ghidra_config: GhidraConfig
+
+
+@dataclass
+class RecCmpBuiltTarget(RecCmpTarget):
+    """Full information for a target. Used to load component files for reccmp analysis."""
+
+    original_path: Path
+    recompiled_path: Path
+    recompiled_pdb: Path
+
+
 class RecCmpProject:
     def __init__(
         self,
@@ -109,11 +144,16 @@ class RecCmpProject:
             source_root = project_directory / project_target_data.source_root
             filename = project_target_data.filename
 
+            ghidra = GhidraConfig(
+                ignore_types=project_target_data.ghidra.ignore_types,
+                ignore_functions=project_target_data.ghidra.ignore_functions,
+            )
+
             project.targets[target_id] = RecCmpTarget(
                 target_id=target_id,
                 filename=filename,
                 source_root=source_root,
-                ghidra_config=project_target_data.ghidra,
+                ghidra_config=ghidra,
             )
         return project
 
@@ -217,6 +257,11 @@ class RecCmpBuiltProject:
             recompiled_path = build_directory.joinpath(build_target_data.path)
             recompiled_pdb = build_directory.joinpath(build_target_data.pdb)
 
+            ghidra = GhidraConfig(
+                ignore_types=project_target_data.ghidra.ignore_types,
+                ignore_functions=project_target_data.ghidra.ignore_functions,
+            )
+
             project.targets[target_id] = RecCmpBuiltTarget(
                 target_id=target_id,
                 filename=filename,
@@ -224,7 +269,7 @@ class RecCmpBuiltProject:
                 recompiled_path=recompiled_path,
                 recompiled_pdb=recompiled_pdb,
                 source_root=source_root,
-                ghidra_config=project_target_data.ghidra,
+                ghidra_config=ghidra,
             )
         return project
 
@@ -239,7 +284,7 @@ class RecCmpPathsAction(argparse.Action):
             target_id=target_id,
             filename="???",
             source_root=Path(source_root),
-            ghidra_config=GhidraConfig.default(),
+            ghidra_config=GhidraConfig(),
         )
         setattr(namespace, self.dest, target)
 
@@ -257,7 +302,7 @@ class RecCmpBuiltPathsAction(argparse.Action):
             recompiled_path=recompiled,
             recompiled_pdb=pdb,
             source_root=source_root,
-            ghidra_config=GhidraConfig.default(),
+            ghidra_config=GhidraConfig(),
         )
         setattr(namespace, self.dest, target)
 

@@ -8,7 +8,6 @@ import ruamel.yaml
 
 from reccmp.assets import get_asset_file
 from .config import (
-    GhidraConfig,
     Hash,
     ProjectFile,
     ProjectFileTarget,
@@ -16,7 +15,7 @@ from .config import (
     UserFileTarget,
 )
 from .common import RECCMP_PROJECT_CONFIG, RECCMP_USER_CONFIG, RECCMP_BUILD_CONFIG
-from .detect import RecCmpProject, RecCmpTarget
+from .detect import RecCmpProject, RecCmpTarget, GhidraConfig
 from .error import RecCmpProjectException
 from .util import get_path_sha256, unique_targets
 
@@ -226,7 +225,7 @@ def create_project(
             target_id=target_id,
             filename=target_filename,
             source_root=project_directory,
-            ghidra_config=GhidraConfig.default(),
+            ghidra_config=GhidraConfig(),
         )
 
     # Write project YAML file
