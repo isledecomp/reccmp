@@ -190,7 +190,7 @@ class ParseAsm:
 
         return (inst.mnemonic, op_str)
 
-    def parse_asm(self, data: bytes, start_addr: int = 0) -> AsmExcerpt:
+    def parse_asm(self, data: bytes, start_addr: int) -> AsmExcerpt:
         self.reset()
         asm: AsmExcerpt = []
 
@@ -222,8 +222,12 @@ class ParseAsm:
                     asm.append((inst.address, " ".join(result)))
             elif section.type == SectionType.ADDR_TAB:
                 asm.append((None, "Jump table:"))
-                for i, (ofs, _) in enumerate(section.contents):
-                    asm.append((ofs, f"Jump_dest_{i}"))
+                for ofs, target in section.contents:
+                    # Jumps in jump tables are absolute, which can lead to false positives
+                    # when the function does not have the same address in orig and recomp.
+                    # Therefore, we compute where the jump will go relative to the start of the function.
+                    target_relative_to_function_start = target - start_addr
+                    asm.append((ofs, f"start + 0x{(target_relative_to_function_start):x}"))
 
             elif section.type == SectionType.DATA_TAB:
                 asm.append((None, "Data table:"))
