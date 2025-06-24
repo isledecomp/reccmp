@@ -4,9 +4,28 @@ from pathlib import Path
 from dataclasses import dataclass
 
 from pydantic import AliasChoices, BaseModel, Field
+import ruamel.yaml
 
 
-class GhidraConfig(BaseModel):
+_yaml = ruamel.yaml.YAML()
+
+
+class YmlFileModel(BaseModel):
+    @classmethod
+    def from_file(cls, filename: Path):
+        with filename.open("r") as f:
+            return cls.model_validate(_yaml.load(f))
+
+    @classmethod
+    def from_str(cls, yaml: str):
+        return cls.model_validate(_yaml.load(yaml))
+
+    def write_file(self, filename: Path):
+        with filename.open("w") as f:
+            _yaml.dump(data=self.model_dump(mode="json"), stream=f)
+
+
+class YmlGhidraConfig(BaseModel):
     ignore_types: list[str] = Field(
         default_factory=list,
         validation_alias=AliasChoices("ignore-types", "ignore_types"),
@@ -17,42 +36,12 @@ class GhidraConfig(BaseModel):
     )
 
     @classmethod
-    def default(cls) -> "GhidraConfig":
+    def default(cls) -> "YmlGhidraConfig":
         return cls(ignore_types=[], ignore_functions=[])
 
 
 @dataclass
-class RecCmpTarget:
-    """Partial information for a target (binary file) in the decomp project
-    This contains only the static information (same for all users).
-    Saved to project.yml. (See ProjectFileTarget)"""
-
-    # Unique ID for grouping the metadata.
-    # If none is given we will use the base filename minus the file extension.
-    target_id: str | None
-
-    # Base filename (not a path) of the binary for this target.
-    # "reccmp-project detect" uses this to search for the original and recompiled binaries
-    # when creating the user.yml file.
-    filename: str
-
-    # Relative (to project root) directory of source code files for this target.
-    source_root: Path
-
-    # Ghidra-specific options for this target.
-    ghidra_config: GhidraConfig
-
-
-@dataclass
-class RecCmpBuiltTarget(RecCmpTarget):
-    """Full information for a target. Used to load component files for reccmp analysis."""
-
-    original_path: Path
-    recompiled_path: Path
-    recompiled_pdb: Path
-
-
-class Hash(BaseModel):
+class Hash:
     sha256: str
 
 
@@ -64,35 +53,37 @@ class ProjectFileTarget(BaseModel):
         validation_alias=AliasChoices("source-root", "source_root")
     )
     hash: Hash
-    ghidra: GhidraConfig = Field(default_factory=GhidraConfig.default)
+    ghidra: YmlGhidraConfig = Field(default_factory=YmlGhidraConfig.default)
 
 
-class ProjectFile(BaseModel):
+class ProjectFile(YmlFileModel):
     """File schema for project.yml"""
 
     targets: dict[str, ProjectFileTarget]
 
 
-class UserFileTarget(BaseModel):
+@dataclass
+class UserFileTarget:
     """Target schema for user.yml"""
 
     path: Path
 
 
-class UserFile(BaseModel):
+class UserFile(YmlFileModel):
     """File schema for user.yml"""
 
     targets: dict[str, UserFileTarget]
 
 
-class BuildFileTarget(BaseModel):
+@dataclass
+class BuildFileTarget:
     """Target schema for build.yml"""
 
     path: Path
     pdb: Path
 
 
-class BuildFile(BaseModel):
+class BuildFile(YmlFileModel):
     """File schema for build.yml"""
 
     project: Path
