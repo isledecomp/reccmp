@@ -227,7 +227,9 @@ class ParseAsm:
                     # when the function does not have the same address in orig and recomp.
                     # Therefore, we compute where the jump will go relative to the start of the function.
                     target_relative_to_function_start = target - start_addr
-                    asm.append((ofs, f"start + 0x{(target_relative_to_function_start):x}"))
+                    asm.append(
+                        (ofs, f"start + 0x{(target_relative_to_function_start):x}")
+                    )
 
             elif section.type == SectionType.DATA_TAB:
                 asm.append((None, "Data table:"))
