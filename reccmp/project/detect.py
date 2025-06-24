@@ -1,19 +1,15 @@
 import argparse
 import enum
 import logging
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Sequence
-
-import ruamel.yaml
 
 from .config import (
     BuildFile,
     BuildFileTarget,
-    GhidraConfig,
     ProjectFile,
     ProjectFileTarget,
-    RecCmpBuiltTarget,
-    RecCmpTarget,
     UserFile,
     UserFileTarget,
 )
@@ -67,6 +63,43 @@ def find_filename_recursively(directory: Path, filename: str) -> Path | None:
     return None
 
 
+@dataclass
+class GhidraConfig:
+    ignore_types: list[str] = field(default_factory=list)
+    ignore_functions: list[int] = field(default_factory=list)
+
+
+@dataclass
+class RecCmpTarget:
+    """Partial information for a target (binary file) in the decomp project
+    This contains only the static information (same for all users).
+    Saved to project.yml. (See ProjectFileTarget)"""
+
+    # Unique ID for grouping the metadata.
+    # If none is given we will use the base filename minus the file extension.
+    target_id: str | None
+
+    # Base filename (not a path) of the binary for this target.
+    # "reccmp-project detect" uses this to search for the original and recompiled binaries
+    # when creating the user.yml file.
+    filename: str
+
+    # Relative (to project root) directory of source code files for this target.
+    source_root: Path
+
+    # Ghidra-specific options for this target.
+    ghidra_config: GhidraConfig
+
+
+@dataclass
+class RecCmpBuiltTarget(RecCmpTarget):
+    """Full information for a target. Used to load component files for reccmp analysis."""
+
+    original_path: Path
+    recompiled_path: Path
+    recompiled_pdb: Path
+
+
 class RecCmpProject:
     def __init__(
         self,
@@ -81,12 +114,10 @@ class RecCmpProject:
         build_directory = find_filename_recursively(
             directory=directory, filename=RECCMP_BUILD_CONFIG
         )
-        yaml_loader = ruamel.yaml.YAML()
         if build_directory:
             build_config = build_directory / RECCMP_BUILD_CONFIG
             logger.debug("Using build config: %s", build_config)
-            with build_config.open() as buildfile:
-                build_data = BuildFile.model_validate(yaml_loader.load(buildfile))
+            build_data = BuildFile.from_file(build_config)
 
             # The project directory can be relative to the build config
             project_directory = build_config.parent.joinpath(build_data.project)
@@ -102,18 +133,22 @@ class RecCmpProject:
             project_config_path=project_config_path,
         )
         logger.debug("Using project config: %s", project_config_path)
-        with project_config_path.open() as projectfile:
-            project_data = ProjectFile.model_validate(yaml_loader.load(projectfile))
+        project_data = ProjectFile.from_file(project_config_path)
 
         for target_id, project_target_data in project_data.targets.items():
             source_root = project_directory / project_target_data.source_root
             filename = project_target_data.filename
 
+            ghidra = GhidraConfig(
+                ignore_types=project_target_data.ghidra.ignore_types,
+                ignore_functions=project_target_data.ghidra.ignore_functions,
+            )
+
             project.targets[target_id] = RecCmpTarget(
                 target_id=target_id,
                 filename=filename,
                 source_root=source_root,
-                ghidra_config=project_target_data.ghidra,
+                ghidra_config=ghidra,
             )
         return project
 
@@ -146,9 +181,7 @@ class RecCmpBuiltProject:
         logger.debug("Using build config: %s", build_config)
 
         # Parse build.yml
-        yaml_loader = ruamel.yaml.YAML()
-        with build_config.open() as buildfile:
-            build_data = BuildFile.model_validate(yaml_loader.load(buildfile))
+        build_data = BuildFile.from_file(build_config)
 
         # Searching for project.yml
         # note that Path.joinpath() will ignore the first path if the second path is absolute
@@ -161,8 +194,7 @@ class RecCmpBuiltProject:
         logger.debug("Using project config: %s", project_config_path)
 
         # Parse project.yml
-        with project_config_path.open() as projectfile:
-            project_data = ProjectFile.model_validate(yaml_loader.load(projectfile))
+        project_data = ProjectFile.from_file(project_config_path)
 
         # Searching for user.yml
         user_config = project_directory / RECCMP_USER_CONFIG
@@ -173,8 +205,7 @@ class RecCmpBuiltProject:
         logger.debug("Using user config: %s", user_config)
 
         # Parse user.yml
-        with user_config.open() as userfile:
-            user_data = UserFile.model_validate(yaml_loader.load(userfile))
+        user_data = UserFile.from_file(user_config)
 
         verify_target_names(
             project_targets=project_data.targets,
@@ -217,6 +248,11 @@ class RecCmpBuiltProject:
             recompiled_path = build_directory.joinpath(build_target_data.path)
             recompiled_pdb = build_directory.joinpath(build_target_data.pdb)
 
+            ghidra = GhidraConfig(
+                ignore_types=project_target_data.ghidra.ignore_types,
+                ignore_functions=project_target_data.ghidra.ignore_functions,
+            )
+
             project.targets[target_id] = RecCmpBuiltTarget(
                 target_id=target_id,
                 filename=filename,
@@ -224,7 +260,7 @@ class RecCmpBuiltProject:
                 recompiled_path=recompiled_path,
                 recompiled_pdb=recompiled_pdb,
                 source_root=source_root,
-                ghidra_config=project_target_data.ghidra,
+                ghidra_config=ghidra,
             )
         return project
 
@@ -239,7 +275,7 @@ class RecCmpPathsAction(argparse.Action):
             target_id=target_id,
             filename="???",
             source_root=Path(source_root),
-            ghidra_config=GhidraConfig.default(),
+            ghidra_config=GhidraConfig(),
         )
         setattr(namespace, self.dest, target)
 
@@ -257,7 +293,7 @@ class RecCmpBuiltPathsAction(argparse.Action):
             recompiled_path=recompiled,
             recompiled_pdb=pdb,
             source_root=source_root,
-            ghidra_config=GhidraConfig.default(),
+            ghidra_config=GhidraConfig(),
         )
         setattr(namespace, self.dest, target)
 
@@ -382,17 +418,13 @@ def detect_project(
     detect_what: DetectWhat,
     build_directory: Path | None = None,
 ) -> None:
-    yaml = ruamel.yaml.YAML()
-
     project_config_path = project_directory / RECCMP_PROJECT_CONFIG
-    with project_config_path.open() as f:
-        project_data = ProjectFile.model_validate(yaml.load(stream=f))
+    project_data = ProjectFile.from_file(project_config_path)
 
     if detect_what == DetectWhat.ORIGINAL:
         user_config_path = project_directory / RECCMP_USER_CONFIG
         if user_config_path.is_file():
-            with user_config_path.open() as f:
-                user_data = UserFile.model_validate(yaml.load(stream=f))
+            user_data = UserFile.from_file(user_config_path)
         else:
             user_data = UserFile(targets={})
 
@@ -423,8 +455,7 @@ def detect_project(
                 )
 
         logger.info("Updating %s", user_config_path)
-        with user_config_path.open("w") as f:
-            yaml.dump(data=user_data.model_dump(mode="json"), stream=f)
+        user_data.write_file(user_config_path)
 
     elif detect_what == DetectWhat.RECOMPILED:
         if not build_directory:
@@ -449,6 +480,4 @@ def detect_project(
             else:
                 logger.warning("Could not find %s", filename)
         logger.info("Updating %s", build_config_path)
-
-        with build_config_path.open("w") as f:
-            yaml.dump(data=build_data.model_dump(mode="json"), stream=f)
+        build_data.write_file(build_config_path)
