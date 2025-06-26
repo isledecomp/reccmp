@@ -189,6 +189,17 @@ def instruction_alters_regs(inst: str, regs: set[str]) -> bool:
     )
 
 
+def _is_relocatable(instr: str) -> bool:
+    """
+    Excludes certain instructions whose relocation will always change the logic
+    to be considered for an effective match.
+    """
+    # Do not relocate jump table entries (this most likely influences the behaviour)
+    if instr.startswith("start +"):
+        return False
+    return True
+
+
 def relocate_instructions(
     codes: Sequence[DiffOpcode], orig_asm: list[str], recomp_asm: list[str]
 ) -> set[int]:
@@ -211,6 +222,8 @@ def relocate_instructions(
 
     for j in inserts:
         line = recomp_asm[j]
+        if not _is_relocatable(line):
+            continue
         recomp_regs_used = set(find_regs_used(line))
         for i in deletes:
             # Check for exact match.
