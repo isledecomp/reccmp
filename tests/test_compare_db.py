@@ -1,6 +1,5 @@
 """Testing compare database behavior, particularly matching"""
 
-import sqlite3
 from unittest.mock import patch
 import pytest
 from reccmp.isledecomp.compare.db import EntityDb
@@ -308,9 +307,9 @@ def test_batch_sqlite_exception(db):
     batch.set_recomp(200, test=123)
 
     # Insert bad data that will cause a binding error
-    batch.match(100, ("bogus",))
+    batch.match(100, 2**100)
 
-    with pytest.raises(sqlite3.Error):
+    with pytest.raises(OverflowError):
         batch.commit()
 
     # Should rollback everything
@@ -322,9 +321,55 @@ def test_batch_sqlite_exception_insert_only(db):
     """Should rollback even if we don't start the explicit transaction in match()"""
     batch = db.batch()
     batch.insert_orig(100, name="Test")
-    batch.insert_orig(("bogus",), name="Test")
+    batch.insert_orig(2**100, name="Test")
 
-    with pytest.raises(sqlite3.Error):
+    with pytest.raises(OverflowError):
         batch.commit()
 
     assert db.get_by_orig(100) is None
+
+
+def test_batch_insert_with_invalid_address(db):
+    """Should not create (insert functions) an entity if the address parameter is invalid."""
+    with db.batch() as batch:
+        batch.insert_orig(None, name="Test")
+        batch.insert_recomp(None, name="Hello")
+        batch.insert_orig("Test", name="Test")
+        batch.insert_recomp("Hello", name="Hello")
+
+    assert db.count() == 0
+
+
+def test_batch_set_with_invalid_address(db):
+    """Should not create (set functions) an entity if the address parameter is invalid."""
+    with db.batch() as batch:
+        batch.set_orig(None, name="Test")
+        batch.set_recomp(None, name="Hello")
+        batch.set_orig("Test", name="Test")
+        batch.set_recomp("Hello", name="Hello")
+
+    assert db.count() == 0
+
+
+def test_batch_match_with_invalid_address(db):
+    """Should not match (existing recomp entity) if either address is invalid."""
+    with db.batch() as batch:
+        batch.set_orig(100, name="Test")
+        batch.set_recomp(200, name="Test")
+        batch.match(100, "200")
+        batch.match("100", 200)
+
+    assert db.get_by_orig(100).recomp_addr is None
+    assert db.get_by_recomp(200).orig_addr is None
+
+
+def test_batch_recomp_match_with_invalid_address(db):
+    """Should not match (existing orig entity) if either address is invalid."""
+    with db.batch() as batch:
+        batch.set_orig(100, name="Test")
+        # Don't create the recomp entity to avoid uniqueness assert
+        batch.set_recomp_addr(100, "200")
+        batch.set_recomp_addr("100", 200)
+
+    assert db.get_by_orig(100).recomp_addr is None
+    assert db.get_by_recomp(200) is None

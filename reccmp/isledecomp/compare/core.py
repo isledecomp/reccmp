@@ -715,7 +715,8 @@ class Compare:
         # Select addresses and symbols for all repeated function names
         for recomp_addr, name, symbol in self._db.sql.execute(
             """SELECT recomp_addr, json_extract(kvstore,'$.name') as name, json_extract(kvstore,'$.symbol')
-            from entities where name in (
+            from entities where recomp_addr is not null
+            and name in (
                 select json_extract(kvstore,'$.name') as name from entities
                 where json_extract(kvstore,'$.type') = ?
                 group by name having count(name) > 1

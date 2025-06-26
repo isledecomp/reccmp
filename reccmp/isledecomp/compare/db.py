@@ -277,12 +277,20 @@ class EntityDb:
                 """INSERT INTO entities (orig_addr, kvstore) values (?,?)
                 ON CONFLICT (orig_addr) DO UPDATE
                 SET kvstore = json_patch(kvstore, excluded.kvstore)""",
-                ((addr, json.dumps(values)) for addr, values in rows),
+                (
+                    (addr, json.dumps(values))
+                    for addr, values in rows
+                    if isinstance(addr, int)
+                ),
             )
         else:
             self._sql.executemany(
                 "INSERT or ignore INTO entities (orig_addr, kvstore) values (?,?)",
-                ((addr, json.dumps(values)) for addr, values in rows),
+                (
+                    (addr, json.dumps(values))
+                    for addr, values in rows
+                    if isinstance(addr, int)
+                ),
             )
 
     def bulk_recomp_insert(
@@ -293,18 +301,28 @@ class EntityDb:
                 """INSERT INTO entities (recomp_addr, kvstore) values (?,?)
                 ON CONFLICT (recomp_addr) DO UPDATE
                 SET kvstore = json_patch(kvstore, excluded.kvstore)""",
-                ((addr, json.dumps(values)) for addr, values in rows),
+                (
+                    (addr, json.dumps(values))
+                    for addr, values in rows
+                    if isinstance(addr, int)
+                ),
             )
         else:
             self._sql.executemany(
                 "INSERT or ignore INTO entities (recomp_addr, kvstore) values (?,?)",
-                ((addr, json.dumps(values)) for addr, values in rows),
+                (
+                    (addr, json.dumps(values))
+                    for addr, values in rows
+                    if isinstance(addr, int)
+                ),
             )
 
     def bulk_match(self, pairs: Iterable[tuple[int, int]]):
         """Expects iterable of `(orig_addr, recomp_addr)`."""
         # We need to iterate over this multiple times.
-        pairlist = list(pairs)
+        pairlist = [
+            (x, y) for x, y in pairs if isinstance(x, int) and isinstance(y, int)
+        ]
 
         with self._sql:
             # Copy orig information to recomp side. Prefer recomp information except for NULLS.
@@ -332,7 +350,11 @@ class EntityDb:
             """UPDATE entities
                 SET recomp_addr = ?
                 WHERE orig_addr = ? and recomp_addr is null""",
-            ((recomp_addr, orig_addr) for orig_addr, recomp_addr in pairs),
+            (
+                (recomp_addr, orig_addr)
+                for orig_addr, recomp_addr in pairs
+                if isinstance(orig_addr, int) and isinstance(recomp_addr, int)
+            ),
         )
 
     def get_unmatched_strings(self) -> list[str]:
