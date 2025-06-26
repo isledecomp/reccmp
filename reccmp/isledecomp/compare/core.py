@@ -728,24 +728,18 @@ class Compare:
 
             repeat_names.setdefault(name, []).append((recomp_addr, symbol))
 
-        updates = {}
+        with self._db.batch() as batch:
+            for name, items in repeat_names.items():
+                for i, (recomp_addr, symbol) in enumerate(items, start=1):
+                    # Just number it to start, in case we don't have a symbol.
+                    new_name = f"{name}({i})"
 
-        for name, items in repeat_names.items():
-            for i, (recomp_addr, symbol) in enumerate(items, start=1):
-                # Just number it to start, in case we don't have a symbol.
-                new_name = f"{name}({i})"
+                    if symbol is not None:
+                        dm_args = get_function_arg_string(symbol)
+                        if dm_args is not None:
+                            new_name = f"{name}{dm_args}"
 
-                if symbol is not None:
-                    dm_args = get_function_arg_string(symbol)
-                    if dm_args is not None:
-                        new_name = f"{name}{dm_args}"
-
-                updates[recomp_addr] = new_name
-
-        self._db.sql.executemany(
-            "UPDATE entities SET kvstore = json_set(kvstore,'$.computed_name',?) WHERE recomp_addr = ?",
-            ((name, addr) for addr, name in updates.items()),
-        )
+                    batch.set_recomp(recomp_addr, computed_name=new_name)
 
     def _compare_vtable(self, match: ReccmpMatch) -> DiffReport:
         vtable_size = match.size
