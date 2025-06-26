@@ -375,45 +375,23 @@ class EntityDb:
         cur.row_factory = matched_entity_factory
         return cur.fetchone()
 
-    def _get_closest_orig(self, addr: int) -> int | None:
-        for (value,) in self._sql.execute(
-            "SELECT orig_addr FROM entities WHERE ? >= orig_addr ORDER BY orig_addr desc LIMIT 1",
-            (addr,),
-        ):
-            return value
+    def get_by_orig(self, addr: int, exact: bool = True) -> ReccmpEntity | None:
+        if exact:
+            query = "SELECT * FROM entity_factory WHERE orig_addr = ?"
+        else:
+            query = "SELECT * FROM entity_factory WHERE ? >= orig_addr ORDER BY orig_addr desc LIMIT 1"
 
-        return None
-
-    def _get_closest_recomp(self, addr: int) -> int | None:
-        for (value,) in self._sql.execute(
-            "SELECT recomp_addr FROM entities WHERE ? >= recomp_addr ORDER BY recomp_addr desc LIMIT 1",
-            (addr,),
-        ):
-            return value
-
-        return None
-
-    def get_by_orig(self, orig: int, exact: bool = True) -> ReccmpEntity | None:
-        addr = self._get_closest_orig(orig)
-        if addr is None or exact and orig != addr:
-            return None
-
-        cur = self._sql.execute(
-            "SELECT * FROM entity_factory WHERE orig_addr = ?",
-            (addr,),
-        )
+        cur = self._sql.execute(query, (addr,))
         cur.row_factory = entity_factory
         return cur.fetchone()
 
-    def get_by_recomp(self, recomp: int, exact: bool = True) -> ReccmpEntity | None:
-        addr = self._get_closest_recomp(recomp)
-        if addr is None or exact and recomp != addr:
-            return None
+    def get_by_recomp(self, addr: int, exact: bool = True) -> ReccmpEntity | None:
+        if exact:
+            query = "SELECT * FROM entity_factory WHERE recomp_addr = ?"
+        else:
+            query = "SELECT * FROM entity_factory WHERE ? >= recomp_addr ORDER BY recomp_addr desc LIMIT 1"
 
-        cur = self._sql.execute(
-            "SELECT * FROM entity_factory WHERE recomp_addr = ?",
-            (addr,),
-        )
+        cur = self._sql.execute(query, (addr,))
         cur.row_factory = entity_factory
         return cur.fetchone()
 
