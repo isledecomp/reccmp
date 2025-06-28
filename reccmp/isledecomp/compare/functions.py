@@ -206,6 +206,9 @@ class FunctionComparator:
                 return f"{instruction} \t({source_ref_str})"
             case source_ref_str, True:
                 return f"{instruction} \t({source_ref_str}, pinned)"
+            case _:
+                # Unreachable, but mypy doesn't understand
+                assert False
 
     def _compare_function_assembly(
         self,
@@ -222,7 +225,9 @@ class FunctionComparator:
         if diff.ratio() != 1.0:
             # Check whether we can resolve register swaps which are actually
             # perfect matches modulo compiler entropy.
-            is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+            is_effective = find_effective_match(
+                diff.get_opcodes(), orig_asm, recomp_asm
+            )
 
             # Convert the addresses to hex string for the diff output
             orig_for_printing = [
