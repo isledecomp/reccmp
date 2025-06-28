@@ -210,7 +210,7 @@ def test_skip_small_instructions(code: bytes):
     (1 for the opcode, 4 for the operand)"""
     with patch("reccmp.isledecomp.compare.asm.parse.ParseAsm.sanitize") as mock:
         p = ParseAsm()
-        p.parse_asm(code)
+        p.parse_asm(code, 0)
         mock.assert_not_called()
 
 
@@ -220,8 +220,8 @@ def test_should_skip_regardless_of_register():
     changes the size of the instruction. Ideally we are consistent."""
     with patch("reccmp.isledecomp.compare.asm.parse.ParseAsm.sanitize") as mock:
         p = ParseAsm()
-        p.parse_asm(b"\x66\x3d\x00\x01")  # cmp ax, 0x100
-        p.parse_asm(b"\x66\x81\xf9\x00\x01")  # cmp cx, 0x100
+        p.parse_asm(b"\x66\x3d\x00\x01", 0)  # cmp ax, 0x100
+        p.parse_asm(b"\x66\x81\xf9\x00\x01", 0)  # cmp cx, 0x100
         mock.assert_not_called()
 
 
@@ -439,7 +439,7 @@ def test_consistent_numbering():
 
     # Run without name lookup
     p = ParseAsm()
-    p.parse_asm(code)
+    p.parse_asm(code, 0)
     assert p.replacements[0x1000] == "<OFFSET1>"
     assert p.replacements[0x1234] == "<OFFSET2>"
     assert p.replacements[0x2000] == "<OFFSET3>"
@@ -454,7 +454,7 @@ def test_consistent_numbering():
     assert len(p.replacements) == 0
 
     # Expect the two addresses to get the same placeholder
-    p.parse_asm(code)
+    p.parse_asm(code, 0)
     assert p.replacements[0x1000] == "<OFFSET1>"
     assert p.replacements[0x1234] == "<OFFSET2>"
     assert p.replacements[0x2000] == "<OFFSET3>"
