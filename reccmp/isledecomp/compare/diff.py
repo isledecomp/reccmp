@@ -74,7 +74,6 @@ def combined_diff(
 
                 subgroups.append({"both": both})
             else:
-                # TODO: Consider generator pattern
                 for orig_addr, _ in orig_combined[i1:i2]:
                     if orig_addr is not None:
                         orig_addrs.add(orig_addr)
