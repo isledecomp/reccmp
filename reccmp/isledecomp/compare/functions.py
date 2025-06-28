@@ -23,11 +23,10 @@ from reccmp.isledecomp.formats.pe import PEImage
 from reccmp.isledecomp.types import EntityType
 
 
-class FunctionPartCompareResult(NamedTuple):
+class FunctionCompareResult(NamedTuple):
     diff: CombinedDiffOutput
     is_effective_match: bool
-    # The match ratio multiplied by the combined number of instructions in orig and recomp
-    weighted_match_ratio: float
+    match_ratio: float
 
 
 def timestamp_string() -> str:
@@ -169,7 +168,7 @@ class FunctionComparator:
             orig_combined, recomp_combined, line_annotations
         )
 
-        diff_result = self._compare_function_part(
+        diff_result = self._compare_function_assembly(
             orig_combined, recomp_combined, split_points
         )
 
@@ -181,11 +180,11 @@ class FunctionComparator:
             recomp_addr=match.recomp_addr,
             name=best_name,
             udiff=diff_result.diff,
-            ratio=diff_result.weighted_match_ratio,
+            ratio=diff_result.match_ratio,
             is_effective_match=diff_result.is_effective_match,
         )
 
-    def _compare_function_part(
+    def _compare_function_assembly(
         self,
         orig: AsmExcerpt,
         recomp: AsmExcerpt,
@@ -218,7 +217,7 @@ class FunctionComparator:
             unified_diff = []
             is_effective = False
 
-        return FunctionPartCompareResult(
+        return FunctionCompareResult(
             unified_diff,
             is_effective,
             diff.match_ratio,
