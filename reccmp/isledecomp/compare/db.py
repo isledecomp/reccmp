@@ -374,7 +374,11 @@ class EntityDb:
         cur.row_factory = matched_entity_factory
         return cur.fetchone()
 
-    def get_by_orig(self, addr: int, exact: bool = True) -> ReccmpEntity | None:
+    def get_by_orig(self, addr: int, *, exact: bool = True) -> ReccmpEntity | None:
+        """Return the ReccmpEntity at the given orig address.
+        If there is no entry for the address and exact=True (default), return None.
+        Otherwise, return the entity at the preceding orig address if it exists.
+        The caller should check the entity's size to make sure it covers the address."""
         if exact:
             query = "SELECT * FROM entity_factory WHERE orig_addr = ?"
         else:
@@ -384,7 +388,11 @@ class EntityDb:
         cur.row_factory = entity_factory
         return cur.fetchone()
 
-    def get_by_recomp(self, addr: int, exact: bool = True) -> ReccmpEntity | None:
+    def get_by_recomp(self, addr: int, *, exact: bool = True) -> ReccmpEntity | None:
+        """Return the ReccmpEntity at the given recomp address.
+        If there is no entry for the address and exact=True (default), return None.
+        Otherwise, return the entity at the preceding recomp address if it exists.
+        The caller should check the entity's size to make sure it covers the address."""
         if exact:
             query = "SELECT * FROM entity_factory WHERE recomp_addr = ?"
         else:

@@ -72,6 +72,63 @@ def test_db_all_order(db):
     ]
 
 
+def test_get_by_exact(db):
+    """get_by_orig and get_by_recomp have two parameters: the address and the 'exact' option.
+    If exact=False, we return the entity at the address OR one at the preceding address if it exists.
+    """
+
+    with db.batch() as batch:
+        batch.set_orig(100)
+        batch.set_recomp(100)
+
+    # If there is an exact addr match, return the entity.
+    assert db.get_by_orig(100) is not None
+    assert db.get_by_orig(100, exact=True) is not None
+    assert db.get_by_orig(100, exact=False) is not None
+    assert db.get_by_recomp(100) is not None
+    assert db.get_by_recomp(100, exact=True) is not None
+    assert db.get_by_recomp(100, exact=False) is not None
+
+    # If there is no exact match, return None.
+    assert db.get_by_orig(200) is None
+    assert db.get_by_orig(200, exact=True) is None
+    assert db.get_by_recomp(200) is None
+    assert db.get_by_recomp(200, exact=True) is None
+
+    # Return the preceding entity if exact=False.
+    assert db.get_by_orig(200, exact=False) is not None
+    assert db.get_by_recomp(200, exact=False) is not None
+
+    # Should only return the preceding entity if one exists.
+    assert db.get_by_orig(50, exact=False) is None
+    assert db.get_by_recomp(50, exact=False) is None
+
+
+def test_get_by_exact_keyword(db):
+    """For get_by_orig and get_by_recomp, the 'exact' keyword must be used to set its value."""
+
+    # Fails without 'exact' keyword
+    with pytest.raises(TypeError):
+        db.get_by_orig(100, False)
+
+    with pytest.raises(TypeError):
+        db.get_by_orig(100, True)
+
+    with pytest.raises(TypeError):
+        db.get_by_recomp(100, True)
+
+    with pytest.raises(TypeError):
+        db.get_by_recomp(100, False)
+
+    # Succeeds with 'exact' keyword or if it the parameter is omitted.
+    db.get_by_orig(100)
+    db.get_by_orig(100, exact=False)
+    db.get_by_orig(100, exact=True)
+    db.get_by_recomp(100)
+    db.get_by_recomp(100, exact=False)
+    db.get_by_recomp(100, exact=True)
+
+
 #### Testing new batch API ####
 
 
