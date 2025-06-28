@@ -1,11 +1,10 @@
 from datetime import datetime
 from dataclasses import dataclass
-from difflib import SequenceMatcher
 from functools import cache
-import functools
 import struct
 from itertools import pairwise
 from typing import Callable, Iterator, NamedTuple
+from reccmp.isledecomp.compare.pinned_sequences import match_sequences_with_pins
 from reccmp.isledecomp.compare.asm.fixes import assert_fixup, find_effective_match
 from reccmp.isledecomp.compare.asm.parse import AsmExcerpt, ParseAsm
 from reccmp.isledecomp.compare.asm.replacement import create_name_lookup
@@ -77,14 +76,6 @@ def create_bin_lookup(bin_file: PEImage) -> Callable[[int], int | None]:
             return None
 
     return lookup
-
-
-# TODO: Rename
-class AccStuff(NamedTuple):
-    opcodes: list[tuple[str, int, int, int, int]]
-    opcode_groups: list[list[tuple[str, int, int, int, int]]]
-    total_lines: int
-    weighted_match_ratio: float
 
 
 @dataclass
@@ -204,72 +195,12 @@ class FunctionComparator:
         orig_asm = [x[1] for x in orig]
         recomp_asm = [x[1] for x in recomp]
 
-        # TODO: Move to dedicated file + tests
+        diff = match_sequences_with_pins(orig_asm, recomp_asm, split_points)
 
-        def offset_opcode(
-            group: tuple[str, int, int, int, int], offset_orig: int, offset_recomp: int
-        ) -> tuple[str, int, int, int, int]:
-            op, orig_start, orig_end, recomp_start, recomp_end = group
-            return (
-                op,
-                orig_start + offset_orig,
-                orig_end + offset_orig,
-                recomp_start + offset_recomp,
-                recomp_end + offset_recomp,
-            )
-
-        def reductor(acc: AccStuff, current: tuple[tuple[int, int], tuple[int, int]]):
-            (orig_start, recomp_start), (orig_end, recomp_end) = current
-            orig_asm_local = orig_asm[orig_start:orig_end]
-            recomp_asm_local = recomp_asm[recomp_start:recomp_end]
-            current_lines = len(orig_asm_local) + len(recomp_asm_local)
-
-            diff = SequenceMatcher(
-                None, orig_asm_local, recomp_asm_local, autojunk=False
-            )
-
-            offset_opcodes = [
-                offset_opcode(opcode, orig_start, recomp_start)
-                for opcode in diff.get_opcodes()
-            ]
-            offset_opcode_groups = [
-                [offset_opcode(opcode, orig_start, recomp_start) for opcode in group]
-                for group in diff.get_grouped_opcodes(n=10)
-            ]
-
-            if len(acc.opcode_groups) == 0:
-                merged_opcode_groups = offset_opcode_groups
-            elif len(offset_opcode_groups) == 0:
-                # This should never happen, just to be sure
-                merged_opcode_groups = acc.opcode_groups
-            else:
-                # Join the groups at the intersection
-                acc.opcode_groups[-1] += offset_opcode_groups.pop(0)
-                merged_opcode_groups = acc.opcode_groups + offset_opcode_groups
-
-            return AccStuff(
-                opcodes=acc.opcodes + offset_opcodes,
-                opcode_groups=merged_opcode_groups,
-                total_lines=acc.total_lines + current_lines,
-                weighted_match_ratio=acc.weighted_match_ratio
-                + max(current_lines, 1) * diff.ratio(),
-            )
-
-        result = functools.reduce(
-            reductor,
-            pairwise(split_points),
-            AccStuff(
-                opcodes=[], opcode_groups=[], total_lines=0, weighted_match_ratio=0.0
-            ),
-        )
-
-        # TODO rename
-        local_ratio = result.weighted_match_ratio / max(result.total_lines, 1)
-
-        if local_ratio != 1.0:
+        if diff.match_ratio != 1.0:
             # Check whether we can resolve register swaps which are actually
             # perfect matches modulo compiler entropy.
-            is_effective = find_effective_match(result.opcodes, orig_asm, recomp_asm)
+            is_effective = find_effective_match(diff.opcodes, orig_asm, recomp_asm)
 
             # Convert the addresses to hex string for the diff output
             orig_combined_as_strings = [
@@ -279,7 +210,7 @@ class FunctionComparator:
                 (hex(addr) if addr is not None else "", instr) for addr, instr in recomp
             ]
             unified_diff = combined_diff(
-                result.opcode_groups,
+                diff.opcode_groups,
                 orig_combined_as_strings,
                 recomp_combined_as_strings,
             )
@@ -290,7 +221,7 @@ class FunctionComparator:
         return FunctionPartCompareResult(
             unified_diff,
             is_effective,
-            local_ratio,
+            diff.match_ratio,
         )
 
     def _collect_line_annotations(self, recomp: AsmExcerpt) -> list[ReccmpMatch]:
@@ -354,9 +285,8 @@ class FunctionComparator:
         """
         Computes the index pairs into `orig` and `recomp`
         that correspond to the line annotations given in `line_annotations`.
-        Contains the first index and last index + 1 in order to facilitate iterating over it.
         """
-        split_points: list[tuple[int, int]] = [(0, 0)]
+        split_points: list[tuple[int, int]] = []
 
         for line_annotation in line_annotations:
             orig_split_index = next(
@@ -393,8 +323,5 @@ class FunctionComparator:
 
             split_points.append((orig_split_index, recomp_split_index))
             split_points.append((orig_split_index + 1, recomp_split_index + 1))
-
-        # Add one past the last index to facilitate iterating
-        split_points.append((len(orig), len(recomp)))
 
         return split_points
