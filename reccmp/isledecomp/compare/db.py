@@ -13,7 +13,6 @@ _SETUP_SQL = """
     CREATE TABLE entities (
         orig_addr int unique,
         recomp_addr int unique,
-        matched int as (orig_addr is not null and recomp_addr is not null),
         kvstore text default '{}'
     );
 
