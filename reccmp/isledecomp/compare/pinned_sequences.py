@@ -1,7 +1,7 @@
-# TODO: Rename
 from difflib import SequenceMatcher
 import functools
 from itertools import pairwise
+import itertools
 from typing import Iterable, NamedTuple, Sequence
 
 
@@ -64,7 +64,12 @@ def match_sequences_with_pins(
         if len(acc.opcode_groups) == 0:
             merged_opcode_groups = offset_opcode_groups
         elif len(offset_opcode_groups) == 0:
-            # This should never happen, just to be sure
+            # This happens e.g. when the code from the start to the first pin matches fully.
+            # The current solution is a bit crude in that it
+            # TODO: Search for regressions in all of ISLE
+            # TODO: Consider an approach inheriting from SequenceMatcher,
+            # in order to reuse the grouping algorithm
+            acc.opcode_groups[-1] += [offset_opcodes[0]]
             merged_opcode_groups = acc.opcode_groups
         else:
             # Join the groups at the intersection
@@ -83,9 +88,7 @@ def match_sequences_with_pins(
         )
 
     # Add the first and last index to the pins so we can iterate with `pairwise()`
-    pins_with_first_and_last = [(0, 0)]
-    pins_with_first_and_last.extend(pinned_lines)
-    pins_with_first_and_last.append((len(a), len(b)))
+    pins_with_first_and_last = list(itertools.chain([(0, 0)], pinned_lines, [(len(a), len(b))]))
 
     result = functools.reduce(
         accumulator,
