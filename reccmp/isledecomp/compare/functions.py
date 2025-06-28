@@ -4,6 +4,7 @@ from functools import cache
 import struct
 from itertools import pairwise
 from typing import Callable, Iterator, NamedTuple
+from reccmp.isledecomp.compare.lines import LinesDb
 from reccmp.isledecomp.compare.pinned_sequences import match_sequences_with_pins
 from reccmp.isledecomp.compare.asm.fixes import assert_fixup, find_effective_match
 from reccmp.isledecomp.compare.asm.parse import AsmExcerpt, ParseAsm
@@ -81,6 +82,7 @@ def create_bin_lookup(bin_file: PEImage) -> Callable[[int], int | None]:
 class FunctionComparator:
     # pylint: disable=too-many-instance-attributes
     db: EntityDb
+    lines_db: LinesDb
     orig_bin: PEImage
     recomp_bin: PEImage
     report: ReccmpReportProtocol
@@ -122,6 +124,14 @@ class FunctionComparator:
                     f.write(f"{addr:8x}: {line}\n")
                 else:
                     f.write(f"        : {line}\n")
+
+    def _source_ref_of_recomp_addr(self, recomp_addr: int | None) -> str | None:
+        if recomp_addr is None:
+            return None
+        path_line_pair = self.lines_db.find_line_of_recomp_address(recomp_addr)
+        if path_line_pair is None:
+            return None
+        return f"{path_line_pair[0].name}:{path_line_pair[1]}"
 
     def compare_function(self, match: ReccmpMatch) -> DiffReport:
         # Detect when the recomp function size would cause us to read
@@ -184,12 +194,25 @@ class FunctionComparator:
             is_effective_match=diff_result.is_effective_match,
         )
 
+    @staticmethod
+    def _print_recomp_instruction(
+        instruction: str, *, source_ref: str | None, is_pinned: bool
+    ) -> str:
+        match source_ref, is_pinned:
+            case None, _:
+                # cannot be pinned if it has no source reference
+                return instruction
+            case source_ref_str, False:
+                return f"{instruction} \t({source_ref_str})"
+            case source_ref_str, True:
+                return f"{instruction} \t({source_ref_str}, pinned)"
+
     def _compare_function_assembly(
         self,
         orig: AsmExcerpt,
         recomp: AsmExcerpt,
         split_points: list[tuple[int, int]],
-    ) -> FunctionPartCompareResult:
+    ) -> FunctionCompareResult:
         # Detach addresses from asm lines for the text diff.
         orig_asm = [x[1] for x in orig]
         recomp_asm = [x[1] for x in recomp]
@@ -202,16 +225,28 @@ class FunctionComparator:
             is_effective = find_effective_match(diff.opcodes, orig_asm, recomp_asm)
 
             # Convert the addresses to hex string for the diff output
-            orig_combined_as_strings = [
+            orig_for_printing = [
                 (hex(addr) if addr is not None else "", instr) for addr, instr in orig
             ]
-            recomp_combined_as_strings = [
-                (hex(addr) if addr is not None else "", instr) for addr, instr in recomp
+
+            recomp_for_printing = [
+                (
+                    hex(addr) if addr is not None else "",
+                    self._print_recomp_instruction(
+                        instruction,
+                        source_ref=self._source_ref_of_recomp_addr(addr),
+                        is_pinned=any(
+                            recomp_addr == line_index for _, recomp_addr in split_points
+                        ),
+                    ),
+                )
+                for line_index, (addr, instruction) in enumerate(recomp)
             ]
+
             unified_diff = combined_diff(
                 diff.opcode_groups,
-                orig_combined_as_strings,
-                recomp_combined_as_strings,
+                orig_for_printing,
+                recomp_for_printing,
             )
         else:
             unified_diff = []

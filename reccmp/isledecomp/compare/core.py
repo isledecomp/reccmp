@@ -105,7 +105,7 @@ class Compare:
         match_strings(self._db, report)
 
         self.function_comparator = FunctionComparator(
-            self._db, self.orig_bin, self.recomp_bin, report
+            self._db, self._lines_db, self.orig_bin, self.recomp_bin, report
         )
 
     @classmethod
@@ -807,16 +807,15 @@ class Compare:
 
         ratio = ratio / float(n_entries) if n_entries > 0 else 0.0
 
-        # n=100: Show the entire table if there is a diff to display.
-        # Otherwise it would be confusing if the table got cut off.
-
-        sm = difflib.SequenceMatcher(
+        # We do not use `get_grouped_opcodes()` because we want to show the entire table
+        # if there is a diff to display. Otherwise it would be confusing if the table got cut off.
+        opcodes = difflib.SequenceMatcher(
             None,
             [x[1] for x in orig_text],
             [x[1] for x in recomp_text],
-        )
+        ).get_opcodes()
 
-        unified_diff = combined_diff(sm, orig_text, recomp_text, context_size=100)
+        unified_diff = combined_diff([opcodes], orig_text, recomp_text)
 
         assert match.name is not None
         return DiffReport(
