@@ -5,7 +5,7 @@ import struct
 from itertools import pairwise
 from typing import Callable, Iterator, NamedTuple
 from reccmp.isledecomp.compare.lines import LinesDb
-from reccmp.isledecomp.compare.pinned_sequences import match_sequences_with_pins
+from reccmp.isledecomp.compare.pinned_sequences import SequenceMatcherWithPins
 from reccmp.isledecomp.compare.asm.fixes import assert_fixup, find_effective_match
 from reccmp.isledecomp.compare.asm.parse import AsmExcerpt, ParseAsm
 from reccmp.isledecomp.compare.asm.replacement import create_name_lookup
@@ -217,12 +217,12 @@ class FunctionComparator:
         orig_asm = [x[1] for x in orig]
         recomp_asm = [x[1] for x in recomp]
 
-        diff = match_sequences_with_pins(orig_asm, recomp_asm, split_points)
+        diff = SequenceMatcherWithPins(orig_asm, recomp_asm, split_points)
 
-        if diff.match_ratio != 1.0:
+        if diff.ratio() != 1.0:
             # Check whether we can resolve register swaps which are actually
             # perfect matches modulo compiler entropy.
-            is_effective = find_effective_match(diff.opcodes, orig_asm, recomp_asm)
+            is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
             # Convert the addresses to hex string for the diff output
             orig_for_printing = [
@@ -244,7 +244,7 @@ class FunctionComparator:
             ]
 
             unified_diff = combined_diff(
-                diff.opcode_groups,
+                diff.get_grouped_opcodes(),
                 orig_for_printing,
                 recomp_for_printing,
             )
@@ -255,7 +255,7 @@ class FunctionComparator:
         return FunctionCompareResult(
             unified_diff,
             is_effective,
-            diff.match_ratio,
+            diff.ratio(),
         )
 
     def _collect_line_annotations(self, recomp: AsmExcerpt) -> list[ReccmpMatch]:

@@ -6,97 +6,130 @@ from typing import Iterable, NamedTuple, Sequence
 
 
 class _IntermediateSequenceMatch(NamedTuple):
-    opcodes: list[tuple[str, int, int, int, int]]
-    opcode_groups: list[list[tuple[str, int, int, int, int]]]
-    total_lines: int
-    weighted_match_ratio: float
+    opcodes: list[tuple[str, int, int, int, int]] = []
+    total_lines: int = 0
+    weighted_match_ratio: float = 0.0
 
-
-class SequenceMatchResult(NamedTuple):
-    opcodes: list[tuple[str, int, int, int, int]]
-    opcode_groups: list[list[tuple[str, int, int, int, int]]]
-    match_ratio: float
-
-
-def offset_opcode(
-    group: tuple[str, int, int, int, int], offset_orig: int, offset_recomp: int
-) -> tuple[str, int, int, int, int]:
-    op, orig_start, orig_end, recomp_start, recomp_end = group
-    return (
-        op,
-        orig_start + offset_orig,
-        orig_end + offset_orig,
-        recomp_start + offset_recomp,
-        recomp_end + offset_recomp,
-    )
 
 # TODO: Unit tests
+# - Compare with and without pins
+# - edge cases: first and/or last line are already pinned
 
-def match_sequences_with_pins(
-    a: Sequence[str],
-    b: Sequence[str],
-    pinned_lines: Iterable[tuple[int, int]],
-) -> SequenceMatchResult:
+
+class SequenceMatcherWithPins:
     """
     Finds the differences between two string sequences, where some associations (pins) between
     the lines are known. The result format is compatible with `difflib.SequenceMatcher`.
     """
 
-    def accumulator(
-        acc: _IntermediateSequenceMatch, current: tuple[tuple[int, int], tuple[int, int]]
+    def __init__(
+        self,
+        a: Sequence[str],
+        b: Sequence[str],
+        pinned_lines: Iterable[tuple[int, int]],
     ):
-        (orig_start, recomp_start), (orig_end, recomp_end) = current
-        orig_asm_local = a[orig_start:orig_end]
-        recomp_asm_local = b[recomp_start:recomp_end]
-        current_lines = len(orig_asm_local) + len(recomp_asm_local)
+        def accumulator(
+            acc: _IntermediateSequenceMatch,
+            current: tuple[tuple[int, int], tuple[int, int]],
+        ):
+            """Matches the block specified by `current` and updates the intermediate information in `acc`."""
 
-        diff = SequenceMatcher(None, orig_asm_local, recomp_asm_local, autojunk=False)
+            (a_start, b_start), (a_end, b_end) = current
+            a_block = a[a_start:a_end]
+            b_block = b[b_start:b_end]
+            num_lines_in_block = len(a_block) + len(b_block)
 
-        offset_opcodes = [
-            offset_opcode(opcode, orig_start, recomp_start)
-            for opcode in diff.get_opcodes()
-        ]
-        offset_opcode_groups = [
-            [offset_opcode(opcode, orig_start, recomp_start) for opcode in group]
-            for group in diff.get_grouped_opcodes(n=10)
-        ]
+            diff = SequenceMatcher(None, a_block, b_block, autojunk=False)
 
-        if len(acc.opcode_groups) == 0:
-            merged_opcode_groups = offset_opcode_groups
-        elif len(offset_opcode_groups) == 0:
-            # This happens e.g. when the code from the start to the first pin matches fully.
-            # The current solution is a bit crude in that it
-            # TODO: Search for regressions in all of ISLE
-            # TODO: Consider an approach inheriting from SequenceMatcher,
-            # in order to reuse the grouping algorithm
-            acc.opcode_groups[-1] += [offset_opcodes[0]]
-            merged_opcode_groups = acc.opcode_groups
-        else:
-            # Join the groups at the intersection
-            acc.opcode_groups[-1] += offset_opcode_groups.pop(0)
-            merged_opcode_groups = acc.opcode_groups + offset_opcode_groups
+            # Offset the opcodes so they apply to `a` and `b` instead of `a_block` and `b_block`
+            updated_opcodes = acc.opcodes + [
+                self._offset_opcode(opcode, a_start, b_start)
+                for opcode in diff.get_opcodes()
+            ]
 
-        accumulated_weighted_match_ratio = (
-            acc.weighted_match_ratio + max(current_lines, 1) * diff.ratio()
+            updated_total_lines = acc.total_lines + num_lines_in_block
+            updated_weighted_match_ratio = (
+                acc.weighted_match_ratio + num_lines_in_block * diff.ratio()
+            )
+
+            return _IntermediateSequenceMatch(
+                opcodes=updated_opcodes,
+                total_lines=updated_total_lines,
+                weighted_match_ratio=updated_weighted_match_ratio,
+            )
+
+        # Add the first and last index to the pins so we can iterate over all sections with `pairwise()`
+        pins_with_first_and_last = itertools.chain(
+            [(0, 0)], pinned_lines, [(len(a), len(b))]
         )
 
-        return _IntermediateSequenceMatch(
-            opcodes=acc.opcodes + offset_opcodes,
-            opcode_groups=merged_opcode_groups,
-            total_lines=acc.total_lines + current_lines,
-            weighted_match_ratio=accumulated_weighted_match_ratio,
+        result = functools.reduce(
+            accumulator,
+            pairwise(pins_with_first_and_last),
+            _IntermediateSequenceMatch(),
+        )
+        self._ratio = (
+            result.weighted_match_ratio / result.total_lines
+            if result.total_lines > 0
+            else 1.0
+        )
+        self._opcodes = result.opcodes
+
+        # return SequenceMatchResult(result.opcodes, result.opcode_groups, overall_match_ratio)
+
+    @staticmethod
+    def _offset_opcode(
+        group: tuple[str, int, int, int, int], offset_orig: int, offset_recomp: int
+    ) -> tuple[str, int, int, int, int]:
+        op, orig_start, orig_end, recomp_start, recomp_end = group
+        return (
+            op,
+            orig_start + offset_orig,
+            orig_end + offset_orig,
+            recomp_start + offset_recomp,
+            recomp_end + offset_recomp,
         )
 
-    # Add the first and last index to the pins so we can iterate with `pairwise()`
-    pins_with_first_and_last = list(itertools.chain([(0, 0)], pinned_lines, [(len(a), len(b))]))
+    def get_opcodes(self) -> list[tuple[str, int, int, int, int]]:
+        return self._opcodes
 
-    result = functools.reduce(
-        accumulator,
-        pairwise(pins_with_first_and_last),
-        _IntermediateSequenceMatch(
-            opcodes=[], opcode_groups=[], total_lines=0, weighted_match_ratio=0.0
-        ),
-    )
-    overall_match_ratio = result.weighted_match_ratio / max(result.total_lines, 1)
+    def ratio(self):
+        return self._ratio
 
-    return SequenceMatchResult(result.opcodes, result.opcode_groups, overall_match_ratio)
+    def get_grouped_opcodes(
+        self, n=3
+    ) -> Iterable[list[tuple[str, int, int, int, int]]]:
+        """
+        Taken from the Python 3.12 standard library, `difflib.py`, published under PSF license, GPL compatible.
+
+        A more hacky approach would be to inherit from `SequenceMatcher` and reuse the implementation,
+        but that would depend on the internal behaviour that `get_grouped_opcodes()` internally
+        calls `get_opcodes()`.
+
+        See `difflib.SequenceMatcher.get_grouped_opcodes()` for more details.
+        """
+
+        codes = self.get_opcodes()
+        if not codes:
+            codes = [("equal", 0, 1, 0, 1)]
+        # Fixup leading and trailing groups if they show no changes.
+        if codes[0][0] == "equal":
+            tag, i1, i2, j1, j2 = codes[0]
+            codes[0] = tag, max(i1, i2 - n), i2, max(j1, j2 - n), j2
+        if codes[-1][0] == "equal":
+            tag, i1, i2, j1, j2 = codes[-1]
+            codes[-1] = tag, i1, min(i2, i1 + n), j1, min(j2, j1 + n)
+
+        nn = n + n
+        group = []
+        for tag, i1, i2, j1, j2 in codes:
+            # End the current group and start a new one whenever
+            # there is a large range with no changes.
+            if tag == "equal" and i2 - i1 > nn:
+                group.append((tag, i1, min(i2, i1 + n), j1, min(j2, j1 + n)))
+                yield group
+                group = []
+                i1, j1 = max(i1, i2 - n), max(j1, j2 - n)
+            group.append((tag, i1, i2, j1, j2))
+        if group and not (len(group) == 1 and group[0][0] == "equal"):
+            yield group
