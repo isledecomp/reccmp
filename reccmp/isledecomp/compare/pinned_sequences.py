@@ -11,15 +11,12 @@ class _IntermediateSequenceMatch(NamedTuple):
     weighted_match_ratio: float = 0.0
 
 
-# TODO: Unit tests
-# - Compare with and without pins
-# - edge cases: first and/or last line are already pinned
-
-
 class SequenceMatcherWithPins:
     """
     Finds the differences between two string sequences, where some associations (pins) between
     the lines are known. The result format is compatible with `difflib.SequenceMatcher`.
+
+    Note that `pinned_lines` must consist of non-decreasing, valid indices into `a` and `b`.
     """
 
     def __init__(
@@ -35,6 +32,14 @@ class SequenceMatcherWithPins:
             """Matches the block specified by `current` and updates the intermediate information in `acc`."""
 
             (a_start, b_start), (a_end, b_end) = current
+            if a_start > a_end or b_start > b_end:
+                # If this were a library, we could log a warning and try to recover.
+                # However, in the present case, this is just a failsafe
+                # since the monotony is verified and logged elsewhere.
+                raise ValueError(
+                    f"The provided pinned lines {pinned_lines} are not monotonous."
+                )
+
             a_block = a[a_start:a_end]
             b_block = b[b_start:b_end]
             num_lines_in_block = len(a_block) + len(b_block)
@@ -58,9 +63,15 @@ class SequenceMatcherWithPins:
                 weighted_match_ratio=updated_weighted_match_ratio,
             )
 
+        valid_pinned_lines = (
+            (a_index, b_index)
+            for a_index, b_index in pinned_lines
+            if a_index in range(len(a)) and b_index in range(len(b))
+        )
+
         # Add the first and last index to the pins so we can iterate over all sections with `pairwise()`
         pins_with_first_and_last = itertools.chain(
-            [(0, 0)], pinned_lines, [(len(a), len(b))]
+            [(0, 0)], valid_pinned_lines, [(len(a), len(b))]
         )
 
         result = functools.reduce(
@@ -74,8 +85,6 @@ class SequenceMatcherWithPins:
             else 1.0
         )
         self._opcodes = result.opcodes
-
-        # return SequenceMatchResult(result.opcodes, result.opcode_groups, overall_match_ratio)
 
     @staticmethod
     def _offset_opcode(
