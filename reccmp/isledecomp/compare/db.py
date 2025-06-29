@@ -13,7 +13,6 @@ _SETUP_SQL = """
     CREATE TABLE entities (
         orig_addr int unique,
         recomp_addr int unique,
-        matched int as (orig_addr is not null and recomp_addr is not null),
         kvstore text default '{}'
     );
 
@@ -26,6 +25,14 @@ _SETUP_SQL = """
         SELECT recomp_addr, kvstore FROM entities
         WHERE recomp_addr is not null and orig_addr is null
         ORDER by recomp_addr;
+
+    -- ReccmpEntity
+    CREATE VIEW entity_factory (orig_addr, recomp_addr, kvstore) AS
+        SELECT orig_addr, recomp_addr, kvstore FROM entities;
+
+    -- ReccmpMatch
+    CREATE VIEW matched_entity_factory AS
+        SELECT * FROM entity_factory WHERE orig_addr IS NOT NULL AND recomp_addr IS NOT NULL;
 """
 
 
@@ -347,79 +354,50 @@ class EntityDb:
 
     def get_all(self) -> Iterator[ReccmpEntity]:
         cur = self._sql.execute(
-            "SELECT orig_addr, recomp_addr, kvstore FROM entities ORDER BY orig_addr NULLS LAST, recomp_addr"
+            "SELECT * FROM entity_factory ORDER BY orig_addr NULLS LAST, recomp_addr"
         )
         cur.row_factory = entity_factory
         yield from cur
 
     def get_matches(self) -> Iterator[ReccmpMatch]:
         cur = self._sql.execute(
-            """SELECT orig_addr, recomp_addr, kvstore FROM entities
-            WHERE matched = 1
-            ORDER BY orig_addr
-            """,
+            "SELECT * FROM matched_entity_factory ORDER BY orig_addr",
         )
         cur.row_factory = matched_entity_factory
         yield from cur
 
     def get_one_match(self, addr: int) -> ReccmpMatch | None:
         cur = self._sql.execute(
-            """SELECT orig_addr, recomp_addr, kvstore FROM entities
-            WHERE orig_addr = ?
-            AND recomp_addr IS NOT NULL
-            """,
+            "SELECT * FROM matched_entity_factory WHERE orig_addr = ?",
             (addr,),
         )
         cur.row_factory = matched_entity_factory
         return cur.fetchone()
 
-    def _get_closest_orig(self, addr: int) -> int | None:
-        for (value,) in self._sql.execute(
-            "SELECT orig_addr FROM entities WHERE ? >= orig_addr ORDER BY orig_addr desc LIMIT 1",
-            (addr,),
-        ):
-            return value
+    def get_by_orig(self, addr: int, exact: bool = True) -> ReccmpEntity | None:
+        if exact:
+            query = "SELECT * FROM entity_factory WHERE orig_addr = ?"
+        else:
+            query = "SELECT * FROM entity_factory WHERE ? >= orig_addr ORDER BY orig_addr desc LIMIT 1"
 
-        return None
-
-    def _get_closest_recomp(self, addr: int) -> int | None:
-        for (value,) in self._sql.execute(
-            "SELECT recomp_addr FROM entities WHERE ? >= recomp_addr ORDER BY recomp_addr desc LIMIT 1",
-            (addr,),
-        ):
-            return value
-
-        return None
-
-    def get_by_orig(self, orig: int, exact: bool = True) -> ReccmpEntity | None:
-        addr = self._get_closest_orig(orig)
-        if addr is None or exact and orig != addr:
-            return None
-
-        cur = self._sql.execute(
-            "SELECT orig_addr, recomp_addr, kvstore FROM entities WHERE orig_addr = ?",
-            (addr,),
-        )
+        cur = self._sql.execute(query, (addr,))
         cur.row_factory = entity_factory
         return cur.fetchone()
 
-    def get_by_recomp(self, recomp: int, exact: bool = True) -> ReccmpEntity | None:
-        addr = self._get_closest_recomp(recomp)
-        if addr is None or exact and recomp != addr:
-            return None
+    def get_by_recomp(self, addr: int, exact: bool = True) -> ReccmpEntity | None:
+        if exact:
+            query = "SELECT * FROM entity_factory WHERE recomp_addr = ?"
+        else:
+            query = "SELECT * FROM entity_factory WHERE ? >= recomp_addr ORDER BY recomp_addr desc LIMIT 1"
 
-        cur = self._sql.execute(
-            "SELECT orig_addr, recomp_addr, kvstore FROM entities WHERE recomp_addr = ?",
-            (addr,),
-        )
+        cur = self._sql.execute(query, (addr,))
         cur.row_factory = entity_factory
         return cur.fetchone()
 
     def get_matches_by_type(self, entity_type: EntityType) -> Iterator[ReccmpMatch]:
         cur = self._sql.execute(
-            """SELECT orig_addr, recomp_addr, kvstore FROM entities
+            """SELECT * FROM matched_entity_factory
             WHERE json_extract(kvstore, '$.type') = ?
-            AND matched = 1
             ORDER BY orig_addr
             """,
             (entity_type,),
@@ -433,10 +411,9 @@ class EntityDb:
         """Fetches all matched annotations of the form `// LINE: TARGET 0x1234` in the given recomp address range."""
 
         cur = self._sql.execute(
-            """SELECT orig_addr, recomp_addr, kvstore FROM entities
+            """SELECT * FROM matched_entity_factory
             WHERE json_extract(kvstore, '$.type') = ?
             AND recomp_addr >= ? AND recomp_addr <= ?
-            AND matched = 1
             ORDER BY orig_addr
             """,
             (
