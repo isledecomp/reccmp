@@ -1,5 +1,3 @@
-"""Tests related to the ReccmpEntity ORM object"""
-
 from difflib import SequenceMatcher
 
 import pytest
