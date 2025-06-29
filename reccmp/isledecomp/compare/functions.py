@@ -8,8 +8,11 @@ from reccmp.isledecomp.compare.lines import LinesDb
 from reccmp.isledecomp.compare.pinned_sequences import SequenceMatcherWithPins
 from reccmp.isledecomp.compare.asm.fixes import assert_fixup, find_effective_match
 from reccmp.isledecomp.compare.asm.parse import AsmExcerpt, ParseAsm
-from reccmp.isledecomp.compare.asm.replacement import create_name_lookup
-from reccmp.isledecomp.compare.db import EntityDb, ReccmpEntity, ReccmpMatch
+from reccmp.isledecomp.compare.asm.replacement import (
+    AddrLookupProtocol,
+    create_name_lookup,
+)
+from reccmp.isledecomp.compare.db import EntityDb, ReccmpMatch
 from reccmp.isledecomp.compare.diff import (
     CombinedDiffOutput,
     DiffReport,
@@ -35,7 +38,7 @@ def timestamp_string() -> str:
 
 
 def create_valid_addr_lookup(
-    db_getter: Callable[[int, bool], ReccmpEntity | None],
+    db_getter: AddrLookupProtocol,
     is_recomp: bool,
     bin_file: PEImage,
 ) -> Callable[[int], bool]:
@@ -51,7 +54,7 @@ def create_valid_addr_lookup(
             return True
 
         # Check whether the address points to valid data
-        entity = db_getter(addr, False)
+        entity = db_getter(addr, exact=False)
         if entity is None:
             return False
         base_addr = entity.recomp_addr if is_recomp else entity.orig_addr
