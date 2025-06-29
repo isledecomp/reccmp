@@ -221,7 +221,7 @@ def test_impact_of_line_annotation(
 
     assert diffreport.udiff == [
         (
-            "@@ -0x200,9 +0x400,3 @@",
+            "@@ -0x200,19 +0x400,22 @@",
             [
                 {
                     "both": [
@@ -243,11 +243,6 @@ def test_impact_of_line_annotation(
                         ("0x403", "mov word ptr [ebp - 4], cx"),
                     ],
                 },
-            ],
-        ),
-        (
-            "@@ -0x21f,1 +0x407,1 @@",
-            [
                 {
                     "orig": [
                         ("0x21f", "mov eax, dword ptr [ebp - 0x14]"),
@@ -255,12 +250,7 @@ def test_impact_of_line_annotation(
                     "recomp": [
                         ("0x407", "mov eax, dword ptr [ebp - 0xc]"),
                     ],
-                }
-            ],
-        ),
-        (
-            "@@ -0x222,9 +0x40a,18 @@",
-            [
+                },
                 {
                     "both": [
                         ("0x222", "mov ax, word ptr [eax]", "0x40a"),
