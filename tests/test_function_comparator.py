@@ -1,3 +1,4 @@
+from typing import Callable
 from unittest.mock import Mock
 import pytest
 from reccmp.isledecomp.compare.db import EntityDb, ReccmpMatch
@@ -22,7 +23,11 @@ RECOMP_GLOBAL_OFFSET = 0x400
 
 
 def compare_functions(
-    db: EntityDb, orig: bytes, recomp: bytes, report: ReccmpReportProtocol
+    db: EntityDb,
+    orig: bytes,
+    recomp: bytes,
+    report: ReccmpReportProtocol,
+    is_relocated_addr: Callable[[int], bool] | None = None,
 ) -> DiffReport:
     """Executes `FunctionComparator.compare_function` on the provided binary code."""
 
@@ -31,13 +36,13 @@ def compare_functions(
     orig_bin = Mock(spec=[])
     orig_bin.read = Mock(return_value=orig)
     orig_bin.imagebase = 0
-    orig_bin.is_relocated_addr = Mock(return_value=False)
+    orig_bin.is_relocated_addr = is_relocated_addr or Mock(return_value=False)
     orig_bin.is_debug = Mock(return_value=False)
 
     recomp_bin = Mock(spec=[])
     recomp_bin.read = Mock(return_value=recomp)
     recomp_bin.imagebase = 0
-    recomp_bin.is_relocated_addr = Mock(return_value=False)
+    recomp_bin.is_relocated_addr = is_relocated_addr or Mock(return_value=False)
     recomp_bin.is_debug = Mock(return_value=False)
 
     comp = FunctionComparator(db, orig_bin, recomp_bin, report, "unittest")
@@ -383,3 +388,49 @@ def test_displacement_with_match(db: EntityDb, report: ReccmpReportProtocol):
     diffreport = compare_functions(db, orig, recm, report)
 
     assert diffreport.ratio == 1.0
+
+
+def test_matching_jump_table(db: EntityDb, report: ReccmpReportProtocol):
+    """Jump tables of functions matching relative to the different offsets of the functions"""
+    orig = b"\xff\x24\x85\x07\x02\x00\x00\x33\x04\x00\x00\x43\x04\x00\x00"
+    recm = b"\xff\x24\x85\x07\x04\x00\x00\x33\x06\x00\x00\x43\x06\x00\x00"
+
+    is_relocated_addr = Mock(return_value=True)
+    # is_relocated_addr = None
+    diffreport = compare_functions(db, orig, recm, report, is_relocated_addr)
+
+    assert diffreport.ratio == 1.0
+    assert diffreport.is_effective_match is False
+
+
+def test_jump_table_wrong_order(db: EntityDb, report: ReccmpReportProtocol):
+    """
+    Jump tables with the correct entries in the wrong order.
+    In particular, this must not become an accidental effective match.
+    """
+    orig = b"\xff\x24\x85\x07\x02\x00\x00\x33\x04\x00\x00\x43\x04\x00\x00"
+    recm = b"\xff\x24\x85\x07\x04\x00\x00\x43\x06\x00\x00\x33\x06\x00\x00"
+
+    # Required to get an `<OFFSET1> into the jump instruction`
+    is_relocated_addr = Mock(return_value=True)
+    diffreport = compare_functions(db, orig, recm, report, is_relocated_addr)
+
+    assert diffreport.ratio < 1.0
+    assert diffreport.is_effective_match is False
+
+    assert diffreport.udiff == [
+        (
+            "@@ -,4 +,4 @@",
+            [
+                {
+                    "both": [
+                        ("0x200", "jmp dword ptr [eax*4 + <OFFSET1>]", "0x400"),
+                        ("", "Jump table:", ""),
+                    ],
+                },
+                {"orig": [], "recomp": [("0x407", "start + 0x243")]},
+                {"both": [("0x207", "start + 0x233", "0x40b")]},
+                {"orig": [("0x20b", "start + 0x243")], "recomp": []},
+            ],
+        )
+    ]
