@@ -222,6 +222,7 @@ def create_project(
         project.targets[target_id] = RecCmpTarget(
             target_id=target_id,
             filename=target_filename,
+            sha256=hash_sha256,
             source_root=project_directory,
             ghidra_config=GhidraConfig(),
         )

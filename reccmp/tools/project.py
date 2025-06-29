@@ -7,10 +7,11 @@ from pathlib import Path
 import reccmp
 from reccmp.project.error import RecCmpProjectException
 from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
+from reccmp.project.common import RECCMP_PROJECT_CONFIG
 from reccmp.project.create import create_project
 from reccmp.project.detect import (
-    RecCmpProject,
     detect_project,
+    find_filename_recursively,
     DetectWhat,
 )
 
@@ -113,14 +114,16 @@ def main():
             logger.error("Project creation failed: %s", e.args[0])
 
     elif args.subcommand == ProjectSubcommand.DETECT:
-        project = RecCmpProject.from_directory(Path.cwd())
-        if project is None:
+        project_path = find_filename_recursively(
+            directory=Path.cwd(), filename=RECCMP_PROJECT_CONFIG
+        )
+        if project_path is None:
             parser.error(
                 f"Cannot find reccmp project. Run '{parser.prog} create' first."
             )
         try:
             detect_project(
-                project_directory=project.project_config_path.parent,
+                project_directory=project_path,
                 search_path=args.detect_search_path,
                 detect_what=args.detect_what,
                 build_directory=Path.cwd(),
