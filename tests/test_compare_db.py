@@ -104,21 +104,22 @@ def test_get_by_exact(db):
     assert db.get_by_recomp(50, exact=False) is None
 
 
-def test_get_by_exact_keyword(db):
+def test_get_by_exact_keyword(db: EntityDb):
     """For get_by_orig and get_by_recomp, the 'exact' keyword must be used to set its value."""
 
-    # Fails without 'exact' keyword
+    # Should fail if called without the 'exact' keyword.
+    # Disable mypy checking for these calls because we've intentionally created a typing error.
     with pytest.raises(TypeError):
-        db.get_by_orig(100, False)
+        db.get_by_orig(100, False)  # type: ignore
 
     with pytest.raises(TypeError):
-        db.get_by_orig(100, True)
+        db.get_by_orig(100, True)  # type: ignore
 
     with pytest.raises(TypeError):
-        db.get_by_recomp(100, True)
+        db.get_by_recomp(100, True)  # type: ignore
 
     with pytest.raises(TypeError):
-        db.get_by_recomp(100, False)
+        db.get_by_recomp(100, False)  # type: ignore
 
     # Succeeds with 'exact' keyword or if it the parameter is omitted.
     db.get_by_orig(100)
