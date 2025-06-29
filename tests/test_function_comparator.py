@@ -1,3 +1,4 @@
+from pathlib import PureWindowsPath
 from typing import Callable
 from unittest.mock import Mock
 import pytest
@@ -9,6 +10,11 @@ from reccmp.isledecomp.compare.lines import LinesDb
 from reccmp.isledecomp.types import EntityType
 
 
+MOCK_PATH = PureWindowsPath("some/path/test.cpp")
+ORIG_GLOBAL_OFFSET = 0x200
+RECOMP_GLOBAL_OFFSET = 0x400
+
+
 @pytest.fixture(name="db")
 def fixture_db() -> EntityDb:
     return EntityDb()
@@ -16,16 +22,12 @@ def fixture_db() -> EntityDb:
 
 @pytest.fixture(name="lines_db")
 def fixture_lines_db() -> LinesDb:
-    return LinesDb([])
+    return LinesDb([MOCK_PATH])
 
 
 @pytest.fixture(name="report")
 def fixture_report_mock() -> ReccmpReportProtocol:
     return Mock(spec=ReccmpReportProtocol)
-
-
-ORIG_GLOBAL_OFFSET = 0x200
-RECOMP_GLOBAL_OFFSET = 0x400
 
 
 def compare_functions(
@@ -214,6 +216,7 @@ def test_impact_of_line_annotation(
     """When text based diff misjudges which parts correspond, a `// LINE` annotation may help. This test uses the same binary, but with such an annotation."""
 
     add_line_annotation(db, 31, 7)
+    lines_db.add_line(MOCK_PATH, 123, 0x407)
 
     diffreport = compare_functions(
         db, lines_db, LINE_MISMATCH_EXAMPLE_ORIG, LINE_MISMATCH_EXAMPLE_RECOMP, report
@@ -248,7 +251,10 @@ def test_impact_of_line_annotation(
                         ("0x21f", "mov eax, dword ptr [ebp - 0x14]"),
                     ],
                     "recomp": [
-                        ("0x407", "mov eax, dword ptr [ebp - 0xc]"),
+                        (
+                            "0x407",
+                            "mov eax, dword ptr [ebp - 0xc] \t(test.cpp:123, pinned)",
+                        ),
                     ],
                 },
                 {
@@ -444,6 +450,35 @@ def test_jump_table_wrong_order(
                 {"orig": [], "recomp": [("0x407", "start + 0x243")]},
                 {"both": [("0x207", "start + 0x233", "0x40b")]},
                 {"orig": [("0x20b", "start + 0x243")], "recomp": []},
+            ],
+        )
+    ]
+
+
+def test_source_reference_without_line_annotation(
+    db: EntityDb, lines_db: LinesDb, report: ReccmpReportProtocol
+):
+    orig = b"\x89\x3c\x85\xa8\x15\xc8\x00"
+    recm = b"\x89\x3c\x85\xa8\x15\xd0\x00"
+    lines_db.add_line(MOCK_PATH, 42, 0x400)
+
+    diffreport = compare_functions(db, lines_db, orig, recm, report)
+
+    assert diffreport.ratio < 1.0
+
+    assert diffreport.udiff == [
+        (
+            "@@ -0x200,1 +0x400,1 @@",
+            [
+                {
+                    "orig": [("0x200", "mov dword ptr [eax*4 + 0xc815a8], edi")],
+                    "recomp": [
+                        (
+                            "0x400",
+                            "mov dword ptr [eax*4 + 0xd015a8], edi \t(test.cpp:42)",
+                        )
+                    ],
+                }
             ],
         )
     ]
