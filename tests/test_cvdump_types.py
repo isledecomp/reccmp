@@ -661,6 +661,7 @@ def test_mfunction(parser: CvdumpTypesParser):
 def test_union_forward_ref(parser: CvdumpTypesParser):
     union = parser.keys["0x2339"]
     assert union["is_forward_ref"] is True
+    assert 'field_list_type' not in union
     assert union["udt"] == "0x2e85"
 
 
@@ -705,6 +706,7 @@ def test_unnamed_union(empty_parser: CvdumpTypesParser):
 
     # Make sure we can parse the members line
     union = empty_parser.keys["0x369e"]
+    assert union["name"] == "__unnamed"
     assert union["size"] == 4
     assert union["field_list_type"] == "0x369d"
 
