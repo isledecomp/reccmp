@@ -195,6 +195,7 @@ class CvdumpSymbolsParser:
             else:
                 self.current_function = None
         elif symbol_type == "S_LDATA32":
+            assert second_part is not None
             if (match := self._ldata32_regex.match(second_part)) is not None:
                 new_var = LdataEntry(
                     section=int(match.group("section"), 16),
@@ -202,6 +203,7 @@ class CvdumpSymbolsParser:
                     type=match.group("type"),
                     name=match.group("name"),
                 )
+                assert self.current_function is not None
                 self.current_function.static_variables.append(new_var)
 
         elif symbol_type in self._unhandled_symbols:
