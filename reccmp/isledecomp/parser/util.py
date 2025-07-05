@@ -105,19 +105,13 @@ def get_class_name(line: str) -> str | None:
     return None
 
 
-global_regex = re.compile(r"(?P<name>(?:\w+::)*g_\w+)")
-less_strict_global_regex = re.compile(r"(?P<name>(?:\w+::)*\w+)(?:\)\(|\[.*|\s*=.*|;)")
+global_regex = re.compile(r"(?P<name>(?:\w+::)*\w+)(?:\)\(|\[.*|\s*=.*|;)")
 
 
 def get_variable_name(line: str) -> str | None:
-    """Grab the name of the variable annotated with the GLOBAL marker.
-    Correct syntax would have the variable start with the prefix "g_"
-    but we will try to match regardless."""
+    """Grab the name of the variable annotated with the GLOBAL marker."""
 
     if (match := global_regex.search(line)) is not None:
-        return match.group("name")
-
-    if (match := less_strict_global_regex.search(line)) is not None:
         return match.group("name")
 
     return None
