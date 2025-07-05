@@ -1,14 +1,7 @@
 from difflib import SequenceMatcher
-import functools
 from itertools import pairwise
 import itertools
-from typing import Iterable, NamedTuple, Sequence
-
-
-class _IntermediateSequenceMatch(NamedTuple):
-    opcodes: list[tuple[str, int, int, int, int]] = []
-    total_lines: int = 0
-    weighted_match_ratio: float = 0.0
+from typing import Iterable, Sequence
 
 
 class SequenceMatcherWithPins:
@@ -25,13 +18,22 @@ class SequenceMatcherWithPins:
         b: Sequence[str],
         pinned_lines: Iterable[tuple[int, int]],
     ):
-        def accumulator(
-            acc: _IntermediateSequenceMatch,
-            current: tuple[tuple[int, int], tuple[int, int]],
-        ):
-            """Matches the block specified by `current` and updates the intermediate information in `acc`."""
+        valid_pinned_lines = (
+            (a_index, b_index)
+            for a_index, b_index in pinned_lines
+            if a_index in range(len(a)) and b_index in range(len(b))
+        )
 
-            (a_start, b_start), (a_end, b_end) = current
+        # Add the first and last index to the pins so we can iterate over all sections with `pairwise()`
+        pins_with_first_and_last = itertools.chain(
+            [(0, 0)], valid_pinned_lines, [(len(a), len(b))]
+        )
+
+        all_opcodes = []
+        total_lines = 0
+        weighted_match_ratio = 0.0
+
+        for (a_start, b_start), (a_end, b_end) in pairwise(pins_with_first_and_last):
             if a_start > a_end or b_start > b_end:
                 # If this were a library, we could log a warning and try to recover.
                 # However, in the present case, this is just a failsafe
@@ -47,44 +49,16 @@ class SequenceMatcherWithPins:
             diff = SequenceMatcher(None, a_block, b_block, autojunk=False)
 
             # Offset the opcodes so they apply to `a` and `b` instead of `a_block` and `b_block`
-            updated_opcodes = acc.opcodes + [
+            all_opcodes += [
                 self._offset_opcode(opcode, a_start, b_start)
                 for opcode in diff.get_opcodes()
             ]
 
-            updated_total_lines = acc.total_lines + num_lines_in_block
-            updated_weighted_match_ratio = (
-                acc.weighted_match_ratio + num_lines_in_block * diff.ratio()
-            )
+            total_lines += num_lines_in_block
+            weighted_match_ratio += num_lines_in_block * diff.ratio()
 
-            return _IntermediateSequenceMatch(
-                opcodes=updated_opcodes,
-                total_lines=updated_total_lines,
-                weighted_match_ratio=updated_weighted_match_ratio,
-            )
-
-        valid_pinned_lines = (
-            (a_index, b_index)
-            for a_index, b_index in pinned_lines
-            if a_index in range(len(a)) and b_index in range(len(b))
-        )
-
-        # Add the first and last index to the pins so we can iterate over all sections with `pairwise()`
-        pins_with_first_and_last = itertools.chain(
-            [(0, 0)], valid_pinned_lines, [(len(a), len(b))]
-        )
-
-        result = functools.reduce(
-            accumulator,
-            pairwise(pins_with_first_and_last),
-            _IntermediateSequenceMatch(),
-        )
-        self._ratio = (
-            result.weighted_match_ratio / result.total_lines
-            if result.total_lines > 0
-            else 1.0
-        )
-        self._opcodes = result.opcodes
+        self._ratio = weighted_match_ratio / total_lines if total_lines > 0 else 1.0
+        self._opcodes = all_opcodes
 
     @staticmethod
     def _offset_opcode(
