@@ -162,6 +162,7 @@ variable_name_cases = [
     ("char hello[50];", "hello"),
     ("char hello[50] = {1234,", "hello"),
     ("int hello = 500;", "hello"),
+    ("char* gBoring_material_names[2];", "gBoring_material_names"),
 ]
 
 
