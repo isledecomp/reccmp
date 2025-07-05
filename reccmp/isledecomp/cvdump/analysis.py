@@ -154,6 +154,25 @@ class CvdumpAnalysis:
                 node_dict[key].node_type = EntityType.FUNCTION
                 node_dict[key].symbol_entry = sym
 
+                # Iterate through static variables defined in this function
+                # generate decorated name "<variable name>___<func name>"
+                for v in sym.static_variables:
+                    key = NodeKey(v.section, v.offset)
+                    if key not in node_dict:
+                        node_dict[key] = CvdumpNode(*key)
+                    node_dict[key].node_type = EntityType.DATA
+                    # TODO this format is required for `match_msvc::match_static_variables` to find the variable
+                    # Look at either documenting this dependency or reworking the query
+                    node_dict[key].decorated_name = f"{v.name}___{sym.name}"
+                    node_dict[key].friendly_name = v.name
+                    try:
+                        v_info = parser.types.get(v.type)
+                        node_dict[key].confirmed_size = v_info.size
+                        node_dict[key].data_type = v_info
+                    except (CvdumpKeyError, CvdumpIntegrityError):
+                        # No big deal if we don't have complete type information.
+                        pass
+
         self.nodes: list[CvdumpNode] = [
             v for _, v in dict(sorted(node_dict.items())).items()
         ]
