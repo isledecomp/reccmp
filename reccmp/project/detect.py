@@ -163,46 +163,50 @@ class RecCmpProject:
     def get(self, target_id: str) -> RecCmpBuiltTarget:
         try:
             target = self.targets[target_id]
-            assert target.source_root is not None
-            assert target.original_path is not None
-            assert target.recompiled_path is not None
-            assert target.recompiled_pdb is not None
-
-            if target.ghidra_config is not None:
-                ghidra = target.ghidra_config
-            else:
-                ghidra = GhidraConfig()
-
-            return RecCmpBuiltTarget(
-                target_id=target.target_id,
-                filename=target.filename,
-                sha256=target.sha256,
-                original_path=target.original_path,
-                recompiled_path=target.recompiled_path,
-                recompiled_pdb=target.recompiled_pdb,
-                source_root=target.source_root,
-                ghidra_config=ghidra,
-            )
-
-        except AssertionError as ex:
-            missing = []
-            for attr in (
-                "source_root",
-                "original_path",
-                "recompiled_path",
-                "recompiled_pdb",
-            ):
-                if getattr(target, attr) is None:
-                    missing.append(attr)
-
-            raise IncompleteReccmpTargetError(
-                f"Target {target_id} is missing data: {','.join(missing)}"
-            ) from ex
-
         except KeyError as ex:
             raise UnknownRecCmpTargetException(
                 f"Invalid target: must be one of {','.join(self.targets.keys())}"
             ) from ex
+
+        # Make sure we have the minimum set of attributes.
+        # The error message should display the full list of missing attributes
+        # so we check it here instead of waiting for a single assert to fail.
+        required_attrs = (
+            "source_root",
+            "original_path",
+            "recompiled_path",
+            "recompiled_pdb",
+        )
+
+        missing_attrs = [
+            attr for attr in required_attrs if getattr(target, attr) is None
+        ]
+        if missing_attrs:
+            raise IncompleteReccmpTargetError(
+                f"Target {target_id} is missing data: {','.join(missing_attrs)}"
+            )
+
+        # This list should match the one above. These asserts are for mypy.
+        assert target.source_root is not None
+        assert target.original_path is not None
+        assert target.recompiled_path is not None
+        assert target.recompiled_pdb is not None
+
+        if target.ghidra_config is not None:
+            ghidra = target.ghidra_config
+        else:
+            ghidra = GhidraConfig()
+
+        return RecCmpBuiltTarget(
+            target_id=target.target_id,
+            filename=target.filename,
+            sha256=target.sha256,
+            original_path=target.original_path,
+            recompiled_path=target.recompiled_path,
+            recompiled_pdb=target.recompiled_pdb,
+            source_root=target.source_root,
+            ghidra_config=ghidra,
+        )
 
     def find_build_config(self, search_path: Path) -> BuildFile | None:
         build_directory = find_filename_recursively(
