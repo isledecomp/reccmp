@@ -29,7 +29,8 @@ class LinesDb:
         # Local filename to list of (line_no, address) pairs
         # This has to be a list instead of a dict because line numbers may be used twice.
         # e.g. for the start and end of a loop.
-        self._map: dict[PurePath, list[tuple[int, int]]] = {}
+        self._path_to_lines_and_addresses: dict[PurePath, list[tuple[int, int]]] = {}
+        self._address_to_path_and_line: dict[int, tuple[PurePath, int]] = {}
 
         # Addresses for the first line for a function
         self._function_starts: set[int] = set()
@@ -41,7 +42,9 @@ class LinesDb:
     def add_lines(
         self, foreign_path: PureWindowsPath, lines: Sequence[tuple[int, int]]
     ):
-        """Connect the remote path to a line number and address pair."""
+        """
+        Connect the remote path to a line number and address pair.
+        """
         filename = foreign_path.name.lower()
 
         candidates = self._filenames.get(filename)
@@ -53,7 +56,9 @@ class LinesDb:
         if sourcepath is None:
             return
 
-        self._map.setdefault(sourcepath, []).extend(list(lines))
+        self._path_to_lines_and_addresses.setdefault(sourcepath, []).extend(list(lines))
+        for line_number, address in lines:
+            self._address_to_path_and_line[address] = (sourcepath, line_number)
 
     def mark_function_starts(self, addrs: Sequence[int]):
         self._function_starts = self._function_starts.union(set(addrs))
@@ -72,7 +77,7 @@ class LinesDb:
         if not isinstance(local_path, PurePath):
             local_path = PurePath(local_path)
 
-        for line_no, addr in self._map.get(local_path, []):
+        for line_no, addr in self._path_to_lines_and_addresses.get(local_path, []):
             if (line_start <= line_no <= line_end) and (
                 not start_only or addr in self._function_starts
             ):
@@ -112,3 +117,6 @@ class LinesDb:
             line_start,
         )
         return None
+
+    def find_line_of_recomp_address(self, address: int) -> tuple[PurePath, int] | None:
+        return self._address_to_path_and_line.get(address, None)
