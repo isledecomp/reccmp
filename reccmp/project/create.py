@@ -170,9 +170,9 @@ def create_project(
     scm: bool = False,
     cmake: bool = False,
 ) -> RecCmpProject:
-    """Generates project.yml and user.yml files in the given project directory.
+    """Generates reccmp-project.yml and reccmp-user.yml files in the given project directory.
     Requires a list of paths to original binaries that will be the focus of the decomp project.
-    If `scm` is enabled, update an existing .gitignore to skip user.yml and build.yml files.
+    If `scm` is enabled, update an existing .gitignore to skip reccmp-user.yml and reccmp-build.yml files.
     If `cmake` is enabled, create CMakeLists.txt and generate sample source files to help get started.
     """
 
@@ -243,7 +243,7 @@ def create_project(
     user_config_data.write_file(user_config_path)
 
     if scm:
-        # Update existing .gitignore to skip build.yml and user.yml.
+        # Update existing .gitignore to skip reccmp-build.yml and reccmp-user.yml.
         gitignore_path = project_directory / ".gitignore"
         if not gitignore_path.exists():
             gitignore_path.touch()
@@ -263,7 +263,7 @@ def create_project(
         project_cmake_dir = project_directory / "cmake"
         project_cmake_dir.mkdir(exist_ok=True)
 
-        # Copy template CMake script that generates build.yml
+        # Copy template CMake script that generates reccmp-build.yml
         logger.debug("Copying %s...", "cmake/reccmp.cmake")
         shutil.copy(
             get_asset_file("cmake/reccmp.cmake"),

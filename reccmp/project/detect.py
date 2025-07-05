@@ -87,9 +87,14 @@ class GhidraConfig:
 @dataclass
 class RecCmpTarget:
     # pylint: disable=too-many-instance-attributes
-    """Partial information for a target (binary file) in the decomp project
-    This contains only the static information (same for all users).
-    Saved to project.yml. (See ProjectFileTarget)"""
+    """Partial information for a target, which includes:
+    - Path to the binary file being decompiled/analyzed.
+    - Metadata to help locate that binary file on each user's system.
+    - Path the recompiled binary for comparison.
+    - Paths to the source code, pdb, and other data sources.
+    - Analysis and data export options.
+    The target is created by combining information from the three config files:
+    reccmp-project.yml, reccmp-user.yml, and reccmp-build.yml."""
 
     # Unique ID for grouping the metadata.
     # If none is given we will use the base filename minus the file extension.
@@ -97,7 +102,7 @@ class RecCmpTarget:
 
     # Base filename (not a path) of the binary for this target.
     # "reccmp-project detect" uses this to search for the original and recompiled binaries
-    # when creating the user.yml file.
+    # when creating the reccmp-user.yml file.
     filename: str
 
     # SHA-256 checksum of the original binary.
@@ -116,7 +121,9 @@ class RecCmpTarget:
 @dataclass
 class RecCmpBuiltTarget:
     # pylint: disable=too-many-instance-attributes
-    """Full information for a target. Used to load component files for reccmp analysis."""
+    """Full information for a target. This has the same attributes as RecCmpTarget
+    but with more strict datatypes. A project will only create this record if we can
+    guarantee that the target has the minimum viable set of attributes."""
 
     # Unique ID for grouping the metadata.
     # If none is given we will use the base filename minus the file extension.
@@ -124,7 +131,7 @@ class RecCmpBuiltTarget:
 
     # Base filename (not a path) of the binary for this target.
     # "reccmp-project detect" uses this to search for the original and recompiled binaries
-    # when creating the user.yml file.
+    # when creating the reccmp-user.yml file.
     filename: str
 
     # SHA-256 checksum of the original binary.
@@ -245,7 +252,7 @@ class RecCmpProject:
     def from_directory(cls, directory: Path) -> "RecCmpProject":
         project = cls()
 
-        # Searching for build.yml
+        # Searching for reccmp-build.yml
         build_data = project.find_build_config(directory)
 
         if build_data is not None:
@@ -279,7 +286,7 @@ class RecCmpProject:
             build_keys=set(build_data.targets) if build_data else set(),
         )
 
-        # Apply project.yml
+        # Apply reccmp-project.yml
         assert project_data is not None
         for target_id, target in project_data.targets.items():
             if target.ghidra is not None:
@@ -300,7 +307,7 @@ class RecCmpProject:
                 ghidra_config=ghidra,
             )
 
-        # Apply user.yml
+        # Apply reccmp-user.yml
         if user_data is not None:
             for target_id, user_target in user_data.targets.items():
                 if target_id not in project.targets:
@@ -308,7 +315,7 @@ class RecCmpProject:
 
                 project.targets[target_id].original_path = user_target.path
 
-        # Apply build.yml
+        # Apply reccmp-build.yml
         if build_data is not None:
             assert project.build_config_path is not None
             build_directory = project.build_config_path.parent
