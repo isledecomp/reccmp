@@ -260,7 +260,9 @@ class RecCmpProject:
             project_data = project.find_project_config(directory)
 
         if project_data is None:
-            raise InvalidRecCmpProjectException(f"No project file in path: {directory}")
+            raise RecCmpProjectNotFoundException(
+                f"No project file in path: {directory}"
+            )
 
         # We must have found the project if we are here.
         assert project.project_config_path is not None

@@ -14,6 +14,7 @@ from reccmp.project.create import (
 from reccmp.project.detect import detect_project, DetectWhat, RecCmpProject
 from reccmp.project.error import (
     RecCmpProjectException,
+    RecCmpProjectNotFoundException,
     InvalidRecCmpProjectException,
     IncompleteReccmpTargetError,
     UnknownRecCmpTargetException,
@@ -28,7 +29,7 @@ def test_project_loading_no_files(tmp_path_factory):
     """Should fail to load a project if there are no files to load."""
     project_root = tmp_path_factory.mktemp("project")
 
-    with pytest.raises(InvalidRecCmpProjectException):
+    with pytest.raises(RecCmpProjectNotFoundException):
         RecCmpProject.from_directory(project_root)
 
 
