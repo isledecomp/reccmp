@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Iterable, Sequence
 from typing_extensions import NotRequired, TypedDict
 
+from reccmp.isledecomp.compare.pinned_sequences import DiffOpcode
 from reccmp.isledecomp.types import EntityType
 
 CombinedDiffInput = list[tuple[str, str]]
@@ -20,7 +21,7 @@ CombinedDiffOutput = list[tuple[str, list[MatchingOrMismatchingBlock]]]
 
 
 def combined_diff(
-    grouped_opcodes: Iterable[Sequence[tuple[str, int, int, int, int]]],
+    grouped_opcodes: Iterable[Sequence[DiffOpcode]],
     orig_combined: CombinedDiffInput,
     recomp_combined: CombinedDiffInput,
 ) -> CombinedDiffOutput:

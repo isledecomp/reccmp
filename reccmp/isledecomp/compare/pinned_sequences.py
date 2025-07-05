@@ -4,6 +4,9 @@ import itertools
 from typing import Iterable, Sequence
 
 
+DiffOpcode = tuple[str, int, int, int, int]
+
+
 class SequenceMatcherWithPins:
     """
     Finds the differences between two string sequences, where some associations (pins) between
@@ -62,8 +65,8 @@ class SequenceMatcherWithPins:
 
     @staticmethod
     def _offset_opcode(
-        group: tuple[str, int, int, int, int], offset_orig: int, offset_recomp: int
-    ) -> tuple[str, int, int, int, int]:
+        group: DiffOpcode, offset_orig: int, offset_recomp: int
+    ) -> DiffOpcode:
         op, orig_start, orig_end, recomp_start, recomp_end = group
         return (
             op,
@@ -73,15 +76,13 @@ class SequenceMatcherWithPins:
             recomp_end + offset_recomp,
         )
 
-    def get_opcodes(self) -> list[tuple[str, int, int, int, int]]:
+    def get_opcodes(self) -> list[DiffOpcode]:
         return self._opcodes
 
     def ratio(self):
         return self._ratio
 
-    def get_grouped_opcodes(
-        self, n=3
-    ) -> Iterable[list[tuple[str, int, int, int, int]]]:
+    def get_grouped_opcodes(self, n=3) -> Iterable[list[DiffOpcode]]:
         """
         Taken from the Python 3.12 standard library, `difflib.py`, published under PSF license, GPL compatible.
 
