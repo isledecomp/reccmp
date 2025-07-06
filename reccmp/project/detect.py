@@ -85,7 +85,7 @@ class GhidraConfig:
 
 
 @dataclass
-class RecCmpTarget:
+class RecCmpPartialTarget:
     # pylint: disable=too-many-instance-attributes
     """Partial information for a target, which includes:
     - Path to the binary file being decompiled/analyzed.
@@ -119,9 +119,9 @@ class RecCmpTarget:
 
 
 @dataclass
-class RecCmpBuiltTarget:
+class RecCmpTarget:
     # pylint: disable=too-many-instance-attributes
-    """Full information for a target. This has the same attributes as RecCmpTarget
+    """Full information for a target. This has the same attributes as RecCmpPartialTarget
     but with more strict datatypes. A project will only create this record if we can
     guarantee that the target has the minimum viable set of attributes."""
 
@@ -154,7 +154,7 @@ class RecCmpProject:
     project_config_path: Path | None
     build_config_path: Path | None
     user_config_path: Path | None
-    targets: dict[str, RecCmpTarget]
+    targets: dict[str, RecCmpPartialTarget]
 
     def __init__(
         self,
@@ -165,9 +165,9 @@ class RecCmpProject:
         self.project_config_path = project_config_path
         self.user_config_path = user_config_path
         self.build_config_path = build_config_path
-        self.targets: dict[str, RecCmpTarget] = {}
+        self.targets = {}
 
-    def get(self, target_id: str) -> RecCmpBuiltTarget:
+    def get(self, target_id: str) -> RecCmpTarget:
         try:
             target = self.targets[target_id]
         except KeyError as ex:
@@ -204,7 +204,7 @@ class RecCmpProject:
         else:
             ghidra = GhidraConfig()
 
-        return RecCmpBuiltTarget(
+        return RecCmpTarget(
             target_id=target.target_id,
             filename=target.filename,
             sha256=target.sha256,
@@ -299,7 +299,7 @@ class RecCmpProject:
 
             source_root = project_directory / target.source_root
 
-            project.targets[target_id] = RecCmpTarget(
+            project.targets[target_id] = RecCmpPartialTarget(
                 target_id=target_id,
                 filename=target.filename,
                 sha256=target.hash.sha256,
@@ -333,13 +333,13 @@ class RecCmpProject:
         return project
 
 
-class RecCmpBuiltPathsAction(argparse.Action):
+class RecCmpPathsAction(argparse.Action):
     def __call__(
         self, parser, namespace, values: Sequence[str] | None, option_string=None
     ):
         assert isinstance(values, Sequence)
         original, recompiled, pdb, source_root = list(Path(o) for o in values)
-        target = RecCmpBuiltTarget(
+        target = RecCmpTarget(
             target_id=original.stem.upper(),
             filename=original.name,
             sha256=get_path_sha256(original),
@@ -352,7 +352,7 @@ class RecCmpBuiltPathsAction(argparse.Action):
         setattr(namespace, self.dest, target)
 
 
-def argparse_add_built_project_target_args(parser: argparse.ArgumentParser):
+def argparse_add_project_target_args(parser: argparse.ArgumentParser):
     target_group = parser.add_mutually_exclusive_group(required=True)
     target_group.add_argument(
         "--target", metavar="<target-id>", help="ID of the target"
@@ -366,15 +366,15 @@ def argparse_add_built_project_target_args(parser: argparse.ArgumentParser):
             "<source-root>",
         ),
         nargs=4,
-        action=RecCmpBuiltPathsAction,
+        action=RecCmpPathsAction,
         dest="paths_target",
         help="The original binary, the recompiled binary, the PDB of the recompiled binary, and the source root",
     )
 
 
-def argparse_parse_built_project_target(
+def argparse_parse_project_target(
     args: argparse.Namespace,
-) -> RecCmpBuiltTarget:
+) -> RecCmpTarget:
     if args.target:
         project = RecCmpProject.from_directory(Path.cwd())
         if not project:

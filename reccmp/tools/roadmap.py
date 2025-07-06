@@ -21,8 +21,8 @@ from reccmp.isledecomp.compare import Compare as IsleCompare
 from reccmp.isledecomp.formats.exceptions import InvalidVirtualAddressError
 from reccmp.isledecomp.types import EntityType
 from reccmp.project.detect import (
-    argparse_add_built_project_target_args,
-    argparse_parse_built_project_target,
+    argparse_add_project_target_args,
+    argparse_parse_project_target,
 )
 from reccmp.project.error import RecCmpProjectException
 from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
@@ -357,7 +357,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {reccmp.VERSION}"
     )
-    argparse_add_built_project_target_args(parser)
+    argparse_add_project_target_args(parser)
 
     parser.add_argument("--csv", metavar="<file>", help="If set, export to CSV")
     parser.add_argument(
@@ -382,7 +382,7 @@ def main() -> int:
     args = parse_args()
 
     try:
-        target = argparse_parse_built_project_target(args=args)
+        target = argparse_parse_project_target(args=args)
     except RecCmpProjectException as e:
         logger.error(e.args[0])
         return 1

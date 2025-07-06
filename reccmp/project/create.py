@@ -13,7 +13,7 @@ from .config import (
     UserFileTarget,
 )
 from .common import RECCMP_PROJECT_CONFIG, RECCMP_USER_CONFIG, RECCMP_BUILD_CONFIG
-from .detect import RecCmpProject, RecCmpTarget, GhidraConfig
+from .detect import RecCmpProject, RecCmpPartialTarget, GhidraConfig
 from .error import RecCmpProjectException
 from .util import get_path_sha256, unique_targets
 
@@ -219,7 +219,7 @@ def create_project(
             hash=Hash(sha256=hash_sha256),
         )
 
-        project.targets[target_id] = RecCmpTarget(
+        project.targets[target_id] = RecCmpPartialTarget(
             target_id=target_id,
             filename=target_filename,
             sha256=hash_sha256,

@@ -19,9 +19,9 @@ from reccmp.isledecomp.cvdump.types import (
 from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
 from reccmp.project.detect import (
     RecCmpProjectException,
-    RecCmpBuiltTarget,
-    argparse_add_built_project_target_args,
-    argparse_parse_built_project_target,
+    RecCmpTarget,
+    argparse_add_project_target_args,
+    argparse_parse_project_target,
 )
 
 
@@ -39,7 +39,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {reccmp.VERSION}"
     )
-    argparse_add_built_project_target_args(parser)
+    argparse_add_project_target_args(parser)
     parser.add_argument(
         "-v",
         "--verbose",
@@ -141,7 +141,7 @@ def create_comparison_item(
     )
 
 
-def do_the_comparison(target: RecCmpBuiltTarget) -> Iterable[ComparisonItem]:
+def do_the_comparison(target: RecCmpTarget) -> Iterable[ComparisonItem]:
     # pylint: disable=too-many-locals
     """Run through each variable in our compare DB, then do the comparison
     according to the variable's type. Emit the result."""
@@ -311,7 +311,7 @@ def main():
     args = parse_args()
 
     try:
-        target = argparse_parse_built_project_target(args=args)
+        target = argparse_parse_project_target(args=args)
     except RecCmpProjectException as e:
         logger.error(e.args[0])
         return 1

@@ -254,7 +254,7 @@ def log_and_track_failure(
         )
 
 
-def find_build_target() -> "RecCmpBuiltTarget":
+def find_target() -> "RecCmpTarget":
     """
     Known issue: In order to use this script, `reccmp-build.yml` must be located in the same directory as `reccmp-project.yml`.
     """
@@ -308,7 +308,7 @@ def find_build_target() -> "RecCmpBuiltTarget":
 
 
 def main():
-    target = find_build_target()
+    target = find_target()
 
     logger.info("Importing file: %s", target.original_path)
 
@@ -346,7 +346,7 @@ try:
     # Packages are imported down here because reccmp's dependencies are only available after the venv was added to the pythonpath
     reload_module("reccmp.project.detect")
     from reccmp.project.common import RECCMP_BUILD_CONFIG, RECCMP_PROJECT_CONFIG
-    from reccmp.project.detect import RecCmpProject, RecCmpBuiltTarget
+    from reccmp.project.detect import RecCmpProject, RecCmpTarget
     from reccmp.project.error import RecCmpProjectNotFoundException
 
     reload_module("reccmp.isledecomp.compare")
