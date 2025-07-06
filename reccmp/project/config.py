@@ -46,7 +46,7 @@ class Hash:
 
 
 class ProjectFileTarget(BaseModel):
-    """Target schema for project.yml"""
+    """Target schema for reccmp-project.yml"""
 
     filename: str
     source_root: Path = Field(
@@ -57,34 +57,34 @@ class ProjectFileTarget(BaseModel):
 
 
 class ProjectFile(YmlFileModel):
-    """File schema for project.yml"""
+    """File schema for reccmp-project.yml"""
 
     targets: dict[str, ProjectFileTarget]
 
 
 @dataclass
 class UserFileTarget:
-    """Target schema for user.yml"""
+    """Target schema for reccmp-user.yml"""
 
     path: Path
 
 
 class UserFile(YmlFileModel):
-    """File schema for user.yml"""
+    """File schema for reccmp-user.yml"""
 
     targets: dict[str, UserFileTarget]
 
 
 @dataclass
 class BuildFileTarget:
-    """Target schema for build.yml"""
+    """Target schema for reccmp-build.yml"""
 
     path: Path
     pdb: Path
 
 
 class BuildFile(YmlFileModel):
-    """File schema for build.yml"""
+    """File schema for reccmp-build.yml"""
 
     project: Path
     targets: dict[str, BuildFileTarget]

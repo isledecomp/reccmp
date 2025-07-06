@@ -16,3 +16,7 @@ class InvalidRecCmpArgumentException(RecCmpProjectException):
 
 class UnknownRecCmpTargetException(RecCmpProjectException):
     pass
+
+
+class IncompleteReccmpTargetError(RecCmpProjectException):
+    pass

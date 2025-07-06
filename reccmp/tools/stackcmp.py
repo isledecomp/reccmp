@@ -14,8 +14,8 @@ from reccmp.isledecomp.compare.diff import (
 )
 from reccmp.isledecomp.cvdump.symbols import SymbolsEntry
 from reccmp.project.detect import (
-    argparse_add_built_project_target_args,
-    argparse_parse_built_project_target,
+    argparse_add_project_target_args,
+    argparse_parse_project_target,
     RecCmpProjectException,
 )
 from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
@@ -304,7 +304,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {reccmp.VERSION}"
     )
-    argparse_add_built_project_target_args(parser)
+    argparse_add_project_target_args(parser)
 
     parser.add_argument(
         "address",
@@ -325,7 +325,7 @@ def main():
     args = parse_args()
 
     try:
-        target = argparse_parse_built_project_target(args=args)
+        target = argparse_parse_project_target(args=args)
     except RecCmpProjectException as e:
         logger.error(e.args[0])
         return 1
