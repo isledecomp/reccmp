@@ -1,7 +1,12 @@
 // @ts-check
-import { defineConfig, devices } from '@playwright/test';
+import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import path from 'path';
+import { defineConfig, devices } from '@playwright/test';
+
+// We want to load the report file using the file:/// protocol instead of
+// serving it through a local web server. To do that, we need an absolute path
+// to the generated index.html file in the current directory.
+const indexPath = path.resolve('./index.html');
 
 /**
  * Read environment variables from file.
@@ -14,8 +19,6 @@ import path from 'path';
 /**
  * @see https://playwright.dev/docs/test-configuration
  */
-
-const indexPath = path.resolve('./index.html');
 
 export default defineConfig({
   testDir: './e2e',
@@ -84,4 +87,3 @@ export default defineConfig({
   //   reuseExistingServer: !process.env.CI,
   // },
 });
-
