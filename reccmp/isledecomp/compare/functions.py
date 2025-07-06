@@ -252,7 +252,7 @@ class FunctionComparator:
             ]
 
             unified_diff = combined_diff(
-                diff.get_grouped_opcodes(),
+                diff.get_grouped_opcodes(n=10),
                 orig_for_printing,
                 recomp_for_printing,
             )
