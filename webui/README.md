@@ -11,9 +11,7 @@ The `pystache` module is used to combine these elements into the final output fi
 The tools in this directory require [node.js](https://nodejs.org/). The `package.json` file lists the dependencies and you can use your package manager of choice to install them. For example: `npm install`.
 
 ## Formatting and linting
-[Biome](https://biomejs.dev/) validates the test files and javascript source. You can run it yourself with the command: `npx @biomejs/biome ci <list-of-paths>`.
-
-The CI scripts run from the `webui` directory and check these paths: `npx @biomejs/biome ci e2e ./testdata.json`.
+[Biome](https://biomejs.dev/) validates the test files and javascript source. You can run it yourself with the command: `npm run lint`.
 
 Biome has additional command line options that will auto-correct some syntax issues.
 
@@ -26,4 +24,4 @@ reccmp-aggregate --samples ./testdata.json ./testdata.json --html ./index.html
 ```
 The next step is to install the browser binaries used to run the tests. This is a one-time requirement. The command is: `npx playwright install --with-deps`
 
-Finally, to run the tests, use the command `npx playwright test`. You can launch the interactive test runner with the command `npx playwright test --ui`.
+Finally, to run the tests, use the command `npm run e2e`. You can launch the interactive test runner with the command `npm run e2e-ui`.

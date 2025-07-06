@@ -42,7 +42,7 @@ jobs:
     - name: Run Playwright tests
       working-directory: ./webui
       run: |
-        npx playwright test
+        npm run e2e
 
     - uses: actions/upload-artifact@v4
       if: ${{ !cancelled() }}
