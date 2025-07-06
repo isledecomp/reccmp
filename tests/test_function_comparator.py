@@ -427,10 +427,15 @@ def test_jump_table_wrong_order(
     Jump tables with the correct entries in the wrong order.
     In particular, this must not become an accidental effective match.
     """
-    orig = b"\xff\x24\x85\x07\x02\x00\x00\x33\x04\x00\x00\x43\x04\x00\x00"
-    recm = b"\xff\x24\x85\x07\x04\x00\x00\x43\x06\x00\x00\x33\x06\x00\x00"
+    orig = (
+        # jmp dword ptr [eax * 4 + $jump_table]
+        b"\xff\x24\x85\x07\x02\x00\x00"
+        # $jump_table:
+        + b"\x33\x04\x00\x00\x43\x04\x00\x00"
+    )
+    recm = b"\xff\x24\x85\x07\x04\x00\x00" + b"\x43\x06\x00\x00\x33\x06\x00\x00"
 
-    # Required to get an `<OFFSET1> into the jump instruction`
+    # Required to get an `<OFFSET1>` into the jump instruction
     is_relocated_addr = Mock(return_value=True)
     diffreport = compare_functions(db, lines_db, orig, recm, report, is_relocated_addr)
 
@@ -450,6 +455,61 @@ def test_jump_table_wrong_order(
                 {"orig": [], "recomp": [("0x407", "start + 0x243")]},
                 {"both": [("0x207", "start + 0x233", "0x40b")]},
                 {"orig": [("0x20b", "start + 0x243")], "recomp": []},
+            ],
+        )
+    ]
+
+
+def test_data_table_wrong_order(
+    db: EntityDb, lines_db: LinesDb, report: ReccmpReportProtocol
+):
+    """
+    Data tables with the correct entries in the wrong order.
+    In particular, this must not become an accidental effective match.
+    Inspired by LEGO1 0x10015e24.
+    """
+    orig = (
+        # mov al, byte ptr [ecx + $data_table]
+        b"\x8a\x81\x15\x02\x00\x00"
+        # jmp dword ptr [eax * 4 + $jump_table]
+        + b"\xff\x24\x85\x0d\x02\x00\x00"
+        # $jump_table:
+        + b"\x33\x02\x00\x00\x43\x02\x00\x00"
+        # $data_table:
+        + b"\x05\x02\x03\x00\x03"
+    )
+    recm = (
+        b"\x8a\x81\x15\x04\x00\x00"
+        + b"\xff\x24\x85\x0d\x04\x00\x00"
+        + b"\x33\x04\x00\x00\x43\x04\x00\x00"
+        + b"\x03\x02\x05\x00\x03"
+    )
+
+    # Required to get an `<OFFSET1>` into the jump instruction
+    is_relocated_addr = Mock(return_value=True)
+    diffreport = compare_functions(db, lines_db, orig, recm, report, is_relocated_addr)
+
+    assert diffreport.ratio < 1.0
+    assert diffreport.is_effective_match is False
+
+    assert diffreport.udiff == [
+        (
+            "@@ -,11 +,11 @@",
+            [
+                {
+                    "both": [
+                        ("0x200", "mov al, byte ptr [ecx + <OFFSET1>]", "0x400"),
+                        ("0x206", "jmp dword ptr [eax*4 + <OFFSET2>]", "0x406"),
+                        ("", "Jump table:", ""),
+                        ("0x20d", "start + 0x33", "0x40d"),
+                        ("0x211", "start + 0x43", "0x411"),
+                        ("", "Data table:", ""),
+                    ]
+                },
+                {"orig": [], "recomp": [("0x415", "0x3"), ("0x416", "0x2")]},
+                {"both": [("0x215", "0x5", "0x417")]},
+                {"orig": [("0x216", "0x2"), ("0x217", "0x3")], "recomp": []},
+                {"both": [("0x218", "0x0", "0x418"), ("0x219", "0x3", "0x419")]},
             ],
         )
     ]
