@@ -55,6 +55,11 @@ test.describe('Table display options', () => {
     // TODO: columnheader role?
     const recompHeader = page.getByRole('rowgroup').getByText(/Recomp/);
 
+    // First row should display the original address, but not the recomp address.
+    const topRow = page.locator('func-row').nth(0);
+    await expect(topRow.getByText('0x401000')).toBeVisible();
+    await expect(topRow.getByText('0x501000')).not.toBeVisible();
+
     // Recomp header is not displayed at the start.
     await expect(recompHeader).not.toBeVisible();
 
@@ -66,12 +71,20 @@ test.describe('Table display options', () => {
     // Should now see the column header.
     await expect(recompHeader).toBeVisible();
 
+    // Recomp address is now visible on the first row.
+    await expect(topRow.getByText('0x401000')).toBeVisible();
+    await expect(topRow.getByText('0x501000')).toBeVisible();
+
     // Uncheck the box.
     await checkbox.click();
     await expect(checkbox).not.toBeChecked();
 
     // Recomp header is gone.
     await expect(recompHeader).not.toBeVisible();
+
+    // Recomp address is gone.
+    await expect(topRow.getByText('0x401000')).toBeVisible();
+    await expect(topRow.getByText('0x501000')).not.toBeVisible();
 
     // TODO: not inspecting column data. Should we do that?
   });
