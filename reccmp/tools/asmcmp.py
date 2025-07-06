@@ -237,6 +237,13 @@ def main():
     report = ReccmpStatusReport(filename=target.original_path.name.lower())
 
     for match in isle_compare.compare_all():
+        # if we are ignoring this function, skip to next one and don't add it to the entities list
+        if (
+            match.match_type == EntityType.FUNCTION
+            and match.name in target.report_config.ignore_functions
+        ):
+            continue
+
         if not args.silent and args.diff is None:
             print_match_oneline(
                 match, show_both_addrs=args.print_rec_addr, is_plain=args.no_color
