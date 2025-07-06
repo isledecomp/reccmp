@@ -1,7 +1,8 @@
 from dataclasses import dataclass
-from difflib import SequenceMatcher
+from typing import Iterable, Sequence
 from typing_extensions import NotRequired, TypedDict
 
+from reccmp.isledecomp.compare.pinned_sequences import DiffOpcode
 from reccmp.isledecomp.types import EntityType
 
 CombinedDiffInput = list[tuple[str, str]]
@@ -20,10 +21,9 @@ CombinedDiffOutput = list[tuple[str, list[MatchingOrMismatchingBlock]]]
 
 
 def combined_diff(
-    diff: SequenceMatcher,
+    grouped_opcodes: Iterable[Sequence[DiffOpcode]],
     orig_combined: CombinedDiffInput,
     recomp_combined: CombinedDiffInput,
-    context_size: int = 3,
 ) -> CombinedDiffOutput:
     """We want to diff the original and recomp assembly. The "combined" assembly
     input has two components: the address of the instruction and the assembly text.
@@ -37,7 +37,7 @@ def combined_diff(
 
     unified_diff = []
 
-    for group in diff.get_grouped_opcodes(context_size):
+    for group in grouped_opcodes:
         subgroups: list[MatchingOrMismatchingBlock] = []
 
         # Keep track of the addresses we've seen in this diff group.
@@ -59,8 +59,9 @@ def combined_diff(
                 # from one of the lists, but we need the addresses from both.
                 # Use zip to put the two lists together and then take out what we want.
                 both = [
-                    (a, b, c)
-                    for ((a, b), (c, _)) in zip(
+                    # Prefer recomp over orig instruction because it may have more information (e.g. source code line)
+                    (orig_addr, recomp_instr, recomp_addr)
+                    for ((orig_addr, _), (recomp_addr, recomp_instr)) in zip(
                         orig_combined[i1:i2], recomp_combined[j1:j2]
                     )
                 ]

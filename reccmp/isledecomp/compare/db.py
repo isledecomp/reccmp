@@ -243,7 +243,7 @@ class EntityBatch:
 
         self.reset()
 
-    def __enter__(self):
+    def __enter__(self) -> "EntityBatch":
         return self
 
     def __exit__(self, exc_type, exc_value, exc_traceback):

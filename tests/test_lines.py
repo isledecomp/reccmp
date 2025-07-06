@@ -49,6 +49,11 @@ def test_lines(local_path: PureWindowsPath | PurePosixPath):
     assert lines.find_function(local_path, 1, 1) is None
     assert lines.find_function(local_path, 3, 10) is None
 
+    # Also test the lookup by address
+    assert lines.find_line_of_recomp_address(0x1233) is None
+    assert lines.find_line_of_recomp_address(0x1234) == (local_path, 2)
+    assert lines.find_line_of_recomp_address(0x1235) is None
+
 
 @pytest.mark.parametrize("local_path", LOCAL_PATHS)
 def test_no_files_of_interest(local_path: PureWindowsPath | PurePosixPath):
@@ -59,6 +64,7 @@ def test_no_files_of_interest(local_path: PureWindowsPath | PurePosixPath):
     lines.mark_function_starts((0x1234,))
     # The address is ignored because "test.cpp" is not part of the decomp code base.
     assert lines.find_function(local_path, 2) is None
+    assert lines.find_line_of_recomp_address(0x1234) is None
 
 
 @pytest.mark.parametrize("local_path", LOCAL_PATHS)
@@ -84,7 +90,7 @@ def test_multiple_match(local_path: PureWindowsPath | PurePosixPath):
 def test_lines_duplicate_reference(local_path: PureWindowsPath | PurePosixPath):
     """
     In MSVC versions as early as MSVC 7.00, the same function can be referenced on multiple lines.
-    This should not cause an error to be thrown.
+    This should not cause an error to be raised.
     """
     lines = LinesDb([local_path])
     lines.add_line(PDB_PATH, 2, 0x1234)
