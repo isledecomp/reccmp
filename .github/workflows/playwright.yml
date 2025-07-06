@@ -21,22 +21,26 @@ jobs:
 
     - name: Create HTML file
       shell: bash
+      working-directory: ./webui
       run: |
-        reccmp-aggregate --samples ./tests/js/testdata.json ./tests/js/testdata.json --html ./tests/js/index.html
+        reccmp-aggregate --samples ./testdata.json ./testdata.json --html ./index.html
 
     - uses: actions/setup-node@v4
       with:
         node-version: lts/*
 
     - name: Install dependencies
+      working-directory: ./webui
       run: |
         npm ci
 
     - name: Install Playwright Browsers
+      working-directory: ./webui
       run: |
         npx playwright install --with-deps
 
     - name: Run Playwright tests
+      working-directory: ./webui
       run: |
         npx playwright test
 
@@ -44,5 +48,5 @@ jobs:
       if: ${{ !cancelled() }}
       with:
         name: playwright-report
-        path: playwright-report/
+        path: webui/playwright-report/
         retention-days: 30

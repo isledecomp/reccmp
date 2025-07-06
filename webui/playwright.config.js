@@ -15,10 +15,10 @@ import path from 'path';
  * @see https://playwright.dev/docs/test-configuration
  */
 
-const indexPath = path.resolve('./tests/js/index.html');
+const indexPath = path.resolve('./index.html');
 
 export default defineConfig({
-  testDir: './tests/js',
+  testDir: './e2e',
   /* Run tests in files in parallel */
   fullyParallel: true,
   /* Fail the build on CI if you accidentally left test.only in the source code. */
