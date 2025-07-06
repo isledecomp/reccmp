@@ -5,20 +5,20 @@
       "diff": [],
       "matching": 1.0,
       "name": "IsleApp::IsleApp",
-      "recomp": "0x401000"
+      "recomp": "0x501000"
     },
     {
       "address": "0x4011a0",
       "diff": [],
       "matching": 1.0,
       "name": "IsleApp::~IsleApp",
-      "recomp": "0x4011a0"
+      "recomp": "0x5011a0"
     },
     {
       "address": "0x401260",
       "matching": 0.0,
       "name": "IsleApp::Close",
-      "recomp": "0x401260",
+      "recomp": "0x501260",
       "stub": true
     },
     {
@@ -26,28 +26,28 @@
       "diff": [],
       "matching": 1.0,
       "name": "IsleApp::SetupLegoOmni",
-      "recomp": "0x4013b0"
+      "recomp": "0x5013b0"
     },
     {
       "address": "0x4014b0",
       "diff": [],
       "matching": 1.0,
       "name": "MxOmniCreateParam::~MxOmniCreateParam",
-      "recomp": "0x4014b0"
+      "recomp": "0x5014b0"
     },
     {
       "address": "0x401530",
       "diff": [],
       "matching": 1.0,
       "name": "MxParam::~MxParam",
-      "recomp": "0x401530"
+      "recomp": "0x501530"
     },
     {
       "address": "0x401540",
       "diff": [],
       "matching": 1.0,
       "name": "MxParam::`scalar deleting destructor'",
-      "recomp": "0x401540"
+      "recomp": "0x501540"
     },
     {
       "address": "0x401560",
@@ -124,35 +124,35 @@
       ],
       "matching": 0.9166666666666666,
       "name": "IsleApp::SetupVideoFlags",
-      "recomp": "0x401560"
+      "recomp": "0x501560"
     },
     {
       "address": "0x401610",
       "diff": [],
       "matching": 1.0,
       "name": "WinMain",
-      "recomp": "0x401610"
+      "recomp": "0x501610"
     },
     {
       "address": "0x401c40",
       "diff": [],
       "matching": 1.0,
       "name": "MxDSObject::SetAtomId",
-      "recomp": "0x401c40"
+      "recomp": "0x501c40"
     },
     {
       "address": "0x401ca0",
       "diff": [],
       "matching": 1.0,
       "name": "FindExistingInstance",
-      "recomp": "0x401ca0"
+      "recomp": "0x501ca0"
     },
     {
       "address": "0x401ce0",
       "diff": [],
       "matching": 1.0,
       "name": "StartDirectSound",
-      "recomp": "0x401ce0"
+      "recomp": "0x501ce0"
     },
     {
       "address": "0x401d20",
@@ -255,48 +255,48 @@
       "effective": true,
       "matching": 1.0,
       "name": "WndProc",
-      "recomp": "0x401d20"
+      "recomp": "0x501d20"
     },
     {
       "address": "0x4023e0",
       "diff": [],
       "matching": 1.0,
       "name": "IsleApp::SetupWindow",
-      "recomp": "0x4023e0"
+      "recomp": "0x5023e0"
     },
     {
       "address": "0x402740",
       "diff": [],
       "matching": 1.0,
       "name": "IsleApp::ReadReg",
-      "recomp": "0x402740"
+      "recomp": "0x502740"
     },
     {
       "address": "0x4027b0",
       "diff": [],
       "matching": 1.0,
       "name": "IsleApp::ReadRegBool",
-      "recomp": "0x4027b0"
+      "recomp": "0x5027b0"
     },
     {
       "address": "0x402880",
       "diff": [],
       "matching": 1.0,
       "name": "IsleApp::ReadRegInt",
-      "recomp": "0x402880"
+      "recomp": "0x502880"
     },
     {
       "address": "0x4028d0",
       "diff": [],
       "matching": 1.0,
       "name": "IsleApp::LoadConfig",
-      "recomp": "0x4028d0"
+      "recomp": "0x5028d0"
     },
     {
       "address": "0x402c20",
       "matching": 0.0,
       "name": "IsleApp::Tick",
-      "recomp": "0x402c20",
+      "recomp": "0x502c20",
       "stub": true
     },
     {
@@ -304,49 +304,49 @@
       "diff": [],
       "matching": 1.0,
       "name": "IsleApp::SetupCursor",
-      "recomp": "0x402e80"
+      "recomp": "0x502e80"
     },
     {
       "address": "0x402f10",
       "diff": [],
       "matching": 1.0,
       "name": "?shi_New@@YAPAXKIPAU_SHI_Pool@@@Z",
-      "recomp": "0x402f10"
+      "recomp": "0x502f10"
     },
     {
       "address": "0x402f80",
       "diff": [],
       "matching": 1.0,
       "name": "??2@YAPAXI@Z",
-      "recomp": "0x402f80"
+      "recomp": "0x502f80"
     },
     {
       "address": "0x402fa0",
       "diff": [],
       "matching": 1.0,
       "name": "??3@YAXPAX@Z",
-      "recomp": "0x402fa0"
+      "recomp": "0x502fa0"
     },
     {
       "address": "0x402fb0",
       "diff": [],
       "matching": 1.0,
       "name": "_MemInitDefaultPool@0",
-      "recomp": "0x402fb0"
+      "recomp": "0x502fb0"
     },
     {
       "address": "0x403020",
       "diff": [],
       "matching": 1.0,
       "name": "_shi_call_new_handler_msc",
-      "recomp": "0x403020"
+      "recomp": "0x503020"
     },
     {
       "address": "0x403050",
       "diff": [],
       "matching": 1.0,
       "name": "_MemPoolShrink@4",
-      "recomp": "0x403050"
+      "recomp": "0x503050"
     },
     {
       "address": "0x403180",
@@ -392,84 +392,84 @@
       "effective": true,
       "matching": 1.0,
       "name": "_MemPoolPreAllocate@12",
-      "recomp": "0x403180"
+      "recomp": "0x503180"
     },
     {
       "address": "0x403300",
       "diff": [],
       "matching": 1.0,
       "name": "@_shi_initPageHeaders@4",
-      "recomp": "0x403300"
+      "recomp": "0x503300"
     },
     {
       "address": "0x403570",
       "diff": [],
       "matching": 1.0,
       "name": "@shi_allocPageHeader@4",
-      "recomp": "0x403570"
+      "recomp": "0x503570"
     },
     {
       "address": "0x4035a0",
       "diff": [],
       "matching": 1.0,
       "name": "@shi_freePageHeader@8",
-      "recomp": "0x4035a0"
+      "recomp": "0x5035a0"
     },
     {
       "address": "0x403750",
       "diff": [],
       "matching": 1.0,
       "name": "@_shi_deletePage@8",
-      "recomp": "0x403750"
+      "recomp": "0x503750"
     },
     {
       "address": "0x403830",
       "diff": [],
       "matching": 1.0,
       "name": "@_shi_allocExternal@12",
-      "recomp": "0x403830"
+      "recomp": "0x503830"
     },
     {
       "address": "0x403a50",
       "diff": [],
       "matching": 1.0,
       "name": "@_shi_initPageVariable@8",
-      "recomp": "0x403a50"
+      "recomp": "0x503a50"
     },
     {
       "address": "0x403b00",
       "diff": [],
       "matching": 1.0,
       "name": "_MemAllocPtr@12",
-      "recomp": "0x403b00"
+      "recomp": "0x503b00"
     },
     {
       "address": "0x403d60",
       "diff": [],
       "matching": 1.0,
       "name": "@_shi_allocVar@12",
-      "recomp": "0x403d60"
+      "recomp": "0x503d60"
     },
     {
       "address": "0x403ef0",
       "diff": [],
       "matching": 1.0,
       "name": "@_shi_allocBlock@12",
-      "recomp": "0x403ef0"
+      "recomp": "0x503ef0"
     },
     {
       "address": "0x4040c0",
       "diff": [],
       "matching": 1.0,
       "name": "_MemFreePtr@4",
-      "recomp": "0x4040c0"
+      "recomp": "0x5040c0"
     },
     {
       "address": "0x404170",
       "diff": [],
       "matching": 1.0,
       "name": "@_shi_freeVar@4",
-      "recomp": "0x404170"
+      "recomp": "0x504170"
     },
     {
       "address": "0x404260",
@@ -658,7 +658,7 @@
       "effective": true,
       "matching": 1.0,
       "name": "_MemReAllocPtr@12",
-      "recomp": "0x404260"
+      "recomp": "0x504260"
     },
     {
       "address": "0x4043b0",
@@ -704,7 +704,7 @@
       "effective": true,
       "matching": 1.0,
       "name": "@_shi_resizeAny@16",
-      "recomp": "0x4043b0"
+      "recomp": "0x5043b0"
     },
     {
       "address": "0x404650",
@@ -1010,217 +1010,217 @@
       ],
       "matching": 0.7224080267558528,
       "name": "@_shi_resizeVar@8",
-      "recomp": "0x404650"
+      "recomp": "0x504650"
     },
     {
       "address": "0x404820",
       "diff": [],
       "matching": 1.0,
       "name": "_MemSizePtr@4",
-      "recomp": "0x404820"
+      "recomp": "0x504820"
     },
     {
       "address": "0x4048d0",
       "diff": [],
       "matching": 1.0,
       "name": "@shi_findAllocAddress@4",
-      "recomp": "0x4048d0"
+      "recomp": "0x5048d0"
     },
     {
       "address": "0x404910",
       "diff": [],
       "matching": 1.0,
       "name": "@_shi_sysAlloc@8",
-      "recomp": "0x404910"
+      "recomp": "0x504910"
     },
     {
       "address": "0x4049a0",
       "diff": [],
       "matching": 1.0,
       "name": "@_shi_sysFree@4",
-      "recomp": "0x4049a0"
+      "recomp": "0x5049a0"
     },
     {
       "address": "0x404a00",
       "diff": [],
       "matching": 1.0,
       "name": "@_shi_sysRealloc@12",
-      "recomp": "0x404a00"
+      "recomp": "0x504a00"
     },
     {
       "address": "0x404ab0",
       "diff": [],
       "matching": 1.0,
       "name": "@_shi_sysResize@12",
-      "recomp": "0x404ab0"
+      "recomp": "0x504ab0"
     },
     {
       "address": "0x404b90",
       "diff": [],
       "matching": 1.0,
       "name": "@_shi_sysSize@4",
-      "recomp": "0x404b90"
+      "recomp": "0x504b90"
     },
     {
       "address": "0x404bd0",
       "diff": [],
       "matching": 1.0,
       "name": "@_shi_sysAllocNear@4",
-      "recomp": "0x404bd0"
+      "recomp": "0x504bd0"
     },
     {
       "address": "0x404bf0",
       "diff": [],
       "matching": 1.0,
       "name": "@_shi_sysFreeNear@4",
-      "recomp": "0x404bf0"
+      "recomp": "0x504bf0"
     },
     {
       "address": "0x404c10",
       "diff": [],
       "matching": 1.0,
       "name": "@_shi_sysValidatePtr@12",
-      "recomp": "0x404c10"
+      "recomp": "0x504c10"
     },
     {
       "address": "0x404d10",
       "diff": [],
       "matching": 1.0,
       "name": "@_shi_sysValidateFunction@4",
-      "recomp": "0x404d10"
+      "recomp": "0x504d10"
     },
     {
       "address": "0x405300",
       "diff": [],
       "matching": 1.0,
       "name": "@_shi_sysAllocPool@12",
-      "recomp": "0x405300"
+      "recomp": "0x505300"
     },
     {
       "address": "0x405520",
       "diff": [],
       "matching": 1.0,
       "name": "@_shi_sysResizePool@16",
-      "recomp": "0x405520"
+      "recomp": "0x505520"
     },
     {
       "address": "0x405690",
       "diff": [],
       "matching": 1.0,
       "name": "@_shi_sysFreePage@4",
-      "recomp": "0x405690"
+      "recomp": "0x505690"
     },
     {
       "address": "0x4057b0",
       "diff": [],
       "matching": 1.0,
       "name": "@_shi_sysSizePage@4",
-      "recomp": "0x4057b0"
+      "recomp": "0x5057b0"
     },
     {
       "address": "0x4057e0",
       "diff": [],
       "matching": 1.0,
       "name": "@_shi_sysSizePool@8",
-      "recomp": "0x4057e0"
+      "recomp": "0x5057e0"
     },
     {
       "address": "0x405800",
       "diff": [],
       "matching": 1.0,
       "name": "@_shi_registerShared@16",
-      "recomp": "0x405800"
+      "recomp": "0x505800"
     },
     {
       "address": "0x405a00",
       "diff": [],
       "matching": 1.0,
       "name": "@_shi_unregisterShared@8",
-      "recomp": "0x405a00"
+      "recomp": "0x505a00"
     },
     {
       "address": "0x405b20",
       "diff": [],
       "matching": 1.0,
       "name": "@_shi_getNextPool@4",
-      "recomp": "0x405b20"
+      "recomp": "0x505b20"
     },
     {
       "address": "0x405b30",
       "diff": [],
       "matching": 1.0,
       "name": "@shi_delNextPool@4",
-      "recomp": "0x405b30"
+      "recomp": "0x505b30"
     },
     {
       "address": "0x405d30",
       "diff": [],
       "matching": 1.0,
       "name": "@shi_createAndEnterMutexShr@12",
-      "recomp": "0x405d30"
+      "recomp": "0x505d30"
     },
     {
       "address": "0x405e20",
       "diff": [],
       "matching": 1.0,
       "name": "@shi_termPoolMutexShr@4",
-      "recomp": "0x405e20"
+      "recomp": "0x505e20"
     },
     {
       "address": "0x405e40",
       "diff": [],
       "matching": 1.0,
       "name": "@shi_enterPoolMutexShr@4",
-      "recomp": "0x405e40"
+      "recomp": "0x505e40"
     },
     {
       "address": "0x405e60",
       "diff": [],
       "matching": 1.0,
       "name": "@shi_leavePoolMutexShr@4",
-      "recomp": "0x405e60"
+      "recomp": "0x505e60"
     },
     {
       "address": "0x405e80",
       "diff": [],
       "matching": 1.0,
       "name": "__shi_enterCriticalSection@0",
-      "recomp": "0x405e80"
+      "recomp": "0x505e80"
     },
     {
       "address": "0x405ea0",
       "diff": [],
       "matching": 1.0,
       "name": "__shi_leaveCriticalSection@0",
-      "recomp": "0x405ea0"
+      "recomp": "0x505ea0"
     },
     {
       "address": "0x405ec0",
       "diff": [],
       "matching": 1.0,
       "name": "__shi_createAndEnterMutex",
-      "recomp": "0x405ec0"
+      "recomp": "0x505ec0"
     },
     {
       "address": "0x405ef0",
       "diff": [],
       "matching": 1.0,
       "name": "_shi_enterPoolMutexSafely",
-      "recomp": "0x405ef0"
+      "recomp": "0x505ef0"
     },
     {
       "address": "0x405fd0",
       "diff": [],
       "matching": 1.0,
       "name": "_shi_enterPoolInitMutexReader",
-      "recomp": "0x405fd0"
+      "recomp": "0x505fd0"
     },
     {
       "address": "0x406060",
       "diff": [],
       "matching": 1.0,
       "name": "_shi_leavePoolInitMutexReader",
-      "recomp": "0x406060"
+      "recomp": "0x506060"
     },
     {
       "address": "0x406090",
@@ -1321,70 +1321,70 @@
       ],
       "matching": 0.8676470588235294,
       "name": "_shi_enterPoolInitMutexWriter",
-      "recomp": "0x406090"
+      "recomp": "0x506090"
     },
     {
       "address": "0x406160",
       "diff": [],
       "matching": 1.0,
       "name": "_shi_leavePoolInitMutexWriter",
-      "recomp": "0x406150"
+      "recomp": "0x506150"
     },
     {
       "address": "0x406180",
       "diff": [],
       "matching": 1.0,
       "name": "_shi_isNT",
-      "recomp": "0x406170"
+      "recomp": "0x506170"
     },
     {
       "address": "0x4061b0",
       "diff": [],
       "matching": 1.0,
       "name": "_MemPoolInit@4",
-      "recomp": "0x4061a0"
+      "recomp": "0x5061a0"
     },
     {
       "address": "0x406520",
       "diff": [],
       "matching": 1.0,
       "name": "_MemPoolSetPageSize@8",
-      "recomp": "0x406510"
+      "recomp": "0x506510"
     },
     {
       "address": "0x406630",
       "diff": [],
       "matching": 1.0,
       "name": "_MemPoolSetBlockSizeFS@8",
-      "recomp": "0x406620"
+      "recomp": "0x506620"
     },
     {
       "address": "0x406710",
       "diff": [],
       "matching": 1.0,
       "name": "@_shi_poolFree@8",
-      "recomp": "0x406700"
+      "recomp": "0x506700"
     },
     {
       "address": "0x4068c0",
       "diff": [],
       "matching": 1.0,
       "name": "@_shi_invokeErrorHandler1@8",
-      "recomp": "0x4068b0"
+      "recomp": "0x5068b0"
     },
     {
       "address": "0x406be0",
       "diff": [],
       "matching": 1.0,
       "name": "_MemErrorUnwind@0",
-      "recomp": "0x406bd0"
+      "recomp": "0x506bd0"
     },
     {
       "address": "0x406c30",
       "diff": [],
       "matching": 1.0,
       "name": "_MemDefaultErrorHandler@4",
-      "recomp": "0x406c20"
+      "recomp": "0x506c20"
     },
     {
       "address": "0x406cb0",
@@ -1426,133 +1426,133 @@
       ],
       "matching": 0.9846153846153847,
       "name": "@_shi_taskRemovePool@4",
-      "recomp": "0x406ca0"
+      "recomp": "0x506ca0"
     },
     {
       "address": "0x406d50",
       "diff": [],
       "matching": 1.0,
       "name": "@_shi_getCurrentThreadContext@8",
-      "recomp": "0x406d40"
+      "recomp": "0x506d40"
     },
     {
       "address": "0x406db0",
       "diff": [],
       "matching": 1.0,
       "name": "@_shi_deleteThreadContext@8",
-      "recomp": "0x406da0"
+      "recomp": "0x506da0"
     },
     {
       "address": "0x406dd0",
       "diff": [],
       "matching": 1.0,
       "name": "_malloc",
-      "recomp": "0x406dc0"
+      "recomp": "0x506dc0"
     },
     {
       "address": "0x406e40",
       "diff": [],
       "matching": 1.0,
       "name": "_calloc",
-      "recomp": "0x406e30"
+      "recomp": "0x506e30"
     },
     {
       "address": "0x406ea0",
       "diff": [],
       "matching": 1.0,
       "name": "_realloc",
-      "recomp": "0x406e90"
+      "recomp": "0x506e90"
     },
     {
       "address": "0x406f00",
       "diff": [],
       "matching": 1.0,
       "name": "_free",
-      "recomp": "0x406ef0"
+      "recomp": "0x506ef0"
     },
     {
       "address": "0x406f10",
       "diff": [],
       "matching": 1.0,
       "name": "__expand",
-      "recomp": "0x406f00"
+      "recomp": "0x506f00"
     },
     {
       "address": "0x406f50",
       "diff": [],
       "matching": 1.0,
       "name": "__heapadd",
-      "recomp": "0x406f40"
+      "recomp": "0x506f40"
     },
     {
       "address": "0x406f60",
       "diff": [],
       "matching": 1.0,
       "name": "__heapwalk",
-      "recomp": "0x406f50"
+      "recomp": "0x506f50"
     },
     {
       "address": "0x406ff0",
       "diff": [],
       "matching": 1.0,
       "name": "__heapused",
-      "recomp": "0x406fe0"
+      "recomp": "0x506fe0"
     },
     {
       "address": "0x407020",
       "diff": [],
       "matching": 1.0,
       "name": "__heapmin",
-      "recomp": "0x407010"
+      "recomp": "0x507010"
     },
     {
       "address": "0x407040",
       "diff": [],
       "matching": 1.0,
       "name": "__msize",
-      "recomp": "0x407030"
+      "recomp": "0x507030"
     },
     {
       "address": "0x407050",
       "diff": [],
       "matching": 1.0,
       "name": "__heapchk",
-      "recomp": "0x407040"
+      "recomp": "0x507040"
     },
     {
       "address": "0x407080",
       "diff": [],
       "matching": 1.0,
       "name": "__heapset",
-      "recomp": "0x407070"
+      "recomp": "0x507070"
     },
     {
       "address": "0x407090",
       "diff": [],
       "matching": 1.0,
       "name": "@_shi_sysReportError@16",
-      "recomp": "0x407080"
+      "recomp": "0x507080"
     },
     {
       "address": "0x407110",
       "diff": [],
       "matching": 1.0,
       "name": "_MemPoolSize@4",
-      "recomp": "0x407100"
+      "recomp": "0x507100"
     },
     {
       "address": "0x4071a0",
       "diff": [],
       "matching": 1.0,
       "name": "_MemPoolWalk@8",
-      "recomp": "0x407190"
+      "recomp": "0x507190"
     },
     {
       "address": "0x407240",
       "diff": [],
       "matching": 1.0,
       "name": "@_shi_walkPool@16",
-      "recomp": "0x407230"
+      "recomp": "0x507230"
     },
     {
       "address": "0x407540",
@@ -1598,7 +1598,7 @@
       "effective": true,
       "matching": 1.0,
       "name": "@shi_isBlockInUseSmall@8",
-      "recomp": "0x407530"
+      "recomp": "0x507530"
     },
     {
       "address": "0x407800",
@@ -1722,315 +1722,315 @@
       ],
       "matching": 0.6296296296296297,
       "name": "@_shi_isBlockInUseFS@12",
-      "recomp": "0x4077f0"
+      "recomp": "0x5077f0"
     },
     {
       "address": "0x407880",
       "diff": [],
       "matching": 1.0,
       "name": "_MemPoolCheck@4",
-      "recomp": "0x407870"
+      "recomp": "0x507870"
     },
     {
       "address": "0x407b20",
       "diff": [],
       "matching": 1.0,
       "name": "_MemCheckPtr@8",
-      "recomp": "0x407b10"
+      "recomp": "0x507b10"
     },
     {
       "address": "0x407ec0",
       "diff": [],
       "matching": 1.0,
       "name": "___CxxFrameHandler",
-      "recomp": "0x407eb0"
+      "recomp": "0x507eb0"
     },
     {
       "address": "0x4080ec",
       "diff": [],
       "matching": 1.0,
       "name": "__global_unwind2",
-      "recomp": "0x4080dc"
+      "recomp": "0x5080dc"
     },
     {
       "address": "0x40812e",
       "diff": [],
       "matching": 1.0,
       "name": "__local_unwind2",
-      "recomp": "0x40811e"
+      "recomp": "0x50811e"
     },
     {
       "address": "0x4081b9",
       "diff": [],
       "matching": 1.0,
       "name": "__NLG_Notify1",
-      "recomp": "0x4081a9"
+      "recomp": "0x5081a9"
     },
     {
       "address": "0x4081c2",
       "diff": [],
       "matching": 1.0,
       "name": "__NLG_Notify",
-      "recomp": "0x4081b2"
+      "recomp": "0x5081b2"
     },
     {
       "address": "0x4081e0",
       "diff": [],
       "matching": 1.0,
       "name": "_srand",
-      "recomp": "0x4081d0"
+      "recomp": "0x5081d0"
     },
     {
       "address": "0x4081f0",
       "diff": [],
       "matching": 1.0,
       "name": "_rand",
-      "recomp": "0x4081e0"
+      "recomp": "0x5081e0"
     },
     {
       "address": "0x408220",
       "diff": [],
       "matching": 1.0,
       "name": "_atol",
-      "recomp": "0x408210"
+      "recomp": "0x508210"
     },
     {
       "address": "0x4082d0",
       "diff": [],
       "matching": 1.0,
       "name": "_atoi",
-      "recomp": "0x4082c0"
+      "recomp": "0x5082c0"
     },
     {
       "address": "0x4082e0",
       "diff": [],
       "matching": 1.0,
       "name": "_WinMainCRTStartup",
-      "recomp": "0x4082d0"
+      "recomp": "0x5082d0"
     },
     {
       "address": "0x408490",
       "diff": [],
       "matching": 1.0,
       "name": "__amsg_exit",
-      "recomp": "0x408480"
+      "recomp": "0x508480"
     },
     {
       "address": "0x4084c0",
       "diff": [],
       "matching": 1.0,
       "name": "?_query_new_handler@@YAP6AHI@ZXZ",
-      "recomp": "0x4084b0"
+      "recomp": "0x5084b0"
     },
     {
       "address": "0x4084d0",
       "diff": [],
       "matching": 1.0,
       "name": "?_query_new_mode@@YAHXZ",
-      "recomp": "0x4084c0"
+      "recomp": "0x5084c0"
     },
     {
       "address": "0x4084e0",
       "diff": [],
       "matching": 1.0,
       "name": "__except_handler3",
-      "recomp": "0x4084d0"
+      "recomp": "0x5084d0"
     },
     {
       "address": "0x4085c0",
       "diff": [],
       "matching": 1.0,
       "name": "_sprintf",
-      "recomp": "0x4085b0"
+      "recomp": "0x5085b0"
     },
     {
       "address": "0x408630",
       "diff": [],
       "matching": 1.0,
       "name": "_abort",
-      "recomp": "0x408620"
+      "recomp": "0x508620"
     },
     {
       "address": "0x408650",
       "diff": [],
       "matching": 1.0,
       "name": "___InternalCxxFrameHandler",
-      "recomp": "0x408640"
+      "recomp": "0x508640"
     },
     {
       "address": "0x408b30",
       "diff": [],
       "matching": 1.0,
       "name": "___FrameUnwindToState",
-      "recomp": "0x408b20"
+      "recomp": "0x508b20"
     },
     {
       "address": "0x4090c0",
       "diff": [],
       "matching": 1.0,
       "name": "__CallSettingFrame@12",
-      "recomp": "0x4090b0"
+      "recomp": "0x5090b0"
     },
     {
       "address": "0x409110",
       "diff": [],
       "matching": 1.0,
       "name": "__mtinit",
-      "recomp": "0x409100"
+      "recomp": "0x509100"
     },
     {
       "address": "0x409170",
       "diff": [],
       "matching": 1.0,
       "name": "__initptd",
-      "recomp": "0x409160"
+      "recomp": "0x509160"
     },
     {
       "address": "0x409190",
       "diff": [],
       "matching": 1.0,
       "name": "__getptd",
-      "recomp": "0x409180"
+      "recomp": "0x509180"
     },
     {
       "address": "0x409200",
       "diff": [],
       "matching": 1.0,
       "name": "__isctype",
-      "recomp": "0x4091f0"
+      "recomp": "0x5091f0"
     },
     {
       "address": "0x4092e0",
       "diff": [],
       "matching": 1.0,
       "name": "?terminate@@YAXXZ",
-      "recomp": "0x40b300"
+      "recomp": "0x50b300"
     },
     {
       "address": "0x409360",
       "diff": [],
       "matching": 1.0,
       "name": "?_inconsistency@@YAXXZ",
-      "recomp": "0x40b380"
+      "recomp": "0x50b380"
     },
     {
       "address": "0x4093e0",
       "diff": [],
       "matching": 1.0,
       "name": "__cinit",
-      "recomp": "0x4092d0"
+      "recomp": "0x5092d0"
     },
     {
       "address": "0x409410",
       "diff": [],
       "matching": 1.0,
       "name": "_exit",
-      "recomp": "0x409300"
+      "recomp": "0x509300"
     },
     {
       "address": "0x409430",
       "diff": [],
       "matching": 1.0,
       "name": "__exit",
-      "recomp": "0x409320"
+      "recomp": "0x509320"
     },
     {
       "address": "0x409550",
       "diff": [],
       "matching": 1.0,
       "name": "__XcptFilter",
-      "recomp": "0x409440"
+      "recomp": "0x509440"
     },
     {
       "address": "0x4096d0",
       "diff": [],
       "matching": 1.0,
       "name": "__ismbblead",
-      "recomp": "0x4095c0"
+      "recomp": "0x5095c0"
     },
     {
       "address": "0x409730",
       "diff": [],
       "matching": 1.0,
       "name": "__setenvp",
-      "recomp": "0x409620"
+      "recomp": "0x509620"
     },
     {
       "address": "0x409820",
       "diff": [],
       "matching": 1.0,
       "name": "__setargv",
-      "recomp": "0x409710"
+      "recomp": "0x509710"
     },
     {
       "address": "0x409a90",
       "diff": [],
       "matching": 1.0,
       "name": "___crtGetEnvironmentStringsA",
-      "recomp": "0x409980"
+      "recomp": "0x509980"
     },
     {
       "address": "0x409c20",
       "diff": [],
       "matching": 1.0,
       "name": "__setmbcp",
-      "recomp": "0x409b10"
+      "recomp": "0x509b10"
     },
     {
       "address": "0x409f30",
       "diff": [],
       "matching": 1.0,
       "name": "___initmbctable",
-      "recomp": "0x409e20"
+      "recomp": "0x509e20"
     },
     {
       "address": "0x409f40",
       "diff": [],
       "matching": 1.0,
       "name": "__ioinit",
-      "recomp": "0x409e30"
+      "recomp": "0x509e30"
     },
     {
       "address": "0x40a120",
       "diff": [],
       "matching": 1.0,
       "name": "__heap_init",
-      "recomp": "0x40a010"
+      "recomp": "0x50a010"
     },
     {
       "address": "0x40a160",
       "diff": [],
       "matching": 1.0,
       "name": "__FF_MSGBANNER",
-      "recomp": "0x40a050"
+      "recomp": "0x50a050"
     },
     {
       "address": "0x40a1a0",
       "diff": [],
       "matching": 1.0,
       "name": "__NMSG_WRITE",
-      "recomp": "0x40a090"
+      "recomp": "0x50a090"
     },
     {
       "address": "0x40a3a0",
       "diff": [],
       "matching": 1.0,
       "name": "__mtinitlocks",
-      "recomp": "0x40a290"
+      "recomp": "0x50a290"
     },
     {
       "address": "0x40a3d0",
       "diff": [],
       "matching": 1.0,
       "name": "__lock",
-      "recomp": "0x40a2c0"
+      "recomp": "0x50a2c0"
     },
     {
       "address": "0x40a440",
       "diff": [],
       "matching": 1.0,
       "name": "__unlock",
-      "recomp": "0x40a330"
+      "recomp": "0x50a330"
     },
     {
       "address": "0x40a540",
@@ -2082,7 +2082,7 @@
       ],
       "matching": 0.9838709677419355,
       "name": "__flsbuf",
-      "recomp": "0x40a430"
+      "recomp": "0x50a430"
     },
     {
       "address": "0x40a690",
@@ -2277,168 +2277,168 @@
       ],
       "matching": 0.9908496732026144,
       "name": "__output",
-      "recomp": "0x40a580"
+      "recomp": "0x50a580"
     },
     {
       "address": "0x40b150",
       "diff": [],
       "matching": 1.0,
       "name": "_raise",
-      "recomp": "0x40b040"
+      "recomp": "0x50b040"
     },
     {
       "address": "0x40b780",
       "diff": [],
       "matching": 1.0,
       "name": "___crtGetStringTypeA",
-      "recomp": "0x40b770"
+      "recomp": "0x50b770"
     },
     {
       "address": "0x40b8b0",
       "diff": [],
       "matching": 1.0,
       "name": "___sbh_new_region",
-      "recomp": "0x40b8a0"
+      "recomp": "0x50b8a0"
     },
     {
       "address": "0x40ba20",
       "diff": [],
       "matching": 1.0,
       "name": "___crtMessageBoxA",
-      "recomp": "0x40ba10"
+      "recomp": "0x50ba10"
     },
     {
       "address": "0x40bac0",
       "diff": [],
       "matching": 1.0,
       "name": "_strncpy",
-      "recomp": "0x40bab0"
+      "recomp": "0x50bab0"
     },
     {
       "address": "0x40bcb0",
       "diff": [],
       "matching": 1.0,
       "name": "__write",
-      "recomp": "0x40bca0"
+      "recomp": "0x50bca0"
     },
     {
       "address": "0x40bd30",
       "diff": [],
       "matching": 1.0,
       "name": "__write_lk",
-      "recomp": "0x40bd20"
+      "recomp": "0x50bd20"
     },
     {
       "address": "0x40bf30",
       "diff": [],
       "matching": 1.0,
       "name": "__lseek",
-      "recomp": "0x40bf20"
+      "recomp": "0x50bf20"
     },
     {
       "address": "0x40bfb0",
       "diff": [],
       "matching": 1.0,
       "name": "__lseek_lk",
-      "recomp": "0x40bfa0"
+      "recomp": "0x50bfa0"
     },
     {
       "address": "0x40c040",
       "diff": [],
       "matching": 1.0,
       "name": "__getbuf",
-      "recomp": "0x40c030"
+      "recomp": "0x50c030"
     },
     {
       "address": "0x40c090",
       "diff": [],
       "matching": 1.0,
       "name": "__isatty",
-      "recomp": "0x40c080"
+      "recomp": "0x50c080"
     },
     {
       "address": "0x40c0c0",
       "diff": [],
       "matching": 1.0,
       "name": "_wctomb",
-      "recomp": "0x40c0b0"
+      "recomp": "0x50c0b0"
     },
     {
       "address": "0x40c120",
       "diff": [],
       "matching": 1.0,
       "name": "__wctomb_lk",
-      "recomp": "0x40c110"
+      "recomp": "0x50c110"
     },
     {
       "address": "0x40c1c0",
       "diff": [],
       "matching": 1.0,
       "name": "__aulldiv",
-      "recomp": "0x40c1b0"
+      "recomp": "0x50c1b0"
     },
     {
       "address": "0x40c230",
       "diff": [],
       "matching": 1.0,
       "name": "__aullrem",
-      "recomp": "0x40c220"
+      "recomp": "0x50c220"
     },
     {
       "address": "0x40c2b0",
       "diff": [],
       "matching": 1.0,
       "name": "__dosmaperr",
-      "recomp": "0x40c2a0"
+      "recomp": "0x50c2a0"
     },
     {
       "address": "0x40c330",
       "diff": [],
       "matching": 1.0,
       "name": "__errno",
-      "recomp": "0x40c320"
+      "recomp": "0x50c320"
     },
     {
       "address": "0x40c340",
       "diff": [],
       "matching": 1.0,
       "name": "___doserrno",
-      "recomp": "0x40c330"
+      "recomp": "0x50c330"
     },
     {
       "address": "0x40c710",
       "diff": [],
       "matching": 1.0,
       "name": "__get_osfhandle",
-      "recomp": "0x40c700"
+      "recomp": "0x50c700"
     },
     {
       "address": "0x40c760",
       "diff": [],
       "matching": 1.0,
       "name": "__lock_fhandle",
-      "recomp": "0x40c750"
+      "recomp": "0x50c750"
     },
     {
       "address": "0x40c7d0",
       "diff": [],
       "matching": 1.0,
       "name": "__unlock_fhandle",
-      "recomp": "0x40c7c0"
+      "recomp": "0x50c7c0"
     },
     {
       "address": "0x40c810",
       "diff": [],
       "matching": 1.0,
       "name": "__fptrap",
-      "recomp": "0x40c800"
+      "recomp": "0x50c800"
     },
     {
       "address": "0x40f018",
       "diff": [],
       "matching": 1.0,
       "name": "MxParam::`vftable'",
-      "recomp": "0x40f060"
+      "recomp": "0x50f060"
     },
     {
       "address": "0x800000",
