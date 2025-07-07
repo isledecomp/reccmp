@@ -32,6 +32,13 @@ def test_multiple_address_column():
     with pytest.raises(CsvMultipleAddressError):
         list(csv_parse("address|symbol|addr"))
 
+    # This includes cases where the same key name is repeated
+    with pytest.raises(CsvMultipleAddressError):
+        list(csv_parse("addr|addr"))
+
+    with pytest.raises(CsvMultipleAddressError):
+        list(csv_parse("address|address"))
+
 
 def test_value_includes_delimiter():
     """If the value contains the delimiter, we can still parse it correctly

@@ -68,15 +68,11 @@ def _convert_attrs(
             yield (key, _boolify(value))
 
 
-def _csv_convert(row: dict[str, str]) -> tuple[int, CsvValuesType]:
+def _csv_convert(addr_key: str, row: dict[str, str]) -> tuple[int, CsvValuesType]:
     """Pull out the address from the CSV row and convert the remaining key/value pairs."""
-    for key in ("address", "addr"):
-        if key in row:
-            addr_value = row[key]
-            break
-
-    # Addr is always a hex number
     try:
+        # Addr is always a hex number
+        addr_value = row[addr_key]
         addr = int(addr_value, 16)
     except ValueError as ex:
         raise CsvInvalidAddressError from ex
@@ -105,12 +101,12 @@ def csv_parse(lines: str | Iterable[str]) -> Iterator[tuple[int, CsvValuesType]]
         raise CsvNoDelimiterError
 
     # We support multiple options for address key, but exactly one must appear.
-    addrs = [key for key in ("address", "addr") if key in reader.fieldnames]
-    if not addrs:
+    addr_keys = [key for key in reader.fieldnames if key in ("address", "addr")]
+    if not addr_keys:
         raise CsvNoAddressError
 
-    if len(addrs) > 1:
+    if len(addr_keys) > 1:
         raise CsvMultipleAddressError
 
     for row in reader:
-        yield _csv_convert(row)
+        yield _csv_convert(addr_keys[0], row)
