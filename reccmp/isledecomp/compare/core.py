@@ -36,6 +36,7 @@ from .match_msvc import (
     match_variables,
     match_strings,
 )
+from .csv import ReccmpCsvParserError, csv_parse
 from .db import EntityDb, ReccmpEntity, ReccmpMatch
 from .diff import DiffReport, combined_diff
 from .lines import LinesDb
@@ -49,6 +50,7 @@ logger = logging.getLogger(__name__)
 
 class Compare:
     # pylint: disable=too-many-instance-attributes
+    # pylint: disable=too-many-arguments
     def __init__(
         self,
         orig_bin: PEImage,
@@ -56,6 +58,7 @@ class Compare:
         pdb_file: Path | str,
         code_dir: Path | str,
         target_id: str | None = None,
+        csv_files: list[Path] | None = None,
     ):
         self.orig_bin = orig_bin
         self.recomp_bin = recomp_bin
@@ -82,6 +85,10 @@ class Compare:
 
         self._load_cvdump()
         self._load_markers(report)
+
+        if isinstance(csv_files, list):
+            for csv_file in csv_files:
+                self._load_csv(csv_file)
 
         # Match using PDB and annotation data
         match_symbols(self._db, report, truncate=True)
@@ -124,6 +131,7 @@ class Compare:
             target.recompiled_pdb,
             target.source_root,
             target_id=target.target_id,
+            csv_files=target.csv_files,
         )
 
     @property
@@ -368,6 +376,19 @@ class Compare:
                     line=line.line_number,
                     type=EntityType.LINE,
                 )
+
+    def _load_csv(self, path: Path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                # TODO: Aborts on any error instead of skipping a row where this is possible
+                rows = list(csv_parse(f))
+        except (FileNotFoundError, ReccmpCsvParserError):
+            logger.error("Failed to parse csv file %s", str(path))
+            return
+
+        with self._db.batch() as batch:
+            for addr, values in rows:
+                batch.set_orig(addr, **values)
 
     def _match_array_elements(self):
         """
