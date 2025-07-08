@@ -98,3 +98,6 @@ class LXImage(Image):
             mz_header=mz_header,
             header=header,
         )
+
+    def seek(self, vaddr: int) -> tuple[bytes, int]:
+        raise NotImplementedError
