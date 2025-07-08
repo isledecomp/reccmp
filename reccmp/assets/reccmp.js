@@ -12,7 +12,7 @@ function getDataByAddr(addr) {
 // Pure functions
 //
 
-function formatAsm(entries, addrOption) {
+function formatAsm(entries, _addrOption) {
   const output = [];
 
   const createTh = (text) => {
@@ -116,7 +116,7 @@ function getMatchPercentText(row) {
     return '100.00%*';
   }
 
-  return (row.matching * 100).toFixed(2) + '%';
+  return `${(row.matching * 100).toFixed(2)}%`;
 }
 
 function countDiffs(row) {
@@ -125,7 +125,7 @@ function countDiffs(row) {
     return '';
   }
 
-  const diffs = diff.map(([slug, subgroups]) => subgroups).flat();
+  const diffs = diff.flatMap(([_slug, subgroups]) => subgroups);
   const diffLength = diffs.filter((d) => !('both' in d)).length;
   const diffWord = diffLength === 1 ? 'diff' : 'diffs';
   return diffLength === 0 ? '' : `${diffLength} ${diffWord}`;
@@ -274,10 +274,10 @@ class ListingState {
     }
 
     // special matcher for combined diff
-    const anyLineMatch = ([addr, line]) => line.toLowerCase().trim().includes(this.query);
+    const anyLineMatch = ([_addr, line]) => line.toLowerCase().trim().includes(this.query);
 
     // Flatten all diff groups for the search
-    const diffs = diff.map(([slug, subgroups]) => subgroups).flat();
+    const diffs = diff.flatMap(([_slug, subgroups]) => subgroups);
     for (const subgroup of diffs) {
       const { both = [], orig = [], recomp = [] } = subgroup;
 
@@ -409,7 +409,7 @@ const appState = new ListingState();
 class SortIndicator extends window.HTMLElement {
   static observedAttributes = ['data-sort'];
 
-  attributeChangedCallback(name, oldValue, newValue) {
+  attributeChangedCallback(_name, _oldValue, newValue) {
     if (newValue === null) {
       // Reserve space for blank indicator so column width stays the same
       this.innerHTML = '&nbsp;';
@@ -428,7 +428,7 @@ class FuncRow extends window.HTMLElement {
     const template = document.querySelector('template#funcrow-template').content;
     const shadow = this.attachShadow({ mode: 'open' });
     shadow.appendChild(template.cloneNode(true));
-    shadow.querySelector(':host > div[data-col="name"]').addEventListener('click', (evt) => {
+    shadow.querySelector(':host > div[data-col="name"]').addEventListener('click', () => {
       this.dispatchEvent(new Event('name-click'));
     });
   }
@@ -461,7 +461,7 @@ class CanCopy extends window.HTMLElement {
     shadow.appendChild(template.cloneNode(true));
 
     const el = shadow.querySelector('slot').assignedNodes()[0];
-    el.addEventListener('mouseout', (evt) => {
+    el.addEventListener('mouseout', () => {
       this.copied = false;
     });
     el.addEventListener('click', (evt) => {
@@ -545,7 +545,9 @@ class DiffDisplayOptions extends window.HTMLElement {
       const checked = this.option === radio.getAttribute('value');
       setBooleanAttribute(radio, 'checked', checked);
 
-      radio.addEventListener('change', (evt) => (this.option = evt.target.value));
+      radio.addEventListener('change', (evt) => {
+        this.option = evt.target.value;
+      });
     });
   }
 
@@ -557,7 +559,7 @@ class DiffDisplayOptions extends window.HTMLElement {
     return this.getAttribute('data-option') ?? 1;
   }
 
-  attributeChangedCallback(name, oldValue, newValue) {
+  attributeChangedCallback(name, _oldValue, _newValue) {
     if (name !== 'data-option') {
       return;
     }
@@ -576,7 +578,9 @@ class DiffDisplay extends window.HTMLElement {
 
     const optControl = new DiffDisplayOptions();
     optControl.option = this.option;
-    optControl.addEventListener('change', (evt) => (this.option = evt.target.option));
+    optControl.addEventListener('change', (evt) => {
+      this.option = evt.target.option;
+    });
     this.appendChild(optControl);
 
     const div = document.createElement('div');
@@ -639,25 +643,33 @@ class ListingOptions extends window.HTMLElement {
     appState.addListener(() => this.onUpdate());
 
     const input = this.querySelector('input[type=search]');
-    input.oninput = (evt) => (appState.query = evt.target.value);
+    input.oninput = (evt) => {
+      appState.query = evt.target.value;
+    };
 
     const hidePerf = this.querySelector('input#cbHidePerfect');
-    hidePerf.onchange = (evt) => (appState.hidePerfect = evt.target.checked);
+    hidePerf.onchange = (evt) => {
+      appState.hidePerfect = evt.target.checked;
+    };
     hidePerf.checked = appState.hidePerfect;
 
     const hideStub = this.querySelector('input#cbHideStub');
-    hideStub.onchange = (evt) => (appState.hideStub = evt.target.checked);
+    hideStub.onchange = (evt) => {
+      appState.hideStub = evt.target.checked;
+    };
     hideStub.checked = appState.hideStub;
 
     const showRecomp = this.querySelector('input#cbShowRecomp');
-    showRecomp.onchange = (evt) => (appState.showRecomp = evt.target.checked);
+    showRecomp.onchange = (evt) => {
+      appState.showRecomp = evt.target.checked;
+    };
     showRecomp.checked = appState.showRecomp;
 
-    this.querySelector('button#pagePrev').addEventListener('click', (evt) => {
+    this.querySelector('button#pagePrev').addEventListener('click', () => {
       appState.page = appState.page - 1;
     });
 
-    this.querySelector('button#pageNext').addEventListener('click', (evt) => {
+    this.querySelector('button#pageNext').addEventListener('click', () => {
       appState.page = appState.page + 1;
     });
 
@@ -669,7 +681,9 @@ class ListingOptions extends window.HTMLElement {
       const checked = appState.filterType === parseInt(radio.getAttribute('value'));
       setBooleanAttribute(radio, 'checked', checked);
 
-      radio.onchange = (evt) => (appState.filterType = radio.getAttribute('value'));
+      radio.onchange = () => {
+        appState.filterType = radio.getAttribute('value');
+      };
     });
 
     this.onUpdate();
@@ -779,7 +793,7 @@ class ListingTable extends window.HTMLElement {
       if (col) {
         const span = th.querySelector('span');
         if (span) {
-          span.addEventListener('click', (evt) => {
+          span.addEventListener('click', () => {
             appState.sortCol = col;
           });
         }
@@ -821,7 +835,7 @@ class ListingTable extends window.HTMLElement {
     for (const obj of appState.pageSlice()) {
       const row = document.createElement('func-row');
       row.setAttribute('data-address', obj.address); // ?
-      row.addEventListener('name-click', (evt) => {
+      row.addEventListener('name-click', () => {
         appState.toggleExpanded(obj.address);
         this.setDiffRow(obj.address, appState.isExpanded(obj.address));
       });
