@@ -2,7 +2,7 @@
 /* global data */
 
 // Unwrap array of functions into a dictionary with address as the key.
-const dataDict = Object.fromEntries(data.map(row => [row.address, row]));
+const dataDict = Object.fromEntries(data.map((row) => [row.address, row]));
 
 function getDataByAddr(addr) {
   return dataDict[addr];
@@ -28,34 +28,40 @@ function formatAsm(entries, addrOption) {
     return td;
   };
 
-  entries.forEach(obj => {
+  entries.forEach((obj) => {
     // These won't all be present. You get "both" for an equal node
     // and orig/recomp for a diff.
     const { both = [], orig = [], recomp = [] } = obj;
 
-    output.push(...both.map(([addr, line, recompAddr]) => {
-      const tr = document.createElement('tr');
-      tr.appendChild(createTh(addr));
-      tr.appendChild(createTh(recompAddr));
-      tr.appendChild(createTd(line));
-      return tr;
-    }));
+    output.push(
+      ...both.map(([addr, line, recompAddr]) => {
+        const tr = document.createElement('tr');
+        tr.appendChild(createTh(addr));
+        tr.appendChild(createTh(recompAddr));
+        tr.appendChild(createTd(line));
+        return tr;
+      }),
+    );
 
-    output.push(...orig.map(([addr, line]) => {
-      const tr = document.createElement('tr');
-      tr.appendChild(createTh(addr));
-      tr.appendChild(createTh(''));
-      tr.appendChild(createTd(`-${line}`, 'diffneg'));
-      return tr;
-    }));
+    output.push(
+      ...orig.map(([addr, line]) => {
+        const tr = document.createElement('tr');
+        tr.appendChild(createTh(addr));
+        tr.appendChild(createTh(''));
+        tr.appendChild(createTd(`-${line}`, 'diffneg'));
+        return tr;
+      }),
+    );
 
-    output.push(...recomp.map(([addr, line]) => {
-      const tr = document.createElement('tr');
-      tr.appendChild(createTh(''));
-      tr.appendChild(createTh(addr));
-      tr.appendChild(createTd(`+${line}`, 'diffpos'));
-      return tr;
-    }));
+    output.push(
+      ...recomp.map(([addr, line]) => {
+        const tr = document.createElement('tr');
+        tr.appendChild(createTh(''));
+        tr.appendChild(createTh(addr));
+        tr.appendChild(createTd(`+${line}`, 'diffpos'));
+        return tr;
+      }),
+    );
   });
 
   return output;
@@ -120,7 +126,7 @@ function countDiffs(row) {
   }
 
   const diffs = diff.map(([slug, subgroups]) => subgroups).flat();
-  const diffLength = diffs.filter(d => !('both' in d)).length;
+  const diffLength = diffs.filter((d) => !('both' in d)).length;
   const diffWord = diffLength === 1 ? 'diff' : 'diffs';
   return diffLength === 0 ? '' : `${diffLength} ${diffWord}`;
 }
@@ -225,7 +231,7 @@ class ListingState {
 
     for (let i = 0; i < this.pageCount(); i++) {
       const startIdx = i * PAGE_SIZE;
-      const endIdx = Math.min(this._results.length, ((i + 1) * PAGE_SIZE)) - 1;
+      const endIdx = Math.min(this._results.length, (i + 1) * PAGE_SIZE) - 1;
 
       let start = this._results[startIdx][this.sortCol];
       let end = this._results[endIdx][this.sortCol];
@@ -243,14 +249,7 @@ class ListingState {
 
   rowFilterFn(row) {
     // Destructuring sets defaults for optional values from this object.
-    const {
-      effective = false,
-      stub = false,
-      diff = '',
-      name,
-      address,
-      matching
-    } = row;
+    const { effective = false, stub = false, diff = '', name, address, matching } = row;
 
     if (this.hidePerfect && (effective || matching >= 1)) {
       return false;
@@ -266,10 +265,7 @@ class ListingState {
 
     // Name/addr search
     if (this.filterType === 1) {
-      return (
-        address.includes(this.query) ||
-        name.toLowerCase().includes(this.query)
-      );
+      return address.includes(this.query) || name.toLowerCase().includes(this.query);
     }
 
     // no diff for review.
@@ -299,13 +295,9 @@ class ListingState {
   }
 
   rowSortFn(rowA, rowB) {
-    const valA = this.sortCol === 'matching'
-      ? matchingColAdjustment(rowA)
-      : rowA[this.sortCol];
+    const valA = this.sortCol === 'matching' ? matchingColAdjustment(rowA) : rowA[this.sortCol];
 
-    const valB = this.sortCol === 'matching'
-      ? matchingColAdjustment(rowB)
-      : rowB[this.sortCol];
+    const valB = this.sortCol === 'matching' ? matchingColAdjustment(rowB) : rowB[this.sortCol];
 
     if (valA > valB) {
       return this.sortDesc ? -1 : 1;
@@ -436,7 +428,7 @@ class FuncRow extends window.HTMLElement {
     const template = document.querySelector('template#funcrow-template').content;
     const shadow = this.attachShadow({ mode: 'open' });
     shadow.appendChild(template.cloneNode(true));
-    shadow.querySelector(':host > div[data-col="name"]').addEventListener('click', evt => {
+    shadow.querySelector(':host > div[data-col="name"]').addEventListener('click', (evt) => {
       this.dispatchEvent(new Event('name-click'));
     });
   }
@@ -469,8 +461,10 @@ class CanCopy extends window.HTMLElement {
     shadow.appendChild(template.cloneNode(true));
 
     const el = shadow.querySelector('slot').assignedNodes()[0];
-    el.addEventListener('mouseout', evt => { this.copied = false; });
-    el.addEventListener('click', evt => {
+    el.addEventListener('mouseout', (evt) => {
+      this.copied = false;
+    });
+    el.addEventListener('click', (evt) => {
       copyToClipboard(evt.target.textContent);
       this.copied = true;
     });
@@ -482,7 +476,9 @@ class CanCopy extends window.HTMLElement {
 
   set copied(value) {
     if (value) {
-      setTimeout(() => { this.copied = false; }, 2000);
+      setTimeout(() => {
+        this.copied = false;
+      }, 2000);
     }
     setBooleanAttribute(this, 'copied', value);
   }
@@ -545,11 +541,11 @@ class DiffDisplayOptions extends window.HTMLElement {
         <label for="showBoth">Both</label>
       </fieldset>`;
 
-    shadow.querySelectorAll('input[type=radio]').forEach(radio => {
+    shadow.querySelectorAll('input[type=radio]').forEach((radio) => {
       const checked = this.option === radio.getAttribute('value');
       setBooleanAttribute(radio, 'checked', checked);
 
-      radio.addEventListener('change', evt => (this.option = evt.target.value));
+      radio.addEventListener('change', (evt) => (this.option = evt.target.value));
     });
   }
 
@@ -580,7 +576,7 @@ class DiffDisplay extends window.HTMLElement {
 
     const optControl = new DiffDisplayOptions();
     optControl.option = this.option;
-    optControl.addEventListener('change', evt => (this.option = evt.target.option));
+    optControl.addEventListener('change', (evt) => (this.option = evt.target.option));
     this.appendChild(optControl);
 
     const div = document.createElement('div');
@@ -643,37 +639,37 @@ class ListingOptions extends window.HTMLElement {
     appState.addListener(() => this.onUpdate());
 
     const input = this.querySelector('input[type=search]');
-    input.oninput = evt => (appState.query = evt.target.value);
+    input.oninput = (evt) => (appState.query = evt.target.value);
 
     const hidePerf = this.querySelector('input#cbHidePerfect');
-    hidePerf.onchange = evt => (appState.hidePerfect = evt.target.checked);
+    hidePerf.onchange = (evt) => (appState.hidePerfect = evt.target.checked);
     hidePerf.checked = appState.hidePerfect;
 
     const hideStub = this.querySelector('input#cbHideStub');
-    hideStub.onchange = evt => (appState.hideStub = evt.target.checked);
+    hideStub.onchange = (evt) => (appState.hideStub = evt.target.checked);
     hideStub.checked = appState.hideStub;
 
     const showRecomp = this.querySelector('input#cbShowRecomp');
-    showRecomp.onchange = evt => (appState.showRecomp = evt.target.checked);
+    showRecomp.onchange = (evt) => (appState.showRecomp = evt.target.checked);
     showRecomp.checked = appState.showRecomp;
 
-    this.querySelector('button#pagePrev').addEventListener('click', evt => {
+    this.querySelector('button#pagePrev').addEventListener('click', (evt) => {
       appState.page = appState.page - 1;
     });
 
-    this.querySelector('button#pageNext').addEventListener('click', evt => {
+    this.querySelector('button#pageNext').addEventListener('click', (evt) => {
       appState.page = appState.page + 1;
     });
 
-    this.querySelector('select#pageSelect').addEventListener('change', evt => {
+    this.querySelector('select#pageSelect').addEventListener('change', (evt) => {
       appState.page = evt.target.value;
     });
 
-    this.querySelectorAll('input[name=filterType]').forEach(radio => {
+    this.querySelectorAll('input[name=filterType]').forEach((radio) => {
       const checked = appState.filterType === parseInt(radio.getAttribute('value'));
       setBooleanAttribute(radio, 'checked', checked);
 
-      radio.onchange = evt => (appState.filterType = radio.getAttribute('value'));
+      radio.onchange = (evt) => (appState.filterType = radio.getAttribute('value'));
     });
 
     this.onUpdate();
@@ -681,12 +677,12 @@ class ListingOptions extends window.HTMLElement {
 
   onUpdate() {
     // Update input placeholder based on search type
-    this.querySelector('input[type=search]').placeholder = appState.filterType === 1
-      ? 'Search for offset or function name...'
-      : 'Search for instruction...';
+    this.querySelector('input[type=search]').placeholder =
+      appState.filterType === 1 ? 'Search for offset or function name...' : 'Search for instruction...';
 
     // Update page number and max page
-    this.querySelector('fieldset#pageDisplay > legend').textContent = `Page ${appState.page + 1} of ${Math.max(1, appState.pageCount())}`;
+    this.querySelector('fieldset#pageDisplay > legend').textContent =
+      `Page ${appState.page + 1} of ${Math.max(1, appState.pageCount())}`;
 
     // Disable prev/next buttons on first/last page
     setBooleanAttribute(this.querySelector('button#pagePrev'), 'disabled', appState.page === 0);
@@ -778,12 +774,14 @@ class ListingTable extends window.HTMLElement {
   connectedCallback() {
     const thead = this.querySelector('thead');
     const headers = thead.querySelectorAll('th:not([data-no-sort])'); // TODO
-    headers.forEach(th => {
+    headers.forEach((th) => {
       const col = th.getAttribute('data-col');
       if (col) {
         const span = th.querySelector('span');
         if (span) {
-          span.addEventListener('click', evt => { appState.sortCol = col; });
+          span.addEventListener('click', (evt) => {
+            appState.sortCol = col;
+          });
         }
       }
     });
@@ -794,7 +792,7 @@ class ListingTable extends window.HTMLElement {
   somethingChanged() {
     // Toggle recomp/diffs column
     setBooleanAttribute(this.querySelector('table'), 'show-recomp', appState.showRecomp);
-    this.querySelectorAll('func-row[data-address]').forEach(row => {
+    this.querySelectorAll('func-row[data-address]').forEach((row) => {
       setBooleanAttribute(row, 'show-recomp', appState.showRecomp);
     });
 
@@ -802,7 +800,7 @@ class ListingTable extends window.HTMLElement {
     const headers = thead.querySelectorAll('th');
 
     // Update sort indicator
-    headers.forEach(th => {
+    headers.forEach((th) => {
       const col = th.getAttribute('data-col');
       const indicator = th.querySelector('sort-indicator');
       if (indicator === null) {
@@ -823,7 +821,7 @@ class ListingTable extends window.HTMLElement {
     for (const obj of appState.pageSlice()) {
       const row = document.createElement('func-row');
       row.setAttribute('data-address', obj.address); // ?
-      row.addEventListener('name-click', evt => {
+      row.addEventListener('name-click', (evt) => {
         appState.toggleExpanded(obj.address);
         this.setDiffRow(obj.address, appState.isExpanded(obj.address));
       });
@@ -835,7 +833,7 @@ class ListingTable extends window.HTMLElement {
         ['recomp', obj.recomp],
         ['name', obj.name],
         ['diffs', countDiffs(obj)],
-        ['matching', getMatchPercentText(obj)]
+        ['matching', getMatchPercentText(obj)],
       ];
 
       items.forEach(([slotName, content]) => {
