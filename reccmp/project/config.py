@@ -53,6 +53,10 @@ class ProjectFileTarget(BaseModel):
         validation_alias=AliasChoices("source-root", "source_root")
     )
     hash: Hash
+    csv_files: list[Path] = Field(
+        validation_alias=AliasChoices("csv", "csv_files", "csv-files"),
+        default_factory=list,
+    )
     ghidra: YmlGhidraConfig = Field(default_factory=YmlGhidraConfig.default)
 
 
