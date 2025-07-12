@@ -100,11 +100,8 @@ def test_unusual_reads(binfile: PEImage):
     with pytest.raises(InvalidVirtualReadError):
         binfile.read(0x100DB588, -1)
 
-    # There are fewer than 1000 bytes in .reloc at the location of this string.
-    # Chunk size is chosen arbitrarily for string reads. The reason is that we need
-    # to read until we hit a zero byte, so we don't use the memoryview directly.
     # This should not fail.
-    assert binfile.read_string(0x1010BFFC, 1000) == b"d3drm.dll"
+    assert binfile.read_string(0x1010BFFC) == b"d3drm.dll"
 
 
 STRING_ADDRESSES = (
