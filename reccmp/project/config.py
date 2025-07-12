@@ -40,6 +40,17 @@ class YmlGhidraConfig(BaseModel):
         return cls(ignore_types=[], ignore_functions=[])
 
 
+class YmlReportConfig(BaseModel):
+    ignore_functions: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("ignore-functions", "ignore_functions"),
+    )
+
+    @classmethod
+    def default(cls) -> "YmlReportConfig":
+        return cls(ignore_functions=[])
+
+
 @dataclass
 class Hash:
     sha256: str
@@ -54,6 +65,7 @@ class ProjectFileTarget(BaseModel):
     )
     hash: Hash
     ghidra: YmlGhidraConfig = Field(default_factory=YmlGhidraConfig.default)
+    report: YmlReportConfig = Field(default_factory=YmlReportConfig.default)
 
 
 class ProjectFile(YmlFileModel):

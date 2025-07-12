@@ -85,6 +85,11 @@ class GhidraConfig:
 
 
 @dataclass
+class ReportConfig:
+    ignore_functions: list[str] = field(default_factory=list)
+
+
+@dataclass
 class RecCmpPartialTarget:
     # pylint: disable=too-many-instance-attributes
     """Partial information for a target, which includes:
@@ -110,6 +115,9 @@ class RecCmpPartialTarget:
 
     # Ghidra-specific options for this target.
     ghidra_config: GhidraConfig | None = None
+
+    # Report options for this target
+    report_config: ReportConfig | None = None
 
     # Relative (to project root) directory of source code files for this target.
     source_root: Path | None = None
@@ -142,6 +150,9 @@ class RecCmpTarget:
 
     # Ghidra-specific options for this target.
     ghidra_config: GhidraConfig
+
+    # Report options for this target
+    report_config: ReportConfig
 
     original_path: Path
     recompiled_path: Path
@@ -204,6 +215,11 @@ class RecCmpProject:
         else:
             ghidra = GhidraConfig()
 
+        if target.report_config is not None:
+            report = target.report_config
+        else:
+            report = ReportConfig()
+
         return RecCmpTarget(
             target_id=target.target_id,
             filename=target.filename,
@@ -213,6 +229,7 @@ class RecCmpProject:
             recompiled_pdb=target.recompiled_pdb,
             source_root=target.source_root,
             ghidra_config=ghidra,
+            report_config=report,
         )
 
     def find_build_config(self, search_path: Path) -> BuildFile | None:
@@ -296,6 +313,12 @@ class RecCmpProject:
                 )
             else:
                 ghidra = None
+            if target.report is not None:
+                report = ReportConfig(
+                    ignore_functions=target.report.ignore_functions,
+                )
+            else:
+                report = None
 
             source_root = project_directory / target.source_root
 
@@ -305,6 +328,7 @@ class RecCmpProject:
                 sha256=target.hash.sha256,
                 source_root=source_root,
                 ghidra_config=ghidra,
+                report_config=report,
             )
 
         # Apply reccmp-user.yml
@@ -348,6 +372,7 @@ class RecCmpPathsAction(argparse.Action):
             recompiled_pdb=pdb,
             source_root=source_root,
             ghidra_config=GhidraConfig(),
+            report_config=ReportConfig(),
         )
         setattr(namespace, self.dest, target)
 
