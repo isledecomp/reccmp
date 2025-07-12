@@ -3,7 +3,7 @@ colorama>=0.4.6
 pystache
 pydantic==2.9.2
 ruamel.yaml
-pydemangler @ git+https://github.com/wbenny/pydemangler.git
+pydemumble==0.0.1
 # requirement of capstone due to python dropping distutils.
 # see: https://github.com/capstone-engine/capstone/issues/2223
 setuptools ; python_version >= "3.12"
