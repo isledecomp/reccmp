@@ -13,7 +13,7 @@ from .config import (
     UserFileTarget,
 )
 from .common import RECCMP_PROJECT_CONFIG, RECCMP_USER_CONFIG, RECCMP_BUILD_CONFIG
-from .detect import RecCmpProject, RecCmpPartialTarget, GhidraConfig
+from .detect import RecCmpProject, RecCmpPartialTarget, GhidraConfig, ReportConfig
 from .error import RecCmpProjectException
 from .util import get_path_sha256, unique_targets
 
@@ -225,6 +225,7 @@ def create_project(
             sha256=hash_sha256,
             source_root=project_directory,
             ghidra_config=GhidraConfig(),
+            report_config=ReportConfig(),
         )
 
     # Write project YAML file
