@@ -175,7 +175,7 @@ class RecCmpBuiltProject:
         )
         if not build_directory:
             raise RecCmpProjectNotFoundException(
-                f"Cannot find {RECCMP_BUILD_CONFIG} under {build_directory}"
+                f"Cannot find {RECCMP_BUILD_CONFIG} in {directory} or any of its parents"
             )
         build_config = build_directory / RECCMP_BUILD_CONFIG
         logger.debug("Using build config: %s", build_config)
@@ -479,8 +479,7 @@ def detect_project(
                         logger.info("Found %s -> %s", target_id, p)
                         logger.info("Found %s -> %s", target_id, pdb)
                         break
-                    else:
-                        missing = pdb.name
+                    missing = pdb.name
             else:
                 logger.warning("Could not find %s", missing)
         logger.info("Updating %s", build_config_path)
