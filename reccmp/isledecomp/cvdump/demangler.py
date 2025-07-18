@@ -5,7 +5,14 @@ https://en.wikiversity.org/wiki/Visual_C%2B%2B_name_mangling
 
 import re
 from typing import NamedTuple
-from pydemumble import demangle  # type: ignore
+from pydemumble import demangle as _demangle  # type: ignore
+
+
+def msvc_demangle(symbol: str) -> str:
+    """Wrapper for demumbler. Converts MSVC C++ symbol to a name
+    more similar to what appears in the code.
+    If no conversion is possible, return empty string."""
+    return _demangle(symbol) or ""
 
 
 class InvalidEncodedNumberError(Exception):
@@ -61,7 +68,7 @@ def get_vtordisp_name(symbol: str) -> str | None:
     """For adjuster thunk functions, the PDB will sometimes use a name
     that contains "vtordisp" but often will just reuse the name of the
     function being thunked. We want to use the vtordisp name if possible."""
-    name = demangle(symbol)
+    name = msvc_demangle(symbol)
     if not name:
         return None
 
@@ -83,7 +90,7 @@ def get_function_arg_string(symbol: str) -> str | None:
     # pylint: disable=c-extension-no-member
     """Demangle the given symbol and return its parameters.
     We can use this to distinguish functions with the same name."""
-    raw = demangle(symbol)
+    raw = msvc_demangle(symbol)
     if not raw:
         return None
 
@@ -97,7 +104,7 @@ def get_function_arg_string(symbol: str) -> str | None:
 def demangle_vtable(symbol: str) -> str:
     # pylint: disable=c-extension-no-member
     """Get the class name referenced in the vtable symbol."""
-    raw = demangle(symbol)
+    raw = msvc_demangle(symbol)
 
     if not raw:
         pass  # TODO: This shouldn't happen if MSVC behaves
