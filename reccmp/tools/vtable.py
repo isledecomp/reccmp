@@ -8,8 +8,8 @@ from reccmp.isledecomp.compare import Compare as IsleCompare
 from reccmp.isledecomp.utils import print_combined_diff
 from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
 from reccmp.project.detect import (
-    argparse_add_built_project_target_args,
-    argparse_parse_built_project_target,
+    argparse_add_project_target_args,
+    argparse_parse_project_target,
     RecCmpProjectException,
 )
 from reccmp.isledecomp.compare.diff import CombinedDiffOutput
@@ -28,7 +28,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {reccmp.VERSION}"
     )
-    argparse_add_built_project_target_args(parser)
+    argparse_add_project_target_args(parser)
     parser.add_argument(
         "--verbose", "-v", action="store_true", help="Show more detailed information"
     )
@@ -62,7 +62,7 @@ def main():
     problem_count = 0
 
     try:
-        target = argparse_parse_built_project_target(args)
+        target = argparse_parse_project_target(args)
     except RecCmpProjectException as e:
         logger.error(e.args[0])
         return 1

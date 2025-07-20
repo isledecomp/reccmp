@@ -705,7 +705,6 @@ class CvdumpTypesParser:
         return {}
 
     def read_union(self, leaf: str) -> dict[str, Any]:
-        """This is a rather barebones handler, only parsing the size"""
         match = self.LF_UNION_LINE.search(leaf)
         assert match is not None
 
@@ -713,10 +712,14 @@ class CvdumpTypesParser:
 
         if match.group("field_type") == "0x0000":
             obj["is_forward_ref"] = True
+        else:
+            field_list_type = normalize_type_id(match.group("field_type"))
+            obj["field_list_type"] = field_list_type
 
-        obj["field_list_type"] = match.group("field_type")
+        udt = match.group("udt")
+        if udt is not None:
+            obj["udt"] = normalize_type_id(udt)
+
         obj["size"] = int(match.group("size"))
-        if match.group("udt") is not None:
-            obj["udt"] = normalize_type_id(match.group("udt"))
 
         return obj

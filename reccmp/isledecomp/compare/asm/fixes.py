@@ -2,8 +2,7 @@ import re
 from typing import Sequence
 
 from reccmp.isledecomp.compare.asm.parse import AsmExcerpt
-
-DiffOpcode = tuple[str, int, int, int, int]
+from reccmp.isledecomp.compare.pinned_sequences import DiffOpcode
 
 REG_FIND = re.compile(r"(?: |\[)(e?[a-d]x|e?[s,d]i|[a-d][l,h]|e?[b,s]p)")
 
@@ -194,8 +193,11 @@ def _is_relocatable(instr: str) -> bool:
     Excludes certain instructions whose relocation will always change the logic
     to be considered for an effective match.
     """
-    # Do not relocate jump table entries (this most likely influences the behaviour)
     if instr.startswith("start +"):
+        # Do not relocate jump table entries (this most likely influences the behaviour)
+        return False
+    if instr.startswith("0x"):
+        # Do not relocate data table entries (this most likely influences the behaviour)
         return False
     return True
 

@@ -28,8 +28,8 @@ from reccmp.assets import get_asset_file
 from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
 from reccmp.project.detect import (
     RecCmpProjectException,
-    argparse_add_built_project_target_args,
-    argparse_parse_built_project_target,
+    argparse_add_project_target_args,
+    argparse_parse_project_target,
 )
 
 
@@ -133,7 +133,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {reccmp.VERSION}"
     )
-    argparse_add_built_project_target_args(parser)
+    argparse_add_project_target_args(parser)
     parser.add_argument(
         "--total",
         "-T",
@@ -197,7 +197,7 @@ def main():
     args = parse_args()
 
     try:
-        target = argparse_parse_built_project_target(args)
+        target = argparse_parse_project_target(args)
     except RecCmpProjectException as e:
         logger.error("%s", e.args[0])
         return 1
@@ -237,6 +237,13 @@ def main():
     report = ReccmpStatusReport(filename=target.original_path.name.lower())
 
     for match in isle_compare.compare_all():
+        # if we are ignoring this function, skip to next one and don't add it to the entities list
+        if (
+            match.match_type == EntityType.FUNCTION
+            and match.name in target.report_config.ignore_functions
+        ):
+            continue
+
         if not args.silent and args.diff is None:
             print_match_oneline(
                 match, show_both_addrs=args.print_rec_addr, is_plain=args.no_color

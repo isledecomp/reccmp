@@ -254,7 +254,7 @@ def log_and_track_failure(
         )
 
 
-def find_build_target() -> "RecCmpBuiltTarget":
+def find_target() -> "RecCmpTarget":
     """
     Known issue: In order to use this script, `reccmp-build.yml` must be located in the same directory as `reccmp-project.yml`.
     """
@@ -262,7 +262,7 @@ def find_build_target() -> "RecCmpBuiltTarget":
     project_search_path = Path(__file__).parent
 
     try:
-        built_project = RecCmpBuiltProject.from_directory(project_search_path)
+        project = RecCmpProject.from_directory(project_search_path)
     except RecCmpProjectNotFoundException as e:
         # Figure out if we are in a debugging scenario
         debug_config_file = Path(__file__).parent / "dev_config.json"
@@ -274,13 +274,14 @@ def find_build_target() -> "RecCmpBuiltTarget":
         with debug_config_file.open() as infile:
             debug_config = json.load(infile)
 
-        built_project = RecCmpBuiltProject.from_directory(
-            Path(debug_config["projectDir"])
-        )
+        project = RecCmpProject.from_directory(Path(debug_config["projectDir"]))
+
+    # We must have loaded a project file if we are here.
+    assert project.project_config_path is not None
 
     # Set up logfile next to the project config file
     file_handler = logging.FileHandler(
-        built_project.project_config_path.parent.joinpath("ghidra_import.log"), mode="w"
+        project.project_config_path.parent.joinpath("ghidra_import.log"), mode="w"
     )
     file_handler.setFormatter(logging.root.handlers[0].formatter)
     logging.root.addHandler(file_handler)
@@ -289,7 +290,9 @@ def find_build_target() -> "RecCmpBuiltTarget":
         GLOBALS.target_name = getProgramFile().getName()
 
     matching_targets = [
-        t for t in built_project.targets.values() if t.filename == GLOBALS.target_name
+        target_id
+        for target_id, target in project.targets.items()
+        if target.filename == GLOBALS.target_name
     ]
 
     if not matching_targets:
@@ -301,11 +304,11 @@ def find_build_target() -> "RecCmpBuiltTarget":
             GLOBALS.target_name,
         )
 
-    return matching_targets[0]
+    return project.get(matching_targets[0])
 
 
 def main():
-    target = find_build_target()
+    target = find_target()
 
     logger.info("Importing file: %s", target.original_path)
 
@@ -343,7 +346,7 @@ try:
     # Packages are imported down here because reccmp's dependencies are only available after the venv was added to the pythonpath
     reload_module("reccmp.project.detect")
     from reccmp.project.common import RECCMP_BUILD_CONFIG, RECCMP_PROJECT_CONFIG
-    from reccmp.project.detect import RecCmpBuiltProject, RecCmpBuiltTarget
+    from reccmp.project.detect import RecCmpProject, RecCmpTarget
     from reccmp.project.error import RecCmpProjectNotFoundException
 
     reload_module("reccmp.isledecomp.compare")

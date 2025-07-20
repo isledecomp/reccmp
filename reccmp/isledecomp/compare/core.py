@@ -4,7 +4,7 @@ import difflib
 from pathlib import Path
 import struct
 from typing import Iterable, Iterator
-from reccmp.project.detect import RecCmpBuiltTarget
+from reccmp.project.detect import RecCmpTarget
 from reccmp.isledecomp.compare.functions import FunctionComparator
 from reccmp.isledecomp.formats.detect import detect_image
 from reccmp.isledecomp.formats.pe import PEImage
@@ -106,11 +106,11 @@ class Compare:
         match_strings(self._db, report)
 
         self.function_comparator = FunctionComparator(
-            self._db, self.orig_bin, self.recomp_bin, report
+            self._db, self._lines_db, self.orig_bin, self.recomp_bin, report
         )
 
     @classmethod
-    def from_target(cls, target: RecCmpBuiltTarget):
+    def from_target(cls, target: RecCmpTarget):
         origfile = detect_image(filepath=target.original_path)
         if not isinstance(origfile, PEImage):
             raise ValueError(f"{target.original_path} is not a PE executable")
@@ -796,16 +796,15 @@ class Compare:
 
         ratio = ratio / float(n_entries) if n_entries > 0 else 0.0
 
-        # n=100: Show the entire table if there is a diff to display.
-        # Otherwise it would be confusing if the table got cut off.
-
-        sm = difflib.SequenceMatcher(
+        # We do not use `get_grouped_opcodes()` because we want to show the entire table
+        # if there is a diff to display. Otherwise it would be confusing if the table got cut off.
+        opcodes = difflib.SequenceMatcher(
             None,
             [x[1] for x in orig_text],
             [x[1] for x in recomp_text],
-        )
+        ).get_opcodes()
 
-        unified_diff = combined_diff(sm, orig_text, recomp_text, context_size=100)
+        unified_diff = combined_diff([opcodes], orig_text, recomp_text)
 
         assert match.name is not None
         return DiffReport(
