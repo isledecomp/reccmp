@@ -13,7 +13,7 @@ def fixture_db():
 
 def test_overloaded_functions_all_unique(db: EntityDb):
     # Should start with nothing
-    assert len([*get_overloaded_functions(db)]) == 0
+    assert len(list(get_overloaded_functions(db))) == 0
 
     with db.batch() as batch:
         batch.set_orig(100, name="Hello", type=EntityType.FUNCTION)
@@ -21,7 +21,7 @@ def test_overloaded_functions_all_unique(db: EntityDb):
         batch.set_recomp(300, name="xyz", type=EntityType.FUNCTION)
 
     # All entities are functions, but their names are unique.
-    assert len([*get_overloaded_functions(db)]) == 0
+    assert len(list(get_overloaded_functions(db))) == 0
 
 
 def test_overloaded_functions_ignore_non_functions(db: EntityDb):
@@ -31,13 +31,13 @@ def test_overloaded_functions_ignore_non_functions(db: EntityDb):
         batch.set_recomp(300, name="Hello")
 
     # Name reused, but no entities are functions.
-    assert len([*get_overloaded_functions(db)]) == 0
+    assert len(list(get_overloaded_functions(db))) == 0
 
     with db.batch() as batch:
         batch.set_orig(400, name="Hello", type=EntityType.FUNCTION)
 
     # The name is not shared with *other* functions
-    assert len([*get_overloaded_functions(db)]) == 0
+    assert len(list(get_overloaded_functions(db))) == 0
 
     with db.batch() as batch:
         batch.set_recomp(400, name="Hello", type=EntityType.FUNCTION)
