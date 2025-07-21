@@ -9,7 +9,7 @@ class OverloadedFunctionEntity(NamedTuple):
     name: str
     symbol: str | None
     # The number for this repeated name, starting at 1, ordered by orig_addr (nulls last), then recomp_addr.
-    sequence: int
+    nth: int
 
 
 def get_overloaded_functions(db: EntityDb) -> Iterable[OverloadedFunctionEntity]:
@@ -17,7 +17,7 @@ def get_overloaded_functions(db: EntityDb) -> Iterable[OverloadedFunctionEntity]
     Uses a SQL window function to get the number for the repeated name so the caller
     doesn't need to keep track. We assume that a better name can be derived from
     the entity's symbol so we return that too."""
-    for orig_addr, recomp_addr, name, symbol, sequence in db.sql.execute(
+    for orig_addr, recomp_addr, name, symbol, nth in db.sql.execute(
         """SELECT orig_addr, recomp_addr,
         json_extract(kvstore,'$.name') as name,
         json_extract(kvstore,'$.symbol'),
@@ -34,5 +34,5 @@ def get_overloaded_functions(db: EntityDb) -> Iterable[OverloadedFunctionEntity]
         assert isinstance(orig_addr, int) or isinstance(recomp_addr, int)
         assert isinstance(name, str)
         assert isinstance(symbol, str) or symbol is None
-        assert isinstance(sequence, int)
-        yield OverloadedFunctionEntity(orig_addr, recomp_addr, name, symbol, sequence)
+        assert isinstance(nth, int)
+        yield OverloadedFunctionEntity(orig_addr, recomp_addr, name, symbol, nth)

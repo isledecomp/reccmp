@@ -44,12 +44,12 @@ def test_overloaded_functions_ignore_non_functions(db: EntityDb):
 
     # Now we have two entities that are functions and have the same name.
     # Don't count the other entities that are *not* functions.
-    assert [func.sequence for func in get_overloaded_functions(db)] == [1, 2]
+    assert [func.nth for func in get_overloaded_functions(db)] == [1, 2]
 
 
 def test_overloaded_functions(db: EntityDb):
     with db.batch() as batch:
-        # Inserted in reverse order to test sequence numbering
+        # Inserted in reverse order to test numbering
         batch.set_recomp(300, name="Hello", type=EntityType.FUNCTION)
         batch.set_recomp(200, name="Hello", type=EntityType.FUNCTION)
         batch.set_orig(100, name="Hello", type=EntityType.FUNCTION)
@@ -57,6 +57,6 @@ def test_overloaded_functions(db: EntityDb):
 
     # Should have three entities, one matched, all functions and all with the name "Hello".
     overloaded = list(get_overloaded_functions(db))
-    assert [func.sequence for func in overloaded] == [1, 2, 3]
+    assert [func.nth for func in overloaded] == [1, 2, 3]
     assert [func.orig_addr for func in overloaded] == [100, 200, None]
     assert [func.recomp_addr for func in overloaded] == [None, 200, 300]
