@@ -39,6 +39,7 @@ from .match_msvc import (
 from .db import EntityDb, ReccmpEntity, ReccmpMatch
 from .diff import DiffReport, combined_diff
 from .lines import LinesDb
+from .queries import get_overloaded_functions
 
 
 # pylint: disable=too-many-lines
@@ -710,36 +711,24 @@ class Compare:
         """Our asm sanitize will use the "friendly" name of a function.
         Overloaded functions will all have the same name. This function detects those
         cases and gives each one a unique name in the db."""
-        repeat_names: dict[str, list[tuple[int, str | None]]] = {}
-
-        # Select addresses and symbols for all repeated function names
-        for recomp_addr, name, symbol in self._db.sql.execute(
-            """SELECT recomp_addr, json_extract(kvstore,'$.name') as name, json_extract(kvstore,'$.symbol')
-            from entities where name in (
-                select json_extract(kvstore,'$.name') as name from entities
-                where json_extract(kvstore,'$.type') = ?
-                group by name having count(name) > 1
-            )""",
-            (EntityType.FUNCTION,),
-        ):
-            # TODO: Thunk's link to the original function is lost once the record is created.
-            if "Thunk of" in name:
-                continue
-
-            repeat_names.setdefault(name, []).append((recomp_addr, symbol))
-
         with self._db.batch() as batch:
-            for name, items in repeat_names.items():
-                for i, (recomp_addr, symbol) in enumerate(items, start=1):
-                    # Just number it to start, in case we don't have a symbol.
-                    new_name = f"{name}({i})"
+            for func in get_overloaded_functions(self._db):
+                # TODO: Thunk's link to the original function is lost once the record is created. See #176.
+                if "Thunk of" in func.name:
+                    continue
 
-                    if symbol is not None:
-                        dm_args = get_function_arg_string(symbol)
-                        if dm_args is not None:
-                            new_name = f"{name}{dm_args}"
+                # Just number it to start, in case we don't have a symbol.
+                new_name = f"{func.name}({func.nth})"
 
-                    batch.set_recomp(recomp_addr, computed_name=new_name)
+                if func.symbol is not None:
+                    dm_args = get_function_arg_string(func.symbol)
+                    if dm_args is not None:
+                        new_name = f"{func.name}{dm_args}"
+
+                if func.orig_addr is not None:
+                    batch.set_orig(func.orig_addr, computed_name=new_name)
+                elif func.recomp_addr is not None:
+                    batch.set_recomp(func.recomp_addr, computed_name=new_name)
 
     def _compare_vtable(self, match: ReccmpMatch) -> DiffReport:
         vtable_size = match.size
