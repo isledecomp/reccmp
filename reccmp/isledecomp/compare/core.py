@@ -24,6 +24,7 @@ from reccmp.isledecomp.compare.event import (
 )
 from reccmp.isledecomp.analysis import (
     find_float_consts,
+    find_import_thunks,
     find_vtordisp,
     is_likely_latin1,
 )
@@ -513,23 +514,19 @@ class Compare:
 
         with self._db.batch() as batch:
             for dll, name, addr in self.orig_bin.imports:
-                import_name = f"{dll.upper()}:{name}"
+                import_name = f"{dll}::{name}"
                 batch.set_orig(
                     addr,
-                    name=f"__imp__{name}",
-                    import_name=import_name,
+                    name=import_name,
                     size=4,
                     type=EntityType.IMPORT,
                 )
 
             for dll, name, addr in self.recomp_bin.imports:
-                # TODO: recomp imports should already have a name from the PDB
-                # but set it anyway to avoid problems later.
-                import_name = f"{dll.upper()}:{name}"
+                import_name = f"{dll}::{name}"
                 batch.set_recomp(
                     addr,
-                    name=f"__imp__{name}",
-                    import_name=import_name,
+                    name=import_name,
                     size=4,
                     type=EntityType.IMPORT,
                 )
@@ -542,6 +539,29 @@ class Compare:
                 recomp_addr = recomp_byname.get(pair, None)
                 if recomp_addr is not None:
                     batch.match(orig_addr, recomp_addr)
+
+        with self._db.batch() as batch:
+            for thunk in find_import_thunks(self.orig_bin):
+                name = f"{thunk.dll_name}::{thunk.func_name}"
+                batch.set_orig(
+                    thunk.addr,
+                    name=name,
+                    type=EntityType.FUNCTION,
+                    skip=True,
+                    size=thunk.size,
+                    ref_orig=thunk.import_addr,
+                )
+
+            for thunk in find_import_thunks(self.recomp_bin):
+                name = f"{thunk.dll_name}::{thunk.func_name}"
+                batch.set_recomp(
+                    thunk.addr,
+                    name=name,
+                    type=EntityType.FUNCTION,
+                    skip=True,
+                    size=thunk.size,
+                    ref_recomp=thunk.import_addr,
+                )
 
     def _match_thunks(self):
         """Thunks are (by nature) matched by indirection. If a thunk from orig

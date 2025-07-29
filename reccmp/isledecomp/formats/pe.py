@@ -494,9 +494,6 @@ class PEImage(Image):
     _relocated_addrs: set[int] = dataclasses.field(default_factory=set, repr=False)
     relocations: set[int] = dataclasses.field(default_factory=set, repr=False)
     # find_str: bool = dataclasses.field(default=False, repr=False)
-    imports: list[tuple[str, str, int]] = dataclasses.field(
-        default_factory=list, repr=False
-    )
     exports: list[tuple[int, bytes]] = dataclasses.field(
         default_factory=list, repr=False
     )
@@ -548,7 +545,6 @@ class PEImage(Image):
             )
 
         self._populate_relocations()
-        self._populate_imports()
         self._populate_thunks()
         # Export dir is always first
         self._populate_exports()
@@ -689,65 +685,63 @@ class PEImage(Image):
             (relocated_addr,) = struct.unpack("<I", section.view[offset : offset + 4])
             self._relocated_addrs.add(relocated_addr)
 
-    def _populate_imports(self):
-        """Parse .idata to find imported DLLs and their functions."""
+    def get_import_descriptors(self) -> Iterator[tuple[int, int, int]]:
         import_directory = self.get_data_directory_region(
             PEDataDirectoryItemType.IMPORT_TABLE
         )
-        assert import_directory is not None
 
-        def iter_image_import(offset: int):
+        if import_directory is None:
+            return
+
+        addr = import_directory.virtual_address
+        while True:
+            # Read 5 dwords until all are zero.
+            image_import_descriptor = struct.unpack("<5I", self.read(addr, 20))
+            addr += 20
+            if all(x == 0 for x in image_import_descriptor):
+                break
+
+            (rva_ilt, _, __, dll_name, rva_iat) = image_import_descriptor
+            # Convert relative virtual addresses into absolute
+            yield (
+                self.imagebase + rva_ilt,
+                self.imagebase + dll_name,
+                self.imagebase + rva_iat,
+            )
+
+    def get_imports(self) -> Iterator[tuple[str, str, int]]:
+        # ILT = Import Lookup Table
+        # IAT = Import Address Table
+        # ILT gives us the symbol name of the import.
+        # IAT gives the address. The compiler generated a thunk function
+        # that jumps to the value of this address.
+        for start_ilt, dll_addr, start_iat in self.get_import_descriptors():
+            dll_name = self.read_string(dll_addr).decode("ascii")
+            ofs_ilt = start_ilt
+            # Address of "__imp__*" symbols.
+            ofs_iat = start_iat
             while True:
-                # Read 5 dwords until all are zero.
-                image_import_descriptor = struct.unpack("<5I", self.read(offset, 20))
-                offset += 20
-                if all(x == 0 for x in image_import_descriptor):
+                (lookup_addr,) = struct.unpack("<L", self.read(ofs_ilt, 4))
+                (import_addr,) = struct.unpack("<L", self.read(ofs_iat, 4))
+                if lookup_addr == 0 or import_addr == 0:
                     break
 
-                (rva_ilt, _, __, dll_name, rva_iat) = image_import_descriptor
-                # Convert relative virtual addresses into absolute
-                yield (
-                    self.imagebase + rva_ilt,
-                    self.imagebase + dll_name,
-                    self.imagebase + rva_iat,
-                )
+                # MSB set if this is an ordinal import
+                if lookup_addr & 0x80000000 != 0:
+                    ordinal_num = lookup_addr & 0x7FFF
+                    symbol_name = f"Ordinal_{ordinal_num}"
+                else:
+                    # Skip the "Hint" field, 2 bytes
+                    name_ofs = lookup_addr + self.imagebase + 2
+                    symbol_name = self.read_string(name_ofs).decode("ascii")
 
-        image_import_descriptors = list(
-            descriptor
-            for descriptor in iter_image_import(import_directory.virtual_address)
-        )
+                yield dll_name, symbol_name, ofs_iat
+                ofs_ilt += 4
+                ofs_iat += 4
 
-        def iter_imports() -> Iterator[tuple[str, str, int]]:
-            # ILT = Import Lookup Table
-            # IAT = Import Address Table
-            # ILT gives us the symbol name of the import.
-            # IAT gives the address. The compiler generated a thunk function
-            # that jumps to the value of this address.
-            for start_ilt, dll_addr, start_iat in image_import_descriptors:
-                dll_name = self.read_string(dll_addr).decode("ascii")
-                ofs_ilt = start_ilt
-                # Address of "__imp__*" symbols.
-                ofs_iat = start_iat
-                while True:
-                    (lookup_addr,) = struct.unpack("<L", self.read(ofs_ilt, 4))
-                    (import_addr,) = struct.unpack("<L", self.read(ofs_iat, 4))
-                    if lookup_addr == 0 or import_addr == 0:
-                        break
-
-                    # MSB set if this is an ordinal import
-                    if lookup_addr & 0x80000000 != 0:
-                        ordinal_num = lookup_addr & 0x7FFF
-                        symbol_name = f"Ordinal_{ordinal_num}"
-                    else:
-                        # Skip the "Hint" field, 2 bytes
-                        name_ofs = lookup_addr + self.imagebase + 2
-                        symbol_name = self.read_string(name_ofs).decode("ascii")
-
-                    yield dll_name, symbol_name, ofs_iat
-                    ofs_ilt += 4
-                    ofs_iat += 4
-
-        self.imports = list(iter_imports())
+    @property
+    def imports(self) -> list[tuple[str, str, int]]:
+        return list(self.get_imports())
 
     def _populate_thunks(self):
         """For each imported function, we generate a thunk function. The only
@@ -771,26 +765,6 @@ class PEImage(Image):
                 jmp_ofs = text_start + ofs + 5 + operand
                 self.thunks.append((thunk_ofs, jmp_ofs))
                 ofs += 5
-
-        # Now check for import thunks which are present in debug and release.
-        # These use an absolute JMP with the 2 byte opcode: 0xff 0x25
-        idata_sections = self.get_sections_in_data_directory(
-            PEDataDirectoryItemType.IMPORT_TABLE
-        )
-        ofs = text_start
-
-        for shift in (0, 2, 4):
-            window = text_sect.view[shift:]
-            win_end = 6 * (len(window) // 6)
-            for i, (b0, b1, jmp_ofs) in enumerate(
-                struct.iter_unpack("<2BL", window[:win_end])
-            ):
-                if (b0, b1) == (0xFF, 0x25) and any(
-                    section.contains_vaddr(jmp_ofs) for section in idata_sections
-                ):
-                    # Record the address of the jmp instruction and the destination in .idata
-                    thunk_ofs = ofs + shift + i * 6
-                    self.thunks.append((thunk_ofs, jmp_ofs))
 
     def _populate_exports(self):
         """If you are missing a lot of annotations in your file
