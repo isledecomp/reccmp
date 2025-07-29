@@ -13,8 +13,22 @@ _SETUP_SQL = """
     CREATE TABLE entities (
         orig_addr int unique,
         recomp_addr int unique,
-        kvstore text default '{}'
+        kvstore text default '{}',
+        ref_orig integer as (json_extract(kvstore, '$.ref_orig')),
+        ref_recomp integer as (json_extract(kvstore, '$.ref_recomp'))
     );
+
+    CREATE VIEW orig_refs (orig_addr, ref_id, nth) AS
+        SELECT thunk.orig_addr, ref.rowid,
+            Row_number() OVER (partition BY thunk.ref_orig order by thunk.orig_addr) nth
+        FROM entities thunk
+        INNER JOIN entities ref on thunk.ref_orig = ref.orig_addr;
+
+    CREATE VIEW recomp_refs (recomp_addr, ref_id, nth) AS
+        SELECT thunk.recomp_addr, ref.rowid,
+            Row_number() OVER (partition BY thunk.ref_recomp order by thunk.recomp_addr) nth
+        FROM entities thunk
+        INNER JOIN entities ref on thunk.ref_recomp = ref.recomp_addr;
 
     CREATE VIEW orig_unmatched (orig_addr, kvstore) AS
         SELECT orig_addr, kvstore FROM entities
