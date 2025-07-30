@@ -36,6 +36,7 @@ from .match_msvc import (
     match_static_variables,
     match_variables,
     match_strings,
+    match_ref,
 )
 from .db import EntityDb, ReccmpEntity, ReccmpMatch
 from .diff import DiffReport, combined_diff
@@ -102,6 +103,7 @@ class Compare:
         self._match_thunks()
         self._match_vtordisp()
         self._check_vtables()
+        match_ref(self._db, report)
         self._unique_names_for_overloaded_functions()
 
         match_strings(self._db, report)
