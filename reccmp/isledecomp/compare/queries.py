@@ -27,8 +27,11 @@ def get_overloaded_functions(db: EntityDb) -> Iterable[OverloadedFunctionEntity]
             select json_extract(kvstore,'$.name') as name from entities
             where json_extract(kvstore,'$.type') = ?
             and name is not null
+            and ref_orig is null and ref_recomp is null
             group by name having count(name) > 1
-        )""",
+        )
+        and ref_orig is null and ref_recomp is null
+        """,
         (EntityType.FUNCTION, EntityType.FUNCTION),
     ):
         assert isinstance(orig_addr, int) or isinstance(recomp_addr, int)

@@ -710,10 +710,6 @@ class Compare:
         cases and gives each one a unique name in the db."""
         with self._db.batch() as batch:
             for func in get_overloaded_functions(self._db):
-                # TODO: Thunk's link to the original function is lost once the record is created. See #176.
-                if "Thunk of" in func.name:
-                    continue
-
                 # Just number it to start, in case we don't have a symbol.
                 new_name = f"{func.name}({func.nth})"
 

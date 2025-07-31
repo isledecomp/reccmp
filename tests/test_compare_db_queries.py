@@ -65,6 +65,25 @@ def test_overloaded_functions(db: EntityDb):
     assert [func.recomp_addr for func in overloaded] == [None, 200, 300]
 
 
+def test_overloaded_functions_ignore_ref(db: EntityDb):
+    """Should not include functions with ref attribute set."""
+    with db.batch() as batch:
+        # Unique among non-ref functions
+        batch.set_orig(100, name="Hello", type=EntityType.FUNCTION)
+        batch.set_orig(200, name="Hello", type=EntityType.FUNCTION, ref_orig=1000)
+        # Non-unique but both are refs
+        batch.set_orig(300, name="Test", type=EntityType.FUNCTION, ref_orig=1000)
+        batch.set_orig(400, name="Test", type=EntityType.FUNCTION, ref_orig=1000)
+        # Non-unique but should ignore the ref function
+        batch.set_orig(500, name="Hey", type=EntityType.FUNCTION)
+        batch.set_orig(600, name="Hey", type=EntityType.FUNCTION)
+        batch.set_orig(700, name="Hey", type=EntityType.FUNCTION, ref_orig=1000)
+
+    # Should only include the duplicate names where both are not ref entities.
+    overloaded = list(get_overloaded_functions(db))
+    assert [func.orig_addr for func in overloaded] == [500, 600]
+
+
 def test_named_thunks_unmatched(db: EntityDb):
     """Should follow the ref_orig or ref_recomp attribute back to the
     parent entity to derive the thunk name."""
