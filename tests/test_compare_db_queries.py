@@ -2,7 +2,10 @@
 
 import pytest
 from reccmp.isledecomp.compare.db import EntityDb
-from reccmp.isledecomp.compare.queries import get_overloaded_functions
+from reccmp.isledecomp.compare.queries import (
+    get_overloaded_functions,
+    get_thunks_and_name,
+)
 from reccmp.isledecomp.types import EntityType
 
 
@@ -60,3 +63,129 @@ def test_overloaded_functions(db: EntityDb):
     assert [func.nth for func in overloaded] == [1, 2, 3]
     assert [func.orig_addr for func in overloaded] == [100, 200, None]
     assert [func.recomp_addr for func in overloaded] == [None, 200, 300]
+
+
+def test_named_thunks_unmatched(db: EntityDb):
+    """Should follow the ref_orig or ref_recomp attribute back to the
+    parent entity to derive the thunk name."""
+    with db.batch() as batch:
+        batch.set_orig(100, name="Hello", type=EntityType.FUNCTION)
+        batch.set_orig(200, ref_orig=100)
+        batch.set_recomp(500, name="Test", type=EntityType.FUNCTION)
+        batch.set_recomp(600, ref_recomp=500)
+
+    names = list(get_thunks_and_name(db))
+    assert len(names) == 2
+    assert names[0].orig_addr == 200
+    assert names[0].name == "Hello"
+    assert names[1].recomp_addr == 600
+    assert names[1].name == "Test"
+
+
+def test_named_thunks_matched(db: EntityDb):
+    """If the thunk has been matched to a parent matched entity
+    we should get only one name reference"""
+    with db.batch() as batch:
+        batch.set_orig(100, name="Hello", type=EntityType.FUNCTION)
+        batch.set_orig(200, ref_orig=100)
+        batch.set_recomp(500, name="Test", type=EntityType.FUNCTION)
+        batch.set_recomp(600, ref_recomp=500)
+        # Both entity and thunk matched
+        batch.match(100, 500)
+        batch.match(200, 600)
+
+    names = list(get_thunks_and_name(db))
+    assert len(names) == 1
+    assert names[0].name == "Test"  # Prefer recomp value
+
+
+def test_named_thunks_no_name(db: EntityDb):
+    """Do not return a name unless the parent entity has one."""
+    with db.batch() as batch:
+        batch.set_orig(100, type=EntityType.FUNCTION)
+        batch.set_orig(200, ref_orig=100)
+        batch.set_recomp(500, type=EntityType.FUNCTION)
+        batch.set_recomp(600, ref_recomp=500)
+
+    names = list(get_thunks_and_name(db))
+    assert len(names) == 0
+
+
+def test_named_thunks_prefer_computed_name(db: EntityDb):
+    """Should use the computed (unique) name on the parent entity."""
+    with db.batch() as batch:
+        # Entity with computed name only
+        batch.set_orig(100, computed_name="Hello", type=EntityType.FUNCTION)
+        batch.set_orig(200, ref_orig=100)
+        # Entity with both name fields
+        batch.set_recomp(500, name="X", computed_name="Test", type=EntityType.FUNCTION)
+        batch.set_recomp(600, ref_recomp=500)
+
+    names = list(get_thunks_and_name(db))
+    assert len(names) == 2
+    assert names[0].name == "Hello"
+    assert names[1].name == "Test"
+
+
+def test_named_thunks_crossed_ref_attr(db: EntityDb):
+    """Don't use ref_recomp on an entity with only an orig_addr.
+    The same is true for ref_orig on an entity with only a recomp_addr.
+    This will technically still work but it probably indicates a bug."""
+    with db.batch() as batch:
+        batch.set_orig(100, name="Hello", type=EntityType.FUNCTION)
+        batch.set_orig(200, ref_recomp=500)
+        batch.set_recomp(500, name="Test", type=EntityType.FUNCTION)
+        batch.set_recomp(600, ref_orig=100)
+
+    names = list(get_thunks_and_name(db))
+    assert len(names) == 0
+
+
+def test_named_thunks_crossed_same_addr(db: EntityDb):
+    """The same should be true even if the address values are the same
+    in both virtual address sapces."""
+    with db.batch() as batch:
+        batch.set_orig(100, name="Hello", type=EntityType.FUNCTION)
+        batch.set_orig(200, ref_recomp=100)
+        batch.set_recomp(100, name="Test", type=EntityType.FUNCTION)
+        batch.set_recomp(200, ref_orig=100)
+
+    names = list(get_thunks_and_name(db))
+    assert len(names) == 0
+
+
+def test_named_thunks_ignore_incomplete_ref(db: EntityDb):
+    """If the thunk has both ref_orig and ref_recomp but they each
+    point to different entities, do not return a name."""
+    with db.batch() as batch:
+        batch.set_orig(100, name="Hello", type=EntityType.FUNCTION)
+        batch.set_orig(200, ref_orig=100)
+        batch.set_recomp(500, name="Test", type=EntityType.FUNCTION)
+        batch.set_recomp(600, ref_recomp=500)
+        # Only thunk is matched
+        batch.match(200, 600)
+
+    names = list(get_thunks_and_name(db))
+    assert len(names) == 0
+
+
+def test_named_thunks_ignore_incomplete_if_matched(db: EntityDb):
+    """If ref_orig and ref_recomp don't point at the same entity
+    don't return a name even if each parent entity is separately matched.
+    i.e. don't check only that the parents are matched. They must be
+    matched to each other."""
+    with db.batch() as batch:
+        # Establish two matched entities
+        batch.set_recomp(2001, name="Hello", type=EntityType.FUNCTION)
+        batch.set_recomp(2002, name="Test", type=EntityType.FUNCTION)
+        batch.match(1001, 2001)
+        batch.match(1002, 2002)
+
+        # Thunk entity with ref_orig and ref_recomp that point
+        # to two different matched entities.
+        batch.set_orig(100, ref_orig=1001)
+        batch.set_recomp(200, ref_recomp=2002)
+        batch.match(100, 200)
+
+    names = list(get_thunks_and_name(db))
+    assert len(names) == 0
