@@ -41,7 +41,7 @@ from .match_msvc import (
 from .db import EntityDb, ReccmpEntity, ReccmpMatch
 from .diff import DiffReport, combined_diff
 from .lines import LinesDb
-from .queries import get_overloaded_functions, get_thunks_and_name
+from .queries import get_overloaded_functions, get_named_thunks
 
 
 # pylint: disable=too-many-lines
@@ -593,7 +593,7 @@ class Compare:
 
     def _name_thunks(self):
         with self._db.batch() as batch:
-            for thunk in get_thunks_and_name(self._db):
+            for thunk in get_named_thunks(self._db):
                 if thunk.orig_addr is not None:
                     batch.set_orig(thunk.orig_addr, name=f"Thunk of '{thunk.name}'")
 

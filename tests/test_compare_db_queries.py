@@ -4,7 +4,7 @@ import pytest
 from reccmp.isledecomp.compare.db import EntityDb
 from reccmp.isledecomp.compare.queries import (
     get_overloaded_functions,
-    get_thunks_and_name,
+    get_named_thunks,
 )
 from reccmp.isledecomp.types import EntityType
 
@@ -93,7 +93,7 @@ def test_named_thunks_unmatched(db: EntityDb):
         batch.set_recomp(500, name="Test", type=EntityType.FUNCTION)
         batch.set_recomp(600, ref_recomp=500)
 
-    names = list(get_thunks_and_name(db))
+    names = list(get_named_thunks(db))
     assert len(names) == 2
     assert names[0].orig_addr == 200
     assert names[0].name == "Hello"
@@ -113,7 +113,7 @@ def test_named_thunks_matched(db: EntityDb):
         batch.match(100, 500)
         batch.match(200, 600)
 
-    names = list(get_thunks_and_name(db))
+    names = list(get_named_thunks(db))
     assert len(names) == 1
     assert names[0].name == "Test"  # Prefer recomp value
 
@@ -126,7 +126,7 @@ def test_named_thunks_no_name(db: EntityDb):
         batch.set_recomp(500, type=EntityType.FUNCTION)
         batch.set_recomp(600, ref_recomp=500)
 
-    names = list(get_thunks_and_name(db))
+    names = list(get_named_thunks(db))
     assert len(names) == 0
 
 
@@ -140,7 +140,7 @@ def test_named_thunks_prefer_computed_name(db: EntityDb):
         batch.set_recomp(500, name="X", computed_name="Test", type=EntityType.FUNCTION)
         batch.set_recomp(600, ref_recomp=500)
 
-    names = list(get_thunks_and_name(db))
+    names = list(get_named_thunks(db))
     assert len(names) == 2
     assert names[0].name == "Hello"
     assert names[1].name == "Test"
@@ -156,20 +156,20 @@ def test_named_thunks_crossed_ref_attr(db: EntityDb):
         batch.set_recomp(500, name="Test", type=EntityType.FUNCTION)
         batch.set_recomp(600, ref_orig=100)
 
-    names = list(get_thunks_and_name(db))
+    names = list(get_named_thunks(db))
     assert len(names) == 0
 
 
 def test_named_thunks_crossed_same_addr(db: EntityDb):
     """The same should be true even if the address values are the same
-    in both virtual address sapces."""
+    in both virtual address spaces."""
     with db.batch() as batch:
         batch.set_orig(100, name="Hello", type=EntityType.FUNCTION)
         batch.set_orig(200, ref_recomp=100)
         batch.set_recomp(100, name="Test", type=EntityType.FUNCTION)
         batch.set_recomp(200, ref_orig=100)
 
-    names = list(get_thunks_and_name(db))
+    names = list(get_named_thunks(db))
     assert len(names) == 0
 
 
@@ -184,7 +184,7 @@ def test_named_thunks_ignore_incomplete_ref(db: EntityDb):
         # Only thunk is matched
         batch.match(200, 600)
 
-    names = list(get_thunks_and_name(db))
+    names = list(get_named_thunks(db))
     assert len(names) == 0
 
 
@@ -206,5 +206,5 @@ def test_named_thunks_ignore_incomplete_if_matched(db: EntityDb):
         batch.set_recomp(200, ref_recomp=2002)
         batch.match(100, 200)
 
-    names = list(get_thunks_and_name(db))
+    names = list(get_named_thunks(db))
     assert len(names) == 0
