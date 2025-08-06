@@ -14,7 +14,6 @@ from typing import Iterator, cast
 
 from .exceptions import (
     InvalidVirtualAddressError,
-    InvalidVirtualReadError,
     SectionNotFoundError,
 )
 from .image import Image
@@ -927,26 +926,9 @@ class PEImage(Image):
     def addr_is_uninitialized(self, vaddr: int) -> bool:
         return any(start <= vaddr < end for start, end in self.uninitialized_ranges)
 
-    def read_string(self, vaddr: int, chunk_size: int = 1000) -> bytes:
-        """Read up to chunk_size or until we find a zero byte."""
-        (section_id, offset) = self.get_relative_addr(vaddr)
-        section = self.sections[section_id - 1]
-        view = section.view[offset : offset + chunk_size]
-        # Don't call read() here because we might not get the entire chunk size.
-        # Use whatever we can get if we are at the end of the section.
-        return view.tobytes().partition(b"\x00")[0]
+    def seek(self, vaddr: int) -> tuple[bytes, int]:
+        for sect, (start, end) in zip(self.sections, self.vaddr_ranges):
+            if start <= vaddr < end:
+                return (sect.view[vaddr - start :], end - vaddr)
 
-    def read(self, vaddr: int, size: int) -> bytes:
-        (section_id, offset) = self.get_relative_addr(vaddr)
-        section = self.sections[section_id - 1]
-
-        # If we try to read off the end of the section
-        if size < 0 or (offset + size) > section.extent:
-            raise InvalidVirtualReadError(
-                f"{self.filepath} : Cannot read {size} bytes from 0x{vaddr:x}"
-            )
-
-        # Pad with zero bytes if reading uninitialized data.
-        # Assumes the section memoryview is cropped to the initialized bytes
-        view = section.view[offset : offset + size]
-        return bytes(view) + b"\x00" * (size - len(view))
+        raise InvalidVirtualAddressError(f"{self.filepath} : 0x{vaddr:x}")
