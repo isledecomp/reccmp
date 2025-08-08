@@ -5,6 +5,7 @@ from pathlib import Path
 import struct
 from typing import Iterable, Iterator
 from reccmp.project.detect import RecCmpTarget
+from reccmp.isledecomp.difflib import get_grouped_opcodes
 from reccmp.isledecomp.compare.functions import FunctionComparator
 from reccmp.isledecomp.formats.detect import detect_image
 from reccmp.isledecomp.formats.pe import PEImage
@@ -830,7 +831,27 @@ class Compare:
             )
 
         if match.entity_type == EntityType.FUNCTION:
-            return self.function_comparator.compare_function(match)
+            best_name = match.best_name()
+            assert best_name is not None
+
+            diff_result = self.function_comparator.compare_function(match)
+            if diff_result.diff:
+                grouped_codes = list(get_grouped_opcodes(diff_result.diff[0], n=10))
+                udiff = combined_diff(
+                    grouped_codes, diff_result.diff[1], diff_result.diff[2]
+                )
+            else:
+                udiff = None
+
+            return DiffReport(
+                match_type=EntityType.FUNCTION,
+                orig_addr=match.orig_addr,
+                recomp_addr=match.recomp_addr,
+                name=best_name,
+                udiff=udiff,
+                ratio=diff_result.match_ratio,
+                is_effective_match=diff_result.is_effective_match,
+            )
 
         if match.entity_type == EntityType.VTABLE:
             return self._compare_vtable(match)
