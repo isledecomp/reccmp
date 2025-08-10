@@ -36,3 +36,42 @@ def test_sblock32():
     # Make sure we can read the proc and all its stack references
     assert len(parser.symbols) == 1
     assert len(parser.symbols[0].stack_symbols) == 8
+
+
+LDATA32_INSIDE_FUNCTION = """\
+(004368) S_GPROC32: [0001:00050A28], Cb: 000000B5, Type:             0x1010, GetCDPathFromPathsTxtFile
+
+(0043AC)  S_BPREL32: [00000008], Type:   T_32PRCHAR(0470), pPath_name
+(0043C4)  S_LDATA32: [0003:0000B3C4], Type:       T_INT4(0074), got_it_already
+(0043E4)  S_LDATA32: [0003:0003C488], Type:             0x100B, cd_pathname
+
+(004400) S_END
+"""
+
+
+def test_ldata32_inside_function():
+    """S_LDATA32 leaves inside of a function (S_GPROC32) are assumed to be
+    static variables from that function."""
+    parser = CvdumpSymbolsParser()
+    for line in LDATA32_INSIDE_FUNCTION.split("\n"):
+        parser.read_line(line)
+
+    assert len(parser.symbols) == 1
+    assert len(parser.symbols[0].static_variables) == 2
+    assert [v.name for v in parser.symbols[0].static_variables] == [
+        "got_it_already",
+        "cd_pathname",
+    ]
+
+
+def test_ldata32_outside_function():
+    """Should ignore an S_LDATA32 leaf found outside a function.
+    These appear to indicate const global variables and they should be
+    repeated in the GLOBALS section."""
+    parser = CvdumpSymbolsParser()
+    parser.read_line(
+        "(00045C) S_LDATA32: [0003:0000E298], Type:             0x1060, TestVariable"
+    )
+
+    # ignored... for now.
+    assert len(parser.symbols) == 0

@@ -203,8 +203,8 @@ class CvdumpSymbolsParser:
                     type=match.group("type"),
                     name=match.group("name"),
                 )
-                assert self.current_function is not None
-                self.current_function.static_variables.append(new_var)
+                if self.current_function is not None:
+                    self.current_function.static_variables.append(new_var)
 
         elif symbol_type in self._unhandled_symbols:
             return
