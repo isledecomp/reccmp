@@ -74,4 +74,5 @@ def test_ldata32_outside_function():
     )
 
     # ignored... for now.
+    # Should not crash with a failed assert. See GH issue #183.
     assert len(parser.symbols) == 0

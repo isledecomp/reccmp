@@ -203,6 +203,10 @@ class CvdumpSymbolsParser:
                     type=match.group("type"),
                     name=match.group("name"),
                 )
+
+                # An S_LDATA32 that appears between S_GPROC32 and S_END blocks then
+                # we consider it to be a static variable from the enclosing function.
+                # If S_LDATA32 appears outside a function, ignore it.
                 if self.current_function is not None:
                     self.current_function.static_variables.append(new_var)
 
