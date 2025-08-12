@@ -24,6 +24,7 @@ from reccmp.isledecomp.compare.event import (
 )
 from reccmp.isledecomp.analysis import (
     find_float_consts,
+    find_import_thunks,
     find_vtordisp,
     is_likely_latin1,
 )
@@ -35,10 +36,12 @@ from .match_msvc import (
     match_static_variables,
     match_variables,
     match_strings,
+    match_ref,
 )
 from .db import EntityDb, ReccmpEntity, ReccmpMatch
 from .diff import DiffReport, combined_diff
 from .lines import LinesDb
+from .queries import get_overloaded_functions, get_named_thunks
 
 
 # pylint: disable=too-many-lines
@@ -97,10 +100,12 @@ class Compare:
         self._find_strings()
         self._match_imports()
         self._match_exports()
-        self._match_thunks()
-        self._match_vtordisp()
+        self._create_thunks()
         self._check_vtables()
+        match_ref(self._db, report)
         self._unique_names_for_overloaded_functions()
+        self._name_thunks()
+        self._match_vtordisp()
 
         match_strings(self._db, report)
 
@@ -512,23 +517,19 @@ class Compare:
 
         with self._db.batch() as batch:
             for dll, name, addr in self.orig_bin.imports:
-                import_name = f"{dll.upper()}:{name}"
+                import_name = f"{dll}::{name}"
                 batch.set_orig(
                     addr,
-                    name=f"__imp__{name}",
-                    import_name=import_name,
+                    name=import_name,
                     size=4,
                     type=EntityType.IMPORT,
                 )
 
             for dll, name, addr in self.recomp_bin.imports:
-                # TODO: recomp imports should already have a name from the PDB
-                # but set it anyway to avoid problems later.
-                import_name = f"{dll.upper()}:{name}"
+                import_name = f"{dll}::{name}"
                 batch.set_recomp(
                     addr,
-                    name=f"__imp__{name}",
-                    import_name=import_name,
+                    name=import_name,
                     size=4,
                     type=EntityType.IMPORT,
                 )
@@ -542,65 +543,62 @@ class Compare:
                 if recomp_addr is not None:
                     batch.match(orig_addr, recomp_addr)
 
-    def _match_thunks(self):
-        """Thunks are (by nature) matched by indirection. If a thunk from orig
-        points at a function we have already matched, we can find the matching
-        thunk in recomp because it points to the same place."""
-
-        # Mark all recomp thunks first. This allows us to use their name
-        # when we sanitize the asm.
         with self._db.batch() as batch:
-            for recomp_thunk, recomp_addr in self.recomp_bin.thunks:
-                recomp_func = self._db.get_by_recomp(recomp_addr)
-                if recomp_func is None:
-                    continue
+            for thunk in find_import_thunks(self.orig_bin):
+                name = f"{thunk.dll_name}::{thunk.func_name}"
+                batch.set_orig(
+                    thunk.addr,
+                    name=name,
+                    type=EntityType.FUNCTION,
+                    skip=True,
+                    size=thunk.size,
+                    ref_orig=thunk.import_addr,
+                )
 
-                assert recomp_func.name is not None
+            for thunk in find_import_thunks(self.recomp_bin):
+                name = f"{thunk.dll_name}::{thunk.func_name}"
+                batch.set_recomp(
+                    thunk.addr,
+                    name=name,
+                    type=EntityType.FUNCTION,
+                    skip=True,
+                    size=thunk.size,
+                    ref_recomp=thunk.import_addr,
+                )
+
+    def _create_thunks(self):
+        """Create entities for any thunk functions in the image.
+        These are the result of an incremental build."""
+        with self._db.batch() as batch:
+            for orig_thunk, orig_addr in self.orig_bin.thunks:
+                batch.insert_orig(
+                    orig_thunk,
+                    type=EntityType.FUNCTION,
+                    size=5,
+                    ref_orig=orig_addr,
+                    skip=True,
+                )
+
+                # We can only match two thunks if we have already matched both
+                # their parent entities. There is nothing to compare because
+                # they will either be equal or left unmatched. Set skip=True.
+
+            for recomp_thunk, recomp_addr in self.recomp_bin.thunks:
                 batch.insert_recomp(
                     recomp_thunk,
                     type=EntityType.FUNCTION,
                     size=5,
-                    name=f"Thunk of '{recomp_func.name}'",
+                    ref_recomp=recomp_addr,
                 )
 
-            # Thunks may be non-unique, so use a list as dict value when
-            # inverting the list of tuples from self.recomp_bin.
-            recomp_thunks: dict[int, list[int]] = {}
-            for thunk_addr, func_addr in self.recomp_bin.thunks:
-                recomp_thunks.setdefault(func_addr, []).append(thunk_addr)
+    def _name_thunks(self):
+        with self._db.batch() as batch:
+            for thunk in get_named_thunks(self._db):
+                if thunk.orig_addr is not None:
+                    batch.set_orig(thunk.orig_addr, name=f"Thunk of '{thunk.name}'")
 
-            # Now match the thunks from orig where we can.
-            for orig_thunk, orig_addr in self.orig_bin.thunks:
-                orig_func = self._db.get_by_orig(orig_addr)
-                if orig_func is None or orig_func.recomp_addr is None:
-                    continue
-
-                # Check whether the thunk destination is a matched symbol
-                if orig_func.recomp_addr not in recomp_thunks:
-                    assert orig_func.name is not None
-                    batch.insert_orig(
-                        orig_thunk,
-                        type=EntityType.FUNCTION,
-                        size=5,
-                        name=f"Thunk of '{orig_func.name}'",
-                    )
-                    continue
-
-                # If there are multiple thunks, they are already in v.addr order.
-                # Pop the earliest one and match it.
-                recomp_thunk = recomp_thunks[orig_func.recomp_addr].pop(0)
-                if len(recomp_thunks[orig_func.recomp_addr]) == 0:
-                    del recomp_thunks[orig_func.recomp_addr]
-
-                batch.match(orig_thunk, recomp_thunk)
-
-                # Don't compare thunk functions for now. The comparison isn't
-                # "useful" in the usual sense. We are only looking at the
-                # bytes of the jmp instruction and not the larger context of
-                # where this function is. Also: these will always match 100%
-                # because we are searching for a match to register this as a
-                # function in the first place.
-                batch.set_orig(orig_thunk, skip=True)
+                elif thunk.recomp_addr is not None:
+                    batch.set_recomp(thunk.recomp_addr, name=f"Thunk of '{thunk.name}'")
 
     def _match_exports(self):
         # invert for name lookup
@@ -710,36 +708,20 @@ class Compare:
         """Our asm sanitize will use the "friendly" name of a function.
         Overloaded functions will all have the same name. This function detects those
         cases and gives each one a unique name in the db."""
-        repeat_names: dict[str, list[tuple[int, str | None]]] = {}
-
-        # Select addresses and symbols for all repeated function names
-        for recomp_addr, name, symbol in self._db.sql.execute(
-            """SELECT recomp_addr, json_extract(kvstore,'$.name') as name, json_extract(kvstore,'$.symbol')
-            from entities where name in (
-                select json_extract(kvstore,'$.name') as name from entities
-                where json_extract(kvstore,'$.type') = ?
-                group by name having count(name) > 1
-            )""",
-            (EntityType.FUNCTION,),
-        ):
-            # TODO: Thunk's link to the original function is lost once the record is created.
-            if "Thunk of" in name:
-                continue
-
-            repeat_names.setdefault(name, []).append((recomp_addr, symbol))
-
         with self._db.batch() as batch:
-            for name, items in repeat_names.items():
-                for i, (recomp_addr, symbol) in enumerate(items, start=1):
-                    # Just number it to start, in case we don't have a symbol.
-                    new_name = f"{name}({i})"
+            for func in get_overloaded_functions(self._db):
+                # Just number it to start, in case we don't have a symbol.
+                new_name = f"{func.name}({func.nth})"
 
-                    if symbol is not None:
-                        dm_args = get_function_arg_string(symbol)
-                        if dm_args is not None:
-                            new_name = f"{name}{dm_args}"
+                if func.symbol is not None:
+                    dm_args = get_function_arg_string(func.symbol)
+                    if dm_args is not None:
+                        new_name = f"{func.name}{dm_args}"
 
-                    batch.set_recomp(recomp_addr, computed_name=new_name)
+                if func.orig_addr is not None:
+                    batch.set_orig(func.orig_addr, computed_name=new_name)
+                elif func.recomp_addr is not None:
+                    batch.set_recomp(func.recomp_addr, computed_name=new_name)
 
     def _compare_vtable(self, match: ReccmpMatch) -> DiffReport:
         vtable_size = match.size

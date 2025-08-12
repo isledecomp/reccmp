@@ -143,18 +143,6 @@ def test_imports(import_ref: tuple[str, str, int], binfile: PEImage):
     assert import_ref in binfile.imports
 
 
-# Location of the JMP instruction and the import address.
-THUNKS = (
-    (0x100D3728, 0x1010B32C),  # DirectDrawCreate
-    (0x10098F9E, 0x1010B3D4),  # RtlUnwind
-)
-
-
-@pytest.mark.parametrize("thunk_ref", THUNKS)
-def test_thunks(thunk_ref: tuple[int, int], binfile: PEImage):
-    assert thunk_ref in binfile.thunks
-
-
 def test_exports(binfile: PEImage):
     assert len(binfile.exports) == 130
     assert (0x1003BFB0, b"??0LegoBackgroundColor@@QAE@PBD0@Z") in binfile.exports

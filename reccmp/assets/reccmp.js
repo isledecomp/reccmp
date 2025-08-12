@@ -679,7 +679,7 @@ class ListingOptions extends window.HTMLElement {
 
     this.querySelectorAll('input[name=filterType]').forEach((radio) => {
       const checked = appState.filterType === parseInt(radio.getAttribute('value'));
-      setBooleanAttribute(radio, 'checked', checked);
+      radio.checked = checked;
 
       radio.onchange = () => {
         appState.filterType = radio.getAttribute('value');

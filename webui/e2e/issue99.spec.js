@@ -4,7 +4,7 @@ test.beforeEach(async ({ page }) => {
   await page.goto('');
 });
 
-test.fixme('Reset filter options after reload (Issue #99)', async ({ page }) => {
+test('Reset filter options after reload (Issue #99)', async ({ page }) => {
   // Make sure the first option is selected on the first page load.
   const radio = page.getByRole('radio', { name: 'Name/address' });
   await expect(radio).toBeChecked();
