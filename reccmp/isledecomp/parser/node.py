@@ -62,7 +62,7 @@ class ParserVtable(ParserSymbol):
 
 @dataclass
 class ParserString(ParserSymbol):
-    pass
+    is_unicode: bool = False
 
 
 @dataclass

@@ -343,8 +343,11 @@ class Compare:
                 # Not that we don't trust you, but we're checking the string
                 # annotation to make sure it is accurate.
                 try:
-                    # TODO: would presumably fail for wchar_t strings
-                    orig = self.orig_bin.read_string(string.offset).decode("latin1")
+                    if string.is_unicode:
+                        orig = None  # TODO
+                    else:
+                        orig = self.orig_bin.read_string(string.offset).decode("latin1")
+
                     string_correct = string.name == orig
                 except UnicodeDecodeError:
                     string_correct = False

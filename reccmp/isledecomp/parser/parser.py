@@ -306,7 +306,10 @@ class DecompParser:
             self.state = ReaderState.IN_GLOBAL
 
     def _variable_done(
-        self, variable_name: str | None = None, string_value: str | None = None
+        self,
+        variable_name: str | None = None,
+        string_value: str | None = None,
+        is_unicode: bool = False,
     ):
         if variable_name is None and string_value is None:
             self._syntax_error(ParserError.NO_SUITABLE_NAME)
@@ -323,6 +326,7 @@ class DecompParser:
                         offset=marker.offset,
                         name=string_value,
                         filename=self.filename,
+                        is_unicode=is_unicode,
                     )
                 )
             else:
@@ -570,9 +574,8 @@ class DecompParser:
                 else:
                     variable_name = get_variable_name(line)
 
-            string_name = get_string_contents(line)
-
-            self._variable_done(variable_name, string_name)
+            (string_name, is_unicode) = get_string_contents(line)
+            self._variable_done(variable_name, string_name, is_unicode)
 
         elif self.state == ReaderState.IN_VTABLE:
             vtable_class = get_class_name(line)
