@@ -181,9 +181,12 @@ string_match_cases = [
 ]
 
 
-@pytest.mark.parametrize("line, string", string_match_cases)
-def test_get_string_contents(line: str, string: str):
-    assert get_string_contents(line) == string
+@pytest.mark.parametrize("line, expected", string_match_cases)
+def test_get_string_contents(line: str, expected: str):
+    string = get_string_contents(line)
+    assert string is not None
+    assert string.text == expected
+    assert string.is_unicode is False
 
 
 def test_marker_extra_spaces():
