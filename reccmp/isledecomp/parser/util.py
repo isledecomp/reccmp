@@ -1,6 +1,7 @@
 # C++ Parser utility functions and data structures
 import re
 from ast import literal_eval
+from typing import NamedTuple
 
 # The goal here is to just read whatever is on the next line, so some
 # flexibility in the formatting seems OK
@@ -117,7 +118,12 @@ def get_variable_name(line: str) -> str | None:
     return None
 
 
-def get_string_contents(line: str) -> tuple[str | None, bool]:
+class ParserCodeString(NamedTuple):
+    text: str
+    is_unicode: bool
+
+
+def get_string_contents(line: str) -> ParserCodeString | None:
     """Return the first C string seen on this line.
     We have to unescape the string, and a simple way to do that is to use
     python's ast.literal_eval. I'm sure there are many pitfalls to doing
@@ -127,10 +133,10 @@ def get_string_contents(line: str) -> tuple[str | None, bool]:
         if (match := doubleQuoteRegex.search(line)) is not None:
             is_unicode = match.group(1) is not None
             text = literal_eval(match.group(2))
-            return (text, is_unicode)
+            return ParserCodeString(text=text, is_unicode=is_unicode)
     # pylint: disable=broad-exception-caught
     # No way to predict what kind of exception could occur.
     except Exception:
         pass
 
-    return (None, False)
+    return None
