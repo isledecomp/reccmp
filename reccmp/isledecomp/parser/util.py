@@ -1,6 +1,7 @@
 # C++ Parser utility functions and data structures
 import re
 from ast import literal_eval
+from typing import NamedTuple
 
 # The goal here is to just read whatever is on the next line, so some
 # flexibility in the formatting seems OK
@@ -20,7 +21,7 @@ blockCommentRegex = re.compile(r"(/\*.*?\*/)")
 regularCommentRegex = re.compile(r"(//.*)")
 
 # Get string contents, ignore escape characters that might interfere
-doubleQuoteRegex = re.compile(r"(\"(?:[^\"\\]|\\.)*\")")
+doubleQuoteRegex = re.compile(r'(L)?("(?:[^"\\]|\\.)*")')
 
 # Detect a line that would cause us to enter a new scope
 scopeDetectRegex = re.compile(r"(?:class|struct|namespace) (?P<name>\w+).*(?:{)?")
@@ -117,7 +118,12 @@ def get_variable_name(line: str) -> str | None:
     return None
 
 
-def get_string_contents(line: str) -> str | None:
+class ParserCodeString(NamedTuple):
+    text: str
+    is_unicode: bool
+
+
+def get_string_contents(line: str) -> ParserCodeString | None:
     """Return the first C string seen on this line.
     We have to unescape the string, and a simple way to do that is to use
     python's ast.literal_eval. I'm sure there are many pitfalls to doing
@@ -125,7 +131,9 @@ def get_string_contents(line: str) -> str | None:
 
     try:
         if (match := doubleQuoteRegex.search(line)) is not None:
-            return literal_eval(match.group(1))
+            is_unicode = match.group(1) is not None
+            text = literal_eval(match.group(2))
+            return ParserCodeString(text=text, is_unicode=is_unicode)
     # pylint: disable=broad-exception-caught
     # No way to predict what kind of exception could occur.
     except Exception:
