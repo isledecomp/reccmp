@@ -20,7 +20,7 @@ blockCommentRegex = re.compile(r"(/\*.*?\*/)")
 regularCommentRegex = re.compile(r"(//.*)")
 
 # Get string contents, ignore escape characters that might interfere
-doubleQuoteRegex = re.compile(r"(L)?(\"(?:[^\"\\]|\\.)*\")")
+doubleQuoteRegex = re.compile(r'(L)?("(?:[^"\\]|\\.)*")')
 
 # Detect a line that would cause us to enter a new scope
 scopeDetectRegex = re.compile(r"(?:class|struct|namespace) (?P<name>\w+).*(?:{)?")
