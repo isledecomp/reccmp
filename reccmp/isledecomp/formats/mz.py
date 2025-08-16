@@ -79,3 +79,6 @@ class MZImage(Image):
     @classmethod
     def taste(cls, data: bytes, offset: int) -> bool:
         return ImageDosHeader.taste(data, offset=offset)
+
+    def seek(self, vaddr: int) -> tuple[bytes, int]:
+        raise NotImplementedError
