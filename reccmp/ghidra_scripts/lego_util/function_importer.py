@@ -5,6 +5,7 @@
 
 import logging
 from abc import ABC, abstractmethod
+from typing import Sequence
 
 from ghidra.program.model.listing import Function, Parameter
 from ghidra.program.flatapi import FlatProgramAPI
@@ -113,7 +114,7 @@ class FullPdbFunctionImporter(PdbFunctionImporter):
         self.return_type = type_importer.import_pdb_type_into_ghidra(
             self.signature.return_type
         )
-        self.arguments = [
+        self.arguments: Sequence[ParameterImpl] = [
             ParameterImpl(
                 f"param{index}",
                 type_importer.import_pdb_type_into_ghidra(type_name),
