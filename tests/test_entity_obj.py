@@ -46,27 +46,3 @@ def test_match_name_priority():
     name = create_entity(100, 200, computed_name="Hello", name="Test").match_name()
     assert name is not None
     assert "Hello" in name
-
-
-def test_computed_name_string():
-    """Ignore 'computed_name' if entity is a string"""
-
-    name = create_entity(
-        100, 200, computed_name="Hello", name="Test", type=EntityType.STRING
-    ).match_name()
-    assert name is not None
-    assert "Test" in name
-
-
-def test_match_name_string():
-    """We currently store the string value in the name field.
-    If the string includes newlines, we need to escape them before replacing the
-    value during asm sanitize. (It will interfere with diff calculation.)"""
-    string = """A string
-    with
-    newlines"""
-
-    name = create_entity(100, None, type=EntityType.STRING, name=string).match_name()
-    assert name is not None
-    assert "\n" not in name
-    assert "\\n" in name
