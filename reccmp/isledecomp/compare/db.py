@@ -50,6 +50,13 @@ _SETUP_SQL = """
 """
 
 
+def entity_name_from_string(text: str, wide: bool = False) -> str:
+    """Create an entity name for the given string by escaping
+    control characters and double quotes, then wrapping in double quotes."""
+    escaped = text.encode("unicode_escape").decode("utf-8").replace('"', '\\"')
+    return f'{"L" if wide else ""}"{escaped}"'
+
+
 EntityTypeLookup: dict[int, str] = {
     value: name for name, value in EntityType.__members__.items()
 }
@@ -116,16 +123,6 @@ class ReccmpEntity:
         """Combination of the name and compare type.
         Intended for name substitution in the diff. If there is a diff,
         it will be more obvious what this symbol indicates."""
-
-        # Special handling for strings that might contain newlines.
-        if self.entity_type == EntityType.STRING:
-            if self.name is not None:
-                # Escape newlines so they do not interfere
-                # with asm sanitize and diff calculation.
-                return f"{repr(self.name)} (STRING)"
-
-            return None
-
         best_name = self.best_name()
         if best_name is None:
             return None

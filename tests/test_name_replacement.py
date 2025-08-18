@@ -69,21 +69,6 @@ def test_name_hierarchy(db):
     assert "Test" not in entity
 
 
-def test_string_escape_newlines(db):
-    """Make sure newlines are removed from the string.
-    This overlap with tests on the ReccmpEntity name functions, but it is more vital
-    to ensure there are no newlines at this stage because they will disrupt the asm diff.
-    """
-    with db.batch() as batch:
-        batch.set_orig(100, name="Test\nTest", type=EntityType.STRING)
-
-    lookup = create_lookup(db)
-    entity = lookup(100)
-
-    assert entity is not None
-    assert "\n" not in entity
-
-
 def test_offset_name(db):
     """For some entities (i.e. variables) we will return a name if the search address
     is inside the address range of the entity. This is determined by the size attribute.
