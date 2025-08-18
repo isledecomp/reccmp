@@ -99,6 +99,12 @@ def test_raw_all_initialized():
     with pytest.raises(InvalidVirtualAddressError):
         img.read_string(6)
 
+    with pytest.raises(InvalidVirtualAddressError):
+        img.read_widechar(-1)
+
+    with pytest.raises(InvalidVirtualAddressError):
+        img.read_widechar(6)
+
 
 def test_raw_partially_initialized():
     img = RawImage.from_memory(b"test", size=10)
@@ -136,7 +142,62 @@ def test_raw_all_uninitialized():
     assert img.read_string(6) == b""
 
 
-def test_widechar():
+def test_widechar_null_terminator_included():
+    """Reading pairs of bytes until both are null. No expectation on encoding."""
+    img = RawImage.from_memory(b"\x00\x00")
+    assert img.read_widechar(0) == b""
+
+    # UTF-16 LE
     img = RawImage.from_memory(b"t\x00e\x00s\x00t\x00\x00\x00")
     data = img.read_widechar(0)
     assert data.decode("utf-16-le") == "test"
+
+    # UTF-16 BE
+    img = RawImage.from_memory(b"\x00t\x00e\x00s\x00t\x00\x00")
+    data = img.read_widechar(0)
+    assert data.decode("utf-16-be") == "test"
+
+    # Not restricted to cases where every other byte is null
+    img = RawImage.from_memory(b"test\x00\x00")
+    data = img.read_widechar(0)
+    assert data == b"test"
+
+
+def test_widechar_null_terminator_missing():
+    """I don't think it's likely this will happen, but this is to test the case
+    where the string appears at the very end of physical memory."""
+    img = RawImage.from_memory(b"\x00")
+    assert img.read_widechar(0) == b""
+
+    with pytest.raises(InvalidVirtualAddressError):
+        img = RawImage.from_memory(b"")
+        img.read_widechar(0)
+
+    # Throws InvalidVirtualAddressError if not for the uninitialized padding.
+    img = RawImage.from_memory(b"", size=1)
+    assert img.read_widechar(0) == b""
+
+    # UTF-16 LE: 1 byte for null-terminator
+    img = RawImage.from_memory(b"t\x00e\x00s\x00t\x00\x00")
+    data = img.read_widechar(0)
+    assert data.decode("utf-16-le") == "test"
+
+    # UTF-16 LE: no null-terminator
+    img = RawImage.from_memory(b"t\x00e\x00s\x00t\x00")
+    data = img.read_widechar(0)
+    assert data.decode("utf-16-le") == "test"
+
+    # UTF-16 BE: 1 byte for null-terminator
+    img = RawImage.from_memory(b"\x00t\x00e\x00s\x00t\x00")
+    data = img.read_widechar(0)
+    assert data.decode("utf-16-be") == "test"
+
+    # UTF-16 BE: no null-terminator
+    img = RawImage.from_memory(b"\x00t\x00e\x00s\x00t")
+    data = img.read_widechar(0)
+    assert data.decode("utf-16-be") == "test"
+
+    # Not restricted to cases where every other byte is null
+    img = RawImage.from_memory(b"test")
+    data = img.read_widechar(0)
+    assert data == b"test"

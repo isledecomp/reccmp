@@ -3,11 +3,11 @@ import dataclasses
 from pathlib import Path
 from .exceptions import InvalidVirtualReadError
 
-# Matches 0-to-N non-null bytes and one byte null-terminator.
-r_szstring = re.compile(rb"[^\x00]*\x00")
+# Matches 0-to-N non-null bytes.
+r_szstring = re.compile(rb"[^\x00]*")
 
-# Matches any sequence of bytes (including nulls) until reading two nulls in a row.
-r_widestring = re.compile(rb".*?\x00\x00\x00", flags=re.S)
+# Matches pairs of bytes until both are null.
+r_widestring = re.compile(rb"(?:(?:[^\x00]\x00)|(?:\x00[^\x00])|(?:[^\x00][^\x00]))*")
 
 
 @dataclasses.dataclass
@@ -30,16 +30,21 @@ class Image:
 
         match = r_szstring.match(view)
         if match:
-            return match.group(0).rstrip(b"\x00")
+            return match.group(0)
 
-        return bytes(view)
+        return b""
 
     def read_widechar(self, vaddr: int) -> bytes:
         (view, _) = self.seek(vaddr)
 
         match = r_widestring.match(view)
-        if match:
-            return match.group(0)[:-2]
+        # Since we are dealing with only UTF-16 LE at the outset,
+        # just make sure we don't deliver a string with an odd number of bytes
+        # that will definitely fail to decode.
+        # Later on we may want to have each image type do things differently
+        # based on the expectations of the platform.
+        if match and len(match.group(0)) % 2 == 0:
+            return match.group(0)
 
         return b""
 
