@@ -2,7 +2,7 @@
 
 import json
 from reccmp.isledecomp.types import EntityType
-from reccmp.isledecomp.compare.db import ReccmpEntity
+from reccmp.isledecomp.compare.db import ReccmpEntity, entity_name_from_string
 
 
 def create_entity(
@@ -46,3 +46,31 @@ def test_match_name_priority():
     name = create_entity(100, 200, computed_name="Hello", name="Test").match_name()
     assert name is not None
     assert "Hello" in name
+
+
+def test_entity_name_from_string():
+    """String text should be escaped and wrapped in double quotes."""
+    assert entity_name_from_string("") == '""'
+    assert entity_name_from_string("", wide=True) == 'L""'
+
+    # Escaping control characters and backslashes
+    assert entity_name_from_string("\\") == '"\\\\"'
+    assert entity_name_from_string("\r\t\n") == '"\\r\\t\\n"'
+    assert entity_name_from_string("\x00\x01\x02") == '"\\x00\\x01\\x02"'
+
+    # Escaping double quotes (not part of unicode_escape conversion)
+    assert entity_name_from_string('"quotes"') == '"\\"quotes\\""'
+
+    # Escaping extended ASCII (Latin1) character
+    assert entity_name_from_string("®") == '"\\xae"'
+    assert entity_name_from_string("®", wide=True) == 'L"\\xae"'
+
+    # Escaping Unicode character
+    assert entity_name_from_string("œ") == '"\\u0153"'
+    assert entity_name_from_string("‡") == '"\\u2021"'
+    assert entity_name_from_string("œ", wide=True) == 'L"\\u0153"'
+    assert entity_name_from_string("‡", wide=True) == 'L"\\u2021"'
+
+    # No need to escape the single quote
+    # (Ignore the fact that we have escaped it for this test string)
+    assert entity_name_from_string("Can't") == '"Can\'t"'
