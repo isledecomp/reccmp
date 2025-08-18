@@ -134,3 +134,9 @@ def test_raw_all_uninitialized():
     # Reading from any valid address results in the empty string.
     assert img.read_string(0) == b""
     assert img.read_string(6) == b""
+
+
+def test_widechar():
+    img = RawImage.from_memory(b"t\x00e\x00s\x00t\x00\x00\x00")
+    data = img.read_widechar(0)
+    assert data.decode("utf-16-le") == "test"

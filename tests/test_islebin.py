@@ -119,6 +119,10 @@ def test_strings(addr: int, string: bytes, binfile: PEImage):
     assert binfile.read_string(addr) == string
 
 
+def test_widechar(binfile: PEImage):
+    assert binfile.read_widechar(0x100DAAA0) == "(null)".encode("utf-16-le")
+
+
 def test_relocation(binfile: PEImage):
     # n.b. This is not the number of *relocations* read from .reloc.
     # It is the set of unique addresses in the binary that get relocated.

@@ -199,26 +199,17 @@ class Compare:
                         )
                         continue
 
-                    # TODO: skip unicode for now. will need to handle these differently.
-                    if string_info.is_utf16:
-                        continue
-
-                    size = sym.size()
-                    assert size is not None
-
-                    raw = self.recomp_bin.read(addr, size)
-
                     try:
-                        # We use the string length reported in the mangled symbol as the
-                        # data size, but this is not always accurate with respect to the
-                        # null terminator.
-                        # e.g. ??_C@_0BA@EFDM@MxObjectFactory?$AA@
-                        # reported length: 16 (includes null terminator)
-                        # c.f. ??_C@_03DPKJ@enz?$AA@
-                        # reported length: 3 (does NOT include terminator)
-                        # This will handle the case where the entire string contains "\x00"
-                        # because those are distinct from the empty string of length 0.
-                        decoded_string = raw.decode("latin1")
+                        # String size is the total memory footprint, including null-terminator.
+                        if string_info.is_utf16:
+                            raw = self.recomp_bin.read_widechar(addr)
+                            decoded_string = raw.decode("utf-16-le")
+                            string_size = len(raw) + 2
+                        else:
+                            raw = self.recomp_bin.read_string(addr)
+                            decoded_string = raw.decode("latin1")
+                            string_size = len(raw) + 1
+
                         rstrip_string = decoded_string.rstrip("\x00")
 
                         # TODO: Hack to exclude a string that contains \x00 bytes
@@ -241,7 +232,7 @@ class Compare:
                             rstrip_string, wide=string_info.is_utf16
                         ),
                         symbol=sym.decorated_name,
-                        size=len(rstrip_string) + 1,
+                        size=string_size,
                         verified=True,
                     )
                 else:
@@ -346,9 +337,13 @@ class Compare:
                 # annotation to make sure it is accurate.
                 try:
                     if string.is_unicode:
-                        orig = None  # TODO
+                        raw = self.orig_bin.read_widechar(string.offset)
+                        orig = raw.decode("utf-16-le")
+                        string_size = len(raw) + 2
                     else:
-                        orig = self.orig_bin.read_string(string.offset).decode("latin1")
+                        raw = self.orig_bin.read_string(string.offset)
+                        orig = raw.decode("latin1")
+                        string_size = len(raw) + 1
 
                     string_correct = string.name == orig
                 except UnicodeDecodeError:
@@ -366,7 +361,7 @@ class Compare:
                     string.offset,
                     name=entity_name_from_string(string.name, wide=string.is_unicode),
                     type=EntityType.STRING,
-                    size=len(string.name) + 1,  # including null-terminator
+                    size=string_size,
                     verified=True,
                 )
 

@@ -6,6 +6,9 @@ from .exceptions import InvalidVirtualReadError
 # Matches 0-to-N non-null bytes and one byte null-terminator.
 r_szstring = re.compile(rb"[^\x00]*\x00")
 
+# Matches any sequence of bytes (including nulls) until reading two nulls in a row.
+r_widestring = re.compile(rb".*?\x00\x00\x00", flags=re.S)
+
 
 @dataclasses.dataclass
 class Image:
@@ -30,6 +33,15 @@ class Image:
             return match.group(0).rstrip(b"\x00")
 
         return bytes(view)
+
+    def read_widechar(self, vaddr: int) -> bytes:
+        (view, _) = self.seek(vaddr)
+
+        match = r_widestring.match(view)
+        if match:
+            return match.group(0)[:-2]
+
+        return b""
 
     def read(self, vaddr: int, size: int) -> bytes:
         (view, remaining) = self.seek(vaddr)
