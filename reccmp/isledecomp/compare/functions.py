@@ -23,7 +23,9 @@ from reccmp.isledecomp.formats.pe import PEImage
 
 
 class FunctionCompareResult(NamedTuple):
-    diff: tuple[list[DiffOpcode], list[tuple[str, str]], list[tuple[str, str]]] | None
+    codes: list[DiffOpcode]
+    orig_inst: list[tuple[str, str]]
+    recomp_inst: list[tuple[str, str]]
     is_effective_match: bool
     match_ratio: float
 
@@ -214,39 +216,34 @@ class FunctionComparator:
             is_effective = find_effective_match(
                 diff.get_opcodes(), orig_asm, recomp_asm
             )
-
-            # Convert the addresses to hex string for the diff output
-            orig_for_printing = [
-                (hex(addr) if addr is not None else "", instr) for addr, instr in orig
-            ]
-
-            recomp_for_printing = [
-                (
-                    hex(addr) if addr is not None else "",
-                    self._print_recomp_instruction(
-                        instruction,
-                        source_ref=self._source_ref_of_recomp_addr(addr),
-                        is_pinned=any(
-                            recomp_addr == line_index for _, recomp_addr in split_points
-                        ),
-                    ),
-                )
-                for line_index, (addr, instruction) in enumerate(recomp)
-            ]
-
-            unified_diff = (
-                diff.get_opcodes(),
-                orig_for_printing,
-                recomp_for_printing,
-            )
         else:
-            unified_diff = None
             is_effective = False
 
+        # Convert the addresses to hex string for the diff output
+        orig_for_printing = [
+            (hex(addr) if addr is not None else "", instr) for addr, instr in orig
+        ]
+
+        recomp_for_printing = [
+            (
+                hex(addr) if addr is not None else "",
+                self._print_recomp_instruction(
+                    instruction,
+                    source_ref=self._source_ref_of_recomp_addr(addr),
+                    is_pinned=any(
+                        recomp_addr == line_index for _, recomp_addr in split_points
+                    ),
+                ),
+            )
+            for line_index, (addr, instruction) in enumerate(recomp)
+        ]
+
         return FunctionCompareResult(
-            unified_diff,
-            is_effective,
-            diff.ratio(),
+            codes=diff.get_opcodes(),
+            orig_inst=orig_for_printing,
+            recomp_inst=recomp_for_printing,
+            is_effective_match=is_effective,
+            match_ratio=diff.ratio(),
         )
 
     def _collect_line_annotations(self, recomp: AsmExcerpt) -> list[ReccmpMatch]:

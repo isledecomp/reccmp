@@ -835,10 +835,10 @@ class Compare:
             assert best_name is not None
 
             diff_result = self.function_comparator.compare_function(match)
-            if diff_result.diff:
-                grouped_codes = list(get_grouped_opcodes(diff_result.diff[0], n=10))
+            if diff_result.match_ratio != 1.0:
+                grouped_codes = list(get_grouped_opcodes(diff_result.codes, n=10))
                 udiff = combined_diff(
-                    grouped_codes, diff_result.diff[1], diff_result.diff[2]
+                    grouped_codes, diff_result.orig_inst, diff_result.recomp_inst
                 )
             else:
                 udiff = None

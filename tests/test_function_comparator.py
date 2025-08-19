@@ -91,7 +91,33 @@ def test_simple_identical_diff(
     diffreport = compare_functions(db, lines_db, code, code, report)
 
     assert diffreport.match_ratio == 1.0
-    assert diffreport.diff is None
+
+    # Should still return asm and opcodes even though this function is a match.
+    assert diffreport.codes == [("equal", 0, 9, 0, 9)]
+
+    assert diffreport.orig_inst == [
+        ("0x200", "push ebp"),
+        ("0x201", "mov ebp, esp"),
+        ("0x203", "sub esp, 0x2c"),
+        ("0x206", "push ebx"),
+        ("0x207", "push esi"),
+        ("0x208", "push edi"),
+        ("0x209", "mov word ptr [ebp - 8], 0"),
+        ("0x20f", "mov word ptr [ebp - 0x10], 0"),
+        ("0x215", "mov eax, dword ptr [ebp + 0x14]"),
+    ]
+
+    assert diffreport.recomp_inst == [
+        ("0x400", "push ebp"),
+        ("0x401", "mov ebp, esp"),
+        ("0x403", "sub esp, 0x2c"),
+        ("0x406", "push ebx"),
+        ("0x407", "push esi"),
+        ("0x408", "push edi"),
+        ("0x409", "mov word ptr [ebp - 8], 0"),
+        ("0x40f", "mov word ptr [ebp - 0x10], 0"),
+        ("0x415", "mov eax, dword ptr [ebp + 0x14]"),
+    ]
 
 
 def test_simple_nontrivial_diff(
@@ -104,21 +130,19 @@ def test_simple_nontrivial_diff(
     diffreport = compare_functions(db, lines_db, orig, recm, report)
 
     assert diffreport.match_ratio < 1.0
-    assert diffreport.diff is not None
 
-    (codes, orig_inst, recomp_inst) = diffreport.diff
-    assert codes == [
+    assert diffreport.codes == [
         ("equal", 0, 2, 0, 2),
         ("replace", 2, 3, 2, 3),
     ]
 
-    assert orig_inst == [
+    assert diffreport.orig_inst == [
         ("0x200", "mov word ptr [ebp - 8], 0"),
         ("0x206", "mov word ptr [ebp - 0x10], 0"),
         ("0x20c", "mov eax, dword ptr [ebp + 0x14]"),
     ]
 
-    assert recomp_inst == [
+    assert diffreport.recomp_inst == [
         ("0x400", "mov word ptr [ebp - 8], 0"),
         ("0x406", "mov word ptr [ebp - 0x10], 0"),
         ("0x40c", "mov edx, dword ptr [ecx + 0x14]"),
@@ -146,18 +170,15 @@ def test_example_where_diff_mismatches_lines(
     )
 
     assert diffreport.match_ratio < 1.0
-    assert diffreport.diff is not None
 
-    (codes, orig_inst, recomp_inst) = diffreport.diff
-
-    assert codes == [
+    assert diffreport.codes == [
         ("equal", 0, 2, 0, 2),
         ("replace", 2, 7, 2, 15),
         ("equal", 7, 8, 15, 16),
         ("replace", 8, 19, 16, 22),
     ]
 
-    assert orig_inst == [
+    assert diffreport.orig_inst == [
         ("0x200", "sub ecx, eax"),
         ("0x202", "dec ecx"),
         ("0x203", "mov word ptr [ebp - 0x28], cx"),
@@ -179,7 +200,7 @@ def test_example_where_diff_mismatches_lines(
         ("0x243", "test byte ptr [ebp - 0x17], 0x40"),
     ]
 
-    assert recomp_inst == [
+    assert diffreport.recomp_inst == [
         ("0x400", "sub ecx, eax"),
         ("0x402", "dec ecx"),
         ("0x403", "mov word ptr [ebp - 4], cx"),
@@ -217,10 +238,7 @@ def test_impact_of_line_annotation(
         db, lines_db, LINE_MISMATCH_EXAMPLE_ORIG, LINE_MISMATCH_EXAMPLE_RECOMP, report
     )
 
-    assert diffreport.diff is not None
-    (codes, _, __) = diffreport.diff
-
-    assert codes == [
+    assert diffreport.codes == [
         ("equal", 0, 2, 0, 2),
         ("replace", 2, 9, 2, 3),
         ("replace", 9, 10, 3, 4),
@@ -297,13 +315,16 @@ def test_displacement_without_match(
     diffreport = compare_functions(db, lines_db, orig, recm, report)
 
     assert diffreport.match_ratio < 1.0
-    assert diffreport.diff is not None
 
-    (codes, orig_inst, recomp_inst) = diffreport.diff
+    assert diffreport.codes == [("replace", 0, 1, 0, 1)]
 
-    assert codes == [("replace", 0, 1, 0, 1)]
-    assert orig_inst == [("0x200", "mov dword ptr [eax*4 + 0xc815a8], edi")]
-    assert recomp_inst == [("0x400", "mov dword ptr [eax*4 + 0xd015a8], edi")]
+    assert diffreport.orig_inst == [
+        ("0x200", "mov dword ptr [eax*4 + 0xc815a8], edi"),
+    ]
+
+    assert diffreport.recomp_inst == [
+        ("0x400", "mov dword ptr [eax*4 + 0xd015a8], edi"),
+    ]
 
 
 def test_displacement_with_match(
@@ -358,26 +379,23 @@ def test_jump_table_wrong_order(
     diffreport = compare_functions(db, lines_db, orig, recm, report, is_relocated_addr)
 
     assert diffreport.match_ratio < 1.0
-    assert diffreport.diff is not None
     assert diffreport.is_effective_match is False
 
-    (codes, orig_inst, recomp_inst) = diffreport.diff
-
-    assert codes == [
+    assert diffreport.codes == [
         ("equal", 0, 2, 0, 2),
         ("insert", 2, 2, 2, 3),
         ("equal", 2, 3, 3, 4),
         ("delete", 3, 4, 4, 4),
     ]
 
-    assert orig_inst == [
+    assert diffreport.orig_inst == [
         ("0x200", "jmp dword ptr [eax*4 + <OFFSET1>]"),
         ("", "Jump table:"),
         ("0x207", "start + 0x233"),
         ("0x20b", "start + 0x243"),
     ]
 
-    assert recomp_inst == [
+    assert diffreport.recomp_inst == [
         ("0x400", "jmp dword ptr [eax*4 + <OFFSET1>]"),
         ("", "Jump table:"),
         ("0x407", "start + 0x243"),
@@ -415,12 +433,9 @@ def test_data_table_wrong_order(
     diffreport = compare_functions(db, lines_db, orig, recm, report, is_relocated_addr)
 
     assert diffreport.match_ratio < 1.0
-    assert diffreport.diff is not None
     assert diffreport.is_effective_match is False
 
-    (codes, orig_inst, recomp_inst) = diffreport.diff
-
-    assert codes == [
+    assert diffreport.codes == [
         ("equal", 0, 6, 0, 6),
         ("insert", 6, 6, 6, 8),
         ("equal", 6, 7, 8, 9),
@@ -428,7 +443,7 @@ def test_data_table_wrong_order(
         ("equal", 9, 11, 9, 11),
     ]
 
-    assert orig_inst == [
+    assert diffreport.orig_inst == [
         ("0x200", "mov al, byte ptr [ecx + <OFFSET1>]"),
         ("0x206", "jmp dword ptr [eax*4 + <OFFSET2>]"),
         ("", "Jump table:"),
@@ -445,7 +460,7 @@ def test_data_table_wrong_order(
         ("0x219", "0x3"),
     ]
 
-    assert recomp_inst == [
+    assert diffreport.recomp_inst == [
         ("0x400", "mov al, byte ptr [ecx + <OFFSET1>]"),
         ("0x406", "jmp dword ptr [eax*4 + <OFFSET2>]"),
         ("", "Jump table:"),
@@ -470,12 +485,13 @@ def test_source_reference_without_line_annotation(
     diffreport = compare_functions(db, lines_db, orig, recm, report)
 
     assert diffreport.match_ratio < 1.0
-    assert diffreport.diff is not None
 
-    (codes, orig_inst, recomp_inst) = diffreport.diff
-
-    assert codes == [("replace", 0, 1, 0, 1)]
-    assert orig_inst == [("0x200", "mov dword ptr [eax*4 + 0xc815a8], edi")]
-    assert recomp_inst == [
-        ("0x400", "mov dword ptr [eax*4 + 0xd015a8], edi \t(test.cpp:42)")
+    assert diffreport.codes == [
+        ("replace", 0, 1, 0, 1),
+    ]
+    assert diffreport.orig_inst == [
+        ("0x200", "mov dword ptr [eax*4 + 0xc815a8], edi"),
+    ]
+    assert diffreport.recomp_inst == [
+        ("0x400", "mov dword ptr [eax*4 + 0xd015a8], edi \t(test.cpp:42)"),
     ]
