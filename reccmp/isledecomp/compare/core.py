@@ -200,27 +200,37 @@ class Compare:
                         continue
 
                     try:
-                        # String size is the total memory footprint, including null-terminator.
+                        # Use the section contribution size if we have it. It is more accurate
+                        # than the number embedded in the string symbol. This also enables us
+                        # to read strings that include null bytes.
+                        # string_size is the total memory footprint, including null-terminator.
                         if string_info.is_utf16:
-                            raw = self.recomp_bin.read_widechar(addr)
+                            if sym.section_contribution is not None:
+                                string_size = sym.section_contribution
+                                # Remove 2-byte null-terminator before decoding
+                                raw = self.recomp_bin.read(addr, string_size)[:-2]
+                            else:
+                                raw = self.recomp_bin.read_widechar(addr)
+                                string_size = len(raw) + 2
+
                             decoded_string = raw.decode("utf-16-le")
-                            string_size = len(raw) + 2
                         else:
-                            raw = self.recomp_bin.read_string(addr)
+                            if sym.section_contribution is not None:
+                                string_size = sym.section_contribution
+                                # Remove 1-byte null-terminator before decoding
+                                raw = self.recomp_bin.read(addr, string_size)[:-1]
+                            else:
+                                raw = self.recomp_bin.read_string(addr)
+                                string_size = len(raw) + 1
+
                             decoded_string = raw.decode("latin1")
-                            string_size = len(raw) + 1
-
-                        rstrip_string = decoded_string.rstrip("\x00")
-
-                        # TODO: Hack to exclude a string that contains \x00 bytes
-                        # The proper solution is to escape the text for JSON or use
-                        # base64 encoding for comparing binary values.
-                        # Kicking the can down the road for now.
-                        if "\x00" in decoded_string and rstrip_string == "":
-                            continue
-                        sym.friendly_name = rstrip_string
 
                     except UnicodeDecodeError:
+                        logger.debug(
+                            "Could not decode string: %s, wide=%d",
+                            raw,
+                            int(string_info.is_utf16),
+                        )
                         continue
 
                     # Special handling for string entities.
@@ -229,7 +239,7 @@ class Compare:
                         addr,
                         type=sym.node_type,
                         name=entity_name_from_string(
-                            rstrip_string, wide=string_info.is_utf16
+                            decoded_string, wide=string_info.is_utf16
                         ),
                         symbol=sym.decorated_name,
                         size=string_size,
