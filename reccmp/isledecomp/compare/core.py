@@ -201,8 +201,14 @@ class Compare:
 
                     try:
                         # Use the section contribution size if we have it. It is more accurate
-                        # than the number embedded in the string symbol. This also enables us
-                        # to read strings that include null bytes.
+                        # than the number embedded in the string symbol:
+                        #
+                        #     e.g. ??_C@_0BA@EFDM@MxObjectFactory?$AA@
+                        #     reported length: 16 (includes null terminator)
+                        #     c.f. ??_C@_03DPKJ@enz?$AA@
+                        #     reported length: 3 (does NOT include terminator)
+                        #
+                        # Using a known length enables us to read strings that include null bytes.
                         # string_size is the total memory footprint, including null-terminator.
                         if string_info.is_utf16:
                             if sym.section_contribution is not None:
