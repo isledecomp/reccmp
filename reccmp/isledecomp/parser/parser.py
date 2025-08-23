@@ -324,7 +324,7 @@ class DecompParser:
                         offset=marker.offset,
                         name=string.text,
                         filename=self.filename,
-                        is_unicode=string.is_unicode,
+                        is_widechar=string.is_widechar,
                     )
                 )
             else:

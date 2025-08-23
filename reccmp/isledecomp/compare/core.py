@@ -346,7 +346,7 @@ class Compare:
                 # Not that we don't trust you, but we're checking the string
                 # annotation to make sure it is accurate.
                 try:
-                    if string.is_unicode:
+                    if string.is_widechar:
                         raw = self.orig_bin.read_widechar(string.offset)
                         orig = raw.decode("utf-16-le")
                         string_size = len(raw) + 2
@@ -369,7 +369,7 @@ class Compare:
 
                 batch.set_orig(
                     string.offset,
-                    name=entity_name_from_string(string.name, wide=string.is_unicode),
+                    name=entity_name_from_string(string.name, wide=string.is_widechar),
                     type=EntityType.STRING,
                     size=string_size,
                     verified=True,
