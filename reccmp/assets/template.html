@@ -39,31 +39,38 @@
         font-family: monospace;
       }
 
-      func-row:hover {
+      tr[data-address]:hover {
         background: #404040 !important;
       }
 
-      func-row:nth-child(odd of :not([hidden])), #listing > thead th {
+      tr[data-address]:nth-child(odd of :not([hidden])), #listing > thead th {
         background: #282828;
       }
 
-      func-row:nth-child(even of :not([hidden])) {
+      tr[data-address]:nth-child(even of :not([hidden])) {
         background: #383838;
       }
 
       table#listing {
         border: 1px #f0f0f0 solid;
+        table-layout: fixed;
       }
 
       #listing > thead th {
         padding: 0.5em;
         user-select: none;
-        width: 10%;
         text-align: left;
       }
 
-      #listing:not([show-recomp]) > thead th[data-col="recomp"] {
-        display: none;
+      #listing > thead th[data-col="address"],
+      #listing > thead th[data-col="recomp"] {
+        /* enough for "0x" and 8 digit address */
+        width: 10ch;
+      }
+
+      #listing > thead th[data-col="diffs"],
+      #listing > thead th[data-col="matching"] {
+        width: 8ch;
       }
 
       #listing > thead th > div {
@@ -81,11 +88,9 @@
       }
 
       #listing > thead th:last-child > div {
+        /* Draw the sort triangle to the left of the last column. */
+        flex-direction: row-reverse;
         justify-content: right;
-      }
-
-      #listing > thead th[data-col="name"] {
-        width: 60%;
       }
 
       .diffneg {
@@ -179,6 +184,82 @@
         font-size: 1.2em;
         margin-bottom: 0;
       }
+
+      tr[data-diff]:not([hidden]) {
+        contain: paint;
+      }
+
+      tr[data-diff] > td {
+        border: 1px #f0f0f0 solid;
+        border-bottom: 0px none;
+        display: table-cell;
+        padding: 0.5em;
+        word-break: break-all !important;
+      }
+
+      tr[data-diff] > td > div.no-diff {
+        font-style: italic;
+        text-align: center;
+      }
+
+      tr[data-address] > td[data-col="name"]:hover {
+        cursor: pointer;
+        text-decoration: underline;
+        text-decoration-style: dotted;
+      }
+
+      tr[data-address] > td:not(data-col="name"]) {
+        white-space: nowrap;
+      }
+
+      tr[data-address] > td {
+        border-top: 1px #f0f0f0 solid;
+        display: table-cell;
+        padding: 0.5em;
+        vertical-align: top;
+        white-space: nowrap;
+      }
+
+      tr[data-address] > td[data-col="name"] {
+        white-space: wrap;
+        word-break: break-all !important;
+      }
+
+      tr[data-address] > td:last-child {
+        text-align: right;
+      }
+
+      can-copy {
+        position: relative;
+        cursor: pointer;
+      }
+      can-copy::after {
+        background-color: #fff;
+        color: #222;
+        display: none;
+        font-size: 12px;
+        padding: 1px 2px;
+        width: fit-content;
+        border-radius: 1px;
+        text-align: center;
+        bottom: 120%;
+        left: 0;
+        box-shadow: 0 4px 14px 0 rgba(0,0,0,.2), 0 0 0 1px rgba(0,0,0,.05);
+        position: absolute;
+        white-space: nowrap;
+        transition: .1s;
+        content: 'Copy to clipboard';
+      }
+      can-copy:hover {
+        text-decoration: underline;
+        text-decoration-style: dotted;
+      }
+      can-copy:hover::after {
+        display: block;
+      }
+      can-copy[copied]:hover::after {
+        content: 'Copied!';
+      }
     </style>
     <script>
       var report = {{{report}}};
@@ -224,145 +305,7 @@
         </div>
       </listing-options>
       <listing-table>
-        <table id="listing">
-          <thead>
-            <tr>
-              <th data-col="address">
-                <div>
-                  <span>Address</span>
-                  <sort-indicator/>
-                </div>
-              </th>
-              <th data-col="recomp">
-                <div>
-                  <span>Recomp</span>
-                  <sort-indicator/>
-                </div>
-              </th>
-              <th data-col="name">
-                <div>
-                  <span>Name</span>
-                  <sort-indicator/>
-                </div>
-              </th>
-              <th data-col="diffs" data-no-sort></th>
-              <th data-col="matching">
-                <div>
-                  <sort-indicator></sort-indicator>
-                  <span>Matching</span>
-                </div>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-          </tbody>
-        </table>
       </listing-table>
     </div>
-    <template id="funcrow-template">
-      <style>
-        :host(:not([hidden])) {
-          display: table-row;
-        }
-
-        :host(:not([show-recomp])) > div[data-col="recomp"] {
-          display: none;
-        }
-
-        div[data-col="name"]:hover {
-          cursor: pointer;
-        }
-
-        div[data-col="name"]:hover > ::slotted(*) {
-          text-decoration: underline;
-          text-decoration-style: dotted;
-        }
-
-        ::slotted(*:not([slot="name"])) {
-          white-space: nowrap;
-        }
-
-        :host > div {
-          border-top: 1px #f0f0f0 solid;
-          display: table-cell;
-          padding: 0.5em;
-          word-break: break-all !important;
-        }
-
-        :host > div:last-child {
-          text-align: right;
-        }
-      </style>
-      <div data-col="address"><can-copy><slot name="address"></slot></can-copy></div>
-      <div data-col="recomp"><can-copy><slot name="recomp"></slot></can-copy></div>
-      <div data-col="name"><slot name="name"></slot></div>
-      <div data-col="diffs"><slot name="diffs"></slot></div>
-      <div data-col="matching"><slot name="matching"></slot></div>
-    </template>
-    <template id="diffrow-template">
-      <style>
-        :host(:not([hidden])) {
-          display: table-row;
-          contain: paint;
-        }
-
-        td.singleCell {
-          border: 1px #f0f0f0 solid;
-          border-bottom: 0px none;
-          display: table-cell;
-          padding: 0.5em;
-          word-break: break-all !important;
-        }
-      </style>
-      <td class="singleCell" colspan="5">
-        <slot></slot>
-      </td>
-    </template>
-    <template id="nodiff-template">
-      <style>
-        ::slotted(*) {
-          font-style: italic;
-          text-align: center;
-        }
-      </style>
-      <slot></slot>
-    </template>
-    <template id="can-copy-template">
-      <style>
-        :host {
-          position: relative;
-        }
-        ::slotted(*) {
-          cursor: pointer;
-        }
-        slot::after {
-          background-color: #fff;
-          color: #222;
-          display: none;
-          font-size: 12px;
-          padding: 1px 2px;
-          width: fit-content;
-          border-radius: 1px;
-          text-align: center;
-          bottom: 120%;
-          box-shadow: 0 4px 14px 0 rgba(0,0,0,.2), 0 0 0 1px rgba(0,0,0,.05);
-          position: absolute;
-          white-space: nowrap;
-          transition: .1s;
-          content: 'Copy to clipboard';
-        }
-        ::slotted(*:hover) {
-          text-decoration: underline;
-          text-decoration-style: dotted;
-        }
-        slot:hover::after {
-          display: block;
-        }
-        :host([copied]) > slot:hover::after {
-          content: 'Copied!';
-        }
-      </style>
-      <slot></slot>
-    </template>
   </body>
 </html>

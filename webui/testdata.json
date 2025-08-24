@@ -22,6 +22,20 @@
       "stub": true
     },
     {
+      "address": "0x401270",
+      "diff": [],
+      "matching": 1.0,
+      "name": "Vector2::MulImpl(float const &)",
+      "recomp": "0x501270"
+    },
+    {
+      "address": "0x401280",
+      "diff": [],
+      "matching": 1.0,
+      "name": "list<ROI *,allocator<ROI *> >::_Buynode",
+      "recomp": "0x501280"
+    },
+    {
       "address": "0x4013b0",
       "diff": [],
       "matching": 1.0,

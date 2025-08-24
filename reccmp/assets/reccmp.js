@@ -419,52 +419,13 @@ class SortIndicator extends window.HTMLElement {
   }
 }
 
-class FuncRow extends window.HTMLElement {
-  connectedCallback() {
-    if (this.shadowRoot !== null) {
-      return;
-    }
-
-    const template = document.querySelector('template#funcrow-template').content;
-    const shadow = this.attachShadow({ mode: 'open' });
-    shadow.appendChild(template.cloneNode(true));
-    shadow.querySelector(':host > div[data-col="name"]').addEventListener('click', () => {
-      this.dispatchEvent(new Event('name-click'));
-    });
-  }
-
-  get address() {
-    return this.getAttribute('data-address');
-  }
-}
-
-class NoDiffMessage extends window.HTMLElement {
-  connectedCallback() {
-    if (this.shadowRoot !== null) {
-      return;
-    }
-
-    const template = document.querySelector('template#nodiff-template').content;
-    const shadow = this.attachShadow({ mode: 'open' });
-    shadow.appendChild(template.cloneNode(true));
-  }
-}
-
 class CanCopy extends window.HTMLElement {
   connectedCallback() {
-    if (this.shadowRoot !== null) {
-      return;
-    }
-
-    const template = document.querySelector('template#can-copy-template').content;
-    const shadow = this.attachShadow({ mode: 'open' });
-    shadow.appendChild(template.cloneNode(true));
-
-    const el = shadow.querySelector('slot').assignedNodes()[0];
-    el.addEventListener('mouseout', () => {
+    this.addEventListener('mouseout', () => {
       this.copied = false;
     });
-    el.addEventListener('click', (evt) => {
+
+    this.addEventListener('click', (evt) => {
       copyToClipboard(evt.target.textContent);
       this.copied = true;
     });
@@ -481,27 +442,6 @@ class CanCopy extends window.HTMLElement {
       }, 2000);
     }
     setBooleanAttribute(this, 'copied', value);
-  }
-}
-
-// Displays asm diff for the given @data-address value.
-class DiffRow extends window.HTMLElement {
-  connectedCallback() {
-    if (this.shadowRoot !== null) {
-      return;
-    }
-
-    const template = document.querySelector('template#diffrow-template').content;
-    const shadow = this.attachShadow({ mode: 'open' });
-    shadow.appendChild(template.cloneNode(true));
-  }
-
-  get address() {
-    return this.getAttribute('data-address');
-  }
-
-  set address(value) {
-    this.setAttribute('data-address', value);
   }
 }
 
@@ -740,14 +680,117 @@ class ListingTable extends window.HTMLElement {
     appState.addListener(() => this.somethingChanged());
   }
 
+  diffRow(address, showRecomp) {
+    const obj = getDataByAddr(address);
+
+    let contents;
+
+    if ('stub' in obj) {
+      contents = document.createElement('div');
+      contents.setAttribute('class', 'no-diff');
+      contents.textContent = 'Stub. No diff.';
+    } else if (obj.diff.length === 0) {
+      contents = document.createElement('div');
+      contents.setAttribute('class', 'no-diff');
+      contents.textContent = 'Identical function - no diff';
+    } else {
+      contents = document.createElement('diff-display');
+      contents.setAttribute('data-option', '1');
+      contents.setAttribute('data-address', address);
+    }
+
+    const td = document.createElement('td');
+    td.setAttribute('colspan', showRecomp ? 5 : 4);
+    td.append(contents);
+
+    const tr = document.createElement('tr');
+    tr.setAttribute('data-diff', address);
+    tr.append(td);
+    return tr;
+  }
+
+  funcRow(obj, showRecomp) {
+    const createColumn = (dataCol, canCopy, textContent) => {
+      const td = document.createElement('td');
+      td.setAttribute('data-col', dataCol);
+      if (canCopy) {
+        const copy = document.createElement('can-copy');
+        copy.textContent = textContent;
+        td.append(copy);
+      } else {
+        td.append(textContent);
+      }
+
+      return td;
+    };
+
+    const cols = {
+      address: createColumn('address', true, obj.address),
+      recomp: createColumn('recomp', true, obj.recomp),
+      name: createColumn('name', false, obj.name),
+      diffs: createColumn('diffs', false, countDiffs(obj)),
+      matching: createColumn('matching', false, getMatchPercentText(obj)),
+    };
+
+    if (!showRecomp) {
+      delete cols.recomp;
+    }
+
+    const tr = document.createElement('tr');
+    tr.setAttribute('data-address', obj.address);
+    tr.append(...Object.values(cols));
+    return tr;
+  }
+
+  headerRow(showRecomp, sortCol, sortDesc) {
+    const cols = {
+      address: 'Address',
+      recomp: 'Recomp',
+      name: 'Name',
+      diffs: '',
+      matching: 'Matching',
+    };
+
+    if (!showRecomp) {
+      delete cols.recomp;
+    }
+
+    const headers = Object.entries(cols).map(([key, name]) => {
+      if (key === 'diffs') {
+        const th = document.createElement('th');
+        th.setAttribute('data-col', 'diffs');
+        th.setAttribute('data-no-sort', true);
+        return th;
+      }
+
+      const sort_indicator = document.createElement('sort-indicator');
+      if (key === sortCol) {
+        sort_indicator.setAttribute('data-sort', sortDesc ? 'desc' : 'asc');
+      }
+
+      const th = document.createElement('th');
+      th.setAttribute('data-col', key);
+      const div = document.createElement('div');
+      const span = document.createElement('span');
+      span.textContent = name;
+      div.append(span, sort_indicator);
+      th.append(div);
+      return th;
+    });
+
+    const tr = document.createElement('tr');
+    tr.append(...headers);
+    return tr;
+  }
+
   setDiffRow(address, shouldExpand) {
     const tbody = this.querySelector('tbody');
-    const funcrow = tbody.querySelector(`func-row[data-address="${address}"]`);
+    const funcrow = tbody.querySelector(`tr[data-address="${address}"]`);
     if (funcrow === null) {
       return;
     }
 
-    const existing = tbody.querySelector(`diff-row[data-address="${address}"]`);
+    const existing = tbody.querySelector(`tr[data-diff="${address}"]`);
     if (existing !== null) {
       if (!shouldExpand) {
         tbody.removeChild(existing);
@@ -756,39 +799,38 @@ class ListingTable extends window.HTMLElement {
       return;
     }
 
-    const diffrow = document.createElement('diff-row');
-    diffrow.address = address;
-
-    // Decide what goes inside the diff row.
-    const obj = getDataByAddr(address);
-
-    if ('stub' in obj) {
-      const msg = document.createElement('no-diff');
-      const p = document.createElement('div');
-      p.innerText = 'Stub. No diff.';
-      msg.appendChild(p);
-      diffrow.appendChild(msg);
-    } else if (obj.diff.length === 0) {
-      const msg = document.createElement('no-diff');
-      const p = document.createElement('div');
-      p.innerText = 'Identical function - no diff';
-      msg.appendChild(p);
-      diffrow.appendChild(msg);
-    } else {
-      const dd = new DiffDisplay();
-      dd.option = '1';
-      dd.address = address;
-      diffrow.appendChild(dd);
-    }
-
     // Insert the diff row after the parent func row.
-    tbody.insertBefore(diffrow, funcrow.nextSibling);
+    funcrow.insertAdjacentElement('afterend', this.diffRow(address, appState.showRecomp));
   }
 
   connectedCallback() {
-    const thead = this.querySelector('thead');
-    const headers = thead.querySelectorAll('th:not([data-no-sort])'); // TODO
-    headers.forEach((th) => {
+    this.addEventListener('name-click', (evt) => {
+      appState.toggleExpanded(evt.detail);
+      this.setDiffRow(evt.detail, appState.isExpanded(evt.detail));
+    });
+
+    this.innerHTML = '<table id="listing"><thead></thead><tbody></tbody></table>';
+
+    this.somethingChanged();
+  }
+
+  somethingChanged() {
+    const header_row = this.headerRow(appState.showRecomp, appState.sortCol, appState.sortDesc);
+
+    const rows = [];
+
+    // Create rows for this page.
+    for (const obj of appState.pageSlice()) {
+      rows.push(this.funcRow(obj, appState.showRecomp));
+      if (appState.isExpanded(obj.address)) {
+        rows.push(this.diffRow(obj.address, appState.showRecomp));
+      }
+    }
+
+    this.querySelector('thead').replaceChildren(header_row);
+    this.querySelector('tbody').replaceChildren(...rows);
+
+    this.querySelectorAll('th:not([data-no-sort])').forEach((th) => {
       const col = th.getAttribute('data-col');
       if (col) {
         const span = th.querySelector('span');
@@ -800,69 +842,13 @@ class ListingTable extends window.HTMLElement {
       }
     });
 
-    this.somethingChanged();
-  }
-
-  somethingChanged() {
-    // Toggle recomp/diffs column
-    setBooleanAttribute(this.querySelector('table'), 'show-recomp', appState.showRecomp);
-    this.querySelectorAll('func-row[data-address]').forEach((row) => {
-      setBooleanAttribute(row, 'show-recomp', appState.showRecomp);
-    });
-
-    const thead = this.querySelector('thead');
-    const headers = thead.querySelectorAll('th');
-
-    // Update sort indicator
-    headers.forEach((th) => {
-      const col = th.getAttribute('data-col');
-      const indicator = th.querySelector('sort-indicator');
-      if (indicator === null) {
-        return;
-      }
-
-      if (appState.sortCol === col) {
-        indicator.setAttribute('data-sort', appState.sortDesc ? 'desc' : 'asc');
-      } else {
-        indicator.removeAttribute('data-sort');
-      }
-    });
-
-    // Add the rows
-    const tbody = this.querySelector('tbody');
-    tbody.innerHTML = ''; // ?
-
-    for (const obj of appState.pageSlice()) {
-      const row = document.createElement('func-row');
-      row.setAttribute('data-address', obj.address); // ?
-      row.addEventListener('name-click', () => {
-        appState.toggleExpanded(obj.address);
-        this.setDiffRow(obj.address, appState.isExpanded(obj.address));
+    this.querySelectorAll('tr[data-address]').forEach((row) => {
+      // Clicking the name column toggles the diff detail row.
+      // This is added or removed without replacing the entire <tbody>.
+      row.querySelector('td[data-col="name"]').addEventListener('click', () => {
+        this.dispatchEvent(new CustomEvent('name-click', { detail: row.getAttribute('data-address') }));
       });
-      setBooleanAttribute(row, 'show-recomp', appState.showRecomp);
-      setBooleanAttribute(row, 'expanded', appState.isExpanded(row));
-
-      const items = [
-        ['address', obj.address],
-        ['recomp', obj.recomp],
-        ['name', obj.name],
-        ['diffs', countDiffs(obj)],
-        ['matching', getMatchPercentText(obj)],
-      ];
-
-      items.forEach(([slotName, content]) => {
-        const div = document.createElement('span');
-        div.setAttribute('slot', slotName);
-        div.innerText = content;
-        row.appendChild(div);
-      });
-
-      tbody.appendChild(row);
-
-      if (appState.isExpanded(obj.address)) {
-        this.setDiffRow(obj.address, true);
-      }
-    }
+    });
   }
 }
 
@@ -872,8 +858,5 @@ window.onload = () => {
   window.customElements.define('diff-display', DiffDisplay);
   window.customElements.define('diff-display-options', DiffDisplayOptions);
   window.customElements.define('sort-indicator', SortIndicator);
-  window.customElements.define('func-row', FuncRow);
-  window.customElements.define('diff-row', DiffRow);
-  window.customElements.define('no-diff', NoDiffMessage);
   window.customElements.define('can-copy', CanCopy);
 };
