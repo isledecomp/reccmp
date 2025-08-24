@@ -241,11 +241,64 @@ def test_impact_of_line_annotation(
     assert diffreport.codes == [
         ("equal", 0, 2, 0, 2),
         ("replace", 2, 9, 2, 3),
+        # Pinned line is in this "replace" section:
         ("replace", 9, 10, 3, 4),
         ("equal", 10, 11, 4, 5),
         ("replace", 11, 14, 5, 8),
         ("equal", 14, 15, 8, 9),
         ("replace", 15, 19, 9, 22),
+    ]
+
+    # The asm is the same as the previous function "test_example_where_diff_mismatches_lines"
+    # except for two instructions shown below:
+
+    assert diffreport.orig_inst == [
+        ("0x200", "sub ecx, eax"),
+        ("0x202", "dec ecx"),
+        ("0x203", "mov word ptr [ebp - 0x28], cx"),
+        ("0x207", "jmp 0x1d1"),
+        # LINE entity provides a name for this jump destination:
+        ("0x20c", "jmp cppfile.cpp:384 (LINE)"),
+        ("0x211", "movsx eax, word ptr [ebp - 0x18]"),
+        ("0x215", "movsx ecx, word ptr [ebp - 0x28]"),
+        ("0x219", "add eax, ecx"),
+        ("0x21b", "mov word ptr [ebp - 0x28], ax"),
+        ("0x21f", "mov eax, dword ptr [ebp - 0x14]"),
+        ("0x222", "mov ax, word ptr [eax]"),
+        ("0x225", "mov word ptr [ebp - 0x18], ax"),
+        ("0x229", "add dword ptr [ebp - 0x14], 2"),
+        ("0x22d", "movsx eax, word ptr [ebp - 0x18]"),
+        ("0x231", "test eax, eax"),
+        ("0x233", "jl 0xa"),
+        ("0x239", "jmp 0x19a"),
+        ("0x23e", "jmp 0x68"),
+        ("0x243", "test byte ptr [ebp - 0x17], 0x40"),
+    ]
+
+    assert diffreport.recomp_inst == [
+        ("0x400", "sub ecx, eax"),
+        ("0x402", "dec ecx"),
+        ("0x403", "mov word ptr [ebp - 4], cx"),
+        # line number and pin indicator:
+        ("0x407", "mov eax, dword ptr [ebp - 0xc] \t(test.cpp:123, pinned)"),
+        ("0x40a", "mov ax, word ptr [eax]"),
+        ("0x40d", "mov word ptr [ebp - 0x10], ax"),
+        ("0x411", "add dword ptr [ebp - 0xc], 2"),
+        ("0x415", "movsx eax, word ptr [ebp - 0x10]"),
+        ("0x419", "test eax, eax"),
+        ("0x41b", "jge 0x7e"),
+        ("0x421", "movsx eax, word ptr [ebp - 0x10]"),
+        ("0x425", "test ah, 0x40"),
+        ("0x428", "je 0x13"),
+        ("0x42e", "movsx eax, word ptr [ebp - 4]"),
+        ("0x432", "movsx ecx, word ptr [ebp - 0x10]"),
+        ("0x436", "add eax, ecx"),
+        ("0x438", "mov word ptr [ebp - 4], ax"),
+        ("0x43c", "jmp 0x161"),
+        ("0x441", "mov eax, dword ptr [ebp - 0x10]"),
+        ("0x444", "push eax"),
+        ("0x445", "mov eax, dword ptr [ebp - 4]"),
+        ("0x448", "push eax"),
     ]
 
 
