@@ -62,7 +62,7 @@ class ParserVtable(ParserSymbol):
 
 @dataclass
 class ParserString(ParserSymbol):
-    is_unicode: bool = False
+    is_widechar: bool = False
 
 
 @dataclass

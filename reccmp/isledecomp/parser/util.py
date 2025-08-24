@@ -120,7 +120,7 @@ def get_variable_name(line: str) -> str | None:
 
 class ParserCodeString(NamedTuple):
     text: str
-    is_unicode: bool
+    is_widechar: bool
 
 
 def get_string_contents(line: str) -> ParserCodeString | None:
@@ -131,9 +131,9 @@ def get_string_contents(line: str) -> ParserCodeString | None:
 
     try:
         if (match := doubleQuoteRegex.search(line)) is not None:
-            is_unicode = match.group(1) is not None
+            is_widechar = match.group(1) is not None
             text = literal_eval(match.group(2))
-            return ParserCodeString(text=text, is_unicode=is_unicode)
+            return ParserCodeString(text=text, is_widechar=is_widechar)
     # pylint: disable=broad-exception-caught
     # No way to predict what kind of exception could occur.
     except Exception:
