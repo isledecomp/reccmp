@@ -6,6 +6,10 @@ import struct
 from typing import Iterable, Iterator
 from reccmp.project.detect import RecCmpTarget
 from reccmp.isledecomp.compare.functions import FunctionComparator
+from reccmp.isledecomp.formats.exceptions import (
+    InvalidVirtualReadError,
+    InvalidStringError,
+)
 from reccmp.isledecomp.formats.detect import detect_image
 from reccmp.isledecomp.formats.pe import PEImage
 from reccmp.isledecomp.cvdump.demangler import (
@@ -231,11 +235,18 @@ class Compare:
 
                             decoded_string = raw.decode("latin1")
 
+                    except (InvalidVirtualReadError, InvalidStringError):
+                        logger.warning(
+                            "Could not read string from recomp 0x%x, wide=%s",
+                            addr,
+                            string_info.is_utf16,
+                        )
+
                     except UnicodeDecodeError:
                         logger.debug(
-                            "Could not decode string: %s, wide=%d",
+                            "Could not decode string: %s, wide=%s",
                             raw,
-                            int(string_info.is_utf16),
+                            string_info.is_utf16,
                         )
                         continue
 
@@ -362,6 +373,14 @@ class Compare:
                         string_size = len(raw) + 1
 
                     string_correct = string.name == orig
+
+                except InvalidStringError:
+                    logger.warning(
+                        "Could not read string from orig 0x%x, wide=%s",
+                        string.offset,
+                        string.is_widechar,
+                    )
+
                 except UnicodeDecodeError:
                     string_correct = False
 

@@ -1,7 +1,7 @@
 import re
 import dataclasses
 from pathlib import Path
-from .exceptions import InvalidVirtualReadError
+from .exceptions import InvalidVirtualReadError, InvalidStringError
 
 # Matches 0-to-N non-null bytes.
 r_szstring = re.compile(rb"[^\x00]*")
@@ -29,24 +29,23 @@ class Image:
         (view, _) = self.seek(vaddr)
 
         match = r_szstring.match(view)
-        if match:
-            return match.group(0)
+        if match is None:
+            raise InvalidStringError(f"Cannot read string at {vaddr:x}")
 
-        return b""
+        return match.group(0)
 
     def read_widechar(self, vaddr: int) -> bytes:
         (view, _) = self.seek(vaddr)
 
         match = r_widestring.match(view)
-        # Since we are dealing with only UTF-16 LE at the outset,
-        # just make sure we don't deliver a string with an odd number of bytes
-        # that will definitely fail to decode.
-        # Later on we may want to have each image type do things differently
-        # based on the expectations of the platform.
-        if match and len(match.group(0)) % 2 == 0:
-            return match.group(0)
 
-        return b""
+        # We expect to support only images that use UTF-16 LE for the near-to-medium term.
+        # However: we only verify that we return a string that *could* be decoded.
+        # The caller should trap UnicodeDecodeError.
+        if match is None or len(match.group(0)) % 2 != 0:
+            raise InvalidStringError(f"Cannot read widechar string at {vaddr:x}")
+
+        return match.group(0)
 
     def read(self, vaddr: int, size: int) -> bytes:
         (view, remaining) = self.seek(vaddr)
