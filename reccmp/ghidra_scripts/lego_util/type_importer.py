@@ -24,7 +24,7 @@ from ghidra.util.task import ConsoleTaskMonitor
 
 from reccmp.isledecomp.cvdump.types import VirtualBasePointer
 
-from .types import SanitizedEntityName
+from .entity_names import SanitizedEntityName, sanitize_name
 from .exceptions import (
     MultipleTypesFoundInGhidraError,
     TypeNotFoundError,
@@ -39,7 +39,6 @@ from .ghidra_helper import (
     get_ghidra_type,
     get_or_create_class_namespace,
     get_scalar_ghidra_type,
-    sanitize_name,
 )
 from .pdb_extraction import PdbFunctionExtractor
 

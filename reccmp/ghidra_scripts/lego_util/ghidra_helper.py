@@ -1,7 +1,6 @@
 """A collection of helper functions for the interaction with Ghidra."""
 
 import logging
-import re
 
 # Disable spurious warnings in vscode / pylance
 # pyright: reportMissingModuleSource=false
@@ -15,14 +14,12 @@ from ghidra.program.model.data import (
 )
 from ghidra.program.model.symbol import Namespace, SourceType
 
-from .types import NamespacePath, SanitizedEntityName
-
+from .entity_names import NamespacePath, SanitizedEntityName, sanitize_name
 from .exceptions import (
     ClassOrNamespaceNotFoundInGhidraError,
     TypeNotFoundInGhidraError,
     MultipleTypesFoundInGhidraError,
 )
-from .globals import GLOBALS
 
 
 logger = logging.getLogger(__name__)
@@ -66,7 +63,9 @@ def get_ghidra_type(api: FlatProgramAPI, entity_name: SanitizedEntityName) -> Da
 
     result = category.getDataType(entity_name.base_name)
     if result is None:
-        raise TypeNotFoundInGhidraError(f"{category_path.getPath()}/{entity_name.base_name}")
+        raise TypeNotFoundInGhidraError(
+            f"{category_path.getPath()}/{entity_name.base_name}"
+        )
 
     return result
 
@@ -139,63 +138,6 @@ def get_or_create_class_namespace(
         [*class_namespace_path, class_name] = namespace_path
         parent_namespace = _create_ghidra_namespace(api, tuple(class_namespace_path))
         return api.createClass(parent_namespace, class_name)
-
-
-# These appear in debug builds
-THUNK_OF_RE = re.compile(r"^Thunk of '(.*)'$")
-
-
-def sanitize_name(name: str) -> SanitizedEntityName:
-    """
-    Takes a full class or function name and replaces characters not accepted by Ghidra.
-    Applies mostly to templates, names like `vbase destructor`, and thunks in debug build.
-
-    Returns the sanitized name split into a path along namespaces. For example,
-    `sanitize_name("a::b::c") == ["a", "b", "c"]`.
-    """
-    if (match := THUNK_OF_RE.fullmatch(name)) is not None:
-        is_thunk = True
-        name = match.group(1)
-    else:
-        is_thunk = False
-
-    # Replace characters forbidden in Ghidra
-    new_name = (
-        name.replace("<", "[")
-        .replace(">", "]")
-        .replace("*", "#")
-        .replace(" ", "_")
-        .replace("`", "'")
-    )
-
-    # Importing function names like `FUN_10001234` into BETA10 can be confusing
-    # because Ghidra's auto-generated functions look exactly the same.
-    # Therefore, such function names are replaced by `LEGO_10001234` in the BETA10 import.
-
-    # FIXME: The identification here is a crutch - we need a more reusable solution for this scenario
-    if GLOBALS.target_name.upper() == "BETA10.DLL":
-        new_name = re.sub(r"FUN_([0-9a-f]{8})", r"LEGO1_\1", new_name)
-
-    if "<" in name:
-        new_name = "_template_" + new_name
-
-    # TODO: This is not correct for templates of the form a<b::c>
-    # TODO: Unit tests for this function (split off if needed)
-    new_name_split = new_name.split("::")
-
-    if is_thunk:
-        new_name_split[-1] = "_thunk_" + new_name_split[-1]
-
-    new_name = "::".join(new_name_split)
-    if new_name != name:
-        logger.info(
-            "Changed class or function name from '%s' to '%s' to avoid Ghidra issues",
-            name,
-            new_name,
-        )
-
-    [*namespace_path, base_name] = new_name_split
-    return SanitizedEntityName(tuple(namespace_path), base_name)
 
 
 def get_class_namespace_and_name(
