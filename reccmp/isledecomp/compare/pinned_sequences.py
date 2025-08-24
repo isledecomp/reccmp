@@ -1,10 +1,8 @@
 from difflib import SequenceMatcher
 from itertools import pairwise
 import itertools
-from typing import Iterable, Sequence
-
-
-DiffOpcode = tuple[str, int, int, int, int]
+from typing import Iterable, Iterator, Sequence
+from reccmp.isledecomp.difflib import DiffOpcode, get_grouped_opcodes
 
 
 class SequenceMatcherWithPins:
@@ -82,38 +80,5 @@ class SequenceMatcherWithPins:
     def ratio(self):
         return self._ratio
 
-    def get_grouped_opcodes(self, n=3) -> Iterable[list[DiffOpcode]]:
-        """
-        Taken from the Python 3.12 standard library, `difflib.py`, published under PSF license, GPL compatible.
-
-        A more hacky approach would be to inherit from `SequenceMatcher` and reuse the implementation,
-        but that would depend on the internal behaviour that `get_grouped_opcodes()` internally
-        calls `get_opcodes()`.
-
-        See `difflib.SequenceMatcher.get_grouped_opcodes()` for more details.
-        """
-
-        codes = self.get_opcodes()
-        if not codes:
-            codes = [("equal", 0, 1, 0, 1)]
-        # Fixup leading and trailing groups if they show no changes.
-        if codes[0][0] == "equal":
-            tag, i1, i2, j1, j2 = codes[0]
-            codes[0] = tag, max(i1, i2 - n), i2, max(j1, j2 - n), j2
-        if codes[-1][0] == "equal":
-            tag, i1, i2, j1, j2 = codes[-1]
-            codes[-1] = tag, i1, min(i2, i1 + n), j1, min(j2, j1 + n)
-
-        nn = n + n
-        group = []
-        for tag, i1, i2, j1, j2 in codes:
-            # End the current group and start a new one whenever
-            # there is a large range with no changes.
-            if tag == "equal" and i2 - i1 > nn:
-                group.append((tag, i1, min(i2, i1 + n), j1, min(j2, j1 + n)))
-                yield group
-                group = []
-                i1, j1 = max(i1, i2 - n), max(j1, j2 - n)
-            group.append((tag, i1, i2, j1, j2))
-        if group and not (len(group) == 1 and group[0][0] == "equal"):
-            yield group
+    def get_grouped_opcodes(self, n=3) -> Iterator[list[DiffOpcode]]:
+        yield from get_grouped_opcodes(self._opcodes, n)
