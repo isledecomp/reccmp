@@ -15,6 +15,8 @@ from ghidra.program.model.data import (
 )
 from ghidra.program.model.symbol import Namespace, SourceType
 
+from .types import NamespacePath, SanitizedEntityName
+
 from .exceptions import (
     ClassOrNamespaceNotFoundInGhidraError,
     TypeNotFoundInGhidraError,
@@ -24,6 +26,10 @@ from .globals import GLOBALS
 
 
 logger = logging.getLogger(__name__)
+
+
+def category_path_of(namespace_path: NamespacePath):
+    return CategoryPath("/" + "/".join(namespace_path))
 
 
 def get_scalar_ghidra_type(api: FlatProgramAPI, type_name: str) -> DataType:
@@ -43,7 +49,7 @@ def get_scalar_ghidra_type(api: FlatProgramAPI, type_name: str) -> DataType:
             raise MultipleTypesFoundInGhidraError(type_name, result)
 
 
-def get_ghidra_type(api: FlatProgramAPI, data_type_path: list[str]) -> DataType:
+def get_ghidra_type(api: FlatProgramAPI, entity_name: SanitizedEntityName) -> DataType:
     """
     Searches for the type named `typeName` in Ghidra.
 
@@ -51,31 +57,18 @@ def get_ghidra_type(api: FlatProgramAPI, data_type_path: list[str]) -> DataType:
     - NotFoundInGhidraError
     - MultipleTypesFoundInGhidraError
     """
-    # We wouldn't need this check if our typing was watertight.
-    # However, the check is helpful because cvdump types are dict[str, Any],
-    # so the type check misses some cases where a non-list is inserted here.
-    if not isinstance(data_type_path, list):
-        raise ValueError(f"Expected list[str], got {type(data_type_path)}")
 
-    match data_type_path:
-        case []:
-            raise ValueError("get_data_type called with empty array")
-        case [*type_path, type_name]:
-            category = (
-                api.getCurrentProgram()
-                .getDataTypeManager()
-                .getCategory(CategoryPath("/" + "/".join(type_path)))
-            )
-            if category is None:
-                raise TypeNotFoundInGhidraError(f"{type_path} (category)")
+    category_path = category_path_of(entity_name.namespace_path)
 
-            result = category.getDataType(type_name)
-            if result is None:
-                raise TypeNotFoundInGhidraError(f"{type_path}/{type_name}")
+    category = api.getCurrentProgram().getDataTypeManager().getCategory(category_path)
+    if category is None:
+        raise TypeNotFoundInGhidraError(f"{category_path.getPath()} (category)")
 
-            return result
-        case _:
-            assert False, f"Unreachable code: {data_type_path}"
+    result = category.getDataType(entity_name.base_name)
+    if result is None:
+        raise TypeNotFoundInGhidraError(f"{category_path.getPath()}/{entity_name.base_name}")
+
+    return result
 
 
 def get_or_add_pointer_type(api: FlatProgramAPI, pointee: DataType) -> DataType:
@@ -102,24 +95,24 @@ def add_data_type_or_reuse_existing(
 
 
 def _get_ghidra_namespace(
-    api: FlatProgramAPI, namespace_hierachy: list[str]
+    api: FlatProgramAPI, namespace_path: NamespacePath
 ) -> Namespace:
     """Finds a matching namespace for the given list. Returns the global namespace for an empty list."""
     namespace = api.getCurrentProgram().getGlobalNamespace()
-    for part in namespace_hierachy:
+    for part in namespace_path:
         if len(part) == 0:
             continue
         namespace = api.getNamespace(namespace, part)
         if namespace is None:
-            raise ClassOrNamespaceNotFoundInGhidraError(namespace_hierachy)
+            raise ClassOrNamespaceNotFoundInGhidraError(namespace_path)
     return namespace
 
 
 def _create_ghidra_namespace(
-    api: FlatProgramAPI, namespace_hierachy: list[str]
+    api: FlatProgramAPI, namespace_path: NamespacePath
 ) -> Namespace:
     namespace = api.getCurrentProgram().getGlobalNamespace()
-    for part in namespace_hierachy:
+    for part in namespace_path:
         if len(part) == 0:
             continue
         namespace = api.getNamespace(namespace, part)
@@ -128,12 +121,12 @@ def _create_ghidra_namespace(
     return namespace
 
 
-def get_or_create_namespace(
-    api: FlatProgramAPI, namespace_path: list[str]
+def get_or_create_class_namespace(
+    api: FlatProgramAPI, namespace_path: NamespacePath
 ) -> Namespace:
     """
-    Returns the given namespace/class if it exists. Otherwise, the last part is created as a class,
-    the rest are created as namespaces.
+    Classes are very similar to namespaces in Ghidra. This function returns the class/namespace if it exists.
+    Otherwise, the last part is created as a class, the rest are created as namespaces.
     """
     logger.info("Looking for namespace: '%s'", namespace_path)
     try:
@@ -141,10 +134,10 @@ def get_or_create_namespace(
         logger.debug("Found existing class/namespace %s", namespace_path)
         return result
     except ClassOrNamespaceNotFoundInGhidraError:
-        logger.info("Creating class/namespace %s", namespace_path)
+        logger.info("Creating class %s", namespace_path)
         # We assume that the last part belongs to a class and the rest to the namespace containing the class
         [*class_namespace_path, class_name] = namespace_path
-        parent_namespace = _create_ghidra_namespace(api, class_namespace_path)
+        parent_namespace = _create_ghidra_namespace(api, tuple(class_namespace_path))
         return api.createClass(parent_namespace, class_name)
 
 
@@ -152,7 +145,7 @@ def get_or_create_namespace(
 THUNK_OF_RE = re.compile(r"^Thunk of '(.*)'$")
 
 
-def sanitize_name(name: str) -> list[str]:
+def sanitize_name(name: str) -> SanitizedEntityName:
     """
     Takes a full class or function name and replaces characters not accepted by Ghidra.
     Applies mostly to templates, names like `vbase destructor`, and thunks in debug build.
@@ -187,6 +180,7 @@ def sanitize_name(name: str) -> list[str]:
         new_name = "_template_" + new_name
 
     # TODO: This is not correct for templates of the form a<b::c>
+    # TODO: Unit tests for this function (split off if needed)
     new_name_split = new_name.split("::")
 
     if is_thunk:
@@ -200,24 +194,25 @@ def sanitize_name(name: str) -> list[str]:
             new_name,
         )
 
-    return new_name_split
+    [*namespace_path, base_name] = new_name_split
+    return SanitizedEntityName(tuple(namespace_path), base_name)
 
 
-def get_namespace_and_name(
+def get_class_namespace_and_name(
     api: FlatProgramAPI, name_with_namespace: str
 ) -> tuple[Namespace, str]:
     """
     For a given entity inside a namespace or class (e.g. `namespace::class::fn`),
     returns the appropriate Ghidra namespace and extracts the base name as a string, e.g.
-    `(Namespace("namespace::class"), "fn")`. Creates the namespace if necessary.
+    `(Namespace("namespace::class"), "fn")`. Creates the namespaces and class if necessary.
     """
-    [*namespace_path, base_name] = sanitize_name(name_with_namespace)
-    namespace = get_or_create_namespace(api, namespace_path)
-    return namespace, base_name
+    sanitized_name = sanitize_name(name_with_namespace)
+    namespace = get_or_create_class_namespace(api, sanitized_name.namespace_path)
+    return namespace, sanitized_name.base_name
 
 
 def set_ghidra_label(api: FlatProgramAPI, address: int, label_with_namespace: str):
-    namespace, name = get_namespace_and_name(api, label_with_namespace)
+    namespace, name = get_class_namespace_and_name(api, label_with_namespace)
     symbol_table = api.getCurrentProgram().getSymbolTable()
     address_hex = hex(address)
     address_ghidra = api.getAddressFactory().getAddress(address_hex)

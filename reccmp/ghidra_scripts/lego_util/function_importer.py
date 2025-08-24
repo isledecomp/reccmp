@@ -25,7 +25,7 @@ from .pdb_extraction import (
 )
 from .ghidra_helper import (
     add_data_type_or_reuse_existing,
-    get_namespace_and_name,
+    get_class_namespace_and_name,
     get_or_add_pointer_type,
 )
 
@@ -50,7 +50,7 @@ class PdbFunctionImporter(ABC):
 
         assert self.match_info.name is not None
 
-        self.namespace, self.name = get_namespace_and_name(
+        self.namespace, self.name = get_class_namespace_and_name(
             self.api,
             self.match_info.name,
         )
