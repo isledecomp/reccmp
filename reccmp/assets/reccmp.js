@@ -144,15 +144,6 @@ function copyToClipboard(value) {
   navigator.clipboard.writeText(value);
 }
 
-function escapeHtml(unsafe) {
-  return unsafe
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
 const PAGE_SIZE = 200;
 
 //
@@ -689,33 +680,69 @@ class ListingTable extends window.HTMLElement {
     appState.addListener(() => this.somethingChanged());
   }
 
-  diffRowHtml(address, showRecomp) {
+  diffRow(address, showRecomp) {
     const obj = getDataByAddr(address);
 
     let contents;
 
     if ('stub' in obj) {
-      contents = `<div class="no-diff">Stub. No diff.</div>`;
+      contents = document.createElement('div');
+      contents.setAttribute('class', 'no-diff');
+      contents.textContent = 'Stub. No diff.';
     } else if (obj.diff.length === 0) {
-      contents = `<div class="no-diff">Identical function - no diff</div>`;
+      contents = document.createElement('div');
+      contents.setAttribute('class', 'no-diff');
+      contents.textContent = 'Identical function - no diff';
     } else {
-      contents = `<diff-display data-option="1" data-address="${address}"></diff-display>`;
+      contents = document.createElement('diff-display');
+      contents.setAttribute('data-option', '1');
+      contents.setAttribute('data-address', address);
     }
 
-    return `<tr data-diff="${address}"><td colspan=${showRecomp ? 5 : 4}>${contents}</td></tr>`;
+    const td = document.createElement('td');
+    td.setAttribute('colspan', showRecomp ? 5 : 4);
+    td.append(contents);
+
+    const tr = document.createElement('tr');
+    tr.setAttribute('data-diff', address);
+    tr.append(td);
+    return tr;
   }
 
-  funcRowHtml(obj, showRecomp) {
-    return `<tr data-address=${obj.address}>
-      <td data-col="address"><can-copy>${obj.address}</can-copy></td>
-      ${showRecomp ? `<td data-col="recomp"><can-copy>${obj.recomp}</can-copy></td>` : ''}
-      <td data-col="name">${escapeHtml(obj.name)}</td>
-      <td data-col="diffs">${countDiffs(obj)}</td>
-      <td data-col="matching">${getMatchPercentText(obj)}</td>
-    </tr>`;
+  funcRow(obj, showRecomp) {
+    const createColumn = (dataCol, canCopy, textContent) => {
+      const td = document.createElement('td');
+      td.setAttribute('data-col', dataCol);
+      if (canCopy) {
+        const copy = document.createElement('can-copy');
+        copy.textContent = textContent;
+        td.append(copy);
+      } else {
+        td.append(textContent);
+      }
+
+      return td;
+    };
+
+    const cols = {
+      address: createColumn('address', true, obj.address),
+      recomp: createColumn('recomp', true, obj.recomp),
+      name: createColumn('name', false, obj.name),
+      diffs: createColumn('diffs', false, countDiffs(obj)),
+      matching: createColumn('matching', false, getMatchPercentText(obj)),
+    };
+
+    if (!showRecomp) {
+      delete cols.recomp;
+    }
+
+    const tr = document.createElement('tr');
+    tr.setAttribute('data-address', obj.address);
+    tr.append(...Object.values(cols));
+    return tr;
   }
 
-  headerRowHtml(showRecomp, sortCol, sortDesc) {
+  headerRow(showRecomp, sortCol, sortDesc) {
     const cols = {
       address: 'Address',
       recomp: 'Recomp',
@@ -730,18 +757,30 @@ class ListingTable extends window.HTMLElement {
 
     const headers = Object.entries(cols).map(([key, name]) => {
       if (key === 'diffs') {
-        return `<th data-col="diffs" data-no-sort></th>`;
+        const th = document.createElement('th');
+        th.setAttribute('data-col', 'diffs');
+        th.setAttribute('data-no-sort', true);
+        return th;
       }
 
-      const sort_indicator =
-        key === sortCol ? `<sort-indicator data-sort="${sortDesc ? 'desc' : 'asc'}" />` : `<sort-indicator  />`;
+      const sort_indicator = document.createElement('sort-indicator');
+      if (key === sortCol) {
+        sort_indicator.setAttribute('data-sort', sortDesc ? 'desc' : 'asc');
+      }
 
-      return `<th data-col="${key}">
-          <div><span>${name}</span>${sort_indicator}</div>
-        </th>`;
+      const th = document.createElement('th');
+      th.setAttribute('data-col', key);
+      const div = document.createElement('div');
+      const span = document.createElement('span');
+      span.textContent = name;
+      div.append(span, sort_indicator);
+      th.append(div);
+      return th;
     });
 
-    return `<tr>${headers.join('')}</tr>`;
+    const tr = document.createElement('tr');
+    tr.append(...headers);
+    return tr;
   }
 
   setDiffRow(address, shouldExpand) {
@@ -761,7 +800,7 @@ class ListingTable extends window.HTMLElement {
     }
 
     // Insert the diff row after the parent func row.
-    funcrow.insertAdjacentHTML('afterend', this.diffRowHtml(address, appState.showRecomp));
+    funcrow.insertAdjacentElement('afterend', this.diffRow(address, appState.showRecomp));
   }
 
   connectedCallback() {
@@ -770,28 +809,26 @@ class ListingTable extends window.HTMLElement {
       this.setDiffRow(evt.detail, appState.isExpanded(evt.detail));
     });
 
+    this.innerHTML = '<table id="listing"><thead></thead><tbody></tbody></table>';
+
     this.somethingChanged();
   }
 
   somethingChanged() {
-    const header_html = this.headerRowHtml(appState.showRecomp, appState.sortCol, appState.sortDesc);
+    const header_row = this.headerRow(appState.showRecomp, appState.sortCol, appState.sortDesc);
 
     const rows = [];
 
     // Create rows for this page.
     for (const obj of appState.pageSlice()) {
-      rows.push(this.funcRowHtml(obj, appState.showRecomp));
+      rows.push(this.funcRow(obj, appState.showRecomp));
       if (appState.isExpanded(obj.address)) {
-        rows.push(this.diffRowHtml(obj.address, appState.showRecomp));
+        rows.push(this.diffRow(obj.address, appState.showRecomp));
       }
     }
 
-    this.innerHTML = `
-    <table id="listing">
-      <thead>${header_html}</thead>
-      <tbody>${rows.join('')}</tbody>
-    </table>
-    `;
+    this.querySelector('thead').replaceChildren(header_row);
+    this.querySelector('tbody').replaceChildren(...rows);
 
     this.querySelectorAll('th:not([data-no-sort])').forEach((th) => {
       const col = th.getAttribute('data-col');
