@@ -201,3 +201,35 @@ def test_widechar_null_terminator_missing():
     img = RawImage.from_memory(b"test")
     data = img.read_widechar(0)
     assert data == b"test"
+
+
+STRING_READ_SAMPLES = (
+    # No string for any sequence of null bytes.
+    (b"\x00", b"", b""),
+    (b"\x00\x00", b"", b""),
+    (b"\x00\x00\x00", b"", b""),
+    (b"\x00\x00\x00\x00", b"", b""),
+    # Don't return a widechar until we have two physical bytes to read.
+    # If the second byte of the final wide character of the string is 0
+    # then it must be in physical memory. This is hopefully always the case.
+    (b"A", b"A", b""),
+    (b"A\x00", b"A", b"A\x00"),
+    (b"A\x00B", b"A", b"A\x00"),
+    (b"A\x00B\x00", b"A", b"A\x00B\x00"),
+    # Widechar allows for the first byte to be null unless the second one is too.
+    (b"\x00ABC", b"", b"\x00ABC"),
+    (b"\x00\x00ABCD", b"", b""),
+    # Widechar should ignore the last byte even though none of the bytes are null.
+    (b"ABC", b"ABC", b"AB"),
+)
+
+
+@pytest.mark.parametrize(
+    "memory, expected_string, expected_widechar", STRING_READ_SAMPLES
+)
+def test_string_reads(memory: bytes, expected_string: bytes, expected_widechar: bytes):
+    """An attempt to cover all situations where our string regex would fail to match.
+    We don't expect to see an InvalidStringError."""
+    img = RawImage.from_memory(memory)
+    assert img.read_string(0) == expected_string
+    assert img.read_widechar(0) == expected_widechar
