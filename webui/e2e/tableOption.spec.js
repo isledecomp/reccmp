@@ -56,7 +56,7 @@ test.describe('Table display options', () => {
     const recompHeader = page.getByRole('rowgroup').getByText(/Recomp/);
 
     // First row should display the original address, but not the recomp address.
-    const topRow = page.locator('func-row').nth(0);
+    const topRow = page.locator('tr[data-address]').nth(0);
     await expect(topRow.getByText('0x401000')).toBeVisible();
     await expect(topRow.getByText('0x501000')).not.toBeVisible();
 

@@ -338,7 +338,7 @@ def match_strings(db: EntityDb, report: ReccmpReportProtocol = reccmp_report_nop
                 report(
                     ReccmpEvent.NO_MATCH,
                     orig_addr,
-                    msg=f"Failed to match string {repr(text)} at 0x{orig_addr:x}",
+                    msg=f"Failed to match string {text} at 0x{orig_addr:x}",
                 )
 
 

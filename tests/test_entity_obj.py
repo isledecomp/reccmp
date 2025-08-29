@@ -2,7 +2,7 @@
 
 import json
 from reccmp.isledecomp.types import EntityType
-from reccmp.isledecomp.compare.db import ReccmpEntity
+from reccmp.isledecomp.compare.db import ReccmpEntity, entity_name_from_string
 
 
 def create_entity(
@@ -48,25 +48,29 @@ def test_match_name_priority():
     assert "Hello" in name
 
 
-def test_computed_name_string():
-    """Ignore 'computed_name' if entity is a string"""
+def test_entity_name_from_string():
+    """String text should be escaped and wrapped in double quotes."""
+    assert entity_name_from_string("") == '""'
+    assert entity_name_from_string("", wide=True) == 'L""'
 
-    name = create_entity(
-        100, 200, computed_name="Hello", name="Test", type=EntityType.STRING
-    ).match_name()
-    assert name is not None
-    assert "Test" in name
+    # Escaping control characters and backslashes
+    assert entity_name_from_string("\\") == '"\\\\"'
+    assert entity_name_from_string("\r\t\n") == '"\\r\\t\\n"'
+    assert entity_name_from_string("\x00\x01\x02") == '"\\x00\\x01\\x02"'
 
+    # Escaping double quotes (not part of unicode_escape conversion)
+    assert entity_name_from_string('"quotes"') == '"\\"quotes\\""'
 
-def test_match_name_string():
-    """We currently store the string value in the name field.
-    If the string includes newlines, we need to escape them before replacing the
-    value during asm sanitize. (It will interfere with diff calculation.)"""
-    string = """A string
-    with
-    newlines"""
+    # Escaping extended ASCII (Latin1) character
+    assert entity_name_from_string("®") == '"\\xae"'
+    assert entity_name_from_string("®", wide=True) == 'L"\\xae"'
 
-    name = create_entity(100, None, type=EntityType.STRING, name=string).match_name()
-    assert name is not None
-    assert "\n" not in name
-    assert "\\n" in name
+    # Escaping Unicode character
+    assert entity_name_from_string("œ") == '"\\u0153"'
+    assert entity_name_from_string("‡") == '"\\u2021"'
+    assert entity_name_from_string("œ", wide=True) == 'L"\\u0153"'
+    assert entity_name_from_string("‡", wide=True) == 'L"\\u2021"'
+
+    # No need to escape the single quote
+    # (Ignore the fact that we have escaped it for this test string)
+    assert entity_name_from_string("Can't") == '"Can\'t"'

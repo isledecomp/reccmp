@@ -11,8 +11,8 @@ test.describe('Search bar', () => {
 
     // Locators for rows matching and not matching our intended query.
     // TODO: use better locator for table rows/cells
-    const notMatchRows = page.locator('func-row').filter({ hasNotText: query });
-    const matchRows = page.locator('func-row').filter({ hasText: query });
+    const notMatchRows = page.locator('tr[data-address]').filter({ hasNotText: query });
+    const matchRows = page.locator('tr[data-address]').filter({ hasText: query });
 
     // Should have a variety of rows to start.
     await expect(notMatchRows).not.toHaveCount(0);
@@ -37,7 +37,7 @@ test.describe('Search bar', () => {
     const searchbox = page.getByRole('searchbox');
 
     // TODO: use better locator for table rows/cells
-    const rows = page.locator('func-row');
+    const rows = page.locator('tr[data-address]');
 
     // Make sure we have rows displayed.
     await expect(rows).not.toHaveCount(0);
@@ -54,7 +54,7 @@ test.describe('Search bar', () => {
     const radio = page.getByRole('radio', { name: 'Asm output' });
 
     // TODO: use better locator for table rows/cells
-    const rows = page.locator('func-row');
+    const rows = page.locator('tr[data-address]');
 
     // Make sure we have some rows
     await expect(rows).not.toHaveCount(0);

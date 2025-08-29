@@ -11,7 +11,7 @@ test.describe('Column headers', () => {
     const addressHeader = page.locator('thead').getByText(/Address/);
 
     // TODO: improve locator
-    const topRow = page.locator('func-row').nth(0);
+    const topRow = page.locator('tr[data-address]').nth(0);
 
     // First address in test data
     await expect(topRow).toContainText('0x401000');
@@ -31,7 +31,7 @@ test.describe('Column headers', () => {
     // TODO: improve locators
     const addressHeader = page.locator('thead').getByText(/Address/);
     const nameHeader = page.locator('thead').getByText(/Name/);
-    const topRow = page.locator('func-row').nth(0);
+    const topRow = page.locator('tr[data-address]').nth(0);
 
     // Should be sorted by orig address to start.
     await expect(topRow).toContainText('0x401000');
@@ -50,7 +50,7 @@ test.describe('Column headers', () => {
 
     // Now sorting by name in reverse alphabetical order.
     // Inverted sort on address retained for the new column.
-    await expect(topRow).toContainText('_wctomb');
+    await expect(topRow).toContainText('list<ROI *,allocator<ROI *> >::_Buynode');
   });
 
   test('Update sort indicator', async ({ page }) => {

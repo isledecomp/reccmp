@@ -39,7 +39,7 @@ from .match_msvc import (
     match_strings,
     match_ref,
 )
-from .db import EntityDb, ReccmpEntity, ReccmpMatch
+from .db import EntityDb, ReccmpEntity, ReccmpMatch, entity_name_from_string
 from .diff import DiffReport, combined_diff
 from .lines import LinesDb
 from .queries import get_overloaded_functions, get_named_thunks
@@ -231,14 +231,16 @@ class Compare:
                         sym.friendly_name = rstrip_string
 
                     except UnicodeDecodeError:
-                        pass
+                        continue
 
                     # Special handling for string entities.
                     # Make sure the entity size includes the string null-terminator.
                     batch.set_recomp(
                         addr,
                         type=sym.node_type,
-                        name=sym.name(),
+                        name=entity_name_from_string(
+                            rstrip_string, wide=string_info.is_utf16
+                        ),
                         symbol=sym.decorated_name,
                         size=len(rstrip_string) + 1,
                         verified=True,
@@ -344,8 +346,11 @@ class Compare:
                 # Not that we don't trust you, but we're checking the string
                 # annotation to make sure it is accurate.
                 try:
-                    # TODO: would presumably fail for wchar_t strings
-                    orig = self.orig_bin.read_string(string.offset).decode("latin1")
+                    if string.is_unicode:
+                        orig = None  # TODO
+                    else:
+                        orig = self.orig_bin.read_string(string.offset).decode("latin1")
+
                     string_correct = string.name == orig
                 except UnicodeDecodeError:
                     string_correct = False
@@ -360,7 +365,7 @@ class Compare:
 
                 batch.set_orig(
                     string.offset,
-                    name=string.name,
+                    name=entity_name_from_string(string.name, wide=string.is_unicode),
                     type=EntityType.STRING,
                     size=len(string.name) + 1,  # including null-terminator
                     verified=True,
@@ -475,7 +480,7 @@ class Compare:
                     batch.insert_orig(
                         addr,
                         type=EntityType.STRING,
-                        name=string,
+                        name=entity_name_from_string(string),
                         size=len(string) + 1,  # including null-terminator
                     )
 
@@ -487,7 +492,7 @@ class Compare:
                     batch.insert_recomp(
                         addr,
                         type=EntityType.STRING,
-                        name=string,
+                        name=entity_name_from_string(string),
                         size=len(string) + 1,  # including null-terminator
                     )
 
