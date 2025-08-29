@@ -7,6 +7,10 @@ from typing import Iterable, Iterator
 from reccmp.project.detect import RecCmpTarget
 from reccmp.isledecomp.difflib import get_grouped_opcodes
 from reccmp.isledecomp.compare.functions import FunctionComparator
+from reccmp.isledecomp.formats.exceptions import (
+    InvalidVirtualReadError,
+    InvalidStringError,
+)
 from reccmp.isledecomp.formats.detect import detect_image
 from reccmp.isledecomp.formats.pe import PEImage
 from reccmp.isledecomp.cvdump.demangler import (
@@ -200,37 +204,51 @@ class Compare:
                         )
                         continue
 
-                    # TODO: skip unicode for now. will need to handle these differently.
-                    if string_info.is_utf16:
-                        continue
-
-                    size = sym.size()
-                    assert size is not None
-
-                    raw = self.recomp_bin.read(addr, size)
-
                     try:
-                        # We use the string length reported in the mangled symbol as the
-                        # data size, but this is not always accurate with respect to the
-                        # null terminator.
-                        # e.g. ??_C@_0BA@EFDM@MxObjectFactory?$AA@
-                        # reported length: 16 (includes null terminator)
-                        # c.f. ??_C@_03DPKJ@enz?$AA@
-                        # reported length: 3 (does NOT include terminator)
-                        # This will handle the case where the entire string contains "\x00"
-                        # because those are distinct from the empty string of length 0.
-                        decoded_string = raw.decode("latin1")
-                        rstrip_string = decoded_string.rstrip("\x00")
+                        # Use the section contribution size if we have it. It is more accurate
+                        # than the number embedded in the string symbol:
+                        #
+                        #     e.g. ??_C@_0BA@EFDM@MxObjectFactory?$AA@
+                        #     reported length: 16 (includes null terminator)
+                        #     c.f. ??_C@_03DPKJ@enz?$AA@
+                        #     reported length: 3 (does NOT include terminator)
+                        #
+                        # Using a known length enables us to read strings that include null bytes.
+                        # string_size is the total memory footprint, including null-terminator.
+                        if string_info.is_utf16:
+                            if sym.section_contribution is not None:
+                                string_size = sym.section_contribution
+                                # Remove 2-byte null-terminator before decoding
+                                raw = self.recomp_bin.read(addr, string_size)[:-2]
+                            else:
+                                raw = self.recomp_bin.read_widechar(addr)
+                                string_size = len(raw) + 2
 
-                        # TODO: Hack to exclude a string that contains \x00 bytes
-                        # The proper solution is to escape the text for JSON or use
-                        # base64 encoding for comparing binary values.
-                        # Kicking the can down the road for now.
-                        if "\x00" in decoded_string and rstrip_string == "":
-                            continue
-                        sym.friendly_name = rstrip_string
+                            decoded_string = raw.decode("utf-16-le")
+                        else:
+                            if sym.section_contribution is not None:
+                                string_size = sym.section_contribution
+                                # Remove 1-byte null-terminator before decoding
+                                raw = self.recomp_bin.read(addr, string_size)[:-1]
+                            else:
+                                raw = self.recomp_bin.read_string(addr)
+                                string_size = len(raw) + 1
+
+                            decoded_string = raw.decode("latin1")
+
+                    except (InvalidVirtualReadError, InvalidStringError):
+                        logger.warning(
+                            "Could not read string from recomp 0x%x, wide=%s",
+                            addr,
+                            string_info.is_utf16,
+                        )
 
                     except UnicodeDecodeError:
+                        logger.debug(
+                            "Could not decode string: %s, wide=%s",
+                            raw,
+                            string_info.is_utf16,
+                        )
                         continue
 
                     # Special handling for string entities.
@@ -239,10 +257,10 @@ class Compare:
                         addr,
                         type=sym.node_type,
                         name=entity_name_from_string(
-                            rstrip_string, wide=string_info.is_utf16
+                            decoded_string, wide=string_info.is_utf16
                         ),
                         symbol=sym.decorated_name,
-                        size=len(rstrip_string) + 1,
+                        size=string_size,
                         verified=True,
                     )
                 else:
@@ -346,12 +364,24 @@ class Compare:
                 # Not that we don't trust you, but we're checking the string
                 # annotation to make sure it is accurate.
                 try:
-                    if string.is_unicode:
-                        orig = None  # TODO
+                    if string.is_widechar:
+                        raw = self.orig_bin.read_widechar(string.offset)
+                        orig = raw.decode("utf-16-le")
+                        string_size = len(raw) + 2
                     else:
-                        orig = self.orig_bin.read_string(string.offset).decode("latin1")
+                        raw = self.orig_bin.read_string(string.offset)
+                        orig = raw.decode("latin1")
+                        string_size = len(raw) + 1
 
                     string_correct = string.name == orig
+
+                except InvalidStringError:
+                    logger.warning(
+                        "Could not read string from orig 0x%x, wide=%s",
+                        string.offset,
+                        string.is_widechar,
+                    )
+
                 except UnicodeDecodeError:
                     string_correct = False
 
@@ -365,9 +395,9 @@ class Compare:
 
                 batch.set_orig(
                     string.offset,
-                    name=entity_name_from_string(string.name, wide=string.is_unicode),
+                    name=entity_name_from_string(string.name, wide=string.is_widechar),
                     type=EntityType.STRING,
-                    size=len(string.name) + 1,  # including null-terminator
+                    size=string_size,
                     verified=True,
                 )
 

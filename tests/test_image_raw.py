@@ -99,6 +99,12 @@ def test_raw_all_initialized():
     with pytest.raises(InvalidVirtualAddressError):
         img.read_string(6)
 
+    with pytest.raises(InvalidVirtualAddressError):
+        img.read_widechar(-1)
+
+    with pytest.raises(InvalidVirtualAddressError):
+        img.read_widechar(6)
+
 
 def test_raw_partially_initialized():
     img = RawImage.from_memory(b"test", size=10)
@@ -134,3 +140,96 @@ def test_raw_all_uninitialized():
     # Reading from any valid address results in the empty string.
     assert img.read_string(0) == b""
     assert img.read_string(6) == b""
+
+
+def test_widechar_null_terminator_included():
+    """Reading pairs of bytes until both are null. No expectation on encoding."""
+    img = RawImage.from_memory(b"\x00\x00")
+    assert img.read_widechar(0) == b""
+
+    # UTF-16 LE
+    img = RawImage.from_memory(b"t\x00e\x00s\x00t\x00\x00\x00")
+    data = img.read_widechar(0)
+    assert data.decode("utf-16-le") == "test"
+
+    # UTF-16 BE
+    img = RawImage.from_memory(b"\x00t\x00e\x00s\x00t\x00\x00")
+    data = img.read_widechar(0)
+    assert data.decode("utf-16-be") == "test"
+
+    # Not restricted to cases where every other byte is null
+    img = RawImage.from_memory(b"test\x00\x00")
+    data = img.read_widechar(0)
+    assert data == b"test"
+
+
+def test_widechar_null_terminator_missing():
+    """I don't think it's likely this will happen, but this is to test the case
+    where the string appears at the very end of physical memory."""
+    img = RawImage.from_memory(b"\x00")
+    assert img.read_widechar(0) == b""
+
+    with pytest.raises(InvalidVirtualAddressError):
+        img = RawImage.from_memory(b"")
+        img.read_widechar(0)
+
+    # Throws InvalidVirtualAddressError if not for the uninitialized padding.
+    img = RawImage.from_memory(b"", size=1)
+    assert img.read_widechar(0) == b""
+
+    # UTF-16 LE: 1 byte for null-terminator
+    img = RawImage.from_memory(b"t\x00e\x00s\x00t\x00\x00")
+    data = img.read_widechar(0)
+    assert data.decode("utf-16-le") == "test"
+
+    # UTF-16 LE: no null-terminator
+    img = RawImage.from_memory(b"t\x00e\x00s\x00t\x00")
+    data = img.read_widechar(0)
+    assert data.decode("utf-16-le") == "test"
+
+    # UTF-16 BE: 1 byte for null-terminator
+    img = RawImage.from_memory(b"\x00t\x00e\x00s\x00t\x00")
+    data = img.read_widechar(0)
+    assert data.decode("utf-16-be") == "test"
+
+    # UTF-16 BE: no null-terminator
+    img = RawImage.from_memory(b"\x00t\x00e\x00s\x00t")
+    data = img.read_widechar(0)
+    assert data.decode("utf-16-be") == "test"
+
+    # Not restricted to cases where every other byte is null
+    img = RawImage.from_memory(b"test")
+    data = img.read_widechar(0)
+    assert data == b"test"
+
+
+STRING_READ_SAMPLES = (
+    # No string for any sequence of null bytes.
+    (b"\x00", b"", b""),
+    (b"\x00\x00", b"", b""),
+    (b"\x00\x00\x00", b"", b""),
+    (b"\x00\x00\x00\x00", b"", b""),
+    # Don't return a widechar until we have two physical bytes to read.
+    # If the second byte of the final wide character of the string is 0
+    # then it must be in physical memory. This is hopefully always the case.
+    (b"A", b"A", b""),
+    (b"A\x00", b"A", b"A\x00"),
+    (b"A\x00B", b"A", b"A\x00"),
+    (b"A\x00B\x00", b"A", b"A\x00B\x00"),
+    # Widechar allows for the first byte to be null unless the second one is too.
+    (b"\x00ABC", b"", b"\x00ABC"),
+    (b"\x00\x00ABCD", b"", b""),
+    # Widechar should ignore the last byte even though none of the bytes are null.
+    (b"ABC", b"ABC", b"AB"),
+)
+
+
+@pytest.mark.parametrize(
+    "memory, expected_string, expected_widechar", STRING_READ_SAMPLES
+)
+def test_string_reads(memory: bytes, expected_string: bytes, expected_widechar: bytes):
+    """An attempt to cover all situations where our string regex would fail to match.
+    We don't expect to see an InvalidStringError."""
+    img = RawImage.from_memory(memory)
+    assert img.read_string(0) == expected_string
+    assert img.read_widechar(0) == expected_widechar

@@ -877,8 +877,8 @@ def test_issue_137(parser):
     assert parser.alerts[0].code.name == "UNEXPECTED_MARKER"
 
 
-def test_unicode_string(parser):
-    """Should detect a unicode string with the L prefix."""
+def test_widechar_string(parser):
+    """Should detect a widechar string with the L prefix."""
     parser.read(
         """\
         // STRING: HELLO 0x1234
@@ -889,7 +889,7 @@ def test_unicode_string(parser):
         """
     )
 
-    assert parser.strings[0].is_unicode is True
+    assert parser.strings[0].is_widechar is True
     assert parser.strings[0].name == "test"
-    assert parser.strings[1].is_unicode is False
+    assert parser.strings[1].is_widechar is False
     assert parser.strings[1].name == "test"

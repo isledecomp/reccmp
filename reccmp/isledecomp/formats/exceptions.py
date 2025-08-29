@@ -11,3 +11,7 @@ class InvalidVirtualReadError(IndexError):
     """Reading the given number of bytes from the given virtual address
     would cause us to read past the end of the section or past the end
     of the virtual address space."""
+
+
+class InvalidStringError(IndexError):
+    """We could not read a string that begins at the given address."""

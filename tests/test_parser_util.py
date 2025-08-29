@@ -186,7 +186,7 @@ def test_get_string_contents(line: str, expected: str):
     string = get_string_contents(line)
     assert string is not None
     assert string.text == expected
-    assert string.is_unicode is False
+    assert string.is_widechar is False
 
 
 def test_marker_extra_spaces():
