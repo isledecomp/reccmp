@@ -5,6 +5,7 @@ from pathlib import Path
 import struct
 from typing import Iterable, Iterator
 from reccmp.project.detect import RecCmpTarget
+from reccmp.isledecomp.difflib import get_grouped_opcodes
 from reccmp.isledecomp.compare.functions import FunctionComparator
 from reccmp.isledecomp.formats.exceptions import (
     InvalidVirtualReadError,
@@ -865,7 +866,27 @@ class Compare:
             )
 
         if match.entity_type == EntityType.FUNCTION:
-            return self.function_comparator.compare_function(match)
+            best_name = match.best_name()
+            assert best_name is not None
+
+            diff_result = self.function_comparator.compare_function(match)
+            if diff_result.match_ratio != 1.0:
+                grouped_codes = list(get_grouped_opcodes(diff_result.codes, n=10))
+                udiff = combined_diff(
+                    grouped_codes, diff_result.orig_inst, diff_result.recomp_inst
+                )
+            else:
+                udiff = None
+
+            return DiffReport(
+                match_type=EntityType.FUNCTION,
+                orig_addr=match.orig_addr,
+                recomp_addr=match.recomp_addr,
+                name=best_name,
+                udiff=udiff,
+                ratio=diff_result.match_ratio,
+                is_effective_match=diff_result.is_effective_match,
+            )
 
         if match.entity_type == EntityType.VTABLE:
             return self._compare_vtable(match)
