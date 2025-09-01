@@ -34,10 +34,14 @@ class YmlGhidraConfig(BaseModel):
         default_factory=list,
         validation_alias=AliasChoices("ignore-functions", "ignore_functions"),
     )
+    name_substitutions: dict[str, str] = Field(
+        default_factory=dict,
+        validation_alias=AliasChoices("name-substitutions", "name_substitutions"),
+    )
 
     @classmethod
     def default(cls) -> "YmlGhidraConfig":
-        return cls(ignore_types=[], ignore_functions=[])
+        return cls(ignore_types=[], ignore_functions=[], name_substitutions={})
 
 
 class YmlReportConfig(BaseModel):

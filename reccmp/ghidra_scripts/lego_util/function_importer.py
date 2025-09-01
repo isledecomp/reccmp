@@ -5,6 +5,7 @@
 
 import logging
 from abc import ABC, abstractmethod
+import re
 from typing import Sequence
 
 from ghidra.program.model.listing import Function, Parameter
@@ -43,6 +44,7 @@ class PdbFunctionImporter(ABC):
         api: FlatProgramAPI,
         func: PdbFunction,
         type_importer: "PdbTypeImporter",
+        name_substitutions: dict[str, str],
     ):
         self.api = api
         self.match_info = func.match_info
@@ -55,15 +57,26 @@ class PdbFunctionImporter(ABC):
             self.match_info.name,
         )
 
+        for pattern, substitution in name_substitutions.items():
+            new_name = re.sub(pattern, substitution, self.name)
+            if new_name != self.name:
+                logger.debug("Replacing function name: %s -> %s", self.name, new_name)
+                self.name = new_name
+
     def get_full_name(self) -> str:
         return f"{self.namespace.getName()}::{self.name}"
 
     @staticmethod
-    def build(api: FlatProgramAPI, func: PdbFunction, type_importer: "PdbTypeImporter"):
+    def build(
+        api: FlatProgramAPI,
+        func: PdbFunction,
+        type_importer: "PdbTypeImporter",
+        name_replacements: dict[str, str],
+    ):
         return (
-            ThunkPdbFunctionImport(api, func, type_importer)
+            ThunkPdbFunctionImport(api, func, type_importer, name_replacements)
             if func.signature is None
-            else FullPdbFunctionImporter(api, func, type_importer)
+            else FullPdbFunctionImporter(api, func, type_importer, name_replacements)
         )
 
     @abstractmethod
@@ -99,8 +112,9 @@ class FullPdbFunctionImporter(PdbFunctionImporter):
         api: FlatProgramAPI,
         func: PdbFunction,
         type_importer: "PdbTypeImporter",
+        name_replacements: dict[str, str],
     ):
-        super().__init__(api, func, type_importer)
+        super().__init__(api, func, type_importer, name_replacements)
 
         assert func.signature is not None
         self.signature = func.signature
