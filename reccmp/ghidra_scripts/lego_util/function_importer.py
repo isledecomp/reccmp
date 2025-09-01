@@ -71,12 +71,12 @@ class PdbFunctionImporter(ABC):
         api: FlatProgramAPI,
         func: PdbFunction,
         type_importer: "PdbTypeImporter",
-        name_replacements: dict[str, str],
+        name_substitutions: dict[str, str],
     ):
         return (
-            ThunkPdbFunctionImport(api, func, type_importer, name_replacements)
+            ThunkPdbFunctionImport(api, func, type_importer, name_substitutions)
             if func.signature is None
-            else FullPdbFunctionImporter(api, func, type_importer, name_replacements)
+            else FullPdbFunctionImporter(api, func, type_importer, name_substitutions)
         )
 
     @abstractmethod
@@ -112,9 +112,9 @@ class FullPdbFunctionImporter(PdbFunctionImporter):
         api: FlatProgramAPI,
         func: PdbFunction,
         type_importer: "PdbTypeImporter",
-        name_replacements: dict[str, str],
+        name_substitutions: dict[str, str],
     ):
-        super().__init__(api, func, type_importer, name_replacements)
+        super().__init__(api, func, type_importer, name_substitutions)
 
         assert func.signature is not None
         self.signature = func.signature
