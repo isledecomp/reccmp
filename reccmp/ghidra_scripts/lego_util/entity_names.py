@@ -28,7 +28,7 @@ def sanitize_name(name: str) -> SanitizedEntityName:
 
     The result consists of a namespace path and a base name, e.g.
     ```
-    sanitize_name("a::b::c") ~ (("a", "b"), "c")
+    sanitize_name("a::b::c") ~ { namespace_path: ["a", "b"], base_name: "c" }
     ```
     """
     if (match := THUNK_OF_RE.fullmatch(name)) is not None:

@@ -357,6 +357,7 @@ try:
 
     reload_module("reccmp.isledecomp.compare.db")
 
+    reload_module("reccmp.ghidra_scripts.lego_util.entity_names")
     reload_module("reccmp.ghidra_scripts.lego_util.exceptions")
     from reccmp.ghidra_scripts.lego_util.exceptions import Lego1Exception
 
