@@ -136,7 +136,9 @@ def get_or_create_class_namespace(
         logger.info("Creating class %s", namespace_path)
         # We assume that the last part belongs to a class and the rest to the namespace containing the class
         [*class_namespace_path, class_name] = namespace_path
-        parent_namespace = _create_ghidra_namespace(api, NamespacePath(class_namespace_path))
+        parent_namespace = _create_ghidra_namespace(
+            api, NamespacePath(class_namespace_path)
+        )
         return api.createClass(parent_namespace, class_name)
 
 

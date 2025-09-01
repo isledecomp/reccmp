@@ -137,14 +137,16 @@ def import_function_into_ghidra(
     api: "FlatProgramAPI",
     pdb_function: "PdbFunction",
     type_importer: "PdbTypeImporter",
-    name_substitutions: dict[str, str]
+    name_substitutions: dict[str, str],
 ):
     hex_original_address = f"{pdb_function.match_info.orig_addr:x}"
 
     # Find the Ghidra function at that address
     ghidra_address = getAddressFactory().getAddress(hex_original_address)
     # pylint: disable=possibly-used-before-assignment
-    function_importer = PdbFunctionImporter.build(api, pdb_function, type_importer, name_substitutions)
+    function_importer = PdbFunctionImporter.build(
+        api, pdb_function, type_importer, name_substitutions
+    )
 
     ghidra_function = getFunctionAt(ghidra_address)
     if ghidra_function is None:
@@ -234,7 +236,13 @@ def do_execute_import(
 
         do_with_error_handling(
             func_name or hex(orig_addr),
-            partial(import_function_into_ghidra, api, pdb_func, type_importer, name_substitutions),
+            partial(
+                import_function_into_ghidra,
+                api,
+                pdb_func,
+                type_importer,
+                name_substitutions,
+            ),
         )
 
     logger.info("Finished importing functions.")
@@ -332,7 +340,7 @@ def main():
             extractor,
             set(target.ghidra_config.ignore_types),
             set(target.ghidra_config.ignore_functions),
-            target.ghidra_config.name_substitutions
+            target.ghidra_config.name_substitutions,
         )
     finally:
         if GLOBALS.running_from_ghidra:
