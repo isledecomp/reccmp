@@ -24,7 +24,7 @@ from ghidra.util.task import ConsoleTaskMonitor
 
 from reccmp.isledecomp.cvdump.types import VirtualBasePointer
 
-from .entity_names import SanitizedEntityName, sanitize_name
+from .entity_names import NamespacePath, SanitizedEntityName, sanitize_name
 from .exceptions import (
     MultipleTypesFoundInGhidraError,
     TypeNotFoundError,
@@ -247,7 +247,7 @@ class PdbTypeImporter:
         # We need a class/namespace for the class itself, not just for its parent,
         # so we need to add the base name to the second argument
         get_or_create_class_namespace(
-            self.api, (*sanitized_name.namespace_path, sanitized_name.base_name)
+            self.api, NamespacePath((*sanitized_name.namespace_path, sanitized_name.base_name))
         )
 
         if raw_name in self.ignore_types:
@@ -402,7 +402,7 @@ class PdbTypeImporter:
 
         # Turns e.g. `SomeNamespace::LegoAnimActor` into `SomeNamespace::LegoAnimActor::VBasePtr`
         vbase_ptr_type_name = SanitizedEntityName(
-            (*sanitized_name.namespace_path, sanitized_name.base_name), "VBasePtr"
+            NamespacePath((*sanitized_name.namespace_path, sanitized_name.base_name)), "VBasePtr"
         )
 
         new_ghidra_struct = self._get_or_create_struct_data_type(

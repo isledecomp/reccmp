@@ -3,7 +3,9 @@ import re
 from typing import NamedTuple
 
 
-NamespacePath = tuple[str, ...]
+class NamespacePath(tuple[str, ...]):
+    def __str__(self):
+        return "::".join(self)
 
 
 class SanitizedEntityName(NamedTuple):
@@ -75,4 +77,4 @@ def sanitize_name(name: str) -> SanitizedEntityName:
         )
 
     [*namespace_path, base_name] = new_name_split
-    return SanitizedEntityName(tuple(namespace_path), base_name)
+    return SanitizedEntityName(NamespacePath(namespace_path), base_name)
