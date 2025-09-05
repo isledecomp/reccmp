@@ -1,5 +1,5 @@
 import difflib
-from reccmp.isledecomp.compare.asm.fixes import assert_fixup, find_effective_match
+from reccmp.isledecomp.compare.asm.fixes import find_effective_match
 
 
 def test_fix_cmp_jmp():
@@ -7,11 +7,9 @@ def test_fix_cmp_jmp():
     recomp_asm = ["mov eax, 1", "mov ebx, 2", "cmp ebx, eax", "jl 0x1"]
 
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
-    assert diff.ratio != 1.0
-
     is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
-    assert is_effective == True
+    assert is_effective is True
 
 
 def test_fix_mov_cmp_jmp_mem_with_different_operands():
@@ -29,7 +27,8 @@ def test_fix_mov_cmp_jmp_mem_with_different_operands():
 
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
     is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
-    assert is_effective == False
+
+    assert is_effective is False
 
 
 def test_fix_mov_cmp_jmp_mem_with_non_matching_jmp():
@@ -48,7 +47,7 @@ def test_fix_mov_cmp_jmp_mem_with_non_matching_jmp():
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
     is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
-    assert is_effective == False
+    assert is_effective is False
 
 
 def test_fix_mov_cmp_jmp_mem_valid():
@@ -67,4 +66,4 @@ def test_fix_mov_cmp_jmp_mem_valid():
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
     is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
-    assert is_effective == True
+    assert is_effective is True
