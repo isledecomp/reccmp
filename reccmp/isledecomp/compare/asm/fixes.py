@@ -55,33 +55,35 @@ def get_patched_jump(a: str, b: str) -> str:
     return mnemonic_a + " " + operand_b
 
 
-def patch_mov_cmp_jmp(orig: list[str], recomp: list[str]) -> list[int]:
+def patch_mov_cmp_jmp(orig: list[str], recomp: list[str]) -> set[int]:
     """Can we resolve the diffs between orig and recomp by patching
     swapped cmp instructions?
     For example:
         mov eax, dword ptr [ebp - 0x4]  mov eax, dword ptr [ebp - 0x8]
         cmp dword ptr [ebp - 0x8]       cmp dword ptr [ebp - 0x4]
         ja .label                       jb .label
+
+    Returns set of fixed lines
     """
 
     # find the first "cmp" instruction
     cmp_index = next((i for i, s in enumerate(orig) if s.startswith("cmp")), -1)
 
     # return if not found, or only found on first or last line
-    if cmp_index in (-1, 0, len(orig) - 1):
-        return []
-
-    if not orig[cmp_index - 1].startswith("mov") or not recomp[
-        cmp_index - 1
-    ].startswith("mov"):
-        return []
-
-    if not recomp[cmp_index].startswith("cmp"):
-        return []
-
-    # if the last lines are not a compatible jump difference
-    if not jump_swap_ok(orig[cmp_index + 1], recomp[cmp_index + 1]):
-        return []
+    if (
+        cmp_index in (-1, 0, len(orig) - 1)
+        or
+        # recomp should also have a cmp in the same line
+        not recomp[cmp_index].startswith("cmp")
+        or
+        # line before cmp must be a mov
+        not orig[cmp_index - 1].startswith("mov")
+        or not recomp[cmp_index - 1].startswith("mov")
+        or
+        # if the last lines are not a compatible jump difference
+        not jump_swap_ok(orig[cmp_index + 1], recomp[cmp_index + 1])
+    ):
+        return set()
 
     # Checking if the combination of mov + cmp include the same set of characters
     # - that is, the set of operands are the same although switched in order
@@ -92,11 +94,11 @@ def patch_mov_cmp_jmp(orig: list[str], recomp: list[str]) -> list[int]:
         if orig[cmp_index + 1] == get_patched_jump(
             orig[cmp_index + 1], recomp[cmp_index + 1]
         ):
-            return [0, 1, 2]
-    return []
+            return {0, 1, 2}
+    return set()
 
 
-def patch_cmp_jmp(orig: list[str], recomp: list[str]) -> bool:
+def patch_cmp_jmp(orig: list[str], recomp: list[str]) -> set[int]:
     """Can we resolve the diffs between orig and recomp by patching
     swapped cmp instructions?
     For example:
@@ -105,21 +107,23 @@ def patch_cmp_jmp(orig: list[str], recomp: list[str]) -> bool:
 
         cmp eax, ebx                    cmp ebx, eax
         ja .label                       jb .label
+
+    Returns set of fixed lines
     """
 
     # find the first "cmp" instruction
     cmp_index = next((i for i, s in enumerate(orig) if s.startswith("cmp")), -1)
     # return if not found, or only found on the last line
-    if cmp_index in (-1, len(orig) - 1):
-        return []
-
-    # return if the recmp doesn't also have "cmp" in the same line
-    if not recomp[cmp_index].startswith("cmp"):
-        return []
-
-    # next line expected to be type of jmp
-    if not jump_swap_ok(orig[cmp_index + 1], recomp[cmp_index + 1]):
-        return []
+    if (
+        cmp_index in (-1, len(orig) - 1)
+        or
+        # recomp should also have a cmp in the same line
+        not recomp[cmp_index].startswith("cmp")
+        or
+        # if the last lines are not a compatible jump difference
+        not jump_swap_ok(orig[cmp_index + 1], recomp[cmp_index + 1])
+    ):
+        return set()
 
     # Checking two things:
     # Are the cmp operands flipped?
@@ -128,8 +132,8 @@ def patch_cmp_jmp(orig: list[str], recomp: list[str]) -> bool:
         if orig[cmp_index + 1] == get_patched_jump(
             orig[cmp_index + 1], recomp[cmp_index + 1]
         ):
-            return [cmp_index, cmp_index + 1]
-    return []
+            return {cmp_index, cmp_index + 1}
+    return set()
 
 
 def patch_cmp_swaps(
