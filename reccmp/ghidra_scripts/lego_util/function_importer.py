@@ -29,7 +29,11 @@ from .ghidra_helper import (
     get_or_add_pointer_type,
 )
 
-from .exceptions import StackOffsetMismatchError, Lego1Exception
+from .exceptions import (
+    StackOffsetMismatchError,
+    Lego1Exception,
+    TypeNotImplementedError,
+)
 from .type_importer import PdbTypeImporter
 from .types import CompiledRegexReplacements
 
@@ -60,7 +64,9 @@ class PdbFunctionImporter(ABC):
         for pattern, substitution in name_substitutions:
             new_name = pattern.sub(substitution, self.name)
             if new_name != self.name:
-                logger.debug("Replacing function name: %s -> %s", self.name, new_name)
+                logger.debug(
+                    "Substituting function name: %s -> %s", self.name, new_name
+                )
                 self.name = new_name
 
     def get_full_name(self) -> str:
@@ -128,6 +134,13 @@ class FullPdbFunctionImporter(PdbFunctionImporter):
         self.return_type = type_importer.import_pdb_type_into_ghidra(
             self.signature.return_type
         )
+
+        if "T_NOTYPE(0000)" in self.signature.arglist:
+            # Variadric functions have a T_NOTYPE as their last argument
+            raise TypeNotImplementedError(
+                f"Function '{self.get_full_name()}' is probably variadric, which is not implemented yet."
+            )
+
         self.arguments: Sequence[ParameterImpl] = [
             ParameterImpl(
                 f"param{index}",

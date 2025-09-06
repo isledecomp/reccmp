@@ -31,7 +31,6 @@ import traceback
 from typing import TYPE_CHECKING, Callable
 from functools import partial
 
-from reccmp.ghidra_scripts.lego_util.types import CompiledRegexReplacements
 
 if TYPE_CHECKING:
     from reccmp.ghidra_scripts.lego_util.headers import *  # pylint: disable=wildcard-import # these are just for headers
@@ -111,6 +110,7 @@ find_and_add_venv_to_pythonpath()
 reload_module("reccmp.ghidra_scripts.lego_util.statistics")
 reload_module("reccmp.ghidra_scripts.lego_util.globals")
 from reccmp.ghidra_scripts.lego_util.globals import GLOBALS
+from reccmp.ghidra_scripts.lego_util.types import CompiledRegexReplacements
 
 logging.root.setLevel(GLOBALS.loglevel)
 
@@ -141,6 +141,8 @@ def import_function_into_ghidra(
     type_importer: "PdbTypeImporter",
     name_substitutions: CompiledRegexReplacements,
 ):
+    logger.debug("Start handling function '%s'", pdb_function.match_info.best_name())
+
     hex_original_address = f"{pdb_function.match_info.orig_addr:x}"
 
     # Find the Ghidra function at that address
@@ -157,8 +159,6 @@ def import_function_into_ghidra(
             ghidra_function is not None
         ), f"Failed to create function at {ghidra_address}"
         logger.info("Created new function at %s", ghidra_address)
-
-    logger.debug("Start handling function '%s'", function_importer.get_full_name())
 
     if function_importer.matches_ghidra_function(ghidra_function):
         logger.info(
@@ -267,6 +267,7 @@ def log_and_track_failure(
             step_name,
             "Unexpected error: " if unexpected else "",
             error,
+            exc_info=error
         )
 
 
