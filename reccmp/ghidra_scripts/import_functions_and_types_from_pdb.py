@@ -267,7 +267,7 @@ def log_and_track_failure(
             step_name,
             "Unexpected error: " if unexpected else "",
             error,
-            exc_info=error
+            exc_info=error,
         )
 
 
