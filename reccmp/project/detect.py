@@ -81,7 +81,31 @@ def find_filename_recursively(directory: Path, filename: str) -> Path | None:
 @dataclass
 class GhidraConfig:
     ignore_types: list[str] = field(default_factory=list)
+    """
+    Types that will be skipped in the Ghidra import. Matches by name.
+    Example value: `["Act2Actor"]`.
+    """
     ignore_functions: list[int] = field(default_factory=list)
+    """
+    Functions that will be skipped in the Ghidra import. Matches by original address.
+    Example value: `[0x100f8ad0]`.
+    """
+    name_substitutions: list[tuple[str, str]] = field(default_factory=list)
+    """
+    Configurable substitutions for function names. Example use case:
+    - There is a shared code base for multiple binaries
+    - The functions in the recomp have placeholder names FUN_12345678
+    - The address in the function name matches only one of the binaries
+
+    In that case one might want to rename the function while importing into another binary in order to tell
+    the function apart from Ghidra's auto-detected functions that have an auto-generated name of the same pattern.
+
+    The syntax matches `re.sub(key, value)`.
+
+    We use a list of tuples instead of a dict to guarantee a consistent order of the substitutions.
+
+    Example value: `[r"FUN_([0-9a-f]{8})", r"LEGO1_\\1"]`.
+    """
 
 
 @dataclass
@@ -310,6 +334,7 @@ class RecCmpProject:
                 ghidra = GhidraConfig(
                     ignore_types=target.ghidra.ignore_types,
                     ignore_functions=target.ghidra.ignore_functions,
+                    name_substitutions=target.ghidra.name_substitutions,
                 )
             else:
                 ghidra = None

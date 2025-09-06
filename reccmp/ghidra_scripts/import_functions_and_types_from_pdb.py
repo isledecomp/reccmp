@@ -23,13 +23,14 @@
 
 import importlib
 import json
-import logging.handlers
+import re
 import sys
 import logging
 from pathlib import Path
 import traceback
 from typing import TYPE_CHECKING, Callable
 from functools import partial
+
 
 if TYPE_CHECKING:
     from reccmp.ghidra_scripts.lego_util.headers import *  # pylint: disable=wildcard-import # these are just for headers
@@ -109,6 +110,7 @@ find_and_add_venv_to_pythonpath()
 reload_module("reccmp.ghidra_scripts.lego_util.statistics")
 reload_module("reccmp.ghidra_scripts.lego_util.globals")
 from reccmp.ghidra_scripts.lego_util.globals import GLOBALS
+from reccmp.ghidra_scripts.lego_util.types import CompiledRegexReplacements
 
 logging.root.setLevel(GLOBALS.loglevel)
 
@@ -137,13 +139,18 @@ def import_function_into_ghidra(
     api: "FlatProgramAPI",
     pdb_function: "PdbFunction",
     type_importer: "PdbTypeImporter",
+    name_substitutions: CompiledRegexReplacements,
 ):
+    logger.debug("Start handling function '%s'", pdb_function.match_info.best_name())
+
     hex_original_address = f"{pdb_function.match_info.orig_addr:x}"
 
     # Find the Ghidra function at that address
     ghidra_address = getAddressFactory().getAddress(hex_original_address)
     # pylint: disable=possibly-used-before-assignment
-    function_importer = PdbFunctionImporter.build(api, pdb_function, type_importer)
+    function_importer = PdbFunctionImporter.build(
+        api, pdb_function, type_importer, name_substitutions
+    )
 
     ghidra_function = getFunctionAt(ghidra_address)
     if ghidra_function is None:
@@ -152,8 +159,6 @@ def import_function_into_ghidra(
             ghidra_function is not None
         ), f"Failed to create function at {ghidra_address}"
         logger.info("Created new function at %s", ghidra_address)
-
-    logger.debug("Start handling function '%s'", function_importer.get_full_name())
 
     if function_importer.matches_ghidra_function(ghidra_function):
         logger.info(
@@ -197,6 +202,7 @@ def do_execute_import(
     extraction: "PdbFunctionExtractor",
     ignore_types: set[str],
     ignore_functions: set[int],
+    name_substitutions: list[tuple[str, str]],
 ):
     pdb_functions = extraction.get_function_list()
 
@@ -219,6 +225,10 @@ def do_execute_import(
         )
 
     logger.info("Importing functions...")
+    name_substitutions_compiled = [
+        (re.compile(regex), replacement) for regex, replacement in name_substitutions
+    ]
+
     for pdb_func in pdb_functions:
         func_name = pdb_func.match_info.name
         orig_addr = pdb_func.match_info.orig_addr
@@ -232,7 +242,13 @@ def do_execute_import(
 
         do_with_error_handling(
             func_name or hex(orig_addr),
-            partial(import_function_into_ghidra, api, pdb_func, type_importer),
+            partial(
+                import_function_into_ghidra,
+                api,
+                pdb_func,
+                type_importer,
+                name_substitutions_compiled,
+            ),
         )
 
     logger.info("Finished importing functions.")
@@ -251,6 +267,7 @@ def log_and_track_failure(
             step_name,
             "Unexpected error: " if unexpected else "",
             error,
+            exc_info=error,
         )
 
 
@@ -330,6 +347,7 @@ def main():
             extractor,
             set(target.ghidra_config.ignore_types),
             set(target.ghidra_config.ignore_functions),
+            target.ghidra_config.name_substitutions,
         )
     finally:
         if GLOBALS.running_from_ghidra:
@@ -354,6 +372,7 @@ try:
 
     reload_module("reccmp.isledecomp.compare.db")
 
+    reload_module("reccmp.ghidra_scripts.lego_util.entity_names")
     reload_module("reccmp.ghidra_scripts.lego_util.exceptions")
     from reccmp.ghidra_scripts.lego_util.exceptions import Lego1Exception
 
