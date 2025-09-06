@@ -23,13 +23,15 @@
 
 import importlib
 import json
-import logging.handlers
+import re
 import sys
 import logging
 from pathlib import Path
 import traceback
 from typing import TYPE_CHECKING, Callable
 from functools import partial
+
+from reccmp.ghidra_scripts.lego_util.types import CompiledRegexReplacements
 
 if TYPE_CHECKING:
     from reccmp.ghidra_scripts.lego_util.headers import *  # pylint: disable=wildcard-import # these are just for headers
@@ -137,7 +139,7 @@ def import_function_into_ghidra(
     api: "FlatProgramAPI",
     pdb_function: "PdbFunction",
     type_importer: "PdbTypeImporter",
-    name_substitutions: dict[str, str],
+    name_substitutions: CompiledRegexReplacements,
 ):
     hex_original_address = f"{pdb_function.match_info.orig_addr:x}"
 
@@ -200,7 +202,7 @@ def do_execute_import(
     extraction: "PdbFunctionExtractor",
     ignore_types: set[str],
     ignore_functions: set[int],
-    name_substitutions: dict[str, str],
+    name_substitutions: list[tuple[str, str]],
 ):
     pdb_functions = extraction.get_function_list()
 
@@ -223,6 +225,10 @@ def do_execute_import(
         )
 
     logger.info("Importing functions...")
+    name_substitutions_compiled = [
+        (re.compile(regex), replacement) for regex, replacement in name_substitutions
+    ]
+
     for pdb_func in pdb_functions:
         func_name = pdb_func.match_info.name
         orig_addr = pdb_func.match_info.orig_addr
@@ -241,7 +247,7 @@ def do_execute_import(
                 api,
                 pdb_func,
                 type_importer,
-                name_substitutions,
+                name_substitutions_compiled,
             ),
         )
 

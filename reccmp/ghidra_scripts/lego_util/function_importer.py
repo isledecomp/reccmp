@@ -5,7 +5,6 @@
 
 import logging
 from abc import ABC, abstractmethod
-import re
 from typing import Sequence
 
 from ghidra.program.model.listing import Function, Parameter
@@ -32,6 +31,7 @@ from .ghidra_helper import (
 
 from .exceptions import StackOffsetMismatchError, Lego1Exception
 from .type_importer import PdbTypeImporter
+from .types import CompiledRegexReplacements
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ class PdbFunctionImporter(ABC):
         api: FlatProgramAPI,
         func: PdbFunction,
         type_importer: "PdbTypeImporter",
-        name_substitutions: dict[str, str],
+        name_substitutions: CompiledRegexReplacements,
     ):
         self.api = api
         self.match_info = func.match_info
@@ -57,8 +57,8 @@ class PdbFunctionImporter(ABC):
             self.match_info.name,
         )
 
-        for pattern, substitution in name_substitutions.items():
-            new_name = re.sub(pattern, substitution, self.name)
+        for pattern, substitution in name_substitutions:
+            new_name = pattern.sub(substitution, self.name)
             if new_name != self.name:
                 logger.debug("Replacing function name: %s -> %s", self.name, new_name)
                 self.name = new_name
@@ -71,7 +71,7 @@ class PdbFunctionImporter(ABC):
         api: FlatProgramAPI,
         func: PdbFunction,
         type_importer: "PdbTypeImporter",
-        name_substitutions: dict[str, str],
+        name_substitutions: CompiledRegexReplacements,
     ):
         return (
             ThunkPdbFunctionImport(api, func, type_importer, name_substitutions)
@@ -112,7 +112,7 @@ class FullPdbFunctionImporter(PdbFunctionImporter):
         api: FlatProgramAPI,
         func: PdbFunction,
         type_importer: "PdbTypeImporter",
-        name_substitutions: dict[str, str],
+        name_substitutions: CompiledRegexReplacements,
     ):
         super().__init__(api, func, type_importer, name_substitutions)
 

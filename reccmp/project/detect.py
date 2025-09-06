@@ -90,7 +90,7 @@ class GhidraConfig:
     Functions that will be skipped in the Ghidra import. Matches by original address.
     Example value: `[0x100f8ad0]`.
     """
-    name_substitutions: dict[str, str] = field(default_factory=dict)
+    name_substitutions: list[tuple[str, str]] = field(default_factory=list)
     """
     Configurable substitutions for function names. Example use case:
     - There is a shared code base for multiple binaries
@@ -102,7 +102,9 @@ class GhidraConfig:
 
     The syntax matches `re.sub(key, value)`.
 
-    Example value: `{ r"FUN_([0-9a-f]{8})": r"LEGO1_\\1" }`.
+    We use a list of tuples instead of a dict to guarantee a consistent order of the substitutions.
+
+    Example value: `[r"FUN_([0-9a-f]{8})", r"LEGO1_\\1"]`.
     """
 
 
