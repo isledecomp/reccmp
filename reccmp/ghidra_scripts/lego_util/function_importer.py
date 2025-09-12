@@ -5,6 +5,7 @@
 
 import logging
 from abc import ABC, abstractmethod
+from typing import Sequence
 
 from ghidra.program.model.listing import Function, Parameter
 from ghidra.program.flatapi import FlatProgramAPI
@@ -24,12 +25,17 @@ from .pdb_extraction import (
 )
 from .ghidra_helper import (
     add_data_type_or_reuse_existing,
-    get_namespace_and_name,
+    get_class_namespace_and_name,
     get_or_add_pointer_type,
 )
 
-from .exceptions import StackOffsetMismatchError, Lego1Exception
+from .exceptions import (
+    StackOffsetMismatchError,
+    Lego1Exception,
+    TypeNotImplementedError,
+)
 from .type_importer import PdbTypeImporter
+from .types import CompiledRegexReplacements
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +48,7 @@ class PdbFunctionImporter(ABC):
         api: FlatProgramAPI,
         func: PdbFunction,
         type_importer: "PdbTypeImporter",
+        name_substitutions: CompiledRegexReplacements,
     ):
         self.api = api
         self.match_info = func.match_info
@@ -49,20 +56,33 @@ class PdbFunctionImporter(ABC):
 
         assert self.match_info.name is not None
 
-        self.namespace, self.name = get_namespace_and_name(
+        self.namespace, self.name = get_class_namespace_and_name(
             self.api,
             self.match_info.name,
         )
+
+        for pattern, substitution in name_substitutions:
+            new_name = pattern.sub(substitution, self.name)
+            if new_name != self.name:
+                logger.debug(
+                    "Substituting function name: %s -> %s", self.name, new_name
+                )
+                self.name = new_name
 
     def get_full_name(self) -> str:
         return f"{self.namespace.getName()}::{self.name}"
 
     @staticmethod
-    def build(api: FlatProgramAPI, func: PdbFunction, type_importer: "PdbTypeImporter"):
+    def build(
+        api: FlatProgramAPI,
+        func: PdbFunction,
+        type_importer: "PdbTypeImporter",
+        name_substitutions: CompiledRegexReplacements,
+    ):
         return (
-            ThunkPdbFunctionImport(api, func, type_importer)
+            ThunkPdbFunctionImport(api, func, type_importer, name_substitutions)
             if func.signature is None
-            else FullPdbFunctionImporter(api, func, type_importer)
+            else FullPdbFunctionImporter(api, func, type_importer, name_substitutions)
         )
 
     @abstractmethod
@@ -98,8 +118,9 @@ class FullPdbFunctionImporter(PdbFunctionImporter):
         api: FlatProgramAPI,
         func: PdbFunction,
         type_importer: "PdbTypeImporter",
+        name_substitutions: CompiledRegexReplacements,
     ):
-        super().__init__(api, func, type_importer)
+        super().__init__(api, func, type_importer, name_substitutions)
 
         assert func.signature is not None
         self.signature = func.signature
@@ -113,7 +134,14 @@ class FullPdbFunctionImporter(PdbFunctionImporter):
         self.return_type = type_importer.import_pdb_type_into_ghidra(
             self.signature.return_type
         )
-        self.arguments = [
+
+        if "T_NOTYPE(0000)" in self.signature.arglist:
+            # Variadric functions have a T_NOTYPE as their last argument
+            raise TypeNotImplementedError(
+                f"Function '{self.get_full_name()}' is probably variadric, which is not implemented yet."
+            )
+
+        self.arguments: Sequence[ParameterImpl] = [
             ParameterImpl(
                 f"param{index}",
                 type_importer.import_pdb_type_into_ghidra(type_name),
