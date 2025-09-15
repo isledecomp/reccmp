@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Callable, Iterator, TypeVar
+from typing import Any, Callable, Iterator, NamedTuple, TypeVar
 
 # Disable spurious warnings in vscode / pylance
 # pyright: reportMissingModuleSource=false
@@ -22,7 +22,11 @@ from ghidra.program.model.data import (
 )
 from ghidra.util.task import ConsoleTaskMonitor
 
-from reccmp.isledecomp.cvdump.types import VirtualBasePointer
+from reccmp.isledecomp.cvdump.types import (
+    CvdumpParsedType,
+    FieldListItem,
+    VirtualBasePointer,
+)
 
 from .entity_names import NamespacePath, SanitizedEntityName, sanitize_name
 from .exceptions import (
@@ -43,6 +47,14 @@ from .ghidra_helper import (
 from .pdb_extraction import PdbFunctionExtractor
 
 logger = logging.getLogger(__name__)
+
+
+class GhidraFieldListItem(NamedTuple):
+    """Using a Ghidra DataType instead of the Cvdump type key from FieldListItem"""
+
+    type: DataType
+    name: str
+    offset: int
 
 
 class PdbTypeImporter:
@@ -147,7 +159,7 @@ class PdbTypeImporter:
     def _import_forward_ref_type(
         self,
         type_index,
-        type_pdb: dict[str, Any],
+        type_pdb: CvdumpParsedType,
         slim_for_vbase: bool = False,
     ) -> DataType:
         referenced_type = type_pdb.get("udt") or type_pdb.get("modifies")
@@ -168,7 +180,7 @@ class PdbTypeImporter:
         )
         return self.import_pdb_type_into_ghidra(referenced_type, slim_for_vbase)
 
-    def _import_array(self, type_pdb: dict[str, Any]) -> DataType:
+    def _import_array(self, type_pdb: CvdumpParsedType) -> DataType:
         inner_type = self.import_pdb_type_into_ghidra(type_pdb["array_type"])
 
         array_total_bytes: int = type_pdb["size"]
@@ -180,7 +192,7 @@ class PdbTypeImporter:
 
         return ArrayDataType(inner_type, array_length, 0)
 
-    def _import_union(self, type_pdb: dict[str, Any]) -> DataType:
+    def _import_union(self, type_pdb: CvdumpParsedType) -> DataType:
         raw_name: str = type_pdb["name"]
         expected_size: int = type_pdb["size"]
         type_name_with_namespace = sanitize_name(raw_name)
@@ -198,9 +210,11 @@ class PdbTypeImporter:
                 f"Writing union types is not supported. Please add by hand: {type_pdb}"
             ) from e
 
-    def _import_enum(self, type_pdb: dict[str, Any]) -> DataType:
+    def _import_enum(self, type_pdb: CvdumpParsedType) -> DataType:
         underlying_type = self.import_pdb_type_into_ghidra(type_pdb["underlying_type"])
-        field_list = self.extraction.compare.cv.types.keys.get(type_pdb["field_type"])
+        field_list = self.extraction.compare.cv.types.keys.get(
+            type_pdb["field_list_type"]
+        )
         assert field_list is not None, f"Failed to find field list for enum {type_pdb}"
         type_name: str = type_pdb["name"]
 
@@ -219,7 +233,7 @@ class PdbTypeImporter:
 
     def _import_class_or_struct(
         self,
-        type_in_pdb: dict[str, Any],
+        type_in_pdb: CvdumpParsedType,
         slim_for_vbase: bool = False,
     ) -> DataType:
         field_list_type: str = type_in_pdb["field_list_type"]
@@ -281,7 +295,7 @@ class PdbTypeImporter:
         logger.info("Adding class data type %s", sanitized_name)
         logger.debug("Class information: %s", type_in_pdb)
 
-        components: list[dict[str, Any]] = []
+        components: list[GhidraFieldListItem] = []
         components.extend(self._get_components_from_base_classes(field_list))
         # can be missing when no new fields are declared
         components.extend(self._get_components_from_members(field_list))
@@ -291,7 +305,7 @@ class PdbTypeImporter:
             )
         )
 
-        components.sort(key=lambda c: c["offset"])
+        components.sort(key=lambda c: c.offset)
 
         if slim_for_vbase:
             # Make a "slim" version: shrink the size to the fields that are actually present.
@@ -300,7 +314,7 @@ class PdbTypeImporter:
                 len(components) > 0
             ), f"Error: {sanitized_name} should not be empty. There must be at least one direct or indirect vbase pointer."
             last_component = components[-1]
-            class_size = last_component["offset"] + last_component["type"].getLength()
+            class_size = last_component.offset + last_component.type.getLength()
 
         self._overwrite_struct(
             sanitized_name,
@@ -313,7 +327,9 @@ class PdbTypeImporter:
 
         return new_ghidra_struct
 
-    def _get_components_from_base_classes(self, field_list) -> Iterator[dict[str, Any]]:
+    def _get_components_from_base_classes(
+        self, field_list: CvdumpParsedType
+    ) -> Iterator[GhidraFieldListItem]:
         non_virtual_base_classes: dict[str, int] = field_list.get("super", {})
 
         for super_type, offset in non_virtual_base_classes.items():
@@ -324,23 +340,29 @@ class PdbTypeImporter:
                 super_type, slim_for_vbase=import_slim_vbase_version_of_superclass
             )
 
-            yield {
-                "type": ghidra_type,
-                "offset": offset,
-                "name": "base" if offset == 0 else f"base_{ghidra_type.getName()}",
-            }
+            yield GhidraFieldListItem(
+                type=ghidra_type,
+                offset=offset,
+                name="base" if offset == 0 else f"base_{ghidra_type.getName()}",
+            )
 
-    def _get_components_from_members(self, field_list: dict[str, Any]):
-        members: list[dict[str, Any]] = field_list.get("members") or []
+    def _get_components_from_members(
+        self, field_list: CvdumpParsedType
+    ) -> Iterator[GhidraFieldListItem]:
+        members: list[FieldListItem] = field_list.get("members") or []
         for member in members:
-            yield member | {"type": self.import_pdb_type_into_ghidra(member["type"])}
+            yield GhidraFieldListItem(
+                type=self.import_pdb_type_into_ghidra(member.type),
+                offset=member.offset,
+                name=member.name,
+            )
 
     def _get_components_from_vbase(
         self,
-        field_list: dict[str, Any],
+        field_list: CvdumpParsedType,
         sanitized_name: SanitizedEntityName,
         current_type: StructureInternal,
-    ) -> Iterator[dict[str, Any]]:
+    ) -> Iterator[GhidraFieldListItem]:
         vbasepointer: VirtualBasePointer | None = field_list.get("vbase", None)
 
         if vbasepointer is not None and any(x.direct for x in vbasepointer.bases):
@@ -348,11 +370,11 @@ class PdbTypeImporter:
                 self.api,
                 self._import_vbaseptr(current_type, sanitized_name, vbasepointer),
             )
-            yield {
-                "type": vbaseptr_type,
-                "offset": vbasepointer.vboffset,
-                "name": "vbase_offset",
-            }
+            yield GhidraFieldListItem(
+                type=vbaseptr_type,
+                offset=vbasepointer.vboffset,
+                name="vbase_offset",
+            )
 
     def _import_vbaseptr(
         self,
@@ -363,11 +385,11 @@ class PdbTypeImporter:
         pointer_size = 4  # hard-code to 4 because of 32 bit
 
         components = [
-            {
-                "offset": 0,
-                "type": get_or_add_pointer_type(self.api, current_type),
-                "name": "o_self",
-            }
+            GhidraFieldListItem(
+                offset=0,
+                type=get_or_add_pointer_type(self.api, current_type),
+                name="o_self",
+            )
         ]
         for vbase in vbasepointer.bases:
             vbase_ghidra_type = self.import_pdb_type_into_ghidra(vbase.type)
@@ -392,11 +414,11 @@ class PdbTypeImporter:
             )
 
             components.append(
-                {
-                    "offset": vbase.index * pointer_size,
-                    "type": vbase_ghidra_pointer_typedef,
-                    "name": f"o_{type_name}",
-                }
+                GhidraFieldListItem(
+                    offset=vbase.index * pointer_size,
+                    type=vbase_ghidra_pointer_typedef,
+                    name=f"o_{type_name}",
+                )
             )
 
         size = len(components) * pointer_size
@@ -425,7 +447,7 @@ class PdbTypeImporter:
         sanitized_name: SanitizedEntityName,
         new_ghidra_struct: StructureInternal,
         class_size: int,
-        components: list[dict[str, Any]],
+        components: list[GhidraFieldListItem],
     ):
         new_ghidra_struct.deleteAll()
         new_ghidra_struct.growStructure(class_size)
@@ -439,7 +461,7 @@ class PdbTypeImporter:
             )
 
         for component in components:
-            offset: int = component["offset"]
+            offset: int = component.offset
             logger.debug("Adding component %s to class: %s", component, sanitized_name)
 
             try:
@@ -459,9 +481,9 @@ class PdbTypeImporter:
 
                 new_ghidra_struct.replaceAtOffset(
                     offset,
-                    component["type"],
+                    component.type,
                     -1,  # set to -1 for fixed-size components
-                    component["name"],  # name
+                    component.name,  # name
                     None,  # comment
                 )
             except Exception as e:

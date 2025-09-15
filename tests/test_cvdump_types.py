@@ -638,7 +638,7 @@ def test_procedure(parser: CvdumpTypesParser):
         "return_type": "T_LONG(0012)",
         "call_type": "C Near",
         "func_attr": "none",
-        "num_params": "3",
+        "num_params": 3,
         "arg_list_type": "0x1018",
     }
 
@@ -652,9 +652,9 @@ def test_mfunction(parser: CvdumpTypesParser):
         "this_type": "0x101B",
         "call_type": "ThisCall",
         "func_attr": "none",
-        "num_params": "2",
+        "num_params": 2,
         "arg_list_type": "0x101d",
-        "this_adjust": "0",
+        "this_adjust": 0,
     }
 
 
@@ -855,9 +855,9 @@ def test_enum_with_local_flag(empty_parser: CvdumpTypesParser):
     empty_parser.read_all(MSVC700_ENUM_WITH_LOCAL_FLAG)
 
     assert empty_parser.keys["0x26ba"] == {
-        "field_type": "0x26b9",
+        "field_list_type": "0x26b9",
         "name": "SomeEnumType::SomeEnumInternalName::__l2::__unnamed",
-        "num_members": "3",
+        "num_members": 3,
         "type": "LF_ENUM",
         "underlying_type": "T_INT4",
     }
@@ -916,10 +916,10 @@ def test_enum_with_whitespace_and_comma(
     empty_parser.read_all(ENUM_WITH_WHITESPACE_AND_COMMA)
 
     assert empty_parser.keys["0x4dc2"] == {
-        "field_type": "0x2588",
+        "field_list_type": "0x2588",
         "is_nested": True,
         "name": "CPool<CTask,signed char [128]>::__unnamed",
-        "num_members": "1",
+        "num_members": 1,
         "type": "LF_ENUM",
         "underlying_type": "T_INT4",
     }
