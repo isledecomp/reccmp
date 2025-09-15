@@ -703,9 +703,9 @@ class CvdumpTypesParser:
         return {
             "type": leaf_type,
             "return_type": match.group("return_type"),
-            "call_type": match.group("call_type"),
             "class_type": match.group("class_type"),
             "this_type": match.group("this_type"),
+            "call_type": match.group("call_type"),
             "func_attr": match.group("func_attr"),
             "num_params": int(match.group("num_params")),
             "arg_list_type": match.group("arg_list_type"),
