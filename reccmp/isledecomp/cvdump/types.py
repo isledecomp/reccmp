@@ -8,6 +8,14 @@ from typing_extensions import NotRequired, TypedDict
 logger = logging.getLogger(__name__)
 
 
+# TODO: For now, this is here just to document where we
+# expect a T_* (scalar) or 0x____ (complex) type key.
+# Not all occurrences are normalized with normalize_type_id().
+# The unit tests show where some hex digits are capitalized.
+# We would need to use typing.NewType for actual type-checking.
+CvdumpTypeKey = str
+
+
 class CvdumpTypeError(Exception):
     pass
 
@@ -25,12 +33,17 @@ class FieldListItem(NamedTuple):
 
     offset: int
     name: str
-    type: str
+    type: CvdumpTypeKey
+
+
+class EnumItem(NamedTuple):
+    name: str
+    value: int
 
 
 @dataclass
 class VirtualBaseClass:
-    type: str
+    type: CvdumpTypeKey
     index: int
     direct: bool
 
@@ -44,7 +57,7 @@ class VirtualBasePointer:
 class ScalarType(NamedTuple):
     offset: int
     name: str | None
-    type: str
+    type: CvdumpTypeKey
 
     @property
     def size(self) -> int:
@@ -70,7 +83,7 @@ class TypeInfo(NamedTuple):
         return self.members is None
 
 
-def normalize_type_id(key: str) -> str:
+def normalize_type_id(key: str) -> CvdumpTypeKey:
     """Helper for TYPES parsing to ensure a consistent format.
     If key begins with "T_" it is a built-in type.
     Else it is a hex string. We prefer lower case letters and
@@ -152,9 +165,6 @@ def join_member_names(parent: str, child: str | None) -> str:
     return f"{parent}.{child}"
 
 
-CvdumpTypeKey = str
-
-
 class LfEnumAttrs(TypedDict):
     field_list_type: NotRequired[CvdumpTypeKey]
     is_forward_ref: NotRequired[bool]
@@ -190,7 +200,7 @@ class CvdumpParsedType(TypedDict):
     super: NotRequired[dict[CvdumpTypeKey, int]]
     vbase: NotRequired[VirtualBasePointer]
     members: NotRequired[list[FieldListItem]]
-    variants: NotRequired[list[dict[str, int | str]]]
+    variants: NotRequired[list[EnumItem]]
 
     # LF_ARGLIST
     argcount: NotRequired[int]
@@ -198,7 +208,7 @@ class CvdumpParsedType(TypedDict):
 
     # LF_POINTER
     element_type: NotRequired[CvdumpTypeKey]
-    containing_class: NotRequired[str]
+    containing_class: NotRequired[CvdumpTypeKey]
 
     # LF_PROCEDURE / LF_MFUNCTION
     return_type: NotRequired[CvdumpTypeKey]
@@ -310,7 +320,7 @@ class CvdumpTypesParser:
     }
 
     def __init__(self) -> None:
-        self.keys: dict[str, CvdumpParsedType] = {}
+        self.keys: dict[CvdumpTypeKey, CvdumpParsedType] = {}
 
     def _get_field_list(self, type_obj: CvdumpParsedType) -> list[FieldListItem]:
         """Return the field list for the given LF_CLASS/LF_STRUCTURE reference"""
@@ -623,7 +633,7 @@ class CvdumpTypesParser:
             obj["members"] = members
 
         variants = [
-            {"name": name, "value": int(value)}
+            EnumItem(name=name, value=int(value))
             for value, name in self.LF_FIELDLIST_ENUMERATE.findall(leaf)
         ]
         if variants:

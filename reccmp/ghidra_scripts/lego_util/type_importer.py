@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Callable, Iterator, NamedTuple, TypeVar
+from typing import Callable, Iterator, NamedTuple, TypeVar
 
 # Disable spurious warnings in vscode / pylance
 # pyright: reportMissingModuleSource=false
@@ -225,9 +225,8 @@ class PdbTypeImporter:
         for existing_variant in result.getNames():
             result.remove(existing_variant)
 
-        variants: list[dict[str, Any]] = field_list["variants"]
-        for variant in variants:
-            result.add(variant["name"], variant["value"])
+        for variant in field_list.get("variants", []):
+            result.add(variant.name, variant.value)
 
         return result
 

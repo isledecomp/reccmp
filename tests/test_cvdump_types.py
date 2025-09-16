@@ -6,6 +6,7 @@ from reccmp.isledecomp.cvdump.types import (
     CvdumpTypesParser,
     CvdumpKeyError,
     CvdumpIntegrityError,
+    EnumItem,
     FieldListItem,
     VirtualBaseClass,
     VirtualBasePointer,
@@ -681,9 +682,9 @@ def test_fieldlist_enumerate(parser: CvdumpTypesParser):
     assert fieldlist_enum == {
         "type": "LF_FIELDLIST",
         "variants": [
-            {"name": "c_read", "value": 1},
-            {"name": "c_write", "value": 2},
-            {"name": "c_text", "value": 4},
+            EnumItem(name="c_read", value=1),
+            EnumItem(name="c_write", value=2),
+            EnumItem(name="c_text", value=4),
         ],
     }
 
@@ -923,3 +924,17 @@ def test_enum_with_whitespace_and_comma(
         "type": "LF_ENUM",
         "underlying_type": "T_INT4",
     }
+
+
+def test_this_adjust_hex(empty_parser: CvdumpTypesParser):
+    """The 'this adjust' attribute is a hex number.
+    Make sure we parse it correctly."""
+    empty_parser.read_all(
+        """\
+0x657a : Length = 26, Leaf = 0x1009 LF_MFUNCTION
+    Return type = T_VOID(0003), Class type = 0x15ED, This type = 0x15EE, 
+    Call type = ThisCall, Func attr = none
+    Parms = 3, Arg list type = 0x6579, This adjust = 24"""
+    )
+
+    assert empty_parser.keys["0x657a"]["this_adjust"] == 0x24
