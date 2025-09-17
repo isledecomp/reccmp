@@ -50,6 +50,7 @@ def test_fix_mov_cmp_jmp_mem_with_non_matching_jmp():
 
     assert is_effective is False
 
+
 def test_fix_mov_cmp_jmp_mem_with_non_matching_jmp_2():
 
     orig_asm = [

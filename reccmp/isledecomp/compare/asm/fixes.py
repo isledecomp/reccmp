@@ -143,6 +143,9 @@ def patch_cmp_swaps(
     swapped cmp instructions?
     """
 
+    # number of additional lines to send to the patcher when considering each diff
+    additonal_lines_to_include = 3
+
     fixed_lines = set()
 
     patch_fns = [patch_cmp_jmp, patch_mov_cmp_jmp]
@@ -156,7 +159,10 @@ def patch_cmp_swaps(
         # If the ranges in orig and recomp are not equal, use the shorter one
         for i, j in zip(range(i1, i2), range(j1, j2)):
             for fn in patch_fns:
-                this_patch_lines = fn(orig_asm[i : i + 3], recomp_asm[j : j + 3])
+                this_patch_lines = fn(
+                    orig_asm[i : i + additonal_lines_to_include],
+                    recomp_asm[j : j + additonal_lines_to_include],
+                )
                 # if we have fixed lines by this patcher, add them to the combined `fixed_lines`
                 if len(this_patch_lines) > 0:
                     fixed_lines.update([j + x for x in this_patch_lines])
