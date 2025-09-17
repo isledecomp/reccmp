@@ -149,6 +149,8 @@ class CvdumpAnalysis:
                 node_dict[key] = CvdumpNode(*key)
 
             if sym.type in ("S_GPROC32", "S_LPROC32"):
+                if sym.type == "S_LPROC32" and node_dict[key].symbol_entry is not None:
+                    continue
                 node_dict[key].friendly_name = sym.name
                 node_dict[key].confirmed_size = sym.size
                 node_dict[key].node_type = EntityType.FUNCTION
