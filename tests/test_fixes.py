@@ -1,4 +1,5 @@
 import difflib
+import pytest
 from reccmp.isledecomp.compare.asm.fixes import find_effective_match
 
 
@@ -85,3 +86,35 @@ def test_fix_mov_cmp_jmp_mem_valid():
     is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
     assert is_effective is True
+
+
+@pytest.mark.xfail
+def test_this_should_not_be_marked_as_effective():
+
+    orig_asm = [
+        "mov eax, dword ptr [esi + 0x100]",
+        "mov ecx, dword ptr [eax + 0x74]",
+        "add eax, 0x74",
+        "sub ecx, 3",
+        "cmp ecx, 0xc",
+        "ja 0x0",
+        "mov eax, 0",
+        "mov ecx, 1",
+        "mov dword ptr [eax], 2",
+    ]
+    recomp_asm = [
+        "mov ecx, dword ptr [esi + 0x100]",
+        "mov eax, dword ptr [ecx + 0x74]",
+        "add ecx, 0x74",
+        "sub eax, 3",
+        "cmp eax, 0xc",
+        "ja 0x0",
+        "mov eax, 0",
+        "mov ecx, 1",
+        "mov dword ptr [ecx], 2",
+    ]
+
+    diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
+    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+
+    assert is_effective is False
