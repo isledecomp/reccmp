@@ -166,6 +166,7 @@ def patch_cmp_swaps(
                 # if we have fixed lines by this patcher, add them to the combined `fixed_lines`
                 if len(this_patch_lines) > 0:
                     fixed_lines.update([j + x for x in this_patch_lines])
+                    # now that we've fixed these lines, no need to check the other patch strategies for fixing
                     break
 
     return fixed_lines
