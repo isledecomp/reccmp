@@ -30,8 +30,8 @@ _section_contrib_regex = re.compile(
 )
 
 # e.g. `S_GDATA32: [0003:000004A4], Type:   T_32PRCHAR(0470), g_set`
-_gdata32_regex = re.compile(
-    r"S_GDATA32: \[(?P<section>\w{4}):(?P<offset>\w{8})\], Type:\s*(?P<type>\S+), (?P<name>.+)"
+_data_regex = re.compile(
+    r"S_(?P<global>[GL])DATA32: \[(?P<section>\w{4}):(?P<offset>\w{8})\], Type:\s*(?P<type>\S+), (?P<name>.+)"
 )
 
 # e.g. 0003 "CMakeFiles/isle.dir/ISLE/res/isle.rc.res"
@@ -78,6 +78,7 @@ class GdataEntry(NamedTuple):
     offset: int
     type: str
     name: str
+    is_global: bool
 
 
 class ModuleEntry(NamedTuple):
@@ -159,13 +160,14 @@ class CvdumpParser:
         """S_PROCREF may be useful later.
         Right now we just want S_GDATA32 symbols because it is the simplest
         way to access global variables."""
-        if (match := _gdata32_regex.match(line)) is not None:
+        if (match := _data_regex.match(line)) is not None:
             self.globals.append(
                 GdataEntry(
                     section=int(match.group("section"), 16),
                     offset=int(match.group("offset"), 16),
                     type=match.group("type"),
                     name=match.group("name"),
+                    is_global=match.group("global") == "G",
                 )
             )
 
