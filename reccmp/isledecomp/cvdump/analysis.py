@@ -121,16 +121,23 @@ class CvdumpAnalysis:
             if key not in node_dict:
                 node_dict[key] = CvdumpNode(*key)
 
-            node_dict[key].node_type = EntityType.DATA
-            node_dict[key].friendly_name = glo.name
-
             try:
                 # Check our types database for type information.
                 # If we did not parse the TYPES section, we can only
                 # get information for built-in "T_" types.
                 g_info = parser.types.get(glo.type)
-                node_dict[key].confirmed_size = g_info.size
-                node_dict[key].data_type = g_info
+                # If we already have a symbol for the given key, only override
+                # the type if the new type is larger. This fixes issues when
+                # symbols are repeated in the pdb with different types.
+                # (eg. when a global is declared as an array without a size)
+                if (
+                    node_dict[key].confirmed_size is None
+                    or node_dict[key].confirmed_size < g_info.size
+                ):
+                    node_dict[key].node_type = EntityType.DATA
+                    node_dict[key].friendly_name = glo.name
+                    node_dict[key].confirmed_size = g_info.size
+                    node_dict[key].data_type = g_info
                 # Previously we set the symbol type to POINTER here if
                 # the variable was known to be a pointer. We can derive this
                 # information later when it's time to compare the variable,
