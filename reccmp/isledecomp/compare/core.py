@@ -337,7 +337,10 @@ class Compare:
 
             for fun in codebase.iter_name_functions():
                 batch.set_orig(
-                    fun.offset, type=EntityType.FUNCTION, stub=fun.should_skip()
+                    fun.offset,
+                    type=EntityType.FUNCTION,
+                    stub=fun.should_skip(),
+                    library=fun.is_library(),
                 )
 
                 if fun.name.startswith("?") or fun.name_is_symbol:
@@ -886,6 +889,7 @@ class Compare:
                 udiff=udiff,
                 ratio=diff_result.match_ratio,
                 is_effective_match=diff_result.is_effective_match,
+                is_library=match.get("library", False),
             )
 
         if match.entity_type == EntityType.VTABLE:
