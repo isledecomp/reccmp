@@ -1,12 +1,12 @@
 from dataclasses import dataclass
 import re
-from typing import Any
 import logging
 
 from reccmp.isledecomp.formats.exceptions import InvalidVirtualAddressError
 from reccmp.isledecomp.cvdump.symbols import SymbolsEntry
 from reccmp.isledecomp.compare import Compare
 from reccmp.isledecomp.compare.db import ReccmpMatch
+from reccmp.isledecomp.cvdump.types import CvdumpParsedType
 
 logger = logging.getLogger(__file__)
 
@@ -65,7 +65,7 @@ class PdbFunctionExtractor:
         "STD Near": "__stdcall",
     }
 
-    def _get_cvdump_type(self, type_name: str | None) -> dict[str, Any] | None:
+    def _get_cvdump_type(self, type_name: str | None) -> CvdumpParsedType | None:
         return (
             None
             if type_name is None
@@ -120,9 +120,7 @@ class PdbFunctionExtractor:
                 )
 
         call_type = self._call_type_map[function_type["call_type"]]
-
-        # parse as hex number, default to 0
-        this_adjust = int(function_type.get("this_adjust", "0"), 16)
+        this_adjust = function_type.get("this_adjust", 0)
 
         return FunctionSignature(
             original_function_symbol=fn,
