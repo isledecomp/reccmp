@@ -185,6 +185,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Don't display text summary of matches",
     )
+    parser.add_argument(
+        "--nolib",
+        action="store_true",
+        help="Exclude LIBRARY annotations from the analysis",
+    )
     argparse_add_logging_args(parser)
 
     args = parser.parse_args()
@@ -242,6 +247,8 @@ def main():
             match.match_type == EntityType.FUNCTION
             and match.name in target.report_config.ignore_functions
         ):
+            continue
+        if args.nolib and match.is_library:
             continue
 
         if not args.silent and args.diff is None:
