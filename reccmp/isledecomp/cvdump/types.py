@@ -334,7 +334,7 @@ class CvdumpTypesParser:
         members: list[FieldListItem] = []
 
         if "super" in field_obj:
-            for super_id, _ in field_obj["super"].items():
+            for super_id in field_obj["super"].keys():
                 # May need to resolve forward ref.
                 superclass = self.get(super_id)
                 if superclass.members is not None:
@@ -506,38 +506,40 @@ class CvdumpTypesParser:
                 continue
 
             try:
-                if leaf_type == "LF_MODIFIER":
-                    self.keys[leaf_id] = self.read_modifier(leaf, leaf_type)
+                match leaf_type:
+                    case "LF_MODIFIER":
+                        self.keys[leaf_id] = self.read_modifier(leaf, leaf_type)
 
-                elif leaf_type == "LF_ARRAY":
-                    self.keys[leaf_id] = self.read_array(leaf, leaf_type)
+                    case "LF_ARRAY":
+                        self.keys[leaf_id] = self.read_array(leaf, leaf_type)
 
-                elif leaf_type == "LF_FIELDLIST":
-                    self.keys[leaf_id] = self.read_fieldlist(leaf, leaf_type)
+                    case "LF_FIELDLIST":
+                        self.keys[leaf_id] = self.read_fieldlist(leaf, leaf_type)
 
-                elif leaf_type == "LF_ARGLIST":
-                    self.keys[leaf_id] = self.read_arglist(leaf, leaf_type)
+                    case "LF_ARGLIST":
+                        self.keys[leaf_id] = self.read_arglist(leaf, leaf_type)
 
-                elif leaf_type == "LF_MFUNCTION":
-                    self.keys[leaf_id] = self.read_mfunction(leaf, leaf_type)
+                    case "LF_MFUNCTION":
+                        self.keys[leaf_id] = self.read_mfunction(leaf, leaf_type)
 
-                elif leaf_type == "LF_PROCEDURE":
-                    self.keys[leaf_id] = self.read_procedure(leaf, leaf_type)
+                    case "LF_PROCEDURE":
+                        self.keys[leaf_id] = self.read_procedure(leaf, leaf_type)
 
-                elif leaf_type in ["LF_CLASS", "LF_STRUCTURE"]:
-                    self.keys[leaf_id] = self.read_class_or_struct(leaf, leaf_type)
+                    case "LF_CLASS" | "LF_STRUCTURE":
+                        self.keys[leaf_id] = self.read_class_or_struct(leaf, leaf_type)
 
-                elif leaf_type == "LF_POINTER":
-                    self.keys[leaf_id] = self.read_pointer(leaf, leaf_type)
+                    case "LF_POINTER":
+                        self.keys[leaf_id] = self.read_pointer(leaf, leaf_type)
 
-                elif leaf_type == "LF_ENUM":
-                    self.keys[leaf_id] = self.read_enum(leaf, leaf_type)
+                    case "LF_ENUM":
+                        self.keys[leaf_id] = self.read_enum(leaf, leaf_type)
 
-                elif leaf_type == "LF_UNION":
-                    self.keys[leaf_id] = self.read_union(leaf, leaf_type)
-                else:
-                    # Check for exhaustiveness
-                    logger.error("Unhandled data in mode: %s", leaf_type)
+                    case "LF_UNION":
+                        self.keys[leaf_id] = self.read_union(leaf, leaf_type)
+
+                    case _:
+                        # Check for exhaustiveness
+                        logger.error("Unhandled data in mode: %s", leaf_type)
 
             except AssertionError:
                 logger.error("Failed to parse PDB types leaf:\n%s", leaf)
