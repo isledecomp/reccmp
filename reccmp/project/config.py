@@ -34,10 +34,25 @@ class YmlGhidraConfig(BaseModel):
         default_factory=list,
         validation_alias=AliasChoices("ignore-functions", "ignore_functions"),
     )
+    name_substitutions: list[tuple[str, str]] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("name-substitutions", "name_substitutions"),
+    )
 
     @classmethod
     def default(cls) -> "YmlGhidraConfig":
-        return cls(ignore_types=[], ignore_functions=[])
+        return cls(ignore_types=[], ignore_functions=[], name_substitutions=[])
+
+
+class YmlReportConfig(BaseModel):
+    ignore_functions: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("ignore-functions", "ignore_functions"),
+    )
+
+    @classmethod
+    def default(cls) -> "YmlReportConfig":
+        return cls(ignore_functions=[])
 
 
 @dataclass
@@ -58,6 +73,7 @@ class ProjectFileTarget(BaseModel):
         default_factory=list,
     )
     ghidra: YmlGhidraConfig = Field(default_factory=YmlGhidraConfig.default)
+    report: YmlReportConfig = Field(default_factory=YmlReportConfig.default)
 
 
 class ProjectFile(YmlFileModel):

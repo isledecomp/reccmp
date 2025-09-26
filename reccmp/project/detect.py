@@ -81,7 +81,36 @@ def find_filename_recursively(directory: Path, filename: str) -> Path | None:
 @dataclass
 class GhidraConfig:
     ignore_types: list[str] = field(default_factory=list)
+    """
+    Types that will be skipped in the Ghidra import. Matches by name.
+    Example value: `["Act2Actor"]`.
+    """
     ignore_functions: list[int] = field(default_factory=list)
+    """
+    Functions that will be skipped in the Ghidra import. Matches by original address.
+    Example value: `[0x100f8ad0]`.
+    """
+    name_substitutions: list[tuple[str, str]] = field(default_factory=list)
+    """
+    Configurable substitutions for function names. Example use case:
+    - There is a shared code base for multiple binaries
+    - The functions in the recomp have placeholder names FUN_12345678
+    - The address in the function name matches only one of the binaries
+
+    In that case one might want to rename the function while importing into another binary in order to tell
+    the function apart from Ghidra's auto-detected functions that have an auto-generated name of the same pattern.
+
+    The syntax matches `re.sub(key, value)`.
+
+    We use a list of tuples instead of a dict to guarantee a consistent order of the substitutions.
+
+    Example value: `[r"FUN_([0-9a-f]{8})", r"LEGO1_\\1"]`.
+    """
+
+
+@dataclass
+class ReportConfig:
+    ignore_functions: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -110,6 +139,9 @@ class RecCmpPartialTarget:
 
     # Ghidra-specific options for this target.
     ghidra_config: GhidraConfig | None = None
+
+    # Report options for this target
+    report_config: ReportConfig | None = None
 
     # Relative (to project root) directory of source code files for this target.
     source_root: Path | None = None
@@ -145,6 +177,9 @@ class RecCmpTarget:
 
     # Ghidra-specific options for this target.
     ghidra_config: GhidraConfig
+
+    # Report options for this target
+    report_config: ReportConfig
 
     original_path: Path
     recompiled_path: Path
@@ -212,6 +247,11 @@ class RecCmpProject:
 
         csv_files = target.csv_files or []
 
+        if target.report_config is not None:
+            report = target.report_config
+        else:
+            report = ReportConfig()
+
         return RecCmpTarget(
             target_id=target.target_id,
             filename=target.filename,
@@ -222,6 +262,7 @@ class RecCmpProject:
             source_root=target.source_root,
             ghidra_config=ghidra,
             csv_files=csv_files,
+            report_config=report,
         )
 
     def find_build_config(self, search_path: Path) -> BuildFile | None:
@@ -302,9 +343,16 @@ class RecCmpProject:
                 ghidra = GhidraConfig(
                     ignore_types=target.ghidra.ignore_types,
                     ignore_functions=target.ghidra.ignore_functions,
+                    name_substitutions=target.ghidra.name_substitutions,
                 )
             else:
                 ghidra = None
+            if target.report is not None:
+                report = ReportConfig(
+                    ignore_functions=target.report.ignore_functions,
+                )
+            else:
+                report = None
 
             # Assumes these are relative paths. If they are not, the second path
             # will replace the first instead of adding onto it.
@@ -318,6 +366,7 @@ class RecCmpProject:
                 source_root=source_root,
                 ghidra_config=ghidra,
                 csv_files=csv_files,
+                report_config=report,
             )
 
         # Apply reccmp-user.yml
@@ -361,6 +410,7 @@ class RecCmpPathsAction(argparse.Action):
             recompiled_pdb=pdb,
             source_root=source_root,
             ghidra_config=GhidraConfig(),
+            report_config=ReportConfig(),
         )
         setattr(namespace, self.dest, target)
 

@@ -21,6 +21,10 @@ class ParserSymbol:
         """The default is to compare any symbols we have"""
         return False
 
+    def is_library(self) -> bool:
+        """The default is to assume that arbitrary symbols are not library functions"""
+        return False
+
     def is_nameref(self) -> bool:
         """All symbols default to name lookup"""
         return True
@@ -42,6 +46,9 @@ class ParserFunction(ParserSymbol):
     def should_skip(self) -> bool:
         return self.type == MarkerType.STUB
 
+    def is_library(self) -> bool:
+        return self.type == MarkerType.LIBRARY
+
     def is_nameref(self) -> bool:
         return (
             self.type in (MarkerType.SYNTHETIC, MarkerType.TEMPLATE, MarkerType.LIBRARY)
@@ -62,7 +69,7 @@ class ParserVtable(ParserSymbol):
 
 @dataclass
 class ParserString(ParserSymbol):
-    pass
+    is_widechar: bool = False
 
 
 @dataclass

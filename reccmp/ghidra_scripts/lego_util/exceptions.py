@@ -1,5 +1,7 @@
 from typing import TYPE_CHECKING
 
+from reccmp.ghidra_scripts.lego_util.entity_names import NamespacePath
+
 # Disable spurious warnings in vscode / pylance
 # pyright: reportMissingModuleSource=false
 
@@ -31,8 +33,8 @@ class TypeNotImplementedError(Lego1Exception):
 
 
 class ClassOrNamespaceNotFoundInGhidraError(Lego1Exception):
-    def __init__(self, namespaceHierachy: list[str]):
-        super().__init__(namespaceHierachy)
+    def __init__(self, namespace_path: NamespacePath):
+        super().__init__(namespace_path)
 
     def get_namespace_str(self) -> str:
         return "::".join(self.args[0])

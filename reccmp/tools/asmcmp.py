@@ -185,6 +185,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Don't display text summary of matches",
     )
+    parser.add_argument(
+        "--nolib",
+        action="store_true",
+        help="Exclude LIBRARY annotations from the analysis",
+    )
     argparse_add_logging_args(parser)
 
     args = parser.parse_args()
@@ -237,6 +242,15 @@ def main():
     report = ReccmpStatusReport(filename=target.original_path.name.lower())
 
     for match in isle_compare.compare_all():
+        # if we are ignoring this function, skip to next one and don't add it to the entities list
+        if (
+            match.match_type == EntityType.FUNCTION
+            and match.name in target.report_config.ignore_functions
+        ):
+            continue
+        if args.nolib and match.is_library:
+            continue
+
         if not args.silent and args.diff is None:
             print_match_oneline(
                 match, show_both_addrs=args.print_rec_addr, is_plain=args.no_color

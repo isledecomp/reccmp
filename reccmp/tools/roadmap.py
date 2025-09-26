@@ -423,9 +423,6 @@ def main() -> int:
                 (_, module_name) = module_ref
 
         row_type = match_type_abbreviation(match.entity_type)
-        name = (
-            repr(match.name) if match.entity_type == EntityType.STRING else match.name
-        )
 
         if match.orig_addr is not None:
             orig_addr = match.orig_addr
@@ -454,7 +451,7 @@ def main() -> int:
             displacement,
             row_type,
             match.size,
-            name,
+            match.name,
             module_name,
         )
 

@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Callable, Iterator, TypeVar
+from typing import Callable, Iterator, NamedTuple, TypeVar
 
 # Disable spurious warnings in vscode / pylance
 # pyright: reportMissingModuleSource=false
@@ -22,8 +22,13 @@ from ghidra.program.model.data import (
 )
 from ghidra.util.task import ConsoleTaskMonitor
 
-from reccmp.isledecomp.cvdump.types import VirtualBasePointer
+from reccmp.isledecomp.cvdump.types import (
+    CvdumpParsedType,
+    FieldListItem,
+    VirtualBasePointer,
+)
 
+from .entity_names import NamespacePath, SanitizedEntityName, sanitize_name
 from .exceptions import (
     MultipleTypesFoundInGhidraError,
     TypeNotFoundError,
@@ -33,14 +38,23 @@ from .exceptions import (
 )
 from .ghidra_helper import (
     add_data_type_or_reuse_existing,
+    category_path_of,
     get_or_add_pointer_type,
     get_ghidra_type,
-    get_or_create_namespace,
-    sanitize_name,
+    get_or_create_class_namespace,
+    get_scalar_ghidra_type,
 )
 from .pdb_extraction import PdbFunctionExtractor
 
 logger = logging.getLogger(__name__)
+
+
+class GhidraFieldListItem(NamedTuple):
+    """Using a Ghidra DataType instead of the Cvdump type key from FieldListItem"""
+
+    type: DataType
+    name: str
+    offset: int
 
 
 class PdbTypeImporter:
@@ -56,10 +70,10 @@ class PdbTypeImporter:
         self.extraction = extraction
         self.ignore_types = ignore_types
         # tracks the structs/classes we have already started to import, otherwise we run into infinite recursion
-        self.handled_structs: set[str] = set()
+        self.handled_structs: set[SanitizedEntityName] = set()
 
         # tracks the enums we have already handled for the sake of efficiency
-        self.handled_enums: dict[str, Enum] = {}
+        self.handled_enums: dict[SanitizedEntityName, Enum] = {}
 
     @property
     def types(self):
@@ -116,7 +130,7 @@ class PdbTypeImporter:
                 "Not implemented: Function-valued argument or return type will be replaced by void pointer: %s",
                 type_pdb,
             )
-            return get_ghidra_type(self.api, "void")
+            return get_scalar_ghidra_type(self.api, "void")
         elif type_category == "LF_UNION":
             return self._import_union(type_pdb)
         else:
@@ -140,19 +154,21 @@ class PdbTypeImporter:
             raise TypeNotFoundError(f"Type has unexpected format: {type_index_lower}")
 
         scalar_cpp_type = self._scalar_type_to_cpp(match.group("typename"))
-        return get_ghidra_type(self.api, scalar_cpp_type)
+        return get_scalar_ghidra_type(self.api, scalar_cpp_type)
 
     def _import_forward_ref_type(
         self,
         type_index,
-        type_pdb: dict[str, Any],
+        type_pdb: CvdumpParsedType,
         slim_for_vbase: bool = False,
     ) -> DataType:
         referenced_type = type_pdb.get("udt") or type_pdb.get("modifies")
         if referenced_type is None:
             try:
                 # Example: HWND__, needs to be created manually
-                return get_ghidra_type(self.api, type_pdb["name"])
+                raw_name: str = type_pdb["name"]
+                type_name_and_namespace = sanitize_name(raw_name)
+                return get_ghidra_type(self.api, type_name_and_namespace)
             except TypeNotFoundInGhidraError as e:
                 raise TypeNotImplementedError(
                     f"{type_index}: forward ref without target, needs to be created manually: {type_pdb}"
@@ -164,7 +180,7 @@ class PdbTypeImporter:
         )
         return self.import_pdb_type_into_ghidra(referenced_type, slim_for_vbase)
 
-    def _import_array(self, type_pdb: dict[str, Any]) -> DataType:
+    def _import_array(self, type_pdb: CvdumpParsedType) -> DataType:
         inner_type = self.import_pdb_type_into_ghidra(type_pdb["array_type"])
 
         array_total_bytes: int = type_pdb["size"]
@@ -176,13 +192,17 @@ class PdbTypeImporter:
 
         return ArrayDataType(inner_type, array_length, 0)
 
-    def _import_union(self, type_pdb: dict[str, Any]) -> DataType:
+    def _import_union(self, type_pdb: CvdumpParsedType) -> DataType:
+        raw_name: str = type_pdb["name"]
+        expected_size: int = type_pdb["size"]
+        type_name_with_namespace = sanitize_name(raw_name)
+
         try:
             logger.debug("Dereferencing union %s", type_pdb)
-            union_type = get_ghidra_type(self.api, type_pdb["name"])
+            union_type = get_ghidra_type(self.api, type_name_with_namespace)
             assert (
-                union_type.getLength() == type_pdb["size"]
-            ), f"Wrong size of existing union type '{type_pdb['name']}': expected {type_pdb['size']}, got {union_type.getLength()}"
+                union_type.getLength() == expected_size
+            ), f"Wrong size of existing union type '{raw_name}': expected {expected_size}, got {union_type.getLength()}"
             return union_type
         except TypeNotFoundInGhidraError as e:
             # We have so few instances, it is not worth implementing this
@@ -190,116 +210,125 @@ class PdbTypeImporter:
                 f"Writing union types is not supported. Please add by hand: {type_pdb}"
             ) from e
 
-    def _import_enum(self, type_pdb: dict[str, Any]) -> DataType:
+    def _import_enum(self, type_pdb: CvdumpParsedType) -> DataType:
         underlying_type = self.import_pdb_type_into_ghidra(type_pdb["underlying_type"])
-        field_list = self.extraction.compare.cv.types.keys.get(type_pdb["field_type"])
+        field_list = self.extraction.compare.cv.types.keys.get(
+            type_pdb["field_list_type"]
+        )
         assert field_list is not None, f"Failed to find field list for enum {type_pdb}"
+        type_name: str = type_pdb["name"]
 
         result = self._get_or_create_enum_data_type(
-            type_pdb["name"], underlying_type.getLength()
+            type_name, underlying_type.getLength()
         )
         # clear existing variant if there are any
         for existing_variant in result.getNames():
             result.remove(existing_variant)
 
-        variants: list[dict[str, Any]] = field_list["variants"]
-        for variant in variants:
-            result.add(variant["name"], variant["value"])
+        for variant in field_list.get("variants", []):
+            result.add(variant.name, variant.value)
 
         return result
 
     def _import_class_or_struct(
         self,
-        type_in_pdb: dict[str, Any],
+        type_in_pdb: CvdumpParsedType,
         slim_for_vbase: bool = False,
     ) -> DataType:
         field_list_type: str = type_in_pdb["field_list_type"]
         field_list = self.types.keys[field_list_type.lower()]
 
         class_size: int = type_in_pdb["size"]
-        class_name_with_namespace: str = sanitize_name(type_in_pdb["name"])
+        raw_name: str = type_in_pdb["name"]
         if slim_for_vbase:
-            class_name_with_namespace += "_vbase_slim"
+            raw_name += "_vbase_slim"
+        sanitized_name = sanitize_name(raw_name)
 
-        if class_name_with_namespace in self.handled_structs:
+        if sanitized_name in self.handled_structs:
             logger.debug(
                 "Class has been handled or is being handled: %s",
-                class_name_with_namespace,
+                sanitized_name,
             )
-            return get_ghidra_type(self.api, class_name_with_namespace)
+            return get_ghidra_type(self.api, sanitized_name)
 
-        logger.debug(
-            "--- Beginning to import class/struct '%s'", class_name_with_namespace
+        logger.debug("--- Beginning to import class/struct '%s'", sanitized_name)
+
+        # Add as soon as we start to avoid infinite recursion.
+        # We use tuples because they are hashable
+        self.handled_structs.add(sanitized_name)
+
+        # We need a class/namespace for the class itself, not just for its parent,
+        # so we need to add the base name to the second argument
+        get_or_create_class_namespace(
+            self.api,
+            NamespacePath((*sanitized_name.namespace_path, sanitized_name.base_name)),
         )
 
-        # Add as soon as we start to avoid infinite recursion
-        self.handled_structs.add(class_name_with_namespace)
-
-        get_or_create_namespace(self.api, class_name_with_namespace)
-
-        if class_name_with_namespace in self.ignore_types:
+        if raw_name in self.ignore_types:
             # Respect ignore-list
             try:
-                result = get_ghidra_type(self.api, class_name_with_namespace)
+                result = get_ghidra_type(self.api, sanitized_name)
                 logger.info(
                     "Skipping import of class '%s' because it is on the ignore list",
-                    class_name_with_namespace,
+                    sanitized_name,
                 )
                 return result
             except TypeNotFoundInGhidraError:
                 logger.warning(
                     "Importing class '%s' despite it being on the ignore list because it is not present in Ghidra.",
-                    class_name_with_namespace,
+                    sanitized_name,
                 )
 
         new_ghidra_struct = self._get_or_create_struct_data_type(
-            class_name_with_namespace, class_size
+            sanitized_name, class_size
         )
 
         if (old_size := new_ghidra_struct.getLength()) != class_size:
             logger.warning(
                 "Existing class %s had incorrect size %d. Setting to %d...",
-                class_name_with_namespace,
+                sanitized_name,
                 old_size,
                 class_size,
             )
 
-        logger.info("Adding class data type %s", class_name_with_namespace)
+        logger.info("Adding class data type %s", sanitized_name)
         logger.debug("Class information: %s", type_in_pdb)
 
-        components: list[dict[str, Any]] = []
+        components: list[GhidraFieldListItem] = []
         components.extend(self._get_components_from_base_classes(field_list))
         # can be missing when no new fields are declared
         components.extend(self._get_components_from_members(field_list))
         components.extend(
             self._get_components_from_vbase(
-                field_list, class_name_with_namespace, new_ghidra_struct
+                field_list, sanitized_name, new_ghidra_struct
             )
         )
 
-        components.sort(key=lambda c: c["offset"])
+        components.sort(key=lambda c: c.offset)
 
         if slim_for_vbase:
             # Make a "slim" version: shrink the size to the fields that are actually present.
             # This makes a difference when the current class uses virtual inheritance
             assert (
                 len(components) > 0
-            ), f"Error: {class_name_with_namespace} should not be empty. There must be at least one direct or indirect vbase pointer."
+            ), f"Error: {sanitized_name} should not be empty. There must be at least one direct or indirect vbase pointer."
             last_component = components[-1]
-            class_size = last_component["offset"] + last_component["type"].getLength()
+            class_size = last_component.offset + last_component.type.getLength()
 
         self._overwrite_struct(
-            class_name_with_namespace,
+            sanitized_name,
             new_ghidra_struct,
             class_size,
             components,
         )
 
-        logger.info("Finished importing class %s", class_name_with_namespace)
+        logger.info("Finished importing class %s", sanitized_name)
 
         return new_ghidra_struct
 
-    def _get_components_from_base_classes(self, field_list) -> Iterator[dict[str, Any]]:
+    def _get_components_from_base_classes(
+        self, field_list: CvdumpParsedType
+    ) -> Iterator[GhidraFieldListItem]:
         non_virtual_base_classes: dict[str, int] = field_list.get("super", {})
 
         for super_type, offset in non_virtual_base_classes.items():
@@ -310,52 +339,56 @@ class PdbTypeImporter:
                 super_type, slim_for_vbase=import_slim_vbase_version_of_superclass
             )
 
-            yield {
-                "type": ghidra_type,
-                "offset": offset,
-                "name": "base" if offset == 0 else f"base_{ghidra_type.getName()}",
-            }
+            yield GhidraFieldListItem(
+                type=ghidra_type,
+                offset=offset,
+                name="base" if offset == 0 else f"base_{ghidra_type.getName()}",
+            )
 
-    def _get_components_from_members(self, field_list: dict[str, Any]):
-        members: list[dict[str, Any]] = field_list.get("members") or []
+    def _get_components_from_members(
+        self, field_list: CvdumpParsedType
+    ) -> Iterator[GhidraFieldListItem]:
+        members: list[FieldListItem] = field_list.get("members") or []
         for member in members:
-            yield member | {"type": self.import_pdb_type_into_ghidra(member["type"])}
+            yield GhidraFieldListItem(
+                type=self.import_pdb_type_into_ghidra(member.type),
+                offset=member.offset,
+                name=member.name,
+            )
 
     def _get_components_from_vbase(
         self,
-        field_list: dict[str, Any],
-        class_name_with_namespace: str,
+        field_list: CvdumpParsedType,
+        sanitized_name: SanitizedEntityName,
         current_type: StructureInternal,
-    ) -> Iterator[dict[str, Any]]:
+    ) -> Iterator[GhidraFieldListItem]:
         vbasepointer: VirtualBasePointer | None = field_list.get("vbase", None)
 
         if vbasepointer is not None and any(x.direct for x in vbasepointer.bases):
             vbaseptr_type = get_or_add_pointer_type(
                 self.api,
-                self._import_vbaseptr(
-                    current_type, class_name_with_namespace, vbasepointer
-                ),
+                self._import_vbaseptr(current_type, sanitized_name, vbasepointer),
             )
-            yield {
-                "type": vbaseptr_type,
-                "offset": vbasepointer.vboffset,
-                "name": "vbase_offset",
-            }
+            yield GhidraFieldListItem(
+                type=vbaseptr_type,
+                offset=vbasepointer.vboffset,
+                name="vbase_offset",
+            )
 
     def _import_vbaseptr(
         self,
         current_type: StructureInternal,
-        class_name_with_namespace: str,
+        sanitized_name: SanitizedEntityName,
         vbasepointer: VirtualBasePointer,
     ) -> StructureInternal:
         pointer_size = 4  # hard-code to 4 because of 32 bit
 
         components = [
-            {
-                "offset": 0,
-                "type": get_or_add_pointer_type(self.api, current_type),
-                "name": "o_self",
-            }
+            GhidraFieldListItem(
+                offset=0,
+                type=get_or_add_pointer_type(self.api, current_type),
+                name="o_self",
+            )
         ]
         for vbase in vbasepointer.bases:
             vbase_ghidra_type = self.import_pdb_type_into_ghidra(vbase.type)
@@ -380,21 +413,27 @@ class PdbTypeImporter:
             )
 
             components.append(
-                {
-                    "offset": vbase.index * pointer_size,
-                    "type": vbase_ghidra_pointer_typedef,
-                    "name": f"o_{type_name}",
-                }
+                GhidraFieldListItem(
+                    offset=vbase.index * pointer_size,
+                    type=vbase_ghidra_pointer_typedef,
+                    name=f"o_{type_name}",
+                )
             )
 
         size = len(components) * pointer_size
 
+        # Turns e.g. `SomeNamespace::LegoAnimActor` into `SomeNamespace::LegoAnimActor::VBasePtr`
+        vbase_ptr_type_name = SanitizedEntityName(
+            NamespacePath((*sanitized_name.namespace_path, sanitized_name.base_name)),
+            "VBasePtr",
+        )
+
         new_ghidra_struct = self._get_or_create_struct_data_type(
-            f"{class_name_with_namespace}::VBasePtr", size
+            vbase_ptr_type_name, size
         )
 
         self._overwrite_struct(
-            f"{class_name_with_namespace}::VBasePtr",
+            vbase_ptr_type_name,
             new_ghidra_struct,
             size,
             components,
@@ -404,10 +443,10 @@ class PdbTypeImporter:
 
     def _overwrite_struct(
         self,
-        class_name_with_namespace: str,
+        sanitized_name: SanitizedEntityName,
         new_ghidra_struct: StructureInternal,
         class_size: int,
-        components: list[dict[str, Any]],
+        components: list[GhidraFieldListItem],
     ):
         new_ghidra_struct.deleteAll()
         new_ghidra_struct.growStructure(class_size)
@@ -417,66 +456,66 @@ class PdbTypeImporter:
         # However, we really do NOT want to do this every time because the type might be self-referential and partially imported.
         if new_ghidra_struct.getLength() != class_size:
             new_ghidra_struct = self._delete_and_recreate_struct_data_type(
-                class_name_with_namespace, class_size, new_ghidra_struct
+                sanitized_name, class_size, new_ghidra_struct
             )
 
         for component in components:
-            offset: int = component["offset"]
-            logger.debug(
-                "Adding component %s to class: %s", component, class_name_with_namespace
-            )
+            offset: int = component.offset
+            logger.debug("Adding component %s to class: %s", component, sanitized_name)
 
             try:
                 # Make sure there is room for the new structure and that we have no collision.
                 existing_type = new_ghidra_struct.getComponentAt(offset)
                 assert (
                     existing_type is not None
-                ), f"Struct collision: Offset {offset} in {class_name_with_namespace} is overlapped by another component"
+                ), f"Struct collision: Offset {offset} in {sanitized_name} is overlapped by another component"
 
                 if existing_type.getDataType().getName() != "undefined":
                     # collision of structs beginning in the same place -> likely due to unions
                     logger.warning(
                         "Struct collision: Offset %d of %s already has a field (likely an inline union)",
                         offset,
-                        class_name_with_namespace,
+                        sanitized_name,
                     )
 
                 new_ghidra_struct.replaceAtOffset(
                     offset,
-                    component["type"],
+                    component.type,
                     -1,  # set to -1 for fixed-size components
-                    component["name"],  # name
+                    component.name,  # name
                     None,  # comment
                 )
             except Exception as e:
-                raise StructModificationError(class_name_with_namespace) from e
+                raise StructModificationError(sanitized_name) from e
 
     def _get_or_create_enum_data_type(
-        self, enum_type_name: str, enum_type_size: int
+        self, type_name: str, enum_type_size: int
     ) -> Enum:
-        if (known_enum := self.handled_enums.get(enum_type_name, None)) is not None:
+        enum_type_name_with_namespace = sanitize_name(type_name)
+
+        if (
+            known_enum := self.handled_enums.get(enum_type_name_with_namespace, None)
+        ) is not None:
             return known_enum
 
         result = self._get_or_create_data_type(
-            enum_type_name,
+            enum_type_name_with_namespace,
             "enum",
             Enum,
-            lambda: EnumDataType(
-                CategoryPath("/imported"), enum_type_name, enum_type_size
-            ),
+            lambda categoryPath, name: EnumDataType(categoryPath, name, enum_type_size),
         )
-        self.handled_enums[enum_type_name] = result
+        self.handled_enums[enum_type_name_with_namespace] = result
         return result
 
     def _get_or_create_struct_data_type(
-        self, class_name_with_namespace: str, class_size: int
+        self, sanitized_name: SanitizedEntityName, class_size: int
     ) -> StructureInternal:
         return self._get_or_create_data_type(
-            class_name_with_namespace,
+            sanitized_name,
             "class/struct",
             StructureInternal,
-            lambda: StructureDataType(
-                CategoryPath("/imported"), class_name_with_namespace, class_size
+            lambda category_path, class_name: StructureDataType(
+                category_path, class_name, class_size
             ),
         )
 
@@ -484,10 +523,10 @@ class PdbTypeImporter:
 
     def _get_or_create_data_type(
         self,
-        type_name: str,
+        sanitized_name: SanitizedEntityName,
         readable_name_of_type_category: str,
         expected_type: type[T],
-        new_instance_callback: Callable[[], T],
+        new_instance_callback: Callable[[CategoryPath, str], T],
     ) -> T:
         """
         Checks if a data type provided under the given name exists in Ghidra.
@@ -499,23 +538,25 @@ class PdbTypeImporter:
         """
 
         data_type_manager = self.api.getCurrentProgram().getDataTypeManager()
+        category_path = category_path_of(sanitized_name.namespace_path)
 
         try:
-            data_type = get_ghidra_type(self.api, type_name)
+            data_type = get_ghidra_type(self.api, sanitized_name)
             logger.debug(
                 "Found existing %s type %s under category path %s",
                 readable_name_of_type_category,
-                type_name,
+                sanitized_name,
                 data_type.getCategoryPath(),
             )
         except TypeNotFoundInGhidraError:
             logger.info(
                 "Creating new %s data type %s",
                 readable_name_of_type_category,
-                type_name,
+                sanitized_name,
             )
             data_type = data_type_manager.addDataType(
-                new_instance_callback(), DataTypeConflictHandler.KEEP_HANDLER
+                new_instance_callback(category_path, sanitized_name.base_name),
+                DataTypeConflictHandler.KEEP_HANDLER,
             )
         except MultipleTypesFoundInGhidraError as e:
             logger.error(
@@ -527,36 +568,37 @@ class PdbTypeImporter:
             logger.info(
                 "(Re)creating new %s data type '%s'",
                 readable_name_of_type_category,
-                type_name,
+                sanitized_name,
             )
             data_type = data_type_manager.addDataType(
-                new_instance_callback(), DataTypeConflictHandler.KEEP_HANDLER
+                new_instance_callback(category_path, sanitized_name.base_name),
+                DataTypeConflictHandler.KEEP_HANDLER,
             )
 
         assert isinstance(
             data_type, expected_type
-        ), f"Found existing type named {type_name} that is not a {readable_name_of_type_category}"
+        ), f"Found existing type named {sanitized_name} that is not a {readable_name_of_type_category}"
         return data_type
 
     def _delete_and_recreate_struct_data_type(
         self,
-        class_name_with_namespace: str,
+        sanitized_name: SanitizedEntityName,
         class_size: int,
         existing_data_type: DataType,
     ) -> StructureInternal:
         logger.warning(
             "Failed to modify data type %s. Will try to delete the existing one and re-create the imported one.",
-            class_name_with_namespace,
+            sanitized_name,
         )
+
+        category_path = category_path_of(sanitized_name.namespace_path)
 
         assert (
             self.api.getCurrentProgram()
             .getDataTypeManager()
             .remove(existing_data_type, ConsoleTaskMonitor())
-        ), f"Failed to delete and re-create data type {class_name_with_namespace}"
-        data_type = StructureDataType(
-            CategoryPath("/imported"), class_name_with_namespace, class_size
-        )
+        ), f"Failed to delete and re-create data type {sanitized_name}"
+        data_type = StructureDataType(category_path, sanitized_name, class_size)
         data_type = (
             self.api.getCurrentProgram()
             .getDataTypeManager()

@@ -60,11 +60,13 @@ def create_name_lookup(
                 return entity.match_name()
 
             if entity.entity_type == EntityType.IMPORT:
-                import_name = entity.get("import_name")
+                import_name = entity.match_name()
                 if import_name is not None:
-                    return "->" + import_name + " (FUNCTION)"
+                    return "->" + import_name
 
-                return entity.match_name()
+                # If there's no name for the import, don't bother going further.
+                # The pointer is a dead end.
+                return None
 
         # No suitable entity at the base address. Read the pointer and see what we get.
         entity = follow_indirect(addr)

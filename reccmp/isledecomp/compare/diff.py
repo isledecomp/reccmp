@@ -124,6 +124,7 @@ class DiffReport:
     ratio: float = 0.0
     is_effective_match: bool = False
     is_stub: bool = False
+    is_library: bool = False
 
     @property
     def effective_ratio(self) -> float:

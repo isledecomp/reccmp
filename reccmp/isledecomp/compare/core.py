@@ -5,7 +5,12 @@ from pathlib import Path
 import struct
 from typing import Iterable, Iterator
 from reccmp.project.detect import RecCmpTarget
+from reccmp.isledecomp.difflib import get_grouped_opcodes
 from reccmp.isledecomp.compare.functions import FunctionComparator
+from reccmp.isledecomp.formats.exceptions import (
+    InvalidVirtualReadError,
+    InvalidStringError,
+)
 from reccmp.isledecomp.formats.detect import detect_image
 from reccmp.isledecomp.formats.pe import PEImage
 from reccmp.isledecomp.cvdump.demangler import (
@@ -24,6 +29,7 @@ from reccmp.isledecomp.compare.event import (
 )
 from reccmp.isledecomp.analysis import (
     find_float_consts,
+    find_import_thunks,
     find_vtordisp,
     is_likely_latin1,
 )
@@ -35,11 +41,13 @@ from .match_msvc import (
     match_static_variables,
     match_variables,
     match_strings,
+    match_ref,
 )
 from .csv import ReccmpCsvParserError, csv_parse
-from .db import EntityDb, ReccmpEntity, ReccmpMatch
+from .db import EntityDb, ReccmpEntity, ReccmpMatch, entity_name_from_string
 from .diff import DiffReport, combined_diff
 from .lines import LinesDb
+from .queries import get_overloaded_functions, get_named_thunks
 
 
 # pylint: disable=too-many-lines
@@ -104,10 +112,12 @@ class Compare:
         self._find_strings()
         self._match_imports()
         self._match_exports()
-        self._match_thunks()
-        self._match_vtordisp()
+        self._create_thunks()
         self._check_vtables()
+        match_ref(self._db, report)
         self._unique_names_for_overloaded_functions()
+        self._name_thunks()
+        self._match_vtordisp()
 
         match_strings(self._db, report)
 
@@ -202,47 +212,63 @@ class Compare:
                         )
                         continue
 
-                    # TODO: skip unicode for now. will need to handle these differently.
-                    if string_info.is_utf16:
-                        continue
-
-                    size = sym.size()
-                    assert size is not None
-
-                    raw = self.recomp_bin.read(addr, size)
-
                     try:
-                        # We use the string length reported in the mangled symbol as the
-                        # data size, but this is not always accurate with respect to the
-                        # null terminator.
-                        # e.g. ??_C@_0BA@EFDM@MxObjectFactory?$AA@
-                        # reported length: 16 (includes null terminator)
-                        # c.f. ??_C@_03DPKJ@enz?$AA@
-                        # reported length: 3 (does NOT include terminator)
-                        # This will handle the case where the entire string contains "\x00"
-                        # because those are distinct from the empty string of length 0.
-                        decoded_string = raw.decode("latin1")
-                        rstrip_string = decoded_string.rstrip("\x00")
+                        # Use the section contribution size if we have it. It is more accurate
+                        # than the number embedded in the string symbol:
+                        #
+                        #     e.g. ??_C@_0BA@EFDM@MxObjectFactory?$AA@
+                        #     reported length: 16 (includes null terminator)
+                        #     c.f. ??_C@_03DPKJ@enz?$AA@
+                        #     reported length: 3 (does NOT include terminator)
+                        #
+                        # Using a known length enables us to read strings that include null bytes.
+                        # string_size is the total memory footprint, including null-terminator.
+                        if string_info.is_utf16:
+                            if sym.section_contribution is not None:
+                                string_size = sym.section_contribution
+                                # Remove 2-byte null-terminator before decoding
+                                raw = self.recomp_bin.read(addr, string_size)[:-2]
+                            else:
+                                raw = self.recomp_bin.read_widechar(addr)
+                                string_size = len(raw) + 2
 
-                        # TODO: Hack to exclude a string that contains \x00 bytes
-                        # The proper solution is to escape the text for JSON or use
-                        # base64 encoding for comparing binary values.
-                        # Kicking the can down the road for now.
-                        if "\x00" in decoded_string and rstrip_string == "":
-                            continue
-                        sym.friendly_name = rstrip_string
+                            decoded_string = raw.decode("utf-16-le")
+                        else:
+                            if sym.section_contribution is not None:
+                                string_size = sym.section_contribution
+                                # Remove 1-byte null-terminator before decoding
+                                raw = self.recomp_bin.read(addr, string_size)[:-1]
+                            else:
+                                raw = self.recomp_bin.read_string(addr)
+                                string_size = len(raw) + 1
+
+                            decoded_string = raw.decode("latin1")
+
+                    except (InvalidVirtualReadError, InvalidStringError):
+                        logger.warning(
+                            "Could not read string from recomp 0x%x, wide=%s",
+                            addr,
+                            string_info.is_utf16,
+                        )
 
                     except UnicodeDecodeError:
-                        pass
+                        logger.debug(
+                            "Could not decode string: %s, wide=%s",
+                            raw,
+                            string_info.is_utf16,
+                        )
+                        continue
 
                     # Special handling for string entities.
                     # Make sure the entity size includes the string null-terminator.
                     batch.set_recomp(
                         addr,
                         type=sym.node_type,
-                        name=sym.name(),
+                        name=entity_name_from_string(
+                            decoded_string, wide=string_info.is_utf16
+                        ),
                         symbol=sym.decorated_name,
-                        size=len(rstrip_string) + 1,
+                        size=string_size,
                         verified=True,
                     )
                 else:
@@ -319,7 +345,10 @@ class Compare:
 
             for fun in codebase.iter_name_functions():
                 batch.set_orig(
-                    fun.offset, type=EntityType.FUNCTION, stub=fun.should_skip()
+                    fun.offset,
+                    type=EntityType.FUNCTION,
+                    stub=fun.should_skip(),
+                    library=fun.is_library(),
                 )
 
                 if fun.name.startswith("?") or fun.name_is_symbol:
@@ -346,9 +375,24 @@ class Compare:
                 # Not that we don't trust you, but we're checking the string
                 # annotation to make sure it is accurate.
                 try:
-                    # TODO: would presumably fail for wchar_t strings
-                    orig = self.orig_bin.read_string(string.offset).decode("latin1")
+                    if string.is_widechar:
+                        raw = self.orig_bin.read_widechar(string.offset)
+                        orig = raw.decode("utf-16-le")
+                        string_size = len(raw) + 2
+                    else:
+                        raw = self.orig_bin.read_string(string.offset)
+                        orig = raw.decode("latin1")
+                        string_size = len(raw) + 1
+
                     string_correct = string.name == orig
+
+                except InvalidStringError:
+                    logger.warning(
+                        "Could not read string from orig 0x%x, wide=%s",
+                        string.offset,
+                        string.is_widechar,
+                    )
+
                 except UnicodeDecodeError:
                     string_correct = False
 
@@ -362,9 +406,9 @@ class Compare:
 
                 batch.set_orig(
                     string.offset,
-                    name=string.name,
+                    name=entity_name_from_string(string.name, wide=string.is_widechar),
                     type=EntityType.STRING,
-                    size=len(string.name) + 1,  # including null-terminator
+                    size=string_size,
                     verified=True,
                 )
 
@@ -490,7 +534,7 @@ class Compare:
                     batch.insert_orig(
                         addr,
                         type=EntityType.STRING,
-                        name=string,
+                        name=entity_name_from_string(string),
                         size=len(string) + 1,  # including null-terminator
                     )
 
@@ -502,7 +546,7 @@ class Compare:
                     batch.insert_recomp(
                         addr,
                         type=EntityType.STRING,
-                        name=string,
+                        name=entity_name_from_string(string),
                         size=len(string) + 1,  # including null-terminator
                     )
 
@@ -533,23 +577,19 @@ class Compare:
 
         with self._db.batch() as batch:
             for dll, name, addr in self.orig_bin.imports:
-                import_name = f"{dll.upper()}:{name}"
+                import_name = f"{dll}::{name}"
                 batch.set_orig(
                     addr,
-                    name=f"__imp__{name}",
-                    import_name=import_name,
+                    name=import_name,
                     size=4,
                     type=EntityType.IMPORT,
                 )
 
             for dll, name, addr in self.recomp_bin.imports:
-                # TODO: recomp imports should already have a name from the PDB
-                # but set it anyway to avoid problems later.
-                import_name = f"{dll.upper()}:{name}"
+                import_name = f"{dll}::{name}"
                 batch.set_recomp(
                     addr,
-                    name=f"__imp__{name}",
-                    import_name=import_name,
+                    name=import_name,
                     size=4,
                     type=EntityType.IMPORT,
                 )
@@ -563,65 +603,62 @@ class Compare:
                 if recomp_addr is not None:
                     batch.match(orig_addr, recomp_addr)
 
-    def _match_thunks(self):
-        """Thunks are (by nature) matched by indirection. If a thunk from orig
-        points at a function we have already matched, we can find the matching
-        thunk in recomp because it points to the same place."""
-
-        # Mark all recomp thunks first. This allows us to use their name
-        # when we sanitize the asm.
         with self._db.batch() as batch:
-            for recomp_thunk, recomp_addr in self.recomp_bin.thunks:
-                recomp_func = self._db.get_by_recomp(recomp_addr)
-                if recomp_func is None:
-                    continue
+            for thunk in find_import_thunks(self.orig_bin):
+                name = f"{thunk.dll_name}::{thunk.func_name}"
+                batch.set_orig(
+                    thunk.addr,
+                    name=name,
+                    type=EntityType.FUNCTION,
+                    skip=True,
+                    size=thunk.size,
+                    ref_orig=thunk.import_addr,
+                )
 
-                assert recomp_func.name is not None
+            for thunk in find_import_thunks(self.recomp_bin):
+                name = f"{thunk.dll_name}::{thunk.func_name}"
+                batch.set_recomp(
+                    thunk.addr,
+                    name=name,
+                    type=EntityType.FUNCTION,
+                    skip=True,
+                    size=thunk.size,
+                    ref_recomp=thunk.import_addr,
+                )
+
+    def _create_thunks(self):
+        """Create entities for any thunk functions in the image.
+        These are the result of an incremental build."""
+        with self._db.batch() as batch:
+            for orig_thunk, orig_addr in self.orig_bin.thunks:
+                batch.insert_orig(
+                    orig_thunk,
+                    type=EntityType.FUNCTION,
+                    size=5,
+                    ref_orig=orig_addr,
+                    skip=True,
+                )
+
+                # We can only match two thunks if we have already matched both
+                # their parent entities. There is nothing to compare because
+                # they will either be equal or left unmatched. Set skip=True.
+
+            for recomp_thunk, recomp_addr in self.recomp_bin.thunks:
                 batch.insert_recomp(
                     recomp_thunk,
                     type=EntityType.FUNCTION,
                     size=5,
-                    name=f"Thunk of '{recomp_func.name}'",
+                    ref_recomp=recomp_addr,
                 )
 
-            # Thunks may be non-unique, so use a list as dict value when
-            # inverting the list of tuples from self.recomp_bin.
-            recomp_thunks: dict[int, list[int]] = {}
-            for thunk_addr, func_addr in self.recomp_bin.thunks:
-                recomp_thunks.setdefault(func_addr, []).append(thunk_addr)
+    def _name_thunks(self):
+        with self._db.batch() as batch:
+            for thunk in get_named_thunks(self._db):
+                if thunk.orig_addr is not None:
+                    batch.set_orig(thunk.orig_addr, name=f"Thunk of '{thunk.name}'")
 
-            # Now match the thunks from orig where we can.
-            for orig_thunk, orig_addr in self.orig_bin.thunks:
-                orig_func = self._db.get_by_orig(orig_addr)
-                if orig_func is None or orig_func.recomp_addr is None:
-                    continue
-
-                # Check whether the thunk destination is a matched symbol
-                if orig_func.recomp_addr not in recomp_thunks:
-                    assert orig_func.name is not None
-                    batch.insert_orig(
-                        orig_thunk,
-                        type=EntityType.FUNCTION,
-                        size=5,
-                        name=f"Thunk of '{orig_func.name}'",
-                    )
-                    continue
-
-                # If there are multiple thunks, they are already in v.addr order.
-                # Pop the earliest one and match it.
-                recomp_thunk = recomp_thunks[orig_func.recomp_addr].pop(0)
-                if len(recomp_thunks[orig_func.recomp_addr]) == 0:
-                    del recomp_thunks[orig_func.recomp_addr]
-
-                batch.match(orig_thunk, recomp_thunk)
-
-                # Don't compare thunk functions for now. The comparison isn't
-                # "useful" in the usual sense. We are only looking at the
-                # bytes of the jmp instruction and not the larger context of
-                # where this function is. Also: these will always match 100%
-                # because we are searching for a match to register this as a
-                # function in the first place.
-                batch.set_orig(orig_thunk, skip=True)
+                elif thunk.recomp_addr is not None:
+                    batch.set_recomp(thunk.recomp_addr, name=f"Thunk of '{thunk.name}'")
 
     def _match_exports(self):
         # invert for name lookup
@@ -731,36 +768,20 @@ class Compare:
         """Our asm sanitize will use the "friendly" name of a function.
         Overloaded functions will all have the same name. This function detects those
         cases and gives each one a unique name in the db."""
-        repeat_names: dict[str, list[tuple[int, str | None]]] = {}
-
-        # Select addresses and symbols for all repeated function names
-        for recomp_addr, name, symbol in self._db.sql.execute(
-            """SELECT recomp_addr, json_extract(kvstore,'$.name') as name, json_extract(kvstore,'$.symbol')
-            from entities where name in (
-                select json_extract(kvstore,'$.name') as name from entities
-                where json_extract(kvstore,'$.type') = ?
-                group by name having count(name) > 1
-            )""",
-            (EntityType.FUNCTION,),
-        ):
-            # TODO: Thunk's link to the original function is lost once the record is created.
-            if "Thunk of" in name:
-                continue
-
-            repeat_names.setdefault(name, []).append((recomp_addr, symbol))
-
         with self._db.batch() as batch:
-            for name, items in repeat_names.items():
-                for i, (recomp_addr, symbol) in enumerate(items, start=1):
-                    # Just number it to start, in case we don't have a symbol.
-                    new_name = f"{name}({i})"
+            for func in get_overloaded_functions(self._db):
+                # Just number it to start, in case we don't have a symbol.
+                new_name = f"{func.name}({func.nth})"
 
-                    if symbol is not None:
-                        dm_args = get_function_arg_string(symbol)
-                        if dm_args is not None:
-                            new_name = f"{name}{dm_args}"
+                if func.symbol is not None:
+                    dm_args = get_function_arg_string(func.symbol)
+                    if dm_args is not None:
+                        new_name = f"{func.name}{dm_args}"
 
-                    batch.set_recomp(recomp_addr, computed_name=new_name)
+                if func.orig_addr is not None:
+                    batch.set_orig(func.orig_addr, computed_name=new_name)
+                elif func.recomp_addr is not None:
+                    batch.set_recomp(func.recomp_addr, computed_name=new_name)
 
     def _compare_vtable(self, match: ReccmpMatch) -> DiffReport:
         vtable_size = match.size
@@ -869,7 +890,28 @@ class Compare:
             )
 
         if match.entity_type == EntityType.FUNCTION:
-            return self.function_comparator.compare_function(match)
+            best_name = match.best_name()
+            assert best_name is not None
+
+            diff_result = self.function_comparator.compare_function(match)
+            if diff_result.match_ratio != 1.0:
+                grouped_codes = list(get_grouped_opcodes(diff_result.codes, n=10))
+                udiff = combined_diff(
+                    grouped_codes, diff_result.orig_inst, diff_result.recomp_inst
+                )
+            else:
+                udiff = None
+
+            return DiffReport(
+                match_type=EntityType.FUNCTION,
+                orig_addr=match.orig_addr,
+                recomp_addr=match.recomp_addr,
+                name=best_name,
+                udiff=udiff,
+                ratio=diff_result.match_ratio,
+                is_effective_match=diff_result.is_effective_match,
+                is_library=match.get("library", False),
+            )
 
         if match.entity_type == EntityType.VTABLE:
             return self._compare_vtable(match)

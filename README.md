@@ -1,5 +1,8 @@
 # Reccmp Decompilation Toolchain
 
+[![Discord server](https://badgen.net/badge/icon/discord?icon=discord&label)](https://discord.gg/25bNWfZB)
+[![Matrix channel](https://badgen.net/badge/icon/matrix?icon=matrix&label)](https://matrix.to/#/#isledecomp:matrix.org)
+
 `reccmp` (recompilation comparison) is a collection of tools for decompilation projects. It was born from the [decompilation of LEGO Island](https://github.com/isledecomp/isle). Functions and data are matched based on comments in the source code. For example:
 ```cpp
 // FUNCTION: LEGO1 0x100b12c0

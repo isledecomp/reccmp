@@ -13,8 +13,22 @@ _SETUP_SQL = """
     CREATE TABLE entities (
         orig_addr int unique,
         recomp_addr int unique,
-        kvstore text default '{}'
+        kvstore text default '{}',
+        ref_orig integer as (json_extract(kvstore, '$.ref_orig')),
+        ref_recomp integer as (json_extract(kvstore, '$.ref_recomp'))
     );
+
+    CREATE VIEW orig_refs (orig_addr, ref_id, nth) AS
+        SELECT thunk.orig_addr, ref.rowid,
+            Row_number() OVER (partition BY thunk.ref_orig order by thunk.orig_addr) nth
+        FROM entities thunk
+        INNER JOIN entities ref on thunk.ref_orig = ref.orig_addr;
+
+    CREATE VIEW recomp_refs (recomp_addr, ref_id, nth) AS
+        SELECT thunk.recomp_addr, ref.rowid,
+            Row_number() OVER (partition BY thunk.ref_recomp order by thunk.recomp_addr) nth
+        FROM entities thunk
+        INNER JOIN entities ref on thunk.ref_recomp = ref.recomp_addr;
 
     CREATE VIEW orig_unmatched (orig_addr, kvstore) AS
         SELECT orig_addr, kvstore FROM entities
@@ -34,6 +48,13 @@ _SETUP_SQL = """
     CREATE VIEW matched_entity_factory AS
         SELECT * FROM entity_factory WHERE orig_addr IS NOT NULL AND recomp_addr IS NOT NULL;
 """
+
+
+def entity_name_from_string(text: str, wide: bool = False) -> str:
+    """Create an entity name for the given string by escaping
+    control characters and double quotes, then wrapping in double quotes."""
+    escaped = text.encode("unicode_escape").decode("utf-8").replace('"', '\\"')
+    return f'{"L" if wide else ""}"{escaped}"'
 
 
 EntityTypeLookup: dict[int, str] = {
@@ -102,16 +123,6 @@ class ReccmpEntity:
         """Combination of the name and compare type.
         Intended for name substitution in the diff. If there is a diff,
         it will be more obvious what this symbol indicates."""
-
-        # Special handling for strings that might contain newlines.
-        if self.entity_type == EntityType.STRING:
-            if self.name is not None:
-                # Escape newlines so they do not interfere
-                # with asm sanitize and diff calculation.
-                return f"{repr(self.name)} (STRING)"
-
-            return None
-
         best_name = self.best_name()
         if best_name is None:
             return None
