@@ -18,7 +18,7 @@ def test_project_without_csv():
         """
     )
 
-    assert p.targets["TEST"].csv_files == []
+    assert p.targets["TEST"].data_sources == []
 
 
 def test_project_with_csv_list():
@@ -32,10 +32,10 @@ def test_project_with_csv_list():
                 hash:
                     sha256: test
                 filename: test.exe
-                csv:
+                data-sources:
                 - file0.csv
                 - file1.csv
         """
     )
 
-    assert p.targets["TEST"].csv_files == [Path("file0.csv"), Path("file1.csv")]
+    assert p.targets["TEST"].data_sources == [Path("file0.csv"), Path("file1.csv")]

@@ -66,7 +66,7 @@ class Compare:
         pdb_file: Path | str,
         code_dir: Path | str,
         target_id: str | None = None,
-        csv_files: list[Path] | None = None,
+        data_sources: list[Path] | None = None,
     ):
         self.orig_bin = orig_bin
         self.recomp_bin = recomp_bin
@@ -94,9 +94,10 @@ class Compare:
         self._load_cvdump()
         self._load_markers(report)
 
-        if isinstance(csv_files, list):
-            for csv_file in csv_files:
-                self._load_csv(csv_file)
+        if isinstance(data_sources, list):
+            for ds_file in data_sources:
+                if ds_file.suffix.lower() == ".csv":
+                    self._load_csv(ds_file)
 
         # Match using PDB and annotation data
         match_symbols(self._db, report, truncate=True)
@@ -141,7 +142,7 @@ class Compare:
             target.recompiled_pdb,
             target.source_root,
             target_id=target.target_id,
-            csv_files=target.csv_files,
+            data_sources=target.data_sources,
         )
 
     @property

@@ -150,7 +150,7 @@ class RecCmpPartialTarget:
     recompiled_pdb: Path | None = None
 
     # Data to set directly in the database (addresses refer to orig binary)
-    csv_files: list[Path] | None = None
+    data_sources: list[Path] | None = None
 
 
 @dataclass
@@ -186,7 +186,7 @@ class RecCmpTarget:
     recompiled_pdb: Path
 
     # Data to set directly in the database (addresses refer to orig binary)
-    csv_files: list[Path] = field(default_factory=list)
+    data_sources: list[Path] = field(default_factory=list)
 
 
 class RecCmpProject:
@@ -245,7 +245,7 @@ class RecCmpProject:
         else:
             ghidra = GhidraConfig()
 
-        csv_files = target.csv_files or []
+        data_sources = target.data_sources or []
 
         if target.report_config is not None:
             report = target.report_config
@@ -261,7 +261,7 @@ class RecCmpProject:
             recompiled_pdb=target.recompiled_pdb,
             source_root=target.source_root,
             ghidra_config=ghidra,
-            csv_files=csv_files,
+            data_sources=data_sources,
             report_config=report,
         )
 
@@ -357,7 +357,9 @@ class RecCmpProject:
             # Assumes these are relative paths. If they are not, the second path
             # will replace the first instead of adding onto it.
             source_root = project_directory / target.source_root
-            csv_files = [project_directory / csv_path for csv_path in target.csv_files]
+            data_sources = [
+                project_directory / ds_path for ds_path in target.data_sources
+            ]
 
             project.targets[target_id] = RecCmpPartialTarget(
                 target_id=target_id,
@@ -365,7 +367,7 @@ class RecCmpProject:
                 sha256=target.hash.sha256,
                 source_root=source_root,
                 ghidra_config=ghidra,
-                csv_files=csv_files,
+                data_sources=data_sources,
                 report_config=report,
             )
 
