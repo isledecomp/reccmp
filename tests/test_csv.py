@@ -308,7 +308,7 @@ def test_ignore_empty_values():
         csv_parse(
             dedent(
                 """\
-            address|type|label|size|skip
+            address|type|name|size|skip
             1234||hello||
             1234|||5|
             1234|function|||

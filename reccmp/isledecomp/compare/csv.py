@@ -99,10 +99,7 @@ def _convert_attrs(values: Iterable[tuple[str, str]]) -> CsvValuesType:
         if key == "symbol":
             output["symbol"] = value
 
-        # TODO: Redirect 'label' to 'name' for compatibility.
-        # In the future 'label' will be the not-necessarily-unique identifier
-        # and 'name' will be the disambiguated string displayed in the asm listing.
-        if key == "label":
+        if key == "name":
             output["name"] = value
 
         if key == "size":
