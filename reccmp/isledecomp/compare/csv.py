@@ -7,6 +7,8 @@ The delimiter is decided based on the first line (following pre-processing). Opt
 import csv
 from csv import Error as PythonCsvError
 from typing import Iterable, Iterator
+from typing_extensions import NotRequired, TypedDict
+from reccmp.isledecomp.types import EntityType
 
 
 class ReccmpCsvParserError(Exception):
@@ -26,12 +28,23 @@ class CsvInvalidAddressError(ReccmpCsvParserError):
     """The address value is not a valid hex number."""
 
 
+class CsvInvalidEntityTypeError(ReccmpCsvParserError):
+    """The entity type string did not match any of our allowed values."""
+
+
 class CsvNoDelimiterError(ReccmpCsvParserError):
     """No obvious delimiter on the first line."""
 
 
-CsvValueOptions = int | str | bool
-CsvValuesType = dict[str, CsvValueOptions]
+CsvValueOptions = int | str | bool | EntityType
+
+
+class CsvValuesType(TypedDict):
+    type: NotRequired[EntityType]
+    name: NotRequired[str]
+    size: NotRequired[int]
+    skip: NotRequired[bool]
+    symbol: NotRequired[str]
 
 
 def _boolify(text: str) -> bool:
@@ -39,8 +52,26 @@ def _boolify(text: str) -> bool:
     return text.strip().lower() not in ("false", "off", "no", "0", "")
 
 
+_entity_type_map = {
+    "function": EntityType.FUNCTION,
+    "global": EntityType.DATA,
+    "string": EntityType.STRING,
+    "float": EntityType.FLOAT,
+    "vtable": EntityType.VTABLE,
+}
+
+
+def _typeify(text: str) -> EntityType:
+    """Text to EntityType enum conversion"""
+    name = text.strip().lower()
+    try:
+        return _entity_type_map[name]
+    except KeyError as ex:
+        raise CsvInvalidEntityTypeError(name) from ex
+
+
 def _csv_preprocess(lines: Iterable[str]) -> Iterator[str]:
-    """Pre-processing of CSV file."""
+    """Remove comments and blank lines so we have an easier time parsing the CSV."""
     for line in lines:
         strip = line.strip()
         # Skip comment lines
@@ -54,18 +85,32 @@ def _csv_preprocess(lines: Iterable[str]) -> Iterator[str]:
         yield line
 
 
-def _convert_attrs(
-    values: Iterable[tuple[str, str]],
-) -> Iterator[tuple[str, CsvValueOptions]]:
+def _convert_attrs(values: Iterable[tuple[str, str]]) -> CsvValuesType:
     """Both a filter and a conversion step for the row values.
     For the incoming iterable of key/value pairs, only output the ones we want set
     in the reccmp database. Some keys have their value converted to a different type."""
+    output: CsvValuesType = {}
+
     for key, value in values:
         if key == "symbol":
-            yield (key, value)
+            output["symbol"] = value
 
-        if key == "skip":
-            yield (key, _boolify(value))
+        # TODO: Redirect 'label' to 'name' for compatibility.
+        # In the future 'label' will be the not-necessarily-unique identifier
+        # and 'name' will be the disambiguated string displayed in the asm listing.
+        if key == "label":
+            output["name"] = value
+
+        if key == "size":
+            output["size"] = int(value)
+
+        if key == "type":
+            output["type"] = _typeify(value)
+
+        if key in ("report_skip", "report.skip", "skip"):
+            output["skip"] = _boolify(value)
+
+    return output
 
 
 def _csv_convert(addr_key: str, row: dict[str, str]) -> tuple[int, CsvValuesType]:
@@ -77,8 +122,7 @@ def _csv_convert(addr_key: str, row: dict[str, str]) -> tuple[int, CsvValuesType
     except ValueError as ex:
         raise CsvInvalidAddressError from ex
 
-    attrs = list(_convert_attrs(row.items()))
-    return (addr, dict(attrs))
+    return (addr, _convert_attrs(row.items()))
 
 
 def csv_parse(lines: str | Iterable[str]) -> Iterator[tuple[int, CsvValuesType]]:
@@ -87,6 +131,9 @@ def csv_parse(lines: str | Iterable[str]) -> Iterator[tuple[int, CsvValuesType]]
         lines = lines.split("\n")
 
     preprocessed = list(_csv_preprocess(lines))
+
+    # We expect lower-case keys. Convert the first line so the dicts returned by the csv reader will match.
+    preprocessed[0] = preprocessed[0].lower()
 
     try:
         # Use the first line (only) to find the delimiter

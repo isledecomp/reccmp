@@ -1,11 +1,13 @@
 from textwrap import dedent
 import pytest
+from reccmp.isledecomp.types import EntityType
 from reccmp.isledecomp.compare.csv import (
     csv_parse,
     CsvNoAddressError,
     CsvMultipleAddressError,
     CsvInvalidAddressError,
     CsvNoDelimiterError,
+    CsvInvalidEntityTypeError,
 )
 
 
@@ -255,6 +257,45 @@ def test_address_repeated():
             dedent(
                 """\
                 addr|skip
+                1000|1
+                1000|0
+            """
+            )
+        )
+    ]
+
+    assert values == [(0x1000, {"skip": True}), (0x1000, {"skip": False})]
+
+
+def test_type():
+    """Should convert the type column to the EntityType enum."""
+
+    # Fail if the user's string doesn't resolve to one of our types.
+    with pytest.raises(CsvInvalidEntityTypeError):
+        list(csv_parse("address|type\n1234|hello"))
+
+    values = list(csv_parse("address|type\n1234|function\n2345|global"))
+
+    assert values == [
+        (0x1234, {"type": EntityType.FUNCTION}),
+        (0x2345, {"type": EntityType.DATA}),
+    ]
+
+    # Should allow mixed case.
+    values = list(csv_parse("address|type\n1234|FUNCTION"))
+
+    assert values == [
+        (0x1234, {"type": EntityType.FUNCTION}),
+    ]
+
+
+def test_header_case():
+    """Should allow mixed/upper/lower case for header line."""
+    values = [
+        *csv_parse(
+            dedent(
+                """\
+                ADDR|SKIP
                 1000|1
                 1000|0
             """
