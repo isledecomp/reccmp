@@ -68,6 +68,10 @@ class ProjectFileTarget(BaseModel):
         validation_alias=AliasChoices("source-root", "source_root")
     )
     hash: Hash
+    data_sources: list[Path] = Field(
+        validation_alias=AliasChoices("data-sources", "data_sources"),
+        default_factory=list,
+    )
     ghidra: YmlGhidraConfig = Field(default_factory=YmlGhidraConfig.default)
     report: YmlReportConfig = Field(default_factory=YmlReportConfig.default)
 
