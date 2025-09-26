@@ -92,6 +92,10 @@ def _convert_attrs(values: Iterable[tuple[str, str]]) -> CsvValuesType:
     output: CsvValuesType = {}
 
     for key, value in values:
+        # Skip any blank.
+        if not value:
+            continue
+
         if key == "symbol":
             output["symbol"] = value
 

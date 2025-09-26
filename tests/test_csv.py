@@ -120,7 +120,6 @@ def test_should_output_bool():
                 3000|no
                 4000|FALSE
                 5000|0
-                6000|
             """
             )
         )
@@ -137,9 +136,6 @@ def test_should_output_bool():
     assert skip_map[0x3000] is False
     assert skip_map[0x4000] is False
     assert skip_map[0x5000] is False
-
-    # Empty string considered false
-    assert skip_map[0x6000] is False
 
 
 def test_ignore_blank_lines():
@@ -304,3 +300,29 @@ def test_header_case():
     ]
 
     assert values == [(0x1000, {"skip": True}), (0x1000, {"skip": False})]
+
+
+def test_ignore_empty_values():
+    """If a field has no value, we should not put anything in the output dict."""
+    values = list(
+        csv_parse(
+            dedent(
+                """\
+            address|type|label|size|skip
+            1234||hello||
+            1234|||5|
+            1234|function|||
+            1234||||
+            """
+            )
+        )
+    )
+
+    assert values == [
+        (0x1234, {"name": "hello"}),
+        (0x1234, {"size": 5}),
+        (0x1234, {"type": EntityType.FUNCTION}),
+        # We should still return an empty dict if the row is empty.
+        # The caller can discard this if they want.
+        (0x1234, {}),
+    ]
