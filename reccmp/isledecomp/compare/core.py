@@ -427,8 +427,10 @@ class Compare:
             with open(path, "r", encoding="utf-8") as f:
                 # TODO: Aborts on any error instead of skipping a row where this is possible
                 rows = list(csv_parse(f))
-        except (FileNotFoundError, ReccmpCsvParserError):
-            logger.error("Failed to parse csv file %s", str(path))
+        except (FileNotFoundError, ReccmpCsvParserError) as ex:
+            logger.error(
+                "Failed to parse csv file %s (%s)", str(path), ex.__class__.__name__
+            )
             return
 
         with self._db.batch() as batch:
