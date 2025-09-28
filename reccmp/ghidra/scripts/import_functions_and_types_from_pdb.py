@@ -23,7 +23,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from reccmp.ghidra.importer.headers import *  # pylint: disable=wildcard-import # these are just for headers
+    # builtins that are available on the root level of scripts
+    from ghidra.ghidra_builtins import *  # pyright: ignore[reportWildcardImportFromLibrary] # pylint: disable=wildcard-import # these are just for headers
 
 ####################################################
 # Global settings for the Ghidrathon import script #
@@ -179,7 +180,7 @@ def reload_module(module: str):
 
 
 def main():
-    api = FlatProgramAPI(currentProgram())
+    api = FlatProgramAPI(currentProgram(), getMonitor())
 
     target = find_target(api)
 

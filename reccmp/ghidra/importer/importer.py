@@ -8,7 +8,6 @@ from typing import Callable
 from functools import partial
 
 from ghidra.program.flatapi import FlatProgramAPI
-from ghidra.util.exception import CancelledException
 
 from reccmp.isledecomp.compare.core import Compare
 from reccmp.project.detect import RecCmpTarget
@@ -77,13 +76,6 @@ def _do_with_error_handling(step_name: str, action: Callable[[], None]):
         _log_and_track_failure(step_name, e)
     except RuntimeError as e:
         cause = e.args[0]
-        if CancelledException is not None and isinstance(cause, CancelledException):
-            # TODO: This looks wrong - should abort
-
-            # let Ghidra's CancelledException pass through
-            logging.critical("Import aborted by the user.")
-            return
-
         _log_and_track_failure(step_name, cause, unexpected=True)
         logger.error(traceback.format_exc())
     except Exception as e:  # pylint: disable=broad-exception-caught
@@ -109,6 +101,8 @@ def _do_execute_import(
 
     logger.info("Importing globals...")
     for glob in extraction.compare.get_variables():
+        api.getMonitor().checkCancelled()
+
         _do_with_error_handling(
             glob.name or hex(glob.orig_addr),
             partial(
@@ -122,6 +116,8 @@ def _do_execute_import(
     ]
 
     for pdb_func in pdb_functions:
+        api.getMonitor().checkCancelled()
+
         func_name = pdb_func.match_info.name
         orig_addr = pdb_func.match_info.orig_addr
         if orig_addr in ignore_functions:
