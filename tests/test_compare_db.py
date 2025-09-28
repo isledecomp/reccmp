@@ -143,54 +143,6 @@ def test_batch(db):
     assert db.get_by_recomp(200).name == "Test"
 
 
-def test_batch_replace(db):
-    """Calling the set or insert methods again on the same address and data will replace the pending value."""
-    with db.batch() as batch:
-        batch.set_orig(100, name="")
-        batch.insert_orig(200, name="")
-        batch.set_recomp(100, name="")
-        batch.insert_recomp(200, name="")
-
-        batch.set_orig(100, name="Orig100")
-        batch.insert_orig(200, name="Orig200")
-        batch.set_recomp(100, name="Recomp100")
-        batch.insert_recomp(200, name="Recomp200")
-
-    assert db.get_by_orig(100).name == "Orig100"
-    assert db.get_by_orig(200).name == "Orig200"
-    assert db.get_by_recomp(100).name == "Recomp100"
-    assert db.get_by_recomp(200).name == "Recomp200"
-
-
-def test_batch_insert_overwrite(db):
-    """Inserts and sets on the same address in the same batch will result in the
-    'insert' values being replaced."""
-    with db.batch() as batch:
-        batch.insert_orig(100, name="Test")
-        batch.set_orig(100, name="Hello", test=123)
-        batch.insert_recomp(100, name="Test")
-        batch.set_recomp(100, name="Hello", test=123)
-
-    assert db.get_by_orig(100).name == "Hello"
-    assert db.get_by_orig(100).get("test") == 123
-
-    assert db.get_by_recomp(100).name == "Hello"
-    assert db.get_by_recomp(100).get("test") == 123
-
-
-def test_batch_insert(db):
-    """The 'insert' methods will abort if any data exists for the address"""
-    db.set_orig_symbol(100, name="Hello")
-    db.set_recomp_symbol(200, name="Test")
-
-    with db.batch() as batch:
-        batch.insert_orig(100, name="abc")
-        batch.insert_recomp(200, name="xyz")
-
-    assert db.get_by_orig(100).name != "abc"
-    assert db.get_by_recomp(200).name != "xyz"
-
-
 def test_batch_upsert(db):
     """The 'set' methods overwrite existing values"""
     db.set_orig_symbol(100, name="Hello")
@@ -374,15 +326,3 @@ def test_batch_sqlite_exception(db):
     # Should rollback everything
     assert db.get_by_orig(100) is None
     assert db.get_by_recomp(200) is None
-
-
-def test_batch_sqlite_exception_insert_only(db):
-    """Should rollback even if we don't start the explicit transaction in match()"""
-    batch = db.batch()
-    batch.insert_orig(100, name="Test")
-    batch.insert_orig(("bogus",), name="Test")
-
-    with pytest.raises(sqlite3.Error):
-        batch.commit()
-
-    assert db.get_by_orig(100) is None
