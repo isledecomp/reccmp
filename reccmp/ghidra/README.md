@@ -61,9 +61,5 @@ Since it is not possible to configure any script parameters in Ghidra, the corre
 
 ## Development
 
-- Type hints for Ghidra (optional): Download a recent release from <https://github.com/VDOO-Connected-Trust/ghidra-pyi-generator>,
-    unpack it somewhere, and `pip install` that directory in this virtual environment. This provides types and headers for Python.
-    Be aware that some of these files contain errors - in particular, `from typing import overload` seems to be missing everywhere, leading to spurious type errors.
-  - <https://pypi.org/project/ghidra-stubs/> may be a better alternative which has not been tested yet.
 - Note that when running the scripts via Ghidrathon, imported modules persist across multiple runs of the script (see also[this issue](https://github.com/mandiant/Ghidrathon/issues/103)).
     If you indend to modify an imported library, you have to use `import importlib; importlib.reload(${library})` or restart Ghidra for your changes to have any effect. Unfortunately, even that is not perfectly reliable, so you may still have to restart Ghidra for some `reccmp` code changes to be applied.
