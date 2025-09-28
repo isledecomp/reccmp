@@ -46,8 +46,8 @@ def test_multiple_address_column():
 def test_value_includes_delimiter():
     """If the value contains the delimiter, we can still parse it correctly
     if the value is quoted. This is a feature of the python csv module."""
-    values = [
-        *csv_parse(
+    values = list(
+        csv_parse(
             dedent(
                 """\
         address,symbol
@@ -55,15 +55,15 @@ def test_value_includes_delimiter():
     """
             )
         )
-    ]
+    )
 
     assert values == [(0x1000, {"symbol": "hello,world"})]
 
 
 def test_ignore_columns():
     """We only parse certain columns that correspond to attribute names in the database."""
-    values = [
-        *csv_parse(
+    values = list(
+        csv_parse(
             dedent(
                 """\
         address|symbol|test
@@ -71,7 +71,7 @@ def test_ignore_columns():
     """
             )
         )
-    ]
+    )
 
     assert values == [(0x1000, {"symbol": "hello"})]
 
@@ -93,8 +93,8 @@ def test_address_not_hex():
 
 def test_too_many_columns():
     """Should ignore extra values in a row."""
-    values = [
-        *csv_parse(
+    values = list(
+        csv_parse(
             dedent(
                 """\
         addr|symbol
@@ -102,7 +102,7 @@ def test_too_many_columns():
     """
             )
         )
-    ]
+    )
 
     assert values == [(0x1000, {"symbol": "hello"})]
 
@@ -127,8 +127,8 @@ def test_should_output_bool():
     """Return bool for certain column values, with some flexibility around possible text values."""
 
     # Using "skip" as an example of a columm where we convert from str to bool:
-    values = [
-        *csv_parse(
+    values = list(
+        csv_parse(
             dedent(
                 """\
                 addr|skip
@@ -140,7 +140,7 @@ def test_should_output_bool():
             """
             )
         )
-    ]
+    )
 
     # To make the following code cleaner
     skip_map = {addr: row["skip"] for addr, row in values}
@@ -182,8 +182,8 @@ def test_bool_with_all_whitespace():
 def test_ignore_blank_lines():
     """Parsing should ignore blank lines.
     n.b. make sure the triple quote string and dedent() remove leading spaces."""
-    values = [
-        *csv_parse(
+    values = list(
+        csv_parse(
             dedent(
                 """\
 
@@ -198,7 +198,7 @@ def test_ignore_blank_lines():
             """
             )
         )
-    ]
+    )
 
     assert values == [
         (0x1000, {"symbol": "test"}),
@@ -209,8 +209,8 @@ def test_ignore_blank_lines():
 
 def test_ignore_comments():
     """We ignore any line starting with // or #."""
-    values = [
-        *csv_parse(
+    values = list(
+        csv_parse(
             dedent(
                 """\
                 # Test CSV file
@@ -221,15 +221,15 @@ def test_ignore_comments():
             """
             )
         )
-    ]
+    )
 
     assert values == [(0x2000, {"symbol": "test"})]
 
 
 def test_tab_delimiter():
     """We support tab as an option for delimiter. (It is not covered in the other tests.)"""
-    values = [
-        *csv_parse(
+    values = list(
+        csv_parse(
             dedent(
                 """\
                 addr\tsymbol
@@ -239,7 +239,7 @@ def test_tab_delimiter():
             """
             )
         )
-    ]
+    )
 
     assert values == [
         (0x1000, {"symbol": "test"}),
@@ -257,7 +257,7 @@ def test_emulate_file_reads():
     file = iter(
         ["# Comment\n", "\n", "addr|symbol\n", "\n", "1000|test\n", "\n", "2000|test\n"]
     )
-    values = [*csv_parse(file)]
+    values = list(csv_parse(file))
 
     assert values == [
         (0x1000, {"symbol": "test"}),
@@ -269,8 +269,8 @@ def test_address_not_first():
     """Since the address is the unique id for the annotation, it will probably appear first in most cases.
     However, this is not required."""
 
-    values = [
-        *csv_parse(
+    values = list(
+        csv_parse(
             dedent(
                 """\
                 symbol|skip|addr
@@ -279,7 +279,7 @@ def test_address_not_first():
             """
             )
         )
-    ]
+    )
 
     addrs = [addr for addr, _ in values]
     assert addrs == [0x1000, 0x2000]
@@ -289,8 +289,8 @@ def test_address_repeated():
     """The address can appear more than once and we will parse it correctly.
     It's up to the caller to decide how to handle this."""
 
-    values = [
-        *csv_parse(
+    values = list(
+        csv_parse(
             dedent(
                 """\
                 addr|skip
@@ -299,7 +299,7 @@ def test_address_repeated():
             """
             )
         )
-    ]
+    )
 
     assert values == [(0x1000, {"skip": True}), (0x1000, {"skip": False})]
 
@@ -328,8 +328,8 @@ def test_type():
 
 def test_header_case():
     """Should allow mixed/upper/lower case for header line."""
-    values = [
-        *csv_parse(
+    values = list(
+        csv_parse(
             dedent(
                 """\
                 ADDR|SKIP
@@ -338,7 +338,7 @@ def test_header_case():
             """
             )
         )
-    ]
+    )
 
     assert values == [(0x1000, {"skip": True}), (0x1000, {"skip": False})]
 
