@@ -11,17 +11,31 @@ from typing_extensions import NotRequired, TypedDict
 from reccmp.isledecomp.types import EntityType
 
 
-class ReccmpCsvParserError(Exception):
-    """Catch-all for csv parsing errors."""
+# Fatal errors:
 
 
-class CsvNoAddressError(ReccmpCsvParserError):
-    """This row does not have an address attribute."""
+class ReccmpCsvFatalParserError(Exception):
+    """Cannot return even a single row from this document."""
 
 
-class CsvMultipleAddressError(ReccmpCsvParserError):
-    """This row has more than one address attribute
+class CsvNoAddressError(ReccmpCsvFatalParserError):
+    """This file does not have an address attribute."""
+
+
+class CsvMultipleAddressError(ReccmpCsvFatalParserError):
+    """This file has more than one address attribute
     (and it's not clear which one we should use)."""
+
+
+class CsvNoDelimiterError(ReccmpCsvFatalParserError):
+    """No obvious delimiter on the first line."""
+
+
+# Non-fatal errors:
+
+
+class ReccmpCsvParserError(Exception):
+    """Cannot parse the row in question."""
 
 
 class CsvInvalidAddressError(ReccmpCsvParserError):
@@ -30,10 +44,6 @@ class CsvInvalidAddressError(ReccmpCsvParserError):
 
 class CsvInvalidEntityTypeError(ReccmpCsvParserError):
     """The entity type string did not match any of our allowed values."""
-
-
-class CsvNoDelimiterError(ReccmpCsvParserError):
-    """No obvious delimiter on the first line."""
 
 
 CsvValueOptions = int | str | bool | EntityType
@@ -145,35 +155,51 @@ def _csv_convert(addr_key: str, row: dict[str, str]) -> tuple[int, CsvValuesType
     return (addr, _convert_attrs(row.items()))
 
 
-def csv_parse(lines: str | Iterable[str]) -> Iterator[tuple[int, CsvValuesType]]:
-    """Read each line from the csv file and output each address and its key/value pairs."""
-    if isinstance(lines, str):
-        lines = lines.split("\n")
+class ReccmpCsvReader:
+    addr_key: str
+    reader: csv.DictReader
 
-    preprocessed = list(_csv_preprocess(lines))
+    def __init__(self, lines: str | Iterable[str]) -> None:
+        """Reads each line from the csv file and outputs each address and its key/value pairs."""
+        if isinstance(lines, str):
+            lines = lines.split("\n")
 
-    # We expect lower-case keys. Convert the first line so the dicts returned by the csv reader will match.
-    preprocessed[0] = preprocessed[0].lower()
+        preprocessed = list(_csv_preprocess(lines))
 
-    try:
-        # Use the first line (only) to find the delimiter
-        dialect = csv.Sniffer().sniff(preprocessed[0], delimiters="|,\t")
-    except PythonCsvError as ex:
-        raise CsvNoDelimiterError from ex
+        # We expect lower-case keys. Convert the first line so the dicts returned by the csv reader will match.
+        preprocessed[0] = preprocessed[0].lower()
 
-    reader = csv.DictReader(preprocessed, dialect=dialect)
+        try:
+            # Use the first line (only) to find the delimiter
+            dialect = csv.Sniffer().sniff(preprocessed[0], delimiters="|,\t")
+        except PythonCsvError as ex:
+            raise CsvNoDelimiterError from ex
 
-    # Could this happen?
-    if reader.fieldnames is None:
-        raise CsvNoDelimiterError
+        self.reader = csv.DictReader(preprocessed, dialect=dialect)
 
-    # We support multiple options for address key, but exactly one must appear.
-    addr_keys = [key for key in reader.fieldnames if key in ("address", "addr")]
-    if not addr_keys:
-        raise CsvNoAddressError
+        # Could this happen?
+        if self.reader.fieldnames is None:
+            raise CsvNoDelimiterError
 
-    if len(addr_keys) > 1:
-        raise CsvMultipleAddressError
+        # We support multiple options for address key, but exactly one must appear.
+        addr_keys = [
+            key for key in self.reader.fieldnames if key in ("address", "addr")
+        ]
+        if not addr_keys:
+            raise CsvNoAddressError
 
-    for row in reader:
-        yield _csv_convert(addr_keys[0], row)
+        if len(addr_keys) > 1:
+            raise CsvMultipleAddressError
+
+        self.addr_key = addr_keys[0]
+
+    def __iter__(self) -> "ReccmpCsvReader":
+        return self
+
+    def __next__(self) -> tuple[int, CsvValuesType]:
+        row = next(self.reader)
+        return _csv_convert(self.addr_key, row)
+
+
+def csv_parse(lines: str | Iterable[str]) -> ReccmpCsvReader:
+    return ReccmpCsvReader(lines)

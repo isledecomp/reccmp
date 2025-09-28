@@ -43,7 +43,7 @@ from .match_msvc import (
     match_strings,
     match_ref,
 )
-from .csv import ReccmpCsvParserError, csv_parse
+from .csv import ReccmpCsvParserError, ReccmpCsvFatalParserError, csv_parse
 from .db import EntityDb, ReccmpEntity, ReccmpMatch, entity_name_from_string
 from .diff import DiffReport, combined_diff
 from .lines import LinesDb
@@ -423,11 +423,28 @@ class Compare:
                 )
 
     def _load_csv(self, path: Path):
+        rows = []
+
         try:
             with open(path, "r", encoding="utf-8") as f:
-                # TODO: Aborts on any error instead of skipping a row where this is possible
-                rows = list(csv_parse(f))
-        except (FileNotFoundError, ReccmpCsvParserError) as ex:
+                rowgen = csv_parse(f)
+                while True:
+                    try:
+                        rows.append(next(rowgen))
+                    except StopIteration:
+                        break
+                    except ReccmpCsvParserError as ex:
+                        logger.error(
+                            "Error in csv file %s (%s)",
+                            str(path),
+                            ex.__class__.__name__,
+                        )
+                        continue
+
+        except FileNotFoundError:
+            logger.error("Could not open csv file %s", str(path))
+            return
+        except ReccmpCsvFatalParserError as ex:
             logger.error(
                 "Failed to parse csv file %s (%s)", str(path), ex.__class__.__name__
             )

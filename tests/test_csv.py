@@ -8,6 +8,7 @@ from reccmp.isledecomp.compare.csv import (
     CsvInvalidAddressError,
     CsvNoDelimiterError,
     CsvInvalidEntityTypeError,
+    ReccmpCsvParserError,
 )
 
 
@@ -391,4 +392,38 @@ def test_function_type_side_effects():
         (0x1234, {"type": EntityType.FUNCTION}),
         (0x1234, {"type": EntityType.FUNCTION, "library": True}),
         (0x1234, {"type": EntityType.FUNCTION, "stub": True}),
+    ]
+
+
+def test_continuable():
+    """Make sure we can continue parsing after handling a non-fatal error."""
+    text = dedent(
+        """\
+        address|type
+        5555|libary
+        1234|function
+        zzzz|function
+        4321|template
+        """
+    )
+
+    # Should throw for "libary"
+    with pytest.raises(ReccmpCsvParserError):
+        list(csv_parse(text))
+
+    # Parse the same text but catch the exception
+    values = []
+    reader = csv_parse(text)
+    while True:
+        try:
+            values.append(next(reader))
+        except StopIteration:
+            break
+        except ReccmpCsvParserError:
+            continue
+
+    # Should exclude the two failed values and return the ones we can parse.
+    assert values == [
+        (0x1234, {"type": EntityType.FUNCTION}),
+        (0x4321, {"type": EntityType.FUNCTION}),
     ]
