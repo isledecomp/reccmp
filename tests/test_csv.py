@@ -326,3 +326,69 @@ def test_ignore_empty_values():
         # The caller can discard this if they want.
         (0x1234, {}),
     ]
+
+
+def test_type_function_aliases():
+    """All these options for "type" resolve to EntityType.FUNCTION"""
+    values = list(
+        csv_parse(
+            dedent(
+                """\
+            address|type
+            1234|function
+            1234|library
+            1234|stub
+            1234|template
+            1234|synthetic
+            """
+            )
+        )
+    )
+
+    assert all(row["type"] == EntityType.FUNCTION for _, row in values)
+
+
+def test_type_field_conversion():
+    """The string in the "type" field is converted to the EntityType enum.
+    This allows for some flexibility in the supported values."""
+    values = list(
+        csv_parse(
+            dedent(
+                """\
+            address|type
+            1234|function
+            1234|FUNCTION
+            1234|FuNcTiOn
+            1234|  function
+            1234|function  
+            1234|"  function  "
+            """
+            )
+        )
+    )
+
+    assert all(row["type"] == EntityType.FUNCTION for _, row in values)
+
+
+def test_function_type_side_effects():
+    """Should set additional fields if the CSV type field is LIBRARY or STUB.
+    Both are aliases for FUNCTION, so use this enum value in the final "type" attribute.
+    """
+    values = list(
+        csv_parse(
+            dedent(
+                """\
+            address|type
+            1234|function
+            1234|library
+            1234|stub
+            """
+            )
+        )
+    )
+
+    assert values == [
+        (0x1234, {"type": EntityType.FUNCTION}),
+        (0x1234, {"type": EntityType.FUNCTION, "library": True}),
+        (0x1234, {"type": EntityType.FUNCTION, "stub": True}),
+    ]

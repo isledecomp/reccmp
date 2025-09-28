@@ -46,6 +46,10 @@ class CsvValuesType(TypedDict):
     skip: NotRequired[bool]
     symbol: NotRequired[str]
 
+    # Set implicitly via type for now
+    stub: NotRequired[bool]
+    library: NotRequired[bool]
+
 
 def _boolify(text: str) -> bool:
     """str to bool conversion. If the string is not in the exclusion list, resolve to True."""
@@ -53,7 +57,13 @@ def _boolify(text: str) -> bool:
 
 
 _entity_type_map = {
+    # Aliases for FUNCTION used in code annotations:
     "function": EntityType.FUNCTION,
+    "template": EntityType.FUNCTION,
+    "synthetic": EntityType.FUNCTION,
+    "library": EntityType.FUNCTION,
+    "stub": EntityType.FUNCTION,
+    # Other types:
     "global": EntityType.DATA,
     "string": EntityType.STRING,
     "float": EntityType.FLOAT,
@@ -61,9 +71,8 @@ _entity_type_map = {
 }
 
 
-def _typeify(text: str) -> EntityType:
+def _typeify(name: str) -> EntityType:
     """Text to EntityType enum conversion"""
-    name = text.strip().lower()
     try:
         return _entity_type_map[name]
     except KeyError as ex:
@@ -106,7 +115,17 @@ def _convert_attrs(values: Iterable[tuple[str, str]]) -> CsvValuesType:
             output["size"] = int(value)
 
         if key == "type":
-            output["type"] = _typeify(value)
+            type_name = value.strip().lower()
+            output["type"] = _typeify(type_name)
+
+            # To imitate the handling for code annotations, set these
+            # extra attribtues based on the FUNCTION alias that was used.
+            if type_name == "stub":
+                output["stub"] = True
+
+            # Support --no-lib option (#206)
+            if type_name == "library":
+                output["library"] = True
 
         if key in ("report_skip", "report.skip", "skip"):
             output["skip"] = _boolify(value)
