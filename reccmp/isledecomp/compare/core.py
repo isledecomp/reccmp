@@ -440,9 +440,9 @@ class Compare:
                         break
                     except ReccmpCsvParserError as ex:
                         logger.error(
-                            "Error in csv file %s (%s)",
+                            "In csv file %s: %s",
                             str(path),
-                            ex.__class__.__name__,
+                            str(ex),
                         )
                         continue
 

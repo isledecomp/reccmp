@@ -37,6 +37,16 @@ class CsvNoDelimiterError(ReccmpCsvFatalParserError):
 class ReccmpCsvParserError(Exception):
     """Cannot parse the row in question."""
 
+    illegal_value: str
+    line_number: int
+
+    def __init__(self, value: str):
+        self.illegal_value = value
+        self.line_number = -1
+
+    def __str__(self) -> str:
+        return f"{self.__class__.__name__}: line {self.line_number}, '{self.illegal_value}'"
+
 
 class CsvInvalidAddressError(ReccmpCsvParserError):
     """The address value is not a valid hex number."""
@@ -89,9 +99,10 @@ def _typeify(name: str) -> EntityType:
         raise CsvInvalidEntityTypeError(name) from ex
 
 
-def _csv_preprocess(lines: Iterable[str]) -> Iterator[str]:
-    """Remove comments and blank lines so we have an easier time parsing the CSV."""
-    for line in lines:
+def _csv_preprocess(lines: Iterable[str]) -> Iterator[tuple[int, str]]:
+    """Remove comments and blank lines so we have an easier time parsing the CSV.
+    Include the original line number so that we can reference it in error messages."""
+    for i, line in enumerate(lines, start=1):
         strip = line.strip()
         # Skip comment lines
         if strip.startswith("#") or strip.startswith("//"):
@@ -101,7 +112,7 @@ def _csv_preprocess(lines: Iterable[str]) -> Iterator[str]:
         if strip == "":
             continue
 
-        yield line
+        yield (i, line)
 
 
 def _convert_attrs(values: Iterable[tuple[str, str]]) -> CsvValuesType:
@@ -154,7 +165,7 @@ def _csv_convert(addr_key: str, row: dict[str, str]) -> tuple[int, CsvValuesType
         addr_value = row[addr_key]
         addr = int(addr_value, 16)
     except ValueError as ex:
-        raise CsvInvalidAddressError from ex
+        raise CsvInvalidAddressError(addr_value) from ex
 
     return (addr, _convert_attrs(row.items()))
 
@@ -162,16 +173,20 @@ def _csv_convert(addr_key: str, row: dict[str, str]) -> tuple[int, CsvValuesType
 class ReccmpCsvReader:
     addr_key: str
     reader: csv.DictReader
+    line_number_map: dict[int, int]
 
     def __init__(self, lines: str | Iterable[str]) -> None:
         """Reads each line from the csv file and outputs each address and its key/value pairs."""
         if isinstance(lines, str):
             lines = lines.split("\n")
 
-        preprocessed = list(_csv_preprocess(lines))
+        # Split list of (line_number, line) into (list of line_numbers, list of lines)
+        select_line_numbers, select_lines = zip(*_csv_preprocess(lines))
+        self.line_number_map = dict(enumerate(select_line_numbers, start=1))
 
         # We expect lower-case keys. Convert the first line so the dicts returned by the csv reader will match.
-        preprocessed[0] = preprocessed[0].lower()
+        # zip returns a tuple so we can't modify the first value in-place.
+        preprocessed = (select_lines[0].lower(), *select_lines[1:])
 
         try:
             # Use the first line (only) to find the delimiter
@@ -202,7 +217,14 @@ class ReccmpCsvReader:
 
     def __next__(self) -> tuple[int, CsvValuesType]:
         row = next(self.reader)
-        return _csv_convert(self.addr_key, row)
+        line_number = self.line_number_map.get(self.reader.line_num, -1)
+        try:
+            return _csv_convert(self.addr_key, row)
+        except ReccmpCsvParserError as ex:
+            # Set the line number here so we don't have to pass it down to
+            # every function that could raise an exception.
+            ex.line_number = line_number
+            raise ex
 
 
 def csv_parse(lines: str | Iterable[str]) -> ReccmpCsvReader:

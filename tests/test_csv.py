@@ -467,3 +467,39 @@ def test_continuable():
         (0x1234, {"type": EntityType.FUNCTION}),
         (0x4321, {"type": EntityType.FUNCTION}),
     ]
+
+
+def test_exception_details():
+    """Should capture the original line number (before removing blank lines)
+    and the value that led to the exception and report both."""
+    text = dedent(
+        """\
+        address|type
+
+        5555|libary
+        1234|function
+
+        zzzz|function
+        4321|template
+        """
+    )
+
+    count = 0
+    reader = csv_parse(text)
+    while True:
+        try:
+            next(reader)
+        except StopIteration:
+            break
+        except CsvInvalidAddressError as ex:
+            assert ex.illegal_value == "zzzz"
+            assert ex.line_number == 6
+            count += 1
+            continue
+        except CsvInvalidEntityTypeError as ex:
+            assert ex.illegal_value == "libary"
+            assert ex.line_number == 3
+            count += 1
+            continue
+
+    assert count == 2
