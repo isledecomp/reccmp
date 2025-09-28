@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING
 
-from reccmp.ghidra_scripts.lego_util.entity_names import NamespacePath
+from .entity_names import NamespacePath
 
 # Disable spurious warnings in vscode / pylance
 # pyright: reportMissingModuleSource=false

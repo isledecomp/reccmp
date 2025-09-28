@@ -1,0 +1,19 @@
+services:
+  ghidra-server:
+    image: blacktop/ghidra
+    command: server
+    environment:
+      - MAXMEM=500M
+      - GHIDRA_IP=127.0.0.1
+      - GHIDRA_USERS=root
+      # Password is "changeme" after first startup. You are prompted to change the password
+    ports:
+      - 13100-13102:13100-13102
+    volumes:
+      - ./server.conf:/ghidra/server/server.conf
+      - ./server-repos:/repos
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 500M
