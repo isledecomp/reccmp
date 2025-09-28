@@ -61,7 +61,7 @@ def get_repository_root():
 def find_and_add_venv_to_pythonpath():
     path = Path(__file__).resolve()
 
-    # Add the virtual environment if we are in one, e.g. `.venv/Lib/site-packages/reccmp/ghidra_scripts/import_[...].py`
+    # Add the virtual environment if we are in one, e.g. `.venv/Lib/site-packages/reccmp/ghidra/scripts/import_[...].py`
     while not path.is_mount():
         if path.name == "site-packages":
             add_python_path(path)

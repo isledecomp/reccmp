@@ -109,7 +109,7 @@ def shared_repository_program(args: argparse.Namespace):
     """The code is partially inspired by `HeadlessAnalyzer.java` from Ghidra."""
 
     # pylint:disable-next=import-error
-    from java.lang import Object  # type:ignore[import-not-found]
+    from java.lang import Object  # type: ignore[import-not-found]
     from ghidra.base.project import GhidraProject
     from ghidra.framework.client import ClientUtil, PasswordClientAuthenticator
     from ghidra.program.model.listing import Program
@@ -212,12 +212,7 @@ def shared_repository_program(args: argparse.Namespace):
                     create_keep_file,
                 )
 
-                ok_to_upgrade = True  # not sure if this matters
-                dom_file.checkin(
-                    checkin_handler,
-                    ok_to_upgrade,
-                    TaskMonitor.DUMMY,
-                )
+                dom_file.checkin(checkin_handler, TaskMonitor.DUMMY)
 
                 logger.debug("DomainFile checked in successfully.")
 
