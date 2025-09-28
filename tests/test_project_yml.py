@@ -39,3 +39,23 @@ def test_project_with_csv_list():
     )
 
     assert p.targets["TEST"].data_sources == [Path("file0.csv"), Path("file1.csv")]
+
+
+def test_project_data_source_non_csv():
+    """Data source filetype is not limited to .csv, even though we only parse those files at the start."""
+
+    p = ProjectFile.from_str(
+        """\
+        targets:
+            TEST:
+                source-root: test
+                hash:
+                    sha256: test
+                filename: test.exe
+                data-sources:
+                - file0.yml
+                - file1.txt
+        """
+    )
+
+    assert p.targets["TEST"].data_sources == [Path("file0.yml"), Path("file1.txt")]

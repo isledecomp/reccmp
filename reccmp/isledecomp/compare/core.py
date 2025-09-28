@@ -98,6 +98,11 @@ class Compare:
             for ds_file in data_sources:
                 if ds_file.suffix.lower() == ".csv":
                     self._load_csv(ds_file)
+                else:
+                    logger.error(
+                        "Skipped data source file '%s'. If this is csv, please add the extension.",
+                        ds_file,
+                    )
 
         # Match using PDB and annotation data
         match_symbols(self._db, report, truncate=True)
