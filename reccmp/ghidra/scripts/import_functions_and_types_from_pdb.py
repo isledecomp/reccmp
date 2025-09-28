@@ -10,55 +10,52 @@
 # @keybinding
 # @menupath
 # @toolbar
-
-
-# In order to make this code run both within and outside of Ghidra, the import order is rather unorthodox in this file.
-# That is why some of the lints below are disabled.
-
-# pylint: disable=wrong-import-position,ungrouped-imports
-# pylint: disable=undefined-variable # need to disable this one globally because pylint does not understand e.g. `askYesNo()``
+# pylint: disable=undefined-variable # need to disable this one globally because pylint does not understand e.g. `currentProgram()`
 
 # Disable spurious warnings in vscode / pylance
 # pyright: reportMissingModuleSource=false
 
 import importlib
 import json
-import re
 import sys
 import logging
 from pathlib import Path
-import traceback
-from typing import TYPE_CHECKING, Callable
-from functools import partial
-
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from reccmp.ghidra_scripts.lego_util.headers import *  # pylint: disable=wildcard-import # these are just for headers
+    from reccmp.ghidra.importer.headers import *  # pylint: disable=wildcard-import # these are just for headers
+
+####################################################
+# Global settings for the Ghidrathon import script #
+####################################################
+LOG_LEVEL = logging.DEBUG
+VERBOSE = False
 
 
 logger = logging.getLogger(__name__)
 
 
-def reload_module(module: str):
-    """
-    Due to a quirk in Jep (used by Ghidrathon), imported modules persist for the lifetime of the Ghidra process
-    and are not reloaded when relaunching the script. Therefore, in order to facilitate development
-    we force reload all our own modules at startup. See also https://github.com/mandiant/Ghidrathon/issues/103.
-
-    Note that as of 2024-05-30, this remedy does not work perfectly (yet): Some changes in isledecomp are
-    still not detected correctly and require a Ghidra restart to be applied.
-    """
-    importlib.reload(importlib.import_module(module))
+try:
+    from ghidra.program.flatapi import FlatProgramAPI
+except ImportError as importError:
+    logger.error(
+        "Failed to import Ghidra functions. Has this script been launched from Ghidra?"
+    )
+    logger.debug("Precise import error:", exc_info=importError)
 
 
 def add_python_path(path: Path):
     """
-    Scripts in Ghidra are executed from the tools/ghidra_scripts directory. We need to add
+    Scripts in Ghidra are executed from the /reccmp/ghidra/scripts directory. We need to add
     a few more paths to the Python path so we can import the other libraries.
     """
     logger.info("Adding %s to Python Path", path)
     assert path.exists()
     sys.path.insert(1, str(path))
+
+
+def get_repository_root():
+    return Path(__file__).absolute().parent.parent.parent.parent
 
 
 def find_and_add_venv_to_pythonpath():
@@ -74,7 +71,7 @@ def find_and_add_venv_to_pythonpath():
     # Development setup: Running from the reccmp repository. The dependencies must be installed in a venv with name `.venv`.
 
     # This one is needed when the reccmp project is installed in editable mode and we are running directly from the source
-    add_python_path(Path(__file__).parent.parent.parent)
+    add_python_path(get_repository_root())
 
     # Now we add the virtual environment where the dependencies need to be installed
     path = Path(__file__).resolve()
@@ -103,177 +100,24 @@ def setup_logging():
     logger.info("Starting import...")
 
 
-# This script can be run both from Ghidra and as a standalone.
-# In the latter case, only the PDB parser will be used.
 setup_logging()
 find_and_add_venv_to_pythonpath()
-reload_module("reccmp.ghidra_scripts.lego_util.statistics")
-reload_module("reccmp.ghidra_scripts.lego_util.globals")
-from reccmp.ghidra_scripts.lego_util.globals import GLOBALS
-from reccmp.ghidra_scripts.lego_util.types import CompiledRegexReplacements
 
-logging.root.setLevel(GLOBALS.loglevel)
-
-try:
-    from ghidra.program.flatapi import FlatProgramAPI
-    from ghidra.util.exception import CancelledException
-
-    GLOBALS.running_from_ghidra = True
-except ImportError as importError:
-    logger.error(
-        "Failed to import Ghidra functions, doing a dry run for the source code parser. "
-        "Has this script been launched from Ghidra?"
-    )
-    logger.debug("Precise import error:", exc_info=importError)
-
-    GLOBALS.running_from_ghidra = False
-    CancelledException = None
+logging.root.setLevel(LOG_LEVEL)
 
 
-def get_repository_root():
-    return Path(__file__).absolute().parent.parent.parent
-
-
-# We need to quote the types here because they might not exist when running without Ghidra
-def import_function_into_ghidra(
-    api: "FlatProgramAPI",
-    pdb_function: "PdbFunction",
-    type_importer: "PdbTypeImporter",
-    name_substitutions: CompiledRegexReplacements,
-):
-    logger.debug("Start handling function '%s'", pdb_function.match_info.best_name())
-
-    hex_original_address = f"{pdb_function.match_info.orig_addr:x}"
-
-    # Find the Ghidra function at that address
-    ghidra_address = getAddressFactory().getAddress(hex_original_address)
-    # pylint: disable=possibly-used-before-assignment
-    function_importer = PdbFunctionImporter.build(
-        api, pdb_function, type_importer, name_substitutions
-    )
-
-    ghidra_function = getFunctionAt(ghidra_address)
-    if ghidra_function is None:
-        ghidra_function = createFunction(ghidra_address, "temp")
-        assert (
-            ghidra_function is not None
-        ), f"Failed to create function at {ghidra_address}"
-        logger.info("Created new function at %s", ghidra_address)
-
-    if function_importer.matches_ghidra_function(ghidra_function):
-        logger.info(
-            "Skipping function '%s', matches already",
-            function_importer.get_full_name(),
-        )
-        return
-
-    logger.debug(
-        "Modifying function %s at 0x%s",
-        function_importer.get_full_name(),
-        hex_original_address,
-    )
-
-    function_importer.overwrite_ghidra_function(ghidra_function)
-
-    GLOBALS.statistics.functions_changed += 1
-
-
-def do_with_error_handling(step_name: str, action: Callable[[], None]):
-    try:
-        action()
-        GLOBALS.statistics.successes += 1
-    except Lego1Exception as e:
-        log_and_track_failure(step_name, e)
-    except RuntimeError as e:
-        cause = e.args[0]
-        if CancelledException is not None and isinstance(cause, CancelledException):
-            # let Ghidra's CancelledException pass through
-            logging.critical("Import aborted by the user.")
-            return
-
-        log_and_track_failure(step_name, cause, unexpected=True)
-        logger.error(traceback.format_exc())
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        log_and_track_failure(step_name, e, unexpected=True)
-        logger.error(traceback.format_exc())
-
-
-def do_execute_import(
-    extraction: "PdbFunctionExtractor",
-    ignore_types: set[str],
-    ignore_functions: set[int],
-    name_substitutions: list[tuple[str, str]],
-):
-    pdb_functions = extraction.get_function_list()
-
-    if not GLOBALS.running_from_ghidra:
-        logger.info("Completed the dry run outside Ghidra.")
-        return
-
-    api = FlatProgramAPI(currentProgram())
-
-    # pylint: disable=possibly-used-before-assignment
-    type_importer = PdbTypeImporter(api, extraction, ignore_types=ignore_types)
-
-    logger.info("Importing globals...")
-    for glob in extraction.compare.get_variables():
-        do_with_error_handling(
-            glob.name or hex(glob.orig_addr),
-            partial(
-                import_global_into_ghidra, api, extraction.compare, type_importer, glob
-            ),
-        )
-
-    logger.info("Importing functions...")
-    name_substitutions_compiled = [
-        (re.compile(regex), replacement) for regex, replacement in name_substitutions
-    ]
-
-    for pdb_func in pdb_functions:
-        func_name = pdb_func.match_info.name
-        orig_addr = pdb_func.match_info.orig_addr
-        if orig_addr in ignore_functions:
-            logger.info(
-                "Skipping function '%s' at '%s' because it is on the ignore list",
-                func_name,
-                hex(orig_addr),
-            )
-            continue
-
-        do_with_error_handling(
-            func_name or hex(orig_addr),
-            partial(
-                import_function_into_ghidra,
-                api,
-                pdb_func,
-                type_importer,
-                name_substitutions_compiled,
-            ),
-        )
-
-    logger.info("Finished importing functions.")
-
-    logger.info("Importing vftables...")
-    import_vftables_into_ghidra(api, extraction.compare.get_vtables())
-    logger.info("Finished importing vftables.")
-
-
-def log_and_track_failure(
-    step_name: str | None, error: Exception, unexpected: bool = False
-):
-    if GLOBALS.statistics.track_failure_and_tell_if_new(error):
-        logger.error(
-            "%s: %s%s",
-            step_name,
-            "Unexpected error: " if unexpected else "",
-            error,
-            exc_info=error,
-        )
-
-
-def find_target() -> "RecCmpTarget":
+def find_target(api: "FlatProgramAPI") -> "RecCmpTarget":
     """
-    Known issue: In order to use this script, `reccmp-build.yml` must be located in the same directory as `reccmp-project.yml`.
+    Tries to find a `reccmp` project on a parent path of this script file.
+    This can be achieved by installing `reccmp` into a venv inside a decompilation project
+    and having `reccmp-build.yaml` next to the venv directory.
+
+    Inside that `reccmp` project, a target is chosen based on the name of the executable of the current file.
+    Note that the relevant filename is that of the original binary (Ghidra keeps track of that),
+    not what the file is called in the Ghidra project.
+
+    **Known issue**: In order to use this script, `reccmp-build.yml` must be located
+    in the same directory as `reccmp-project.yml`.
     """
 
     project_search_path = Path(__file__).parent
@@ -281,12 +125,10 @@ def find_target() -> "RecCmpTarget":
     try:
         project = RecCmpProject.from_directory(project_search_path)
     except RecCmpProjectNotFoundException as e:
-        # Figure out if we are in a debugging scenario
-        debug_config_file = Path(__file__).parent / "dev_config.json"
+        # Figure out if we are in a dev setup. Using this is e.g. necessary when `reccmp` is installed in editable mode
+        debug_config_file = Path(__file__).parent.parent / "dev_config.json"
         if not debug_config_file.exists():
-            raise RecCmpProjectNotFoundException(
-                f"Cannot find a reccmp project under {project_search_path} (missing {RECCMP_PROJECT_CONFIG}/{RECCMP_BUILD_CONFIG})"
-            ) from e
+            raise e
 
         with debug_config_file.open() as infile:
             debug_config = json.load(infile)
@@ -298,62 +140,60 @@ def find_target() -> "RecCmpTarget":
 
     # Set up logfile next to the project config file
     file_handler = logging.FileHandler(
-        project.project_config_path.parent.joinpath("ghidra_import.log"), mode="w"
+        project.project_config_path.parent / "ghidra_import.log", mode="w"
     )
     file_handler.setFormatter(logging.root.handlers[0].formatter)
     logging.root.addHandler(file_handler)
 
-    if GLOBALS.running_from_ghidra:
-        GLOBALS.target_name = getProgramFile().getName()
+    if api is not None:
+        target_name = api.getProgramFile().getName()
 
     matching_targets = [
         target_id
         for target_id, target in project.targets.items()
-        if target.filename == GLOBALS.target_name
+        if target.filename == target_name
     ]
 
     if not matching_targets:
-        logger.error("No target with file name '%s' is configured", GLOBALS.target_name)
+        logger.error("No target with file name '%s' is configured", target_name)
         sys.exit(1)
     elif len(matching_targets) > 1:
         logger.warning(
             "Found multiple targets for file name '%s'. Using the first one.",
-            GLOBALS.target_name,
+            target_name,
         )
 
     return project.get(matching_targets[0])
 
 
+def reload_module(module: str):
+    """
+    Due to a quirk in Jep (used by Ghidrathon), imported modules persist for the lifetime of the Ghidra process
+    and are not reloaded when relaunching the script. Therefore, in order to facilitate development
+    we force reload all our own modules at startup. See also https://github.com/mandiant/Ghidrathon/issues/103.
+
+    Note that as of 2024-05-30, this remedy does not work perfectly (yet): Some changes in isledecomp are
+    still not detected correctly and require a Ghidra restart to be applied.
+    """
+    importlib.reload(importlib.import_module(module))
+
+
 def main():
-    target = find_target()
+    api = FlatProgramAPI(currentProgram())
+
+    target = find_target(api)
 
     logger.info("Importing file: %s", target.original_path)
 
-    if not GLOBALS.verbose:
+    if not VERBOSE:
         logging.getLogger("isledecomp.bin").setLevel(logging.WARNING)
         logging.getLogger("isledecomp.compare.core").setLevel(logging.WARNING)
         logging.getLogger("isledecomp.compare.db").setLevel(logging.WARNING)
         logging.getLogger("isledecomp.compare.lines").setLevel(logging.WARNING)
         logging.getLogger("isledecomp.cvdump.symbols").setLevel(logging.WARNING)
 
-    logger.info("Starting comparison")
-    isle_compare = IsleCompare.from_target(target)
-    logger.info("Comparison complete.")
-
-    # try to acquire matched functions
-    extractor = PdbFunctionExtractor(isle_compare)
-    try:
-        do_execute_import(
-            extractor,
-            set(target.ghidra_config.ignore_types),
-            set(target.ghidra_config.ignore_functions),
-            target.ghidra_config.name_substitutions,
-        )
-    finally:
-        if GLOBALS.running_from_ghidra:
-            GLOBALS.statistics.log()
-
-        logger.info("Done")
+    import_target_into_ghidra(target, api)
+    logger.info("Done!")
 
 
 # sys.path is not reset after running the script, so we should restore it
@@ -363,45 +203,24 @@ try:
 
     # Packages are imported down here because reccmp's dependencies are only available after the venv was added to the pythonpath
     reload_module("reccmp.project.detect")
-    from reccmp.project.common import RECCMP_BUILD_CONFIG, RECCMP_PROJECT_CONFIG
     from reccmp.project.detect import RecCmpProject, RecCmpTarget
     from reccmp.project.error import RecCmpProjectNotFoundException
 
+    reload_module("reccmp.ghidra.importer.importer")
+    from reccmp.ghidra.importer.importer import import_target_into_ghidra
+
     reload_module("reccmp.isledecomp.compare")
-    from reccmp.isledecomp.compare import Compare as IsleCompare
-
     reload_module("reccmp.isledecomp.compare.db")
-
-    reload_module("reccmp.ghidra_scripts.lego_util.entity_names")
-    reload_module("reccmp.ghidra_scripts.lego_util.exceptions")
-    from reccmp.ghidra_scripts.lego_util.exceptions import Lego1Exception
-
-    reload_module("reccmp.ghidra_scripts.lego_util.pdb_extraction")
-    from reccmp.ghidra_scripts.lego_util.pdb_extraction import (
-        PdbFunctionExtractor,
-        PdbFunction,
-    )
-
-    if GLOBALS.running_from_ghidra:
-        reload_module("reccmp.ghidra_scripts.lego_util.ghidra_helper")
-
-        reload_module("reccmp.ghidra_scripts.lego_util.vtable_importer")
-        from reccmp.ghidra_scripts.lego_util.vtable_importer import (
-            import_vftables_into_ghidra,
-        )
-
-        reload_module("reccmp.ghidra_scripts.lego_util.globals_importer")
-        from reccmp.ghidra_scripts.lego_util.globals_importer import (
-            import_global_into_ghidra,
-        )
-
-        reload_module("reccmp.ghidra_scripts.lego_util.function_importer")
-        from reccmp.ghidra_scripts.lego_util.function_importer import (
-            PdbFunctionImporter,
-        )
-
-        reload_module("reccmp.ghidra_scripts.lego_util.type_importer")
-        from reccmp.ghidra_scripts.lego_util.type_importer import PdbTypeImporter
+    reload_module("reccmp.ghidra.importer.entity_names")
+    reload_module("reccmp.ghidra.importer.exceptions")
+    reload_module("reccmp.ghidra.importer.pdb_extraction")
+    reload_module("reccmp.ghidra.importer.ghidra_helper")
+    reload_module("reccmp.ghidra.importer.vtable_importer")
+    reload_module("reccmp.ghidra.importer.globals_importer")
+    reload_module("reccmp.ghidra.importer.function_importer")
+    reload_module("reccmp.ghidra.importer.type_importer")
+    reload_module("reccmp.ghidra.importer.statistics")
+    reload_module("reccmp.ghidra.importer.globals")
 
     if __name__ == "__main__":
         main()
