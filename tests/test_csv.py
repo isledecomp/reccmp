@@ -107,6 +107,22 @@ def test_too_many_columns():
     assert values == [(0x1000, {"symbol": "hello"})]
 
 
+def test_blank_column_header():
+    """Should ignore a blank column header and its value"""
+    values = list(
+        csv_parse(
+            dedent(
+                """\
+        addr|symbol||type
+        1000|hello|world|function
+    """
+            )
+        )
+    )
+
+    assert values == [(0x1000, {"symbol": "hello", "type": EntityType.FUNCTION})]
+
+
 def test_should_output_bool():
     """Return bool for certain column values, with some flexibility around possible text values."""
 
@@ -137,6 +153,30 @@ def test_should_output_bool():
     assert skip_map[0x3000] is False
     assert skip_map[0x4000] is False
     assert skip_map[0x5000] is False
+
+
+def test_bool_with_whitespace():
+    """Test even greater flexibility for fields that resolve to bool."""
+    values = list(
+        csv_parse(
+            dedent(
+                """\
+                addr|skip
+                1000|  false
+                1000|false  
+                1000|" false "
+            """
+            )
+        )
+    )
+
+    assert (row["skip"] is False for _, row in values)
+
+
+def test_bool_with_all_whitespace():
+    """All whitespace resolves to no-value for a bool column."""
+    values = list(csv_parse("addr|skip\n1000|   "))
+    assert values == [(0x1000, {})]
 
 
 def test_ignore_blank_lines():

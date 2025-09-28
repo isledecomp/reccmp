@@ -111,8 +111,12 @@ def _convert_attrs(values: Iterable[tuple[str, str]]) -> CsvValuesType:
     output: CsvValuesType = {}
 
     for key, value in values:
-        # Skip any blank.
-        if not value:
+        # Skip any value without a column header. (None or empty string)
+        if not key:
+            continue
+
+        # Skip any blank value (including whitespace).
+        if not value.strip():
             continue
 
         if key == "symbol":
