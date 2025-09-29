@@ -6,6 +6,7 @@ from reccmp.isledecomp.compare.csv import (
     CsvNoAddressError,
     CsvMultipleAddressError,
     CsvInvalidAddressError,
+    CsvInvalidBoolError,
     CsvNoDelimiterError,
     CsvInvalidEntityTypeError,
     ReccmpCsvParserError,
@@ -132,11 +133,12 @@ def test_should_output_bool():
             dedent(
                 """\
                 addr|skip
-                1000|1
-                2000|yes
-                3000|no
+                1000|true
+                2000|false
+                3000|TrUE
                 4000|FALSE
-                5000|0
+                5000|1
+                6000|0
             """
             )
         )
@@ -145,14 +147,37 @@ def test_should_output_bool():
     # To make the following code cleaner
     skip_map = {addr: row["skip"] for addr, row in values}
 
-    # Any text is considered true...
+    # true/false strings
     assert skip_map[0x1000] is True
-    assert skip_map[0x2000] is True
+    assert skip_map[0x2000] is False
 
-    # except the values for these columns
-    assert skip_map[0x3000] is False
+    # Mixed case supported
+    assert skip_map[0x3000] is True
     assert skip_map[0x4000] is False
-    assert skip_map[0x5000] is False
+
+    # 0 or 1
+    assert skip_map[0x5000] is True
+    assert skip_map[0x6000] is False
+
+
+INVALID_BOOL_SAMPLES = (
+    # Number strings that are not 0 or 1
+    "addr|skip\n100|100",
+    "addr|skip\n100|000",
+    "addr|skip\n100|001",
+    # Strings that are not true/false
+    "addr|skip\n100|hello",
+    "addr|skip\n100|on",
+    "addr|skip\n100|off",
+    "addr|skip\n100|yes",
+    "addr|skip\n100|no",
+)
+
+
+@pytest.mark.parametrize("text", INVALID_BOOL_SAMPLES)
+def test_invalid_bool(text: str):
+    with pytest.raises(CsvInvalidBoolError):
+        list(csv_parse(text))
 
 
 def test_bool_with_whitespace():

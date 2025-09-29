@@ -56,6 +56,10 @@ class CsvInvalidEntityTypeError(ReccmpCsvParserError):
     """The entity type string did not match any of our allowed values."""
 
 
+class CsvInvalidBoolError(ReccmpCsvParserError):
+    """Could not decide if the given value indicates True or False."""
+
+
 CsvValueOptions = int | str | bool | EntityType
 
 
@@ -72,8 +76,16 @@ class CsvValuesType(TypedDict):
 
 
 def _boolify(text: str) -> bool:
-    """str to bool conversion. If the string is not in the exclusion list, resolve to True."""
-    return text.strip().lower() not in ("false", "off", "no", "0", "")
+    """str to bool conversion."""
+    value = text.strip().lower()
+
+    if value in ("true", "1"):
+        return True
+
+    if value in ("false", "0"):
+        return False
+
+    raise CsvInvalidBoolError(value)
 
 
 _entity_type_map = {
@@ -92,7 +104,7 @@ _entity_type_map = {
 
 
 def _typeify(name: str) -> EntityType:
-    """Text to EntityType enum conversion"""
+    """str to EntityType enum conversion"""
     try:
         return _entity_type_map[name]
     except KeyError as ex:
