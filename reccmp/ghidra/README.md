@@ -63,3 +63,4 @@ Since it is not possible to configure any script parameters in Ghidra, the corre
 
 - Note that when running the scripts via Ghidrathon, imported modules persist across multiple runs of the script (see also[this issue](https://github.com/mandiant/Ghidrathon/issues/103)).
     If you indend to modify an imported library, you have to use `import importlib; importlib.reload(${library})` or restart Ghidra for your changes to have any effect. Unfortunately, even that is not perfectly reliable, so you may still have to restart Ghidra for some `reccmp` code changes to be applied.
+- There is a [docker compose setup](./development/compose.yaml) to run a local Ghidra server for developing / testing the remote import functionality.

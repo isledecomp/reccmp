@@ -10,7 +10,6 @@ services:
     ports:
       - 13100-13102:13100-13102
     volumes:
-      - ./server.conf:/ghidra/server/server.conf
       - ./server-repos:/repos
     deploy:
       resources:
