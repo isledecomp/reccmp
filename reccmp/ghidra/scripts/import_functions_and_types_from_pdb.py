@@ -146,22 +146,21 @@ def find_target(api: "FlatProgramAPI") -> "RecCmpTarget":
     file_handler.setFormatter(logging.root.handlers[0].formatter)
     logging.root.addHandler(file_handler)
 
-    if api is not None:
-        target_name = api.getProgramFile().getName()
+    target_hash = api.getCurrentProgram().getExecutableSHA256()
 
     matching_targets = [
         target_id
         for target_id, target in project.targets.items()
-        if target.filename == target_name
+        if target.sha256 == target_hash
     ]
 
     if not matching_targets:
-        logger.error("No target with file name '%s' is configured", target_name)
+        logger.error("No target with hash '%s' is configured", target_hash)
         sys.exit(1)
     elif len(matching_targets) > 1:
         logger.warning(
-            "Found multiple targets for file name '%s'. Using the first one.",
-            target_name,
+            "Found multiple targets with hash '%s'. Using the first one.",
+            target_hash,
         )
 
     return project.get(matching_targets[0])

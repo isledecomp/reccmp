@@ -51,6 +51,15 @@ def main():
 
         logger.info("Program opened. Starting reccmp import...")
 
+        program_hash = program.getExecutableSHA256()
+        if target.sha256 != program_hash:
+            logger.critical(
+                "The program hashes mismatch (Ghidra: '%s', reccmp project: '%s')",
+                program_hash,
+                target.sha256,
+            )
+            return 1
+
         # Not exactly sure why this is necessary, but it can't hurt
         GhidraScriptUtil.acquireBundleHostReference()
 
