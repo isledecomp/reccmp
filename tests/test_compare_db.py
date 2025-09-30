@@ -254,29 +254,30 @@ def test_batch_cannot_alter_matched(db):
     assert db.get_by_recomp(200).orig_addr == 100
 
 
-def test_batch_change_staged_match(db):
-    """You can change an unsaved match by calling match() again on the same orig addr."""
+def test_batch_match_repeat_orig_addr(db):
+    """We expect a batch of matches to be limited to the results of a particular query.
+    As such, each orig and recomp address should appear only once. If either address is repeated
+    and would collide with a previous staged match, ignore the new one."""
     with db.batch() as batch:
         batch.set_recomp(200, name="Hello")
         batch.set_recomp(201, name="Test")
         batch.match(100, 200)
         batch.match(100, 201)
 
-    assert db.get_by_orig(100).recomp_addr == 201
-    assert db.get_by_recomp(200).orig_addr is None
+    assert db.get_by_orig(100).recomp_addr == 200
+    assert db.get_by_recomp(201).orig_addr is None
 
 
 def test_batch_match_repeat_recomp_addr(db):
-    """Calling match() with the same recomp addr should work the same as the orig addr case.
-    Discard the first match in favor of the new one."""
+    """Same as the previous test, except that we are repeating the recomp addr instead of orig."""
     with db.batch() as batch:
         batch.set_recomp(200, name="Hello")
         batch.set_recomp(201, name="Test")
         batch.match(100, 200)
         batch.match(101, 200)
 
-    assert db.get_by_recomp(200).orig_addr == 101
-    assert db.get_by_orig(100) is None
+    assert db.get_by_recomp(200).orig_addr == 100
+    assert db.get_by_orig(101) is None
 
 
 def test_batch_exception_uncaught(db):

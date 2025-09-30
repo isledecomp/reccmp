@@ -208,23 +208,23 @@ class EntityBatch:
         self._recomp_addr[orig] = recomp
 
     def _finalized_matches(self) -> Iterator[tuple[int, int]]:
-        """If an orig or recomp address is used in two or more matches, use
-        only the most recent match and vacate all others."""
+        """Reduce the list of matches so that each orig and recomp addr appears once.
+        If an address is repeated, retain the first pair where it is used and ignore any others.
+        """
         used_orig = set()
         used_recomp = set()
-        final = []
 
-        # Walk the list in reverse and make sure both addrs are unique.
         # This should have the same effect as the original implementation
         # that used two dicts to check uniqueness during each call to match().
-        for orig, recomp in reversed(self._matches):
+        for orig, recomp in self._matches:
             if orig not in used_orig and recomp not in used_recomp:
                 used_orig.add(orig)
                 used_recomp.add(recomp)
-                final.append((orig, recomp))
-
-        # Play back the matches in their original order.
-        yield from reversed(final)
+                yield ((orig, recomp))
+            else:
+                logger.warning(
+                    "Match (%x, %x) collides with previous staged match", orig, recomp
+                )
 
     def commit(self):
         # SQL transaction
