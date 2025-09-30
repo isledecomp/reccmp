@@ -88,7 +88,7 @@ def parse_reccmp_import_args():
     # Optional arguments for remote projects
     parser.add_argument(
         "--remote-checkin-comment",
-        metavar="<mesage>",
+        metavar="<message>",
         default="Automatic import from reccmp",
     )
 

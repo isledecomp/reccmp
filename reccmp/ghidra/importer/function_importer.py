@@ -31,7 +31,7 @@ from .ghidra_helper import (
 
 from .exceptions import (
     StackOffsetMismatchError,
-    Lego1Exception,
+    ReccmpGhidraException,
     TypeNotImplementedError,
 )
 from .type_importer import PdbTypeImporter
@@ -294,7 +294,7 @@ class FullPdbFunctionImporter(PdbFunctionImporter):
             )
 
         if ghidra_function.hasCustomVariableStorage():
-            raise Lego1Exception("Failed to disable custom variable storage.")
+            raise ReccmpGhidraException("Failed to disable custom variable storage.")
 
         ghidra_function.setName(self.name, SourceType.USER_DEFINED)
         ghidra_function.setParentNamespace(self.namespace)

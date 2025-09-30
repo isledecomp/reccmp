@@ -12,7 +12,7 @@ from ghidra.program.flatapi import FlatProgramAPI
 from reccmp.isledecomp.compare.core import Compare
 from reccmp.project.detect import RecCmpTarget
 
-from .exceptions import Lego1Exception
+from .exceptions import ReccmpGhidraException
 from .function_importer import PdbFunctionImporter
 from .globals_importer import import_global_into_ghidra
 from .pdb_extraction import PdbFunction, PdbFunctionExtractor
@@ -72,7 +72,7 @@ def _do_with_error_handling(step_name: str, action: Callable[[], None]):
     try:
         action()
         GLOBALS.statistics.successes += 1
-    except Lego1Exception as e:
+    except ReccmpGhidraException as e:
         _log_and_track_failure(step_name, e)
     except RuntimeError as e:
         cause = e.args[0]

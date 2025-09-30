@@ -11,7 +11,7 @@ from ghidra.program.model.mem import MemBuffer
 from reccmp.isledecomp.compare.core import Compare
 from reccmp.isledecomp.compare.db import ReccmpMatch
 
-from .exceptions import Lego1Exception
+from .exceptions import ReccmpGhidraException
 from .type_importer import PdbTypeImporter
 from .ghidra_helper import set_ghidra_label
 
@@ -31,8 +31,8 @@ def import_global_into_ghidra(
     )
     if node is None:
         # should never happen
-        raise Lego1Exception(
-            f"Failed to find node for {glob.name} at LEGO1 0x{glob.orig_addr:x}"
+        raise ReccmpGhidraException(
+            f"Failed to find node for {glob.name} at address 0x{glob.orig_addr:x}"
         )
 
     name = node.friendly_name or node.decorated_name
