@@ -1,4 +1,4 @@
-from reccmp.ghidra_scripts.lego_util.entity_names import sanitize_name
+from reccmp.ghidra.importer.entity_names import sanitize_name
 
 
 def test_sanitize_name():

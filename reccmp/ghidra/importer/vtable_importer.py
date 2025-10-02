@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 
 def import_vftables_into_ghidra(api: FlatProgramAPI, vftables: Iterator[ReccmpMatch]):
     for vtable in vftables:
+        api.getMonitor().checkCancelled()
+
         raw_vtable_name = vtable.name
         assert raw_vtable_name is not None
         set_ghidra_label(api, vtable.orig_addr, raw_vtable_name)
