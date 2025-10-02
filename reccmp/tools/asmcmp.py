@@ -92,9 +92,12 @@ def print_match_verbose(
         if match.ratio == 1.0:
             print(f"{addrs}: {match.name} 100% match.\n\n{ok_text}\n\n")
         else:
+            print_combined_diff(match.udiff, is_plain, show_both_addrs)
+
             print(
-                f"{addrs}: {match.name} Effective 100% match. (Differs in register allocation only)\n\n{ok_text} (still differs in register allocation)\n\n"
+                f"\n{addrs}: {match.name} 100% effective match (differs, but only in ways that don't affect behavior).\n\n{ok_text}\n\n"
             )
+
     else:
         print_combined_diff(match.udiff, is_plain, show_both_addrs)
 
