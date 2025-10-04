@@ -13,6 +13,8 @@ MxCore* MxObjectFactory::Create(const char* p_name)
 ```
 This allows you to automatically verify the accuracy of re-compiled functions, virtual tables, variable offsets and more. See [here](docs/annotations.md) for the full syntax.
 
+You can supplement the code annotations with metadata from CSV files. The instructions and syntax are [here](docs/csv.md).
+
 At the moment, C++ compiled to 32-bit x86 with old versions of MSVC (like 4.20) is supported. Work on support for newer MSVC versions is in progress - testing and bug reports are greatly appreciated. Other compilers, languages and architectures are not supported at the moment, but feel free to contribute if you wish to do so!
 
 ## Getting started
