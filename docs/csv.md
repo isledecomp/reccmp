@@ -109,7 +109,7 @@ These fields can appear in the CSV file:
 
 All other fields are ignored.
 
-[^1] These files are still called CSV even if the delimiter is not the comma.
-[^2] Uninitialized variables do not use any bytes in the binary.
-[^3] `LINE` not yet supported in CSV.
+[^1]: These files are still called CSV even if the delimiter is not the comma.
+[^2]: Uninitialized variables do not use any bytes in the binary.
+[^3]: `LINE` not yet supported in CSV.
 

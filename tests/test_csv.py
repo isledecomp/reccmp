@@ -528,3 +528,63 @@ def test_exception_details():
             continue
 
     assert count == 2
+
+
+def test_docs_example_basic():
+    """Just make sure we can parse it"""
+    text = dedent(
+        """\
+        address|name|size
+        1008b400|_atol|164
+        1008b4b0|_atoi|14
+        1008b4c0|_strtok|216
+        1008b5a0|_sprintf|103
+        1008b608|__ftol|39"""
+    )
+    assert (0x1008B400, {"name": "_atol", "size": 164}) in list(csv_parse(text))
+
+
+def test_docs_example_null_field():
+    """0x10001070 has null type"""
+    text = dedent(
+        """\
+        address|type|size
+        0x10001000|function|92
+        0x10001070||25
+        0x10001090|function|10"""
+    )
+    assert (0x10001070, {"size": 25}) in list(csv_parse(text))
+
+
+def test_docs_example_quoted_field():
+    """Can parse double-quote-wrapped field that contains delimiter"""
+    text = dedent(
+        """\
+        addr,name
+        101310a0,\"set<MxAtom *,MxAtomCompare,allocator<MxAtom *> >::set<MxAtom *,MxAtomCompare,allocator<MxAtom *> >\""""
+    )
+    assert (
+        0x101310A0,
+        {
+            "name": "set<MxAtom *,MxAtomCompare,allocator<MxAtom *> >::set<MxAtom *,MxAtomCompare,allocator<MxAtom *> >"
+        },
+    ) in list(csv_parse(text))
+
+
+def test_docs_example_comments_and_blanks():
+    """Should ignore comment lines and blank lines"""
+    text = dedent(
+        """\
+        addr,type
+
+        # Months of the year
+        100db57c,string
+        100db588,string
+        100db594,string
+
+        # Days of the week
+        100db614,string
+        100db620,string
+        100db628,string"""
+    )
+    assert (0x100DB614, {"type": EntityType.STRING}) in list(csv_parse(text))
