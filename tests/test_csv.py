@@ -6,7 +6,6 @@ from reccmp.isledecomp.compare.csv import (
     CsvNoAddressError,
     CsvMultipleAddressError,
     CsvInvalidAddressError,
-    CsvInvalidBoolError,
     CsvNoDelimiterError,
     CsvInvalidEntityTypeError,
     ReccmpCsvParserError,
@@ -122,90 +121,6 @@ def test_blank_column_header():
     )
 
     assert values == [(0x1000, {"symbol": "hello", "type": EntityType.FUNCTION})]
-
-
-@pytest.mark.skip(reason="Dropped skip field for now.")
-def test_should_output_bool():
-    """Return bool for certain column values, with some flexibility around possible text values."""
-
-    # Using "skip" as an example of a columm where we convert from str to bool:
-    values = list(
-        csv_parse(
-            dedent(
-                """\
-                addr|skip
-                1000|true
-                2000|false
-                3000|TrUE
-                4000|FALSE
-                5000|1
-                6000|0
-            """
-            )
-        )
-    )
-
-    # To make the following code cleaner
-    skip_map = {addr: row["skip"] for addr, row in values}
-
-    # true/false strings
-    assert skip_map[0x1000] is True
-    assert skip_map[0x2000] is False
-
-    # Mixed case supported
-    assert skip_map[0x3000] is True
-    assert skip_map[0x4000] is False
-
-    # 0 or 1
-    assert skip_map[0x5000] is True
-    assert skip_map[0x6000] is False
-
-
-INVALID_BOOL_SAMPLES = (
-    # Number strings that are not 0 or 1
-    "addr|skip\n100|100",
-    "addr|skip\n100|000",
-    "addr|skip\n100|001",
-    # Strings that are not true/false
-    "addr|skip\n100|hello",
-    "addr|skip\n100|on",
-    "addr|skip\n100|off",
-    "addr|skip\n100|yes",
-    "addr|skip\n100|no",
-)
-
-
-@pytest.mark.skip(reason="Dropped skip field for now.")
-@pytest.mark.parametrize("text", INVALID_BOOL_SAMPLES)
-def test_invalid_bool(text: str):
-    with pytest.raises(CsvInvalidBoolError):
-        list(csv_parse(text))
-
-
-@pytest.mark.skip(reason="Dropped skip field for now.")
-def test_bool_with_whitespace():
-    """Test even greater flexibility for fields that resolve to bool."""
-    values = list(
-        csv_parse(
-            dedent(
-                """\
-                addr|skip
-                1000|  false
-                1000|false  
-                1000|" false "
-            """
-            )
-        )
-    )
-
-    assert (row["skip"] is False for _, row in values)
-
-
-@pytest.mark.skip(reason="Dropped skip field for now.")
-def test_bool_with_all_whitespace():
-    """All whitespace resolves to no-value for a bool column."""
-    values = list(csv_parse("addr|skip\n1000|   "))
-    assert values == [(0x1000, {})]
 
 
 def test_ignore_blank_lines():

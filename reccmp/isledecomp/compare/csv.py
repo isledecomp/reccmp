@@ -56,10 +56,6 @@ class CsvInvalidEntityTypeError(ReccmpCsvParserError):
     """The entity type string did not match any of our allowed values."""
 
 
-class CsvInvalidBoolError(ReccmpCsvParserError):
-    """Could not decide if the given value indicates True or False."""
-
-
 CsvValueOptions = int | str | bool | EntityType
 
 
@@ -72,19 +68,6 @@ class CsvValuesType(TypedDict):
     # Set implicitly via type for now
     stub: NotRequired[bool]
     library: NotRequired[bool]
-
-
-def _boolify(text: str) -> bool:
-    """str to bool conversion."""
-    value = text.strip().lower()
-
-    if value in ("true", "1"):
-        return True
-
-    if value in ("false", "0"):
-        return False
-
-    raise CsvInvalidBoolError(value)
 
 
 _entity_type_map = {
