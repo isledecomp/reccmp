@@ -3,3 +3,4 @@ black==25.1.0
 pylint==3.2.7
 mypy==1.16.1
 types-colorama>=0.4.6
+ghidra-stubs==11.4
