@@ -71,7 +71,7 @@ def sanitize_name(name: str) -> SanitizedEntityName:
     new_name = "::".join(new_name_split)
     if new_name != name:
         logger.info(
-            "Changed class or function name from '%s' to '%s' to avoid Ghidra issues",
+            "Changed entity name from '%s' to '%s' to avoid Ghidra issues",
             name,
             new_name,
         )
