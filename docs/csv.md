@@ -25,7 +25,7 @@ The paths are relative to the directory that contains `reccmp-project.yml`.
 
 ## Format
 
-Here's an example of a CSV file using the pipe character[^1] as the delimiter.
+Here's an example of a CSV file using the pipe character as the delimiter.
 
 ```
 address|name|size
@@ -40,7 +40,7 @@ The header on the first line defines the columns used in the file. The only requ
 
 The address value is always interpreted as a hexadecimal number, even if only digits 0-9 appear. You can use the typical `0x` prefix but it was omitted for this example. The `h` suffix sometimes seen in assembly code is not supported.
 
-The `"name"` field is the name for the entity, as you would expect. `"size"` is the number of bytes used by the entity in virtual memory[^2]. This is always interpreted as a decimal number.
+The `"name"` field is the name for the entity, as you would expect. `"size"` is the number of bytes used by the entity in virtual memory. This is always interpreted as a decimal number.
 
 `"type"` expects one of these values:
 
@@ -50,11 +50,11 @@ The `"name"` field is the name for the entity, as you would expect. `"size"` is 
 - `float`
 - `vtable`
 
-These are the same[^3] categories used in the [code annotations](https://github.com/isledecomp/reccmp/blob/master/docs/annotations.md).
+These are the same categories used in the [code annotations](docs/annotations.md). `LINE` is not yet supported in CSV.
 
 ### Finer points
 
-For a delimiter, you can use a comma, the pipe, or a tab.[^1]
+For a delimiter, you can use a comma, the pipe, or a tab. These files are called CSV even when the delimiter is not the comma.
 
 Do not include padding whitespace around the columns or try to align the values.
 
@@ -108,8 +108,3 @@ These fields can appear in the CSV file:
 | `report.ignore` | If `true`, do not include this entity in the final comparison report. | `1` or `0` or `true` or `false` |
 
 All other fields are ignored.
-
-[^1]: These files are still called CSV even if the delimiter is not the comma.
-[^2]: Uninitialized variables do not use any bytes in the binary.
-[^3]: `LINE` not yet supported in CSV.
-
