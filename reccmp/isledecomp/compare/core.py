@@ -250,7 +250,7 @@ class Compare:
                         )
 
                     except UnicodeDecodeError:
-                        logger.debug(
+                        logger.warning(
                             "Could not decode string: %s, wide=%s",
                             raw,
                             string_info.is_utf16,
@@ -378,15 +378,15 @@ class Compare:
                 # annotation to make sure it is accurate.
                 try:
                     if string.is_widechar:
-                        raw = self.orig_bin.read_widechar(string.offset)
+                        string_size = 2 * len(string.name) + 2
+                        raw = self.orig_bin.read(string.offset, string_size)
                         orig = raw.decode("utf-16-le")
-                        string_size = len(raw) + 2
                     else:
-                        raw = self.orig_bin.read_string(string.offset)
+                        string_size = len(string.name) + 1
+                        raw = self.orig_bin.read(string.offset, string_size)
                         orig = raw.decode("latin1")
-                        string_size = len(raw) + 1
 
-                    string_correct = string.name == orig
+                    string_correct = orig[-1] == "\0" and string.name == orig[:-1]
 
                 except InvalidStringError:
                     logger.warning(
@@ -394,8 +394,14 @@ class Compare:
                         string.offset,
                         string.is_widechar,
                     )
+                    string_correct = False
 
                 except UnicodeDecodeError:
+                    logger.warning(
+                        "Could not decode string: %s, wide=%s",
+                        raw,
+                        string.is_widechar,
+                    )
                     string_correct = False
 
                 if not string_correct:
