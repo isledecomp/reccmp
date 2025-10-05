@@ -67,7 +67,6 @@ class CsvValuesType(TypedDict):
     type: NotRequired[EntityType]
     name: NotRequired[str]
     size: NotRequired[int]
-    skip: NotRequired[bool]
     symbol: NotRequired[str]
 
     # Set implicitly via type for now
@@ -163,9 +162,6 @@ def _convert_attrs(values: Iterable[tuple[str, str]]) -> CsvValuesType:
             # Support --no-lib option (#206)
             if type_name == "library":
                 output["library"] = True
-
-        if key in ("report_skip", "report.skip", "skip"):
-            output["skip"] = _boolify(value)
 
     return output
 

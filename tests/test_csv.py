@@ -124,6 +124,7 @@ def test_blank_column_header():
     assert values == [(0x1000, {"symbol": "hello", "type": EntityType.FUNCTION})]
 
 
+@pytest.mark.skip(reason="Dropped skip field for now.")
 def test_should_output_bool():
     """Return bool for certain column values, with some flexibility around possible text values."""
 
@@ -174,12 +175,14 @@ INVALID_BOOL_SAMPLES = (
 )
 
 
+@pytest.mark.skip(reason="Dropped skip field for now.")
 @pytest.mark.parametrize("text", INVALID_BOOL_SAMPLES)
 def test_invalid_bool(text: str):
     with pytest.raises(CsvInvalidBoolError):
         list(csv_parse(text))
 
 
+@pytest.mark.skip(reason="Dropped skip field for now.")
 def test_bool_with_whitespace():
     """Test even greater flexibility for fields that resolve to bool."""
     values = list(
@@ -198,6 +201,7 @@ def test_bool_with_whitespace():
     assert (row["skip"] is False for _, row in values)
 
 
+@pytest.mark.skip(reason="Dropped skip field for now.")
 def test_bool_with_all_whitespace():
     """All whitespace resolves to no-value for a bool column."""
     values = list(csv_parse("addr|skip\n1000|   "))
@@ -298,9 +302,9 @@ def test_address_not_first():
         csv_parse(
             dedent(
                 """\
-                symbol|skip|addr
-                test|1|1000
-                test|0|2000
+                symbol|name|addr
+                test|hello|1000
+                test|world|2000
             """
             )
         )
@@ -318,15 +322,15 @@ def test_address_repeated():
         csv_parse(
             dedent(
                 """\
-                addr|skip
-                1000|1
-                1000|0
+                addr|name
+                1000|hello
+                1000|world
             """
             )
         )
     )
 
-    assert values == [(0x1000, {"skip": True}), (0x1000, {"skip": False})]
+    assert values == [(0x1000, {"name": "hello"}), (0x1000, {"name": "world"})]
 
 
 def test_type():
@@ -357,15 +361,15 @@ def test_header_case():
         csv_parse(
             dedent(
                 """\
-                ADDR|SKIP
-                1000|1
-                1000|0
+                ADDR|NAME
+                1000|hello
+                1000|world
             """
             )
         )
     )
 
-    assert values == [(0x1000, {"skip": True}), (0x1000, {"skip": False})]
+    assert values == [(0x1000, {"name": "hello"}), (0x1000, {"name": "world"})]
 
 
 def test_ignore_empty_values():
@@ -374,11 +378,11 @@ def test_ignore_empty_values():
         csv_parse(
             dedent(
                 """\
-            address|type|name|size|skip
-            1234||hello||
-            1234|||5|
-            1234|function|||
-            1234||||
+            address|type|name|size
+            1234||hello|
+            1234|||5
+            1234|function||
+            1234|||
             """
             )
         )
@@ -588,3 +592,9 @@ def test_docs_example_comments_and_blanks():
         100db628,string"""
     )
     assert (0x100DB614, {"type": EntityType.STRING}) in list(csv_parse(text))
+
+
+def test_ignore_skip():
+    """Should ignore 'skip' field until we reinstate it."""
+    text = "addr|skip\n1234|1"
+    assert (0x1234, {}) in list(csv_parse(text))

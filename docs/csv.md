@@ -105,6 +105,5 @@ These fields can appear in the CSV file:
 | `name` | Name for the entity (e.g. the fully-qualified function name) | text |
 | `symbol` | Linker name | text |
 | `type` | Entity type | one of: `function, template, synthetic, library, stub, global, string, float, vtable` |
-| `report.ignore` | If `true`, do not include this entity in the final comparison report. | `1` or `0` or `true` or `false` |
 
 All other fields are ignored.
