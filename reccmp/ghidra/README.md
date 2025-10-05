@@ -24,8 +24,9 @@ This assumes that you have already installed `reccmp`, e.g. in a virtual environ
 - Run one of the following commands in the directory where your `reccmp-build.yml` is located:
   - Local project: `reccmp-ghidra-import --target <reccmp-target> --local-project-name <ghidra-project-name> --file <file-inside-ghidra-project>`
     - If necessary, also provide `--local-project-dir`, especially if your Ghidra project is not located in the default directory.
-  - Shared project: `reccmp-ghidra-import --target <reccmp-target> --remote-url ghidra://<user>:<password>@<host>[:port]/<project-name> --file <file-inside-ghidra-project>`
+  - Shared project: `RECCMP_GHIDRA_USER=user RECCMP_GHIDRA_PASSWORD=password reccmp-ghidra-import --target <reccmp-target> --remote-url ghidra://<host>[:<port>]/<project-name> --file <file-inside-ghidra-project>`
     - You can optionally provide `--remote-checkin-comment` if you want to customize the checkin comment.
+    - If you know what you are doing security wise, you can also provide the username and password via the URL: `--remote-url ghidra://user:password@<host>[:<port>]/<project-name`.
 
 ## Setup for Ghidrathon
 
