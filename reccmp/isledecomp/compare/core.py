@@ -509,8 +509,8 @@ class Compare:
                 if addr in self.orig_bin.relocations:
                     continue
 
-                if is_likely_latin1(string):
-                    batch.insert_orig(
+                if is_likely_latin1(string) and not self._db.orig_used(addr):
+                    batch.set_orig(
                         addr,
                         type=EntityType.STRING,
                         name=entity_name_from_string(string),
@@ -521,8 +521,8 @@ class Compare:
                 if addr in self.recomp_bin.relocations:
                     continue
 
-                if is_likely_latin1(string):
-                    batch.insert_recomp(
+                if is_likely_latin1(string) and not self._db.recomp_used(addr):
+                    batch.set_recomp(
                         addr,
                         type=EntityType.STRING,
                         name=entity_name_from_string(string),
@@ -535,14 +535,16 @@ class Compare:
         deduped like strings."""
         with self._db.batch() as batch:
             for addr, size, float_value in find_float_consts(self.orig_bin):
-                batch.insert_orig(
-                    addr, type=EntityType.FLOAT, name=str(float_value), size=size
-                )
+                if not self._db.orig_used(addr):
+                    batch.set_orig(
+                        addr, type=EntityType.FLOAT, name=str(float_value), size=size
+                    )
 
             for addr, size, float_value in find_float_consts(self.recomp_bin):
-                batch.insert_recomp(
-                    addr, type=EntityType.FLOAT, name=str(float_value), size=size
-                )
+                if not self._db.recomp_used(addr):
+                    batch.set_recomp(
+                        addr, type=EntityType.FLOAT, name=str(float_value), size=size
+                    )
 
     def _match_imports(self):
         """We can match imported functions based on the DLL name and
@@ -610,25 +612,27 @@ class Compare:
         These are the result of an incremental build."""
         with self._db.batch() as batch:
             for orig_thunk, orig_addr in self.orig_bin.thunks:
-                batch.insert_orig(
-                    orig_thunk,
-                    type=EntityType.FUNCTION,
-                    size=5,
-                    ref_orig=orig_addr,
-                    skip=True,
-                )
+                if not self._db.orig_used(orig_thunk):
+                    batch.set_orig(
+                        orig_thunk,
+                        type=EntityType.FUNCTION,
+                        size=5,
+                        ref_orig=orig_addr,
+                        skip=True,
+                    )
 
                 # We can only match two thunks if we have already matched both
                 # their parent entities. There is nothing to compare because
                 # they will either be equal or left unmatched. Set skip=True.
 
             for recomp_thunk, recomp_addr in self.recomp_bin.thunks:
-                batch.insert_recomp(
-                    recomp_thunk,
-                    type=EntityType.FUNCTION,
-                    size=5,
-                    ref_recomp=recomp_addr,
-                )
+                if not self._db.recomp_used(recomp_thunk):
+                    batch.set_recomp(
+                        recomp_thunk,
+                        type=EntityType.FUNCTION,
+                        size=5,
+                        ref_recomp=recomp_addr,
+                    )
 
     def _name_thunks(self):
         with self._db.batch() as batch:
