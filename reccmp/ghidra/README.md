@@ -57,7 +57,7 @@ This step differs slightly depending on your setup.
 
 ### File names
 
-Since it is not possible to configure any script parameters in Ghidra, the correct decompilation target needs to be inferred. Currently, this is done via the file name of the original binary when you first imported the file into Ghidra. This needs to match the file name configured in `reccmp-project.yml` under `targets/<target>/filename`.
+Since it is not possible to configure any script parameters in Ghidra, the correct decompilation target needs to be inferred. Currently, this is done via the hash of the original binary, which needs to match the hash configured in `reccmp-project.yml` under `targets/<target>/hash/sha256`.
 
 ## Development
 
