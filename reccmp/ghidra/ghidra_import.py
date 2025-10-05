@@ -79,8 +79,9 @@ def main():
 
 @contextmanager
 def local_program(args: argparse.Namespace):
-    from ghidra.base.project import GhidraProject
     from ghidra.framework import GenericRunInfo
+
+    from reccmp.ghidra.importer.context import open_ghidra_project
 
     project_name: str = args.local_project_name
     file_in_repository = PurePosixPath(args.file)
@@ -92,25 +93,21 @@ def local_program(args: argparse.Namespace):
         "Opening local Ghidra project '%s' from '%s'", project_name, project_dir
     )
 
-    # based on the source code of pyghidra.open_program()
-    restore_project = True
-    project = GhidraProject.openProject(
-        project_dir,
-        project_name,
-        restore_project,
-    )
+    # Based on the source code of pyghidra.open_program().
+    # Not sure what the `restore_project` option does, maybe crash recovery? It does not seem to matter here.
+    with open_ghidra_project(
+        project_dir, project_name, restore_project=False
+    ) as project:
+        logger.debug("Opening program '%s' in Ghidra project", file_in_repository)
+        read_only = False
+        program = project.openProgram(
+            str(file_in_repository.parent), file_in_repository.name, read_only
+        )
 
-    read_only = False
-    logger.debug("Opening program '%s' in Ghidra project", file_in_repository)
-    program = project.openProgram(
-        str(file_in_repository.parent), file_in_repository.name, read_only
-    )
+        yield program
 
-    yield program
-
-    # Note that `program.save()` is wrong and does not work.
-    project.save(program)
-    project.getProject().close()
+        # Note that `program.save()` is wrong and does not work.
+        project.save(program)
 
 
 @contextmanager
@@ -124,6 +121,11 @@ def shared_repository_program(args: argparse.Namespace):
     from ghidra.program.model.listing import Program
     from ghidra.util.task import TaskMonitor
     from ghidra.framework.data import DefaultCheckinHandler
+
+    from reccmp.ghidra.importer.context import (
+        create_ghidra_project,
+        open_ghidra_project,
+    )
 
     project_config = args.remote_url
     assert isinstance(project_config, RemoteProjectConfig)
@@ -163,27 +165,22 @@ def shared_repository_program(args: argparse.Namespace):
         # I have not found an easier way to do this, partly because some constructors are private
         # and there is limited support for Java inheritance in `pyghidra` as of 2025-09.
         # Therefore, the pattern used in `HeadlessAnalyzer.java` cannot be applied.
-        temporary = False
 
-        # TODO: Consider context manager around GhidraProject.create and GhidraProject.open;
-        # maybe in a separate .py file that already assumes Ghidra has been imported
-
-        init_project = GhidraProject.createProject(
-            tmp_dir, TEMP_PROJECT_NAME, temporary
-        )
-        try:
+        # We use a context because we need to make sure the project is always closed, else auto-deleting `tmp_dir` will fail.
+        with create_ghidra_project(
+            tmp_dir, TEMP_PROJECT_NAME, temporary=False
+        ) as init_project:
             # According to the documentation, the project should be closed and re-opened
             # after a call to `convertProjectToShared()`.
             init_project.getProjectData().convertProjectToShared(
                 init_adapter, TaskMonitor.DUMMY
             )
-        finally:
-            # If the project is not closed, auto-deleting `tmp_dir` fails
-            init_project.getProject().close()
 
-        restore_project = False  # not sure if this matters
-        project = GhidraProject.openProject(tmp_dir, TEMP_PROJECT_NAME, restore_project)
-        try:
+        # We use a context because we need to make sure the project is always closed, else auto-deleting `tmp_dir` will fail.
+        # Not sure what the `restore_project` option does, maybe crash recovery? It does not seem to matter here.
+        with open_ghidra_project(
+            tmp_dir, TEMP_PROJECT_NAME, restore_project=False
+        ) as project:
             logger.debug("Opening program '%s' in Ghidra project", file_in_repository)
             dom_file = project.getProjectData().getFile(file_in_repository)
             if dom_file is None:
@@ -230,9 +227,6 @@ def shared_repository_program(args: argparse.Namespace):
                     # Try to undo the checkout in order to keep the list of checkouts clean
                     keep = False
                     dom_file.undoCheckout(keep)
-        finally:
-            # If the project is not closed, auto-deleting `tmp_dir` fails
-            project.getProject().close()
 
 
 if __name__ == "__main__":
