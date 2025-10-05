@@ -113,9 +113,7 @@ def find_target(api: "FlatProgramAPI") -> "RecCmpTarget":
     This can be achieved by installing `reccmp` into a venv inside a decompilation project
     and having `reccmp-build.yaml` next to the venv directory.
 
-    Inside that `reccmp` project, a target is chosen based on the name of the executable of the current file.
-    Note that the relevant filename is that of the original binary (Ghidra keeps track of that),
-    not what the file is called in the Ghidra project.
+    Inside that `reccmp` project, a target is chosen based on the hash of the executable of the current file.
 
     **Known issue**: In order to use this script, `reccmp-build.yml` must be located
     in the same directory as `reccmp-project.yml`.
