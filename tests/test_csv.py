@@ -4,7 +4,7 @@ from reccmp.isledecomp.types import EntityType
 from reccmp.isledecomp.compare.csv import (
     csv_parse,
     CsvNoAddressError,
-    CsvMultipleAddressError,
+    CsvDuplicateColumnError,
     CsvInvalidAddressError,
     CsvNoDelimiterError,
     CsvInvalidEntityTypeError,
@@ -20,7 +20,6 @@ def test_no_delimiter():
 
 def test_valid_addr_column():
     """The only requirement is that there is a single address column and a delimiter."""
-    list(csv_parse("addr|symbol"))
     list(csv_parse("address|symbol"))
 
 
@@ -31,16 +30,19 @@ def test_no_address_column():
 
 
 def test_multiple_address_column():
-    """Cannot parse any rows if there is not a single address column."""
-    with pytest.raises(CsvMultipleAddressError):
-        list(csv_parse("address|symbol|addr"))
-
-    # This includes cases where the same key name is repeated
-    with pytest.raises(CsvMultipleAddressError):
-        list(csv_parse("addr|addr"))
-
-    with pytest.raises(CsvMultipleAddressError):
+    """Cannot parse any rows if there is not exactly one address column."""
+    with pytest.raises(CsvDuplicateColumnError):
         list(csv_parse("address|address"))
+
+
+def test_duplicate_columns():
+    """Cannot parse any rows if any column appears more than once"""
+    with pytest.raises(CsvDuplicateColumnError):
+        list(csv_parse("address|name|name"))
+
+    # Case insensitive uniqueness
+    with pytest.raises(CsvDuplicateColumnError):
+        list(csv_parse("address|name|NAME"))
 
 
 def test_value_includes_delimiter():
@@ -83,7 +85,7 @@ def test_address_not_hex():
             csv_parse(
                 dedent(
                     """\
-            addr|symbol
+            address|symbol
             wrong|test
         """
                 )
@@ -97,7 +99,7 @@ def test_too_many_columns():
         csv_parse(
             dedent(
                 """\
-        addr|symbol
+        address|symbol
         1000|hello|world
     """
             )
@@ -113,7 +115,7 @@ def test_blank_column_header():
         csv_parse(
             dedent(
                 """\
-        addr|symbol||type
+        address|symbol||type
         1000|hello|world|function
     """
             )
@@ -131,7 +133,7 @@ def test_ignore_blank_lines():
             dedent(
                 """\
 
-                addr|symbol
+                address|symbol
 
                 1000|test
 
@@ -158,7 +160,7 @@ def test_ignore_comments():
             dedent(
                 """\
                 # Test CSV file
-                addr|symbol
+                address|symbol
                 # 1000|test
                 2000|test
                 // 3000|test
@@ -176,7 +178,7 @@ def test_tab_delimiter():
         csv_parse(
             dedent(
                 """\
-                addr\tsymbol
+                address\tsymbol
                 1000\ttest
                 2000\ttest
                 3000\ttest
@@ -199,7 +201,15 @@ def test_emulate_file_reads():
 
     # Mix of comments and blank lines
     file = iter(
-        ["# Comment\n", "\n", "addr|symbol\n", "\n", "1000|test\n", "\n", "2000|test\n"]
+        [
+            "# Comment\n",
+            "\n",
+            "address|symbol\n",
+            "\n",
+            "1000|test\n",
+            "\n",
+            "2000|test\n",
+        ]
     )
     values = list(csv_parse(file))
 
@@ -217,7 +227,7 @@ def test_address_not_first():
         csv_parse(
             dedent(
                 """\
-                symbol|name|addr
+                symbol|name|address
                 test|hello|1000
                 test|world|2000
             """
@@ -237,7 +247,7 @@ def test_address_repeated():
         csv_parse(
             dedent(
                 """\
-                addr|name
+                address|name
                 1000|hello
                 1000|world
             """
@@ -276,7 +286,7 @@ def test_header_case():
         csv_parse(
             dedent(
                 """\
-                ADDR|NAME
+                ADDRESS|NAME
                 1000|hello
                 1000|world
             """
@@ -483,7 +493,7 @@ def test_docs_example_quoted_field():
     """Can parse double-quote-wrapped field that contains delimiter"""
     text = dedent(
         """\
-        addr,name
+        address,name
         101310a0,\"set<MxAtom *,MxAtomCompare,allocator<MxAtom *> >::set<MxAtom *,MxAtomCompare,allocator<MxAtom *> >\""""
     )
     assert (
@@ -498,7 +508,7 @@ def test_docs_example_comments_and_blanks():
     """Should ignore comment lines and blank lines"""
     text = dedent(
         """\
-        addr,type
+        address,type
 
         # Months of the year
         100db57c,string
@@ -515,5 +525,5 @@ def test_docs_example_comments_and_blanks():
 
 def test_ignore_skip():
     """Should ignore 'skip' field until we reinstate it."""
-    text = "addr|skip\n1234|1"
+    text = "address|skip\n1234|1"
     assert (0x1234, {}) in list(csv_parse(text))

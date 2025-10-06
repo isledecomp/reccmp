@@ -36,7 +36,7 @@ address|name|size
 1008b608|__ftol|39
 ```
 
-The header on the first line defines the columns used in the file. The only required column is `"address"`. You can use the abbreviated `"addr"` if you prefer, but not both in the same file. `"address"` does not need to appear first, but this is common.
+The header on the first line defines the columns used in the file. The only required column is `"address"`. It does not need to appear first, but this is common.
 
 The address value is always interpreted as a hexadecimal number, even if only digits 0-9 appear. You can use the typical `0x` prefix but it was omitted for this example. The `h` suffix sometimes seen in assembly code is not supported.
 
@@ -70,7 +70,7 @@ address|type|size
 If the value contains the delimiter, wrap the entire thing in double quotes. For example:
 
 ```csv
-addr,name
+address,name
 101310a0,"set<MxAtom *,MxAtomCompare,allocator<MxAtom *> >::set<MxAtom *,MxAtomCompare,allocator<MxAtom *> >"
 ```
 
@@ -79,7 +79,7 @@ addr,name
 CSV does not support comments, but we allow them. Any line that begins with `//` or `#` will be skipped.
 
 ```
-addr,type
+address,type
 
 # Months of the year
 100db57c,string
@@ -101,7 +101,6 @@ These fields can appear in the CSV file:
 | column | description | possible values |
 | ------ | ----------- | --------------- |
 | `address` | Address of the entity. Required. | Hex number with or without `0x` prefix |
-| `addr` | Alias for `address`. | |
 | `name` | Name for the entity (e.g. the fully-qualified function name) | text |
 | `symbol` | Linker name | text |
 | `type` | Entity type | one of: `function, template, synthetic, library, stub, global, string, float, vtable` |

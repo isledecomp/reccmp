@@ -22,13 +22,12 @@ class CsvNoAddressError(ReccmpCsvFatalParserError):
     """This file does not have an address attribute."""
 
 
-class CsvMultipleAddressError(ReccmpCsvFatalParserError):
-    """This file has more than one address attribute
-    (and it's not clear which one we should use)."""
-
-
 class CsvNoDelimiterError(ReccmpCsvFatalParserError):
     """No obvious delimiter on the first line."""
+
+
+class CsvDuplicateColumnError(ReccmpCsvFatalParserError):
+    """A column name appears more than once in the header."""
 
 
 # Non-fatal errors:
@@ -191,17 +190,12 @@ class ReccmpCsvReader:
         if self.reader.fieldnames is None:
             raise CsvNoDelimiterError
 
-        # We support multiple options for address key, but exactly one must appear.
-        addr_keys = [
-            key for key in self.reader.fieldnames if key in ("address", "addr")
-        ]
-        if not addr_keys:
+        if len(self.reader.fieldnames) != len(set(self.reader.fieldnames)):
+            raise CsvDuplicateColumnError
+
+        self.addr_key = "address"
+        if self.addr_key not in self.reader.fieldnames:
             raise CsvNoAddressError
-
-        if len(addr_keys) > 1:
-            raise CsvMultipleAddressError
-
-        self.addr_key = addr_keys[0]
 
     def __iter__(self) -> "ReccmpCsvReader":
         return self
