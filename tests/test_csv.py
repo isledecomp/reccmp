@@ -428,25 +428,29 @@ def test_exception_details():
         """
     )
 
-    count = 0
     reader = csv_parse(text)
-    while True:
-        try:
-            next(reader)
-        except StopIteration:
-            break
-        except CsvInvalidAddressError as ex:
-            assert ex.illegal_value == "zzzz"
-            assert ex.line_number == 6
-            count += 1
-            continue
-        except CsvInvalidEntityTypeError as ex:
-            assert ex.illegal_value == "libary"
-            assert ex.line_number == 3
-            count += 1
-            continue
 
-    assert count == 2
+    # 5555|libary
+    with pytest.raises(CsvInvalidEntityTypeError) as excinfo:
+        next(reader)
+        assert excinfo.value.illegal_value == "libary"
+        assert excinfo.value.line_number == 3
+
+    # 1234|function
+    assert next(reader) == (0x1234, {"type": EntityType.FUNCTION})
+
+    # zzzz|function
+    with pytest.raises(CsvInvalidAddressError) as excinfo:
+        next(reader)
+        assert excinfo.value.illegal_value == "zzzz"
+        assert excinfo.value.line_number == 6
+
+    # 4321|template
+    assert next(reader) == (0x4321, {"type": EntityType.FUNCTION})
+
+    # Done
+    with pytest.raises(StopIteration):
+        next(reader)
 
 
 def test_docs_example_basic():
