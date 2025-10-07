@@ -25,7 +25,7 @@ def fixture_db() -> EntityDb:
 @pytest.fixture(name="lines_db")
 def fixture_lines_db() -> LinesDb:
     db = LinesDb()
-    db.add_files([MOCK_PATH])
+    db.add_local_paths([MOCK_PATH])
     return db
 
 

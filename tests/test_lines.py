@@ -26,7 +26,7 @@ def test_lines(local_path: PureWindowsPath | PurePosixPath):
     # Start by adding the local code files for our project.
     # These are the candidates for matching Windows paths from the PDB.
     lines = LinesDb()
-    lines.add_files([local_path])
+    lines.add_local_paths([local_path])
 
     # No results: we haven't added any addresses yet.
     assert lines.find_function(local_path, 1, 10) is None
@@ -74,7 +74,7 @@ def test_lines_add_local_files_after(local_path: PureWindowsPath | PurePosixPath
     lines.mark_function_starts((0x1234,))
 
     # Add source dirs here, after the call to add_line
-    lines.add_files([local_path])
+    lines.add_local_paths([local_path])
 
     # Now we get the function
     assert lines.find_function(local_path, 2) == 0x1234
@@ -99,7 +99,7 @@ def test_multiple_match(local_path: PureWindowsPath | PurePosixPath):
     """
 
     lines = LinesDb()
-    lines.add_files([local_path])
+    lines.add_local_paths([local_path])
     lines.add_line(PDB_PATH, 2, 0x1234)
     lines.add_line(PDB_PATH, 3, 0x1235)
     lines.mark_function_starts((0x1234, 0x1235))
@@ -119,7 +119,7 @@ def test_lines_duplicate_reference(local_path: PureWindowsPath | PurePosixPath):
     This should not cause an error to be raised.
     """
     lines = LinesDb()
-    lines.add_files([local_path])
+    lines.add_local_paths([local_path])
     lines.add_line(PDB_PATH, 2, 0x1234)
     lines.add_line(PDB_PATH, 4, 0x1234)
     lines.mark_function_starts((0x1234,))
@@ -134,7 +134,7 @@ def test_db_hash_windows():
 
     local_path = PureWindowsPath("code\\test.cpp")
     lines = LinesDb()
-    lines.add_files([local_path])
+    lines.add_local_paths([local_path])
 
     pdb_path = PureWindowsPath("code\\test.cpp")
     lines.add_line(pdb_path, 2, 0x1234)
@@ -154,7 +154,7 @@ def test_db_hash_posix():
 
     local_path = PurePosixPath("code/test.cpp")
     lines = LinesDb()
-    lines.add_files([local_path])
+    lines.add_local_paths([local_path])
 
     pdb_path = PureWindowsPath("code\\test.cpp")
     lines.add_line(pdb_path, 2, 0x1234)
@@ -173,7 +173,7 @@ def test_db_search_line(local_path: PureWindowsPath | PurePosixPath):
     unless you restrict to function starts only."""
 
     lines = LinesDb()
-    lines.add_files([local_path])
+    lines.add_local_paths([local_path])
 
     # We haven't added any addresses yet.
     assert [*lines.search_line(local_path, 1, 10)] == []

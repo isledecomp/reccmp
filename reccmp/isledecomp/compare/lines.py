@@ -12,15 +12,15 @@ logger = logging.getLogger(__name__)
 
 
 class LinesDb:
-    # pylint: disable=too-many-instance-attributes
     def __init__(self) -> None:
-        self._new_data = False
         self._path_resolver = cache(convert_foreign_path)
 
-        self._path_queue: list[Path | PurePath] = []
+        # List of foreign paths and associated (line_no, address) pairs that cannot be
+        # matched with the current set of local file paths.
         self._line_queue: list[tuple[PureWindowsPath, list[tuple[int, int]]]] = []
 
-        # Set up memoized map of filenames to their paths
+        # Map of local filenames to their paths. This is used to reduce the list of
+        # possible local paths that can be matched to a foreign path.
         self._filenames: dict[str, list[PurePath]] = {}
 
         # Local filename to list of (line_no, address) pairs
@@ -32,59 +32,57 @@ class LinesDb:
         # Addresses for the first line for a function
         self._function_starts: set[int] = set()
 
-    def add_files(self, paths: Iterable[Path] | Iterable[PurePath]):
-        self._new_data = True
-        self._path_queue.extend(paths)
+    def add_local_paths(self, paths: Iterable[Path] | Iterable[PurePath]):
+        for path in paths:
+            self._filenames.setdefault(path.name.lower(), []).append(path)
+
+        # Save any failed matches to be processed when we get a new local path.
+        retry = []
+
+        for foreign_path, lines in self._line_queue:
+            if not self._match_foreign_path_to_local(foreign_path, lines):
+                retry.append((foreign_path, lines))
+
+        self._line_queue = retry
 
     def add_line(self, foreign_path: PureWindowsPath, line_no: int, addr: int):
-        """Connect the remote path to a line number and address pair."""
+        """Connect the foreign path to a line number and address pair."""
         return self.add_lines(foreign_path, ((line_no, addr),))
 
     def add_lines(
-        self, foreign_path: PureWindowsPath, lines: Iterable[tuple[int, int]]
+        self, foreign_path: PureWindowsPath, lines_iter: Iterable[tuple[int, int]]
     ):
         """
-        Connect the remote path to a line number and address pair.
+        Connect the foreign path to a line number and address pair.
         """
-        self._new_data = True
-        self._line_queue.append((foreign_path, list(lines)))
+        lines = list(lines_iter)
+        if not self._match_foreign_path_to_local(foreign_path, lines):
+            self._line_queue.append((foreign_path, lines))
 
     def mark_function_starts(self, addrs: Iterable[int]):
-        self._function_starts = self._function_starts.union(set(addrs))
+        self._function_starts.update(addrs)
 
-    def _process(self):
-        """Defer processing until we need results. This allows us to call add_files()
-        and add_line() or add_lines() in any order up to the point where we search."""
-        for path in self._path_queue:
-            self._filenames.setdefault(path.name.lower(), []).append(path)
+    def _match_foreign_path_to_local(
+        self, foreign_path: PureWindowsPath, lines: Iterable[tuple[int, int]]
+    ) -> bool:
+        """Match the foreign path and its (line_no, address) pairs to a local path.
+        If we can match it, set the internal data structures and return True."""
+        filename = foreign_path.name.lower()
 
-        # Don't remove from lines queue if we can't find a match.
-        retry_lines = []
+        candidates = self._filenames.get(filename)
+        if candidates is None:
+            return False
 
-        for foreign_path, lines in self._line_queue:
-            filename = foreign_path.name.lower()
+        # Must convert to tuple (hashable type) so we can use functools.cache
+        sourcepath = self._path_resolver(foreign_path, tuple(candidates))
+        if sourcepath is None:
+            return False
 
-            candidates = self._filenames.get(filename)
-            if candidates is None:
-                retry_lines.append((foreign_path, lines))
-                continue
+        self._path_to_lines_and_addresses.setdefault(sourcepath, []).extend(list(lines))
+        for line_number, address in lines:
+            self._address_to_path_and_line[address] = (sourcepath, line_number)
 
-            # Must convert to tuple (hashable type) so we can use functools.cache
-            sourcepath = self._path_resolver(foreign_path, tuple(candidates))
-            if sourcepath is None:
-                retry_lines.append((foreign_path, lines))
-                continue
-
-            self._path_to_lines_and_addresses.setdefault(sourcepath, []).extend(
-                list(lines)
-            )
-            for line_number, address in lines:
-                self._address_to_path_and_line[address] = (sourcepath, line_number)
-
-        self._path_queue.clear()
-        self._line_queue.clear()
-        self._line_queue.extend(retry_lines)
-        self._new_data = False
+        return True
 
     def search_line(
         self,
@@ -93,9 +91,6 @@ class LinesDb:
         line_end: int | None = None,
         start_only: bool = False,
     ) -> Iterator[int]:
-        if self._new_data:
-            self._process()
-
         # If there is no end line, search for a single line only
         if line_end is None:
             line_end = line_start
@@ -145,7 +140,4 @@ class LinesDb:
         return None
 
     def find_line_of_recomp_address(self, address: int) -> tuple[PurePath, int] | None:
-        if self._new_data:
-            self._process()
-
         return self._address_to_path_and_line.get(address, None)
