@@ -37,13 +37,11 @@ class LinesDb:
             self._filenames.setdefault(path.name.lower(), []).append(path)
 
         # Save any failed matches to be processed when we get a new local path.
-        retry = []
-
-        for foreign_path, lines in self._line_queue:
-            if not self._match_foreign_path_to_local(foreign_path, lines):
-                retry.append((foreign_path, lines))
-
-        self._line_queue = retry
+        self._line_queue = [
+            (foreign_path, lines)
+            for foreign_path, lines in self._line_queue
+            if not self._match_foreign_path_to_local(foreign_path, lines)
+        ]
 
     def add_line(self, foreign_path: PureWindowsPath, line_no: int, addr: int):
         """Connect the foreign path to a line number and address pair."""
