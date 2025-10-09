@@ -81,8 +81,7 @@ class Compare:
         # Controls whether we dump the asm output to a file
         self._debug: bool = False
 
-        code_files = [Path(p) for p in walk_source_dir(self.code_dir)]
-        self._lines_db = LinesDb(code_files)
+        self._lines_db = LinesDb()
         self._db = EntityDb()
 
         # For now, just redirect match alerts to the logger.
@@ -300,15 +299,13 @@ class Compare:
             batch.match(self.orig_bin.entry, self.recomp_bin.entry)
 
     def _load_markers(self, report: ReccmpReportProtocol = reccmp_report_nop):
-        codefiles = list(walk_source_dir(self.code_dir))
+        codefiles = [Path(p) for p in walk_source_dir(self.code_dir)]
+        self._lines_db.add_local_paths(codefiles)
         codebase = DecompCodebase(codefiles, self.target_id)
-
-        def orig_bin_checker(addr: int) -> bool:
-            return self.orig_bin.is_valid_vaddr(addr)
 
         # If the address of any annotation would cause an exception,
         # remove it and report an error.
-        bad_annotations = codebase.prune_invalid_addrs(orig_bin_checker)
+        bad_annotations = codebase.prune_invalid_addrs(self.orig_bin.is_valid_vaddr)
 
         for sym in bad_annotations:
             report(

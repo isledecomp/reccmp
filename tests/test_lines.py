@@ -25,7 +25,8 @@ def test_lines(local_path: PureWindowsPath | PurePosixPath):
     """Basic demonstration of behavior with a simple file path."""
     # Start by adding the local code files for our project.
     # These are the candidates for matching Windows paths from the PDB.
-    lines = LinesDb([local_path])
+    lines = LinesDb()
+    lines.add_local_paths([local_path])
 
     # No results: we haven't added any addresses yet.
     assert lines.find_function(local_path, 1, 10) is None
@@ -56,10 +57,34 @@ def test_lines(local_path: PureWindowsPath | PurePosixPath):
 
 
 @pytest.mark.parametrize("local_path", LOCAL_PATHS)
+def test_lines_add_local_files_after(local_path: PureWindowsPath | PurePosixPath):
+    """Does it still work if we add the local paths after the foreign paths?"""
+    lines = LinesDb()
+
+    # No results: we haven't added any addresses yet.
+    assert lines.find_function(local_path, 1, 10) is None
+
+    # Attach line 2 of the file to this virtual address.
+    # The add_line function expects a Windows-like path from the PDB.
+    # All other functions use the local path.
+    lines.add_line(PDB_PATH, 2, 0x1234)
+
+    # Should return nothing: we have not marked this addr as the start of a function
+    assert lines.find_function(local_path, 2) is None
+    lines.mark_function_starts((0x1234,))
+
+    # Add source dirs here, after the call to add_line
+    lines.add_local_paths([local_path])
+
+    # Now we get the function
+    assert lines.find_function(local_path, 2) == 0x1234
+
+
+@pytest.mark.parametrize("local_path", LOCAL_PATHS)
 def test_no_files_of_interest(local_path: PureWindowsPath | PurePosixPath):
     """Same as above test, but with no files declared up front.
     Calls to add_line do not alter the db."""
-    lines = LinesDb([])
+    lines = LinesDb()
     lines.add_line(PDB_PATH, 2, 0x1234)
     lines.mark_function_starts((0x1234,))
     # The address is ignored because "test.cpp" is not part of the decomp code base.
@@ -73,7 +98,8 @@ def test_multiple_match(local_path: PureWindowsPath | PurePosixPath):
     If we find more than one address, the file does not match our data source (PDB or MAP).
     """
 
-    lines = LinesDb([local_path])
+    lines = LinesDb()
+    lines.add_local_paths([local_path])
     lines.add_line(PDB_PATH, 2, 0x1234)
     lines.add_line(PDB_PATH, 3, 0x1235)
     lines.mark_function_starts((0x1234, 0x1235))
@@ -92,7 +118,8 @@ def test_lines_duplicate_reference(local_path: PureWindowsPath | PurePosixPath):
     In MSVC versions as early as MSVC 7.00, the same function can be referenced on multiple lines.
     This should not cause an error to be raised.
     """
-    lines = LinesDb([local_path])
+    lines = LinesDb()
+    lines.add_local_paths([local_path])
     lines.add_line(PDB_PATH, 2, 0x1234)
     lines.add_line(PDB_PATH, 4, 0x1234)
     lines.mark_function_starts((0x1234,))
@@ -106,7 +133,8 @@ def test_db_hash_windows():
     Windows paths are not case-sensitive."""
 
     local_path = PureWindowsPath("code\\test.cpp")
-    lines = LinesDb([local_path])
+    lines = LinesDb()
+    lines.add_local_paths([local_path])
 
     pdb_path = PureWindowsPath("code\\test.cpp")
     lines.add_line(pdb_path, 2, 0x1234)
@@ -125,7 +153,8 @@ def test_db_hash_posix():
     and when it can be expected to match."""
 
     local_path = PurePosixPath("code/test.cpp")
-    lines = LinesDb([local_path])
+    lines = LinesDb()
+    lines.add_local_paths([local_path])
 
     pdb_path = PureWindowsPath("code\\test.cpp")
     lines.add_line(pdb_path, 2, 0x1234)
@@ -143,7 +172,8 @@ def test_db_search_line(local_path: PureWindowsPath | PurePosixPath):
     """search_line() will return any line in the given range
     unless you restrict to function starts only."""
 
-    lines = LinesDb([local_path])
+    lines = LinesDb()
+    lines.add_local_paths([local_path])
 
     # We haven't added any addresses yet.
     assert [*lines.search_line(local_path, 1, 10)] == []
