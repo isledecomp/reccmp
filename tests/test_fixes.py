@@ -89,6 +89,82 @@ def test_fix_mov_cmp_jmp_mem_valid():
     assert is_effective is True
 
 
+def test_fix_fld_fmul_valid():
+
+    orig_asm = [
+        "fld dword ptr [ebp - 0x18]",
+        "fmul dword ptr [ebp - 8]",
+        "faddp st(1)",
+        "fld dword ptr [ebp - 4]",
+        "fmul dword ptr [ebp - 0x14]",
+    ]
+    recomp_asm = [
+        "fld dword ptr [ebp - 8]",
+        "fmul dword ptr [ebp - 0x18]",
+        "faddp st(1)",
+        "fld dword ptr [ebp - 0x14]",
+        "fmul dword ptr [ebp - 4]",
+    ]
+
+    diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
+    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+
+    assert is_effective is True
+
+
+def test_fix_fld_fmul_invalid_duplication():
+
+    orig_asm = [
+        "fld dword ptr [ebp - 0x18]",
+        "fmul dword ptr [ebp - 8]",
+        "fld dword ptr [ebp - 0x18]",
+        "fmul dword ptr [ebp - 8]",
+    ]
+    recomp_asm = [
+        "fld dword ptr [ebp - 8]",
+        "fmul dword ptr [ebp - 0x18]",
+    ]
+
+    diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
+    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+
+    assert is_effective is False
+
+
+def test_fix_fld_fmul_invalid_diff_operands():
+
+    orig_asm = [
+        "fld dword ptr [ebp - 0x18]",
+        "fmul dword ptr [ebp - 9]",
+    ]
+    recomp_asm = [
+        "fld dword ptr [ebp - 8]",
+        "fmul dword ptr [ebp - 0x18]",
+    ]
+
+    diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
+    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+
+    assert is_effective is False
+
+
+def test_fix_fld_fsub_invalid():
+
+    orig_asm = [
+        "fld dword ptr [ebp - 0x18]",
+        "fsub dword ptr [ebp - 8]",
+    ]
+    recomp_asm = [
+        "fld dword ptr [ebp - 8]",
+        "fsub dword ptr [ebp - 0x18]",
+    ]
+
+    diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
+    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+
+    assert is_effective is False
+
+
 @pytest.mark.xfail
 def test_this_should_not_be_marked_as_effective():
 
