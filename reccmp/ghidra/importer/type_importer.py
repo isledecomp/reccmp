@@ -77,7 +77,7 @@ class PdbTypeImporter:
 
     @property
     def types(self):
-        return self.extraction.compare.cv.types
+        return self.extraction.compare.types
 
     def import_pdb_type_into_ghidra(
         self, type_index: str, slim_for_vbase: bool = False
@@ -98,7 +98,7 @@ class PdbTypeImporter:
             return self._import_scalar_type(type_index_lower)
 
         try:
-            type_pdb = self.extraction.compare.cv.types.keys[type_index_lower]
+            type_pdb = self.extraction.compare.types.keys[type_index_lower]
         except KeyError as e:
             raise TypeNotFoundError(
                 f"Failed to find referenced type '{type_index_lower}'"
@@ -212,9 +212,7 @@ class PdbTypeImporter:
 
     def _import_enum(self, type_pdb: CvdumpParsedType) -> DataType:
         underlying_type = self.import_pdb_type_into_ghidra(type_pdb["underlying_type"])
-        field_list = self.extraction.compare.cv.types.keys.get(
-            type_pdb["field_list_type"]
-        )
+        field_list = self.extraction.compare.types.keys.get(type_pdb["field_list_type"])
         assert field_list is not None, f"Failed to find field list for enum {type_pdb}"
         type_name: str = type_pdb["name"]
 
