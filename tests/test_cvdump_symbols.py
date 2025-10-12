@@ -38,6 +38,28 @@ def test_sblock32():
     assert len(parser.symbols[0].stack_symbols) == 8
 
 
+LOCAL_PROC = """
+(0000A4) S_LPROC32: [0001:00000180], Cb: 0000002F, Type:             0x1078, check_watchlist
+         Parent: 00000000, End: 000000EC, Next: 00000000
+         Debug start: 00000000, Debug end: 0000002E
+
+(0000DC)  S_REGISTER: esi, Type:    T_32PVOID(0403), ptr
+
+(0000EC) S_END
+"""
+
+
+def test_local_proc():
+    """S_LPROC32 blocks should be proccessed as well, since these functions
+    may use different calling conventions from S_GPROC32 functions."""
+    parser = CvdumpSymbolsParser()
+    for line in LOCAL_PROC.split("\n"):
+        parser.read_line(line)
+
+    # Make sure we can read the proc
+    assert len(parser.symbols) == 1
+
+
 LDATA32_INSIDE_FUNCTION = """\
 (004368) S_GPROC32: [0001:00050A28], Cb: 000000B5, Type:             0x1010, GetCDPathFromPathsTxtFile
 
