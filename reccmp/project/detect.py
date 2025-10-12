@@ -525,19 +525,29 @@ def detect_project(
         build_config_path = build_directory / RECCMP_BUILD_CONFIG
         build_data = BuildFile(project=project_directory.resolve(), targets={})
 
-        for target_id, target_data in project_data.targets.items():
-            filename = target_data.filename
+        def detect_recompiled(filename: str):
             for search_path_folder in search_path:
-                p = search_path_folder / filename
-                pdb = p.with_suffix(".pdb")
-                if p.is_file() and pdb.is_file():
-                    build_data.targets.setdefault(
-                        target_id, BuildFileTarget(path=p, pdb=pdb)
+                binary = search_path_folder / filename
+                pdb = binary.with_suffix(".pdb")
+                if binary.is_file():
+                    if pdb.is_file():
+                        build_data.targets.setdefault(
+                            target_id, BuildFileTarget(path=binary, pdb=pdb)
+                        )
+                        logger.info("Found %s -> %s", target_id, binary)
+                        logger.info("Found %s -> %s", target_id, pdb)
+                        return
+
+                    logger.warning(
+                        "Missing PDB file '%s' next to binary '%s'",
+                        pdb.name,
+                        str(binary),
                     )
-                    logger.info("Found %s -> %s", target_id, p)
-                    logger.info("Found %s -> %s", target_id, pdb)
-                    break
-            else:
-                logger.warning("Could not find %s", filename)
+
+            logger.warning("Failed to detect a recompile for '%s'", filename)
+
+        for target_id, target_data in project_data.targets.items():
+            detect_recompiled(target_data.filename)
+
         logger.info("Updating %s", build_config_path)
         build_data.write_file(build_config_path)
