@@ -16,6 +16,15 @@ class StackOrRegisterSymbol(NamedTuple):
     name: str
 
 
+class LdataEntry(NamedTuple):
+    """local static variables"""
+
+    section: int
+    offset: int
+    type: str
+    name: str
+
+
 # S_GPROC32 = functions
 @dataclass
 class SymbolsEntry:
@@ -27,6 +36,7 @@ class SymbolsEntry:
     func_type: str
     name: str
     stack_symbols: list[StackOrRegisterSymbol] = field(default_factory=list)
+    static_variables: list[LdataEntry] = field(default_factory=list)
     frame_pointer_present: bool = False
     addr: int | None = None  # Absolute address. Will be set later, if at all
 
@@ -83,6 +93,14 @@ class CvdumpSymbolsParser:
 
     _register_stack_symbols = ["S_BPREL32", "S_REGISTER"]
 
+    """
+    Parse the second part of static variable, e.g.
+    `S_LDATA32: [0003:000004A4], Type:   T_32PRCHAR(0470), set`
+    """
+    _ldata32_regex = re.compile(
+        r"\[(?P<section>\w{4}):(?P<offset>\w{8})\], Type:\s*(?P<type>\S+), (?P<name>.+)"
+    )
+
     # List the unhandled types so we can check exhaustiveness
     _unhandled_symbols = [
         "S_COMPILE",
@@ -91,7 +109,6 @@ class CvdumpSymbolsParser:
         "S_OBJNAME",
         "S_THUNK32",
         "S_LABEL32",
-        "S_LDATA32",
         "S_REGREL32",  # TODO: Seen as early as MSVC 7.00; might be relevant to Ghidra and/or stackcmp
         "S_UDT",
     ]
@@ -177,6 +194,22 @@ class CvdumpSymbolsParser:
                 assert self.block_level >= 0
             else:
                 self.current_function = None
+        elif symbol_type == "S_LDATA32":
+            assert second_part is not None
+            if (match := self._ldata32_regex.match(second_part)) is not None:
+                new_var = LdataEntry(
+                    section=int(match.group("section"), 16),
+                    offset=int(match.group("offset"), 16),
+                    type=match.group("type"),
+                    name=match.group("name"),
+                )
+
+                # An S_LDATA32 that appears between S_GPROC32 and S_END blocks then
+                # we consider it to be a static variable from the enclosing function.
+                # If S_LDATA32 appears outside a function, ignore it.
+                if self.current_function is not None:
+                    self.current_function.static_variables.append(new_var)
+
         elif symbol_type in self._unhandled_symbols:
             return
         else:

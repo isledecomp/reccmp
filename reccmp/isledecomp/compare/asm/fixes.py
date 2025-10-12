@@ -2,8 +2,7 @@ import re
 from typing import Sequence
 
 from reccmp.isledecomp.compare.asm.parse import AsmExcerpt
-
-DiffOpcode = tuple[str, int, int, int, int]
+from reccmp.isledecomp.compare.pinned_sequences import DiffOpcode
 
 REG_FIND = re.compile(r"(?: |\[)(e?[a-d]x|e?[s,d]i|[a-d][l,h]|e?[b,s]p)")
 
@@ -44,24 +43,7 @@ def is_operand_swap(a: str, b: str) -> bool:
     return a.partition(", ")[0] != b.partition(", ")[0] and sorted(a) == sorted(b)
 
 
-def can_cmp_swap(orig: list[str], recomp: list[str]) -> bool:
-    # Make sure we have 1 cmp and 1 jmp for both
-    if len(orig) != 2 or len(recomp) != 2:
-        return False
-
-    if not orig[0].startswith("cmp") or not recomp[0].startswith("cmp"):
-        return False
-
-    if not orig[1].startswith("j") or not recomp[1].startswith("j"):
-        return False
-
-    # Checking two things:
-    # Are the cmp operands flipped?
-    # Is the jump instruction compatible with a flip?
-    return is_operand_swap(orig[0], recomp[0]) and jump_swap_ok(orig[1], recomp[1])
-
-
-def patch_jump(a: str, b: str) -> str:
+def get_patched_jump(a: str, b: str) -> str:
     """For jump instructions a, b, return `(mnemonic_a) (operand_b)`.
     The reason to do it this way (instead of just returning `a`) is that
     the jump instructions might use different displacement offsets
@@ -73,20 +55,100 @@ def patch_jump(a: str, b: str) -> str:
     return mnemonic_a + " " + operand_b
 
 
+def patch_mov_cmp_jmp(orig: list[str], recomp: list[str]) -> set[int]:
+    """Can we resolve the diffs between orig and recomp by patching
+    swapped cmp instructions?
+    For example:
+        mov eax, dword ptr [ebp - 0x4]  mov eax, dword ptr [ebp - 0x8]
+        cmp dword ptr [ebp - 0x8]       cmp dword ptr [ebp - 0x4]
+        ja .label                       jb .label
+
+    Returns set of fixed lines
+    """
+
+    # find the first "cmp" instruction
+    cmp_index = next((i for i, s in enumerate(orig) if s.startswith("cmp")), -1)
+
+    # return if not found, or only found on first or last line
+    if (
+        cmp_index in (-1, 0, len(orig) - 1)
+        or
+        # recomp should also have a cmp in the same line
+        not recomp[cmp_index].startswith("cmp")
+        or
+        # line before cmp must be a mov
+        not orig[cmp_index - 1].startswith("mov")
+        or not recomp[cmp_index - 1].startswith("mov")
+        or
+        # if the last lines are not a compatible jump difference
+        not jump_swap_ok(orig[cmp_index + 1], recomp[cmp_index + 1])
+    ):
+        return set()
+
+    # Checking if the combination of mov + cmp include the same set of characters
+    # - that is, the set of operands are the same although switched in order
+    if sorted(orig[cmp_index - 1] + orig[cmp_index]) == sorted(
+        recomp[cmp_index - 1] + recomp[cmp_index]
+    ):
+        # We only register the fix if the jmp actually matches
+        if orig[cmp_index + 1] == get_patched_jump(
+            orig[cmp_index + 1], recomp[cmp_index + 1]
+        ):
+            return {0, 1, 2}
+    return set()
+
+
+def patch_cmp_jmp(orig: list[str], recomp: list[str]) -> set[int]:
+    """Can we resolve the diffs between orig and recomp by patching
+    swapped cmp instructions?
+    For example:
+        cmp eax, ebx                    cmp ebx, eax
+        je .label                       je .label
+
+        cmp eax, ebx                    cmp ebx, eax
+        ja .label                       jb .label
+
+    Returns set of fixed lines
+    """
+
+    # find the first "cmp" instruction
+    cmp_index = next((i for i, s in enumerate(orig) if s.startswith("cmp")), -1)
+    # return if not found, or only found on the last line
+    if (
+        cmp_index in (-1, len(orig) - 1)
+        or
+        # recomp should also have a cmp in the same line
+        not recomp[cmp_index].startswith("cmp")
+        or
+        # if the last lines are not a compatible jump difference
+        not jump_swap_ok(orig[cmp_index + 1], recomp[cmp_index + 1])
+    ):
+        return set()
+
+    # Checking two things:
+    # Are the cmp operands flipped?
+    # Is the jump instruction compatible with a flip?
+    if is_operand_swap(orig[cmp_index], recomp[cmp_index]):
+        if orig[cmp_index + 1] == get_patched_jump(
+            orig[cmp_index + 1], recomp[cmp_index + 1]
+        ):
+            return {cmp_index, cmp_index + 1}
+    return set()
+
+
 def patch_cmp_swaps(
     codes: Sequence[DiffOpcode], orig_asm: list[str], recomp_asm: list[str]
 ) -> set[int]:
     """Can we resolve the diffs between orig and recomp by patching
     swapped cmp instructions?
-    For example:
-        cmp eax, ebx            cmp ebx, eax
-        je .label               je .label
-
-        cmp eax, ebx            cmp ebx, eax
-        ja .label               jb .label
     """
 
+    # number of additional lines to send to the patcher when considering each diff
+    additonal_lines_to_include = 3
+
     fixed_lines = set()
+
+    patch_fns = [patch_cmp_jmp, patch_mov_cmp_jmp]
 
     for code, i1, i2, j1, j2 in codes:
         # To save us the trouble of finding "compatible" cmp instructions
@@ -96,15 +158,16 @@ def patch_cmp_swaps(
 
         # If the ranges in orig and recomp are not equal, use the shorter one
         for i, j in zip(range(i1, i2), range(j1, j2)):
-            if can_cmp_swap(orig_asm[i : i + 2], recomp_asm[j : j + 2]):
-                # Patch cmp
-                fixed_lines.add(j)
-
-                # Patch the jump if necessary
-                patched = patch_jump(orig_asm[i + 1], recomp_asm[j + 1])
-                # We only register a fix if it actually matches
-                if orig_asm[i + 1] == patched:
-                    fixed_lines.add(j + 1)
+            for fn in patch_fns:
+                this_patch_lines = fn(
+                    orig_asm[i : i + additonal_lines_to_include],
+                    recomp_asm[j : j + additonal_lines_to_include],
+                )
+                # if we have fixed lines by this patcher, add them to the combined `fixed_lines`
+                if len(this_patch_lines) > 0:
+                    fixed_lines.update([j + x for x in this_patch_lines])
+                    # now that we've fixed these lines, no need to check the other patch strategies for fixing
+                    break
 
     return fixed_lines
 
@@ -194,8 +257,11 @@ def _is_relocatable(instr: str) -> bool:
     Excludes certain instructions whose relocation will always change the logic
     to be considered for an effective match.
     """
-    # Do not relocate jump table entries (this most likely influences the behaviour)
     if instr.startswith("start +"):
+        # Do not relocate jump table entries (this most likely influences the behaviour)
+        return False
+    if instr.startswith("0x"):
+        # Do not relocate data table entries (this most likely influences the behaviour)
         return False
     return True
 

@@ -162,6 +162,7 @@ variable_name_cases = [
     ("char hello[50];", "hello"),
     ("char hello[50] = {1234,", "hello"),
     ("int hello = 500;", "hello"),
+    ("char* gBoring_material_names[2];", "gBoring_material_names"),
 ]
 
 
@@ -180,9 +181,12 @@ string_match_cases = [
 ]
 
 
-@pytest.mark.parametrize("line, string", string_match_cases)
-def test_get_string_contents(line: str, string: str):
-    assert get_string_contents(line) == string
+@pytest.mark.parametrize("line, expected", string_match_cases)
+def test_get_string_contents(line: str, expected: str):
+    string = get_string_contents(line)
+    assert string is not None
+    assert string.text == expected
+    assert string.is_widechar is False
 
 
 def test_marker_extra_spaces():

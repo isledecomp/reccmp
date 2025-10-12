@@ -30,3 +30,20 @@ jobs:
     - name: Run mypy
       shell: bash
       run: mypy ./reccmp ./tests
+
+  js-format:
+    name: 'Javascript Format'
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install dependencies
+      working-directory: ./webui
+      run: |
+        npm ci
+
+    - name: Biome Format (tests)
+      working-directory: ./webui
+      run: |
+        npm run lint

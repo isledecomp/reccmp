@@ -875,3 +875,21 @@ def test_issue_137(parser):
     assert len(parser.alerts) == 1
     assert parser.alerts[0].code == ParserError.UNEXPECTED_MARKER
     assert parser.alerts[0].code.name == "UNEXPECTED_MARKER"
+
+
+def test_widechar_string(parser):
+    """Should detect a widechar string with the L prefix."""
+    parser.read(
+        """\
+        // STRING: HELLO 0x1234
+        char* test = L"test";
+
+        // STRING: HELLO 0x5555
+        char* test = "test";
+        """
+    )
+
+    assert parser.strings[0].is_widechar is True
+    assert parser.strings[0].name == "test"
+    assert parser.strings[1].is_widechar is False
+    assert parser.strings[1].name == "test"

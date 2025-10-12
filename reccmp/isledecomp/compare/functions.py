@@ -1,29 +1,33 @@
 from datetime import datetime
 from dataclasses import dataclass
-import difflib
 from functools import cache
 import struct
 from itertools import pairwise
 from typing import Callable, Iterator, NamedTuple
+from reccmp.isledecomp.compare.lines import LinesDb
+from reccmp.isledecomp.difflib import DiffOpcode
+from reccmp.isledecomp.compare.pinned_sequences import SequenceMatcherWithPins
 from reccmp.isledecomp.compare.asm.fixes import assert_fixup, find_effective_match
 from reccmp.isledecomp.compare.asm.parse import AsmExcerpt, ParseAsm
-from reccmp.isledecomp.compare.asm.replacement import create_name_lookup
-from reccmp.isledecomp.compare.db import EntityDb, ReccmpEntity, ReccmpMatch
-from reccmp.isledecomp.compare.diff import CombinedDiffOutput, DiffReport, combined_diff
+from reccmp.isledecomp.compare.asm.replacement import (
+    AddrLookupProtocol,
+    create_name_lookup,
+)
+from reccmp.isledecomp.compare.db import EntityDb, ReccmpMatch
 from reccmp.isledecomp.compare.event import ReccmpEvent, ReccmpReportProtocol
 from reccmp.isledecomp.formats.exceptions import (
     InvalidVirtualAddressError,
     InvalidVirtualReadError,
 )
 from reccmp.isledecomp.formats.pe import PEImage
-from reccmp.isledecomp.types import EntityType
 
 
-class FunctionPartCompareResult(NamedTuple):
-    diff: CombinedDiffOutput
+class FunctionCompareResult(NamedTuple):
+    codes: list[DiffOpcode]
+    orig_inst: list[tuple[str, str]]
+    recomp_inst: list[tuple[str, str]]
     is_effective_match: bool
-    # The match ratio multiplied by the combined number of instructions in orig and recomp
-    weighted_match_ratio: float
+    match_ratio: float
 
 
 def timestamp_string() -> str:
@@ -31,7 +35,7 @@ def timestamp_string() -> str:
 
 
 def create_valid_addr_lookup(
-    db_getter: Callable[[int, bool], ReccmpEntity | None],
+    db_getter: AddrLookupProtocol,
     is_recomp: bool,
     bin_file: PEImage,
 ) -> Callable[[int], bool]:
@@ -47,7 +51,7 @@ def create_valid_addr_lookup(
             return True
 
         # Check whether the address points to valid data
-        entity = db_getter(addr, False)
+        entity = db_getter(addr, exact=False)
         if entity is None:
             return False
         base_addr = entity.recomp_addr if is_recomp else entity.orig_addr
@@ -78,6 +82,7 @@ def create_bin_lookup(bin_file: PEImage) -> Callable[[int], int | None]:
 class FunctionComparator:
     # pylint: disable=too-many-instance-attributes
     db: EntityDb
+    lines_db: LinesDb
     orig_bin: PEImage
     recomp_bin: PEImage
     report: ReccmpReportProtocol
@@ -120,7 +125,15 @@ class FunctionComparator:
                 else:
                     f.write(f"        : {line}\n")
 
-    def compare_function(self, match: ReccmpMatch) -> DiffReport:
+    def _source_ref_of_recomp_addr(self, recomp_addr: int | None) -> str | None:
+        if recomp_addr is None:
+            return None
+        path_line_pair = self.lines_db.find_line_of_recomp_address(recomp_addr)
+        if path_line_pair is None:
+            return None
+        return f"{path_line_pair[0].name}:{path_line_pair[1]}"
+
+    def compare_function(self, match: ReccmpMatch) -> FunctionCompareResult:
         # Detect when the recomp function size would cause us to read
         # enough bytes from the original function that we cross into
         # the next annotated function.
@@ -151,8 +164,6 @@ class FunctionComparator:
         orig_combined = self.orig_sanitize.parse_asm(orig_raw, match.orig_addr)
         recomp_combined = self.recomp_sanitize.parse_asm(recomp_raw, match.recomp_addr)
 
-        total_lines = len(orig_combined) + len(recomp_combined)
-
         if self.debug:
             self._dump_asm(orig_combined, recomp_combined)
 
@@ -162,75 +173,77 @@ class FunctionComparator:
             assert_fixup(recomp_combined)
 
         line_annotations = self._collect_line_annotations(recomp_combined)
-        code_split_by_annotations = self._split_code_on_line_annotations(
+
+        split_points = self._compute_split_points(
             orig_combined, recomp_combined, line_annotations
         )
 
-        diffs = [
-            self._compare_function_part(orig_block, recomp_block)
-            for orig_block, recomp_block in code_split_by_annotations
-        ]
-
-        unified_diff = []
-        for diff in diffs:
-            unified_diff += diff.diff
-
-        total_ratio = sum(diff.weighted_match_ratio for diff in diffs) / max(
-            total_lines, 1
-        )
-        is_effective_match_overall = total_ratio <= 0.999 and all(
-            diff.is_effective_match for diff in diffs
+        return self._compare_function_assembly(
+            orig_combined, recomp_combined, split_points
         )
 
-        best_name = match.best_name()
-        assert best_name is not None
-        return DiffReport(
-            match_type=EntityType.FUNCTION,
-            orig_addr=match.orig_addr,
-            recomp_addr=match.recomp_addr,
-            name=best_name,
-            udiff=unified_diff,
-            ratio=total_ratio,
-            is_effective_match=is_effective_match_overall,
-        )
+    @staticmethod
+    def _print_recomp_instruction(
+        instruction: str, *, source_ref: str | None, is_pinned: bool
+    ) -> str:
+        match source_ref, is_pinned:
+            case None, _:
+                # cannot be pinned if it has no source reference
+                return instruction
+            case source_ref_str, False:
+                return f"{instruction} \t({source_ref_str})"
+            case source_ref_str, True:
+                return f"{instruction} \t({source_ref_str}, pinned)"
+            case _:
+                # Unreachable, but mypy doesn't understand
+                assert False
 
-    def _compare_function_part(
-        self, orig: AsmExcerpt, recomp: AsmExcerpt
-    ) -> FunctionPartCompareResult:
+    def _compare_function_assembly(
+        self,
+        orig: AsmExcerpt,
+        recomp: AsmExcerpt,
+        split_points: list[tuple[int, int]],
+    ) -> FunctionCompareResult:
         # Detach addresses from asm lines for the text diff.
         orig_asm = [x[1] for x in orig]
         recomp_asm = [x[1] for x in recomp]
 
-        diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm, autojunk=False)
-        local_ratio = diff.ratio()
+        diff = SequenceMatcherWithPins(orig_asm, recomp_asm, split_points)
 
-        if local_ratio != 1.0:
+        if diff.ratio() != 1.0:
             # Check whether we can resolve register swaps which are actually
             # perfect matches modulo compiler entropy.
-            codes = diff.get_opcodes()
-            is_effective = find_effective_match(codes, orig_asm, recomp_asm)
-
-            # Convert the addresses to hex string for the diff output
-            orig_combined_as_strings = [
-                (hex(addr) if addr is not None else "", instr) for addr, instr in orig
-            ]
-            recomp_combined_as_strings = [
-                (hex(addr) if addr is not None else "", instr) for addr, instr in recomp
-            ]
-            unified_diff = combined_diff(
-                diff,
-                orig_combined_as_strings,
-                recomp_combined_as_strings,
-                context_size=10,
+            is_effective = find_effective_match(
+                diff.get_opcodes(), orig_asm, recomp_asm
             )
         else:
-            unified_diff = []
             is_effective = False
 
-        return FunctionPartCompareResult(
-            unified_diff,
-            is_effective,
-            local_ratio * max(len(orig) + len(recomp), 1),
+        # Convert the addresses to hex string for the diff output
+        orig_for_printing = [
+            (hex(addr) if addr is not None else "", instr) for addr, instr in orig
+        ]
+
+        recomp_for_printing = [
+            (
+                hex(addr) if addr is not None else "",
+                self._print_recomp_instruction(
+                    instruction,
+                    source_ref=self._source_ref_of_recomp_addr(addr),
+                    is_pinned=any(
+                        recomp_addr == line_index for _, recomp_addr in split_points
+                    ),
+                ),
+            )
+            for line_index, (addr, instruction) in enumerate(recomp)
+        ]
+
+        return FunctionCompareResult(
+            codes=diff.get_opcodes(),
+            orig_inst=orig_for_printing,
+            recomp_inst=recomp_for_printing,
+            is_effective_match=is_effective,
+            match_ratio=diff.ratio(),
         )
 
     def _collect_line_annotations(self, recomp: AsmExcerpt) -> list[ReccmpMatch]:
@@ -294,9 +307,8 @@ class FunctionComparator:
         """
         Computes the index pairs into `orig` and `recomp`
         that correspond to the line annotations given in `line_annotations`.
-        Contains the first index and last index + 1 in order to facilitate iterating over it.
         """
-        split_points: list[tuple[int, int]] = [(0, 0)]
+        split_points: list[tuple[int, int]] = []
 
         for line_annotation in line_annotations:
             orig_split_index = next(
@@ -333,8 +345,5 @@ class FunctionComparator:
 
             split_points.append((orig_split_index, recomp_split_index))
             split_points.append((orig_split_index + 1, recomp_split_index + 1))
-
-        # Add one past the last index to facilitate iterating
-        split_points.append((len(orig), len(recomp)))
 
         return split_points

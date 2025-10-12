@@ -1,12 +1,12 @@
 from dataclasses import dataclass
 import re
-from typing import Any
 import logging
 
 from reccmp.isledecomp.formats.exceptions import InvalidVirtualAddressError
 from reccmp.isledecomp.cvdump.symbols import SymbolsEntry
 from reccmp.isledecomp.compare import Compare
 from reccmp.isledecomp.compare.db import ReccmpMatch
+from reccmp.isledecomp.cvdump.types import CvdumpParsedType
 
 logger = logging.getLogger(__file__)
 
@@ -65,11 +65,11 @@ class PdbFunctionExtractor:
         "STD Near": "__stdcall",
     }
 
-    def _get_cvdump_type(self, type_name: str | None) -> dict[str, Any] | None:
+    def _get_cvdump_type(self, type_name: str | None) -> CvdumpParsedType | None:
         return (
             None
             if type_name is None
-            else self.compare.cv.types.keys.get(type_name.lower())
+            else self.compare.types.keys.get(type_name.lower())
         )
 
     def get_func_signature(self, fn: SymbolsEntry) -> FunctionSignature | None:
@@ -80,7 +80,7 @@ class PdbFunctionExtractor:
 
         # get corresponding function type
 
-        function_type = self.compare.cv.types.keys.get(function_type_str.lower())
+        function_type = self.compare.types.keys.get(function_type_str.lower())
         if function_type is None:
             logger.error(
                 "Could not find function type %s for function %s", fn.func_type, fn.name
@@ -120,9 +120,7 @@ class PdbFunctionExtractor:
                 )
 
         call_type = self._call_type_map[function_type["call_type"]]
-
-        # parse as hex number, default to 0
-        this_adjust = int(function_type.get("this_adjust", "0"), 16)
+        this_adjust = function_type.get("this_adjust", 0)
 
         return FunctionSignature(
             original_function_symbol=fn,

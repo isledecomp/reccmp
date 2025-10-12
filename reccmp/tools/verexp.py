@@ -10,8 +10,8 @@ from reccmp.isledecomp.formats import detect_image, PEImage
 from reccmp.isledecomp.utils import print_diff
 from reccmp.project.detect import (
     RecCmpProjectException,
-    argparse_add_built_project_target_args,
-    argparse_parse_built_project_target,
+    argparse_add_project_target_args,
+    argparse_parse_project_target,
 )
 from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
 
@@ -26,7 +26,7 @@ def main():
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {reccmp.VERSION}"
     )
-    argparse_add_built_project_target_args(parser)
+    argparse_add_project_target_args(parser)
     parser.add_argument(
         "--no-color", "-n", action="store_true", help="Do not color the output"
     )
@@ -37,7 +37,7 @@ def main():
     argparse_parse_logging(args)
 
     try:
-        target = argparse_parse_built_project_target(args)
+        target = argparse_parse_project_target(args)
     except RecCmpProjectException as e:
         logger.error("%s", e.args[0])
         return 1

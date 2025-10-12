@@ -5,7 +5,7 @@ from reccmp.isledecomp.types import EntityType
 from .demangler import demangle_string_const, demangle_vtable
 from .parser import CvdumpParser, LineValue, NodeKey
 from .symbols import SymbolsEntry
-from .types import CvdumpKeyError, CvdumpIntegrityError, TypeInfo
+from .types import CvdumpKeyError, CvdumpIntegrityError, CvdumpTypesParser, TypeInfo
 
 
 class CvdumpNode:
@@ -94,11 +94,13 @@ class CvdumpAnalysis:
     """Collects the results from CvdumpParser into a list of nodes (i.e. symbols).
     These can then be analyzed by a downstream tool."""
 
+    parser: CvdumpParser
     lines: dict[PureWindowsPath, list[LineValue]]
 
     def __init__(self, parser: CvdumpParser):
         """Read in as much information as we have from the parser.
         The more sections we have, the better our information will be."""
+        self.parser = parser
         node_dict: dict[NodeKey, CvdumpNode] = {}
 
         # PUBLICS is our roadmap for everything that follows.
@@ -148,16 +150,41 @@ class CvdumpAnalysis:
             if key not in node_dict:
                 node_dict[key] = CvdumpNode(*key)
 
-            if sym.type == "S_GPROC32":
+            if sym.type in ("S_GPROC32", "S_LPROC32"):
+                if sym.type == "S_LPROC32" and node_dict[key].symbol_entry is not None:
+                    continue
                 node_dict[key].friendly_name = sym.name
                 node_dict[key].confirmed_size = sym.size
                 node_dict[key].node_type = EntityType.FUNCTION
                 node_dict[key].symbol_entry = sym
 
+                # Iterate through static variables defined in this function
+                # generate decorated name "<variable name>___<func name>"
+                for v in sym.static_variables:
+                    key = NodeKey(v.section, v.offset)
+                    if key not in node_dict:
+                        node_dict[key] = CvdumpNode(*key)
+                    node_dict[key].node_type = EntityType.DATA
+                    # TODO this format is required for `match_msvc::match_static_variables` to find the variable
+                    # Look at either documenting this dependency or reworking the query
+                    node_dict[key].decorated_name = f"{v.name}___{sym.name}"
+                    node_dict[key].friendly_name = v.name
+                    try:
+                        v_info = parser.types.get(v.type)
+                        node_dict[key].confirmed_size = v_info.size
+                        node_dict[key].data_type = v_info
+                    except (CvdumpKeyError, CvdumpIntegrityError):
+                        # No big deal if we don't have complete type information.
+                        pass
+
         self.nodes: list[CvdumpNode] = [
             v for _, v in dict(sorted(node_dict.items())).items()
         ]
         self._estimate_size()
+
+    @property
+    def types(self) -> CvdumpTypesParser:
+        return self.parser.types
 
     def _estimate_size(self):
         """Get the distance between one section:offset value and the next one

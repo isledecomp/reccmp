@@ -11,7 +11,6 @@ import reccmp
 from reccmp.isledecomp.formats.exceptions import InvalidVirtualReadError
 from reccmp.isledecomp.compare import Compare as IsleCompare
 from reccmp.isledecomp.compare.db import ReccmpMatch
-from reccmp.isledecomp.cvdump import Cvdump
 from reccmp.isledecomp.cvdump.types import (
     CvdumpKeyError,
     CvdumpIntegrityError,
@@ -19,9 +18,9 @@ from reccmp.isledecomp.cvdump.types import (
 from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
 from reccmp.project.detect import (
     RecCmpProjectException,
-    RecCmpBuiltTarget,
-    argparse_add_built_project_target_args,
-    argparse_parse_built_project_target,
+    RecCmpTarget,
+    argparse_add_project_target_args,
+    argparse_parse_project_target,
 )
 
 
@@ -39,7 +38,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {reccmp.VERSION}"
     )
-    argparse_add_built_project_target_args(parser)
+    argparse_add_project_target_args(parser)
     parser.add_argument(
         "-v",
         "--verbose",
@@ -141,7 +140,7 @@ def create_comparison_item(
     )
 
 
-def do_the_comparison(target: RecCmpBuiltTarget) -> Iterable[ComparisonItem]:
+def do_the_comparison(target: RecCmpTarget) -> Iterable[ComparisonItem]:
     # pylint: disable=too-many-locals
     """Run through each variable in our compare DB, then do the comparison
     according to the variable's type. Emit the result."""
@@ -149,22 +148,9 @@ def do_the_comparison(target: RecCmpBuiltTarget) -> Iterable[ComparisonItem]:
     origfile = isle_compare.orig_bin
     recompfile = isle_compare.recomp_bin
 
-    # TODO: We don't currently retain the type information of each variable
-    # in our compare DB. To get those, we build this mini-lookup table that
-    # maps recomp addresses to their type.
-    # We still need to build the full compare DB though, because we may
-    # need the matched symbols to compare pointers (e.g. on strings)
-    mini_cvdump = Cvdump(str(target.recompiled_pdb)).globals().types().run()
-
-    recomp_type_reference = {
-        recompfile.get_abs_addr(g.section, g.offset): g.type
-        for g in mini_cvdump.globals
-        if recompfile.is_valid_section(g.section)
-    }
-
     for var in isle_compare.get_variables():
         assert var.name is not None
-        type_name = recomp_type_reference.get(var.recomp_addr)
+        type_name = var.get("data_type")
 
         # Start by assuming we can only compare the raw bytes
         data_size = var.size
@@ -174,7 +160,8 @@ def do_the_comparison(target: RecCmpBuiltTarget) -> Iterable[ComparisonItem]:
             try:
                 # If we are type-aware, we can get the precise
                 # data size for the variable.
-                data_type = mini_cvdump.types.get(type_name)
+                data_type = isle_compare.types.get(type_name)
+                assert data_type.size is not None
                 data_size = data_type.size
             except (CvdumpKeyError, CvdumpIntegrityError) as ex:
                 yield create_comparison_item(var, error=repr(ex))
@@ -254,8 +241,8 @@ def do_the_comparison(target: RecCmpBuiltTarget) -> Iterable[ComparisonItem]:
 
         # If we are here, we can do the type-aware comparison.
         compared = []
-        compare_items = mini_cvdump.types.get_scalars_gapless(type_name)
-        format_str = mini_cvdump.types.get_format_string(type_name)
+        compare_items = isle_compare.types.get_scalars_gapless(type_name)
+        format_str = isle_compare.types.get_format_string(type_name)
 
         orig_data = unpack(format_str, orig_raw)
         recomp_data = unpack(format_str, recomp_raw)
@@ -311,7 +298,7 @@ def main():
     args = parse_args()
 
     try:
-        target = argparse_parse_built_project_target(args=args)
+        target = argparse_parse_project_target(args=args)
     except RecCmpProjectException as e:
         logger.error(e.args[0])
         return 1

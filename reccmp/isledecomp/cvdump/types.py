@@ -1,10 +1,19 @@
 from dataclasses import dataclass
 import re
 import logging
-from typing import Any, NamedTuple
+from typing import NamedTuple
+from typing_extensions import NotRequired, TypedDict
 
 
 logger = logging.getLogger(__name__)
+
+
+# TODO: For now, this is here just to document where we
+# expect a T_* (scalar) or 0x____ (complex) type key.
+# Not all occurrences are normalized with normalize_type_id().
+# The unit tests show where some hex digits are capitalized.
+# We would need to use typing.NewType for actual type-checking.
+CvdumpTypeKey = str
 
 
 class CvdumpTypeError(Exception):
@@ -24,12 +33,17 @@ class FieldListItem(NamedTuple):
 
     offset: int
     name: str
-    type: str
+    type: CvdumpTypeKey
+
+
+class EnumItem(NamedTuple):
+    name: str
+    value: int
 
 
 @dataclass
 class VirtualBaseClass:
-    type: str
+    type: CvdumpTypeKey
     index: int
     direct: bool
 
@@ -43,7 +57,7 @@ class VirtualBasePointer:
 class ScalarType(NamedTuple):
     offset: int
     name: str | None
-    type: str
+    type: CvdumpTypeKey
 
     @property
     def size(self) -> int:
@@ -69,7 +83,7 @@ class TypeInfo(NamedTuple):
         return self.members is None
 
 
-def normalize_type_id(key: str) -> str:
+def normalize_type_id(key: str) -> CvdumpTypeKey:
     """Helper for TYPES parsing to ensure a consistent format.
     If key begins with "T_" it is a built-in type.
     Else it is a hex string. We prefer lower case letters and
@@ -151,6 +165,62 @@ def join_member_names(parent: str, child: str | None) -> str:
     return f"{parent}.{child}"
 
 
+class LfEnumAttrs(TypedDict):
+    field_list_type: NotRequired[CvdumpTypeKey]
+    is_forward_ref: NotRequired[bool]
+    is_nested: NotRequired[bool]
+    name: NotRequired[str]
+    num_members: NotRequired[int]
+    udt: NotRequired[CvdumpTypeKey]
+    underlying_type: NotRequired[CvdumpTypeKey]
+
+
+class CvdumpParsedType(TypedDict):
+    type: str  # leaf type
+
+    # Used by many leaf types
+    name: NotRequired[str]
+    size: NotRequired[int]
+    is_forward_ref: NotRequired[bool]
+    field_list_type: NotRequired[CvdumpTypeKey]
+    udt: NotRequired[CvdumpTypeKey]
+
+    # LF_ARRAY
+    array_type: NotRequired[CvdumpTypeKey]
+
+    # LF_ENUM
+    is_nested: NotRequired[bool]
+    num_members: NotRequired[int]
+    underlying_type: NotRequired[CvdumpTypeKey]
+
+    # LF_MODIFIER
+    modifies: NotRequired[CvdumpTypeKey]
+
+    # LF_FIELDLIST
+    super: NotRequired[dict[CvdumpTypeKey, int]]
+    vbase: NotRequired[VirtualBasePointer]
+    members: NotRequired[list[FieldListItem]]
+    variants: NotRequired[list[EnumItem]]
+
+    # LF_ARGLIST
+    argcount: NotRequired[int]
+    args: NotRequired[list[CvdumpTypeKey]]
+
+    # LF_POINTER
+    element_type: NotRequired[CvdumpTypeKey]
+    containing_class: NotRequired[CvdumpTypeKey]
+
+    # LF_PROCEDURE / LF_MFUNCTION
+    return_type: NotRequired[CvdumpTypeKey]
+    call_type: NotRequired[str]
+    class_type: NotRequired[CvdumpTypeKey]
+    this_type: NotRequired[CvdumpTypeKey]
+    func_attr: NotRequired[str]
+    num_params: NotRequired[int]
+    arg_list_type: NotRequired[CvdumpTypeKey]
+    this_adjust: NotRequired[int]
+
+
 class CvdumpTypesParser:
     """Parser for cvdump output, TYPES section.
     Tricky enough that it demands its own parser."""
@@ -223,11 +293,10 @@ class CvdumpTypesParser:
         )
     )
 
-    LF_ENUM_ATTRIBUTES = [
-        re.compile(r"^\s*# members = (?P<num_members>\d+)$"),
-        # the enum name can have both commas and whitespace, so '.+' is okay
-        re.compile(r"^\s*enum name = (?P<name>.+)$"),
-    ]
+    LF_ENUM_MEMBER_RE = re.compile(r"^\s*# members = (?P<num_members>\d+)$")
+    # the enum name can have both commas and whitespace, so '.+' is okay
+    LF_ENUM_NAME_RE = re.compile(r"^\s*enum name = (?P<name>.+)$")
+
     LF_ENUM_TYPES = re.compile(
         r"^\s*type = (?P<underlying_type>\S+) field list type (?P<field_type>0x\w{4})$"
     )
@@ -251,10 +320,9 @@ class CvdumpTypesParser:
     }
 
     def __init__(self) -> None:
-        self.mode: str | None = None
-        self.keys: dict[str, dict[str, Any]] = {}
+        self.keys: dict[CvdumpTypeKey, CvdumpParsedType] = {}
 
-    def _get_field_list(self, type_obj: dict[str, Any]) -> list[FieldListItem]:
+    def _get_field_list(self, type_obj: CvdumpParsedType) -> list[FieldListItem]:
         """Return the field list for the given LF_CLASS/LF_STRUCTURE reference"""
 
         if type_obj.get("type") == "LF_FIELDLIST":
@@ -265,26 +333,19 @@ class CvdumpTypesParser:
 
         members: list[FieldListItem] = []
 
-        super_ids = field_obj.get("super", [])
-        for super_id in super_ids:
-            # May need to resolve forward ref.
-            superclass = self.get(super_id)
-            if superclass.members is not None:
-                members += superclass.members
+        if "super" in field_obj:
+            for super_id in field_obj["super"].keys():
+                # May need to resolve forward ref.
+                superclass = self.get(super_id)
+                if superclass.members is not None:
+                    members += superclass.members
 
         raw_members = field_obj.get("members", [])
-        members += [
-            FieldListItem(
-                offset=m["offset"],
-                type=m["type"],
-                name=m["name"],
-            )
-            for m in raw_members
-        ]
+        members += raw_members
 
         return sorted(members, key=lambda m: m.offset)
 
-    def _mock_array_members(self, type_obj: dict[str, Any]) -> list[FieldListItem]:
+    def _mock_array_members(self, type_obj: CvdumpParsedType) -> list[FieldListItem]:
         """LF_ARRAY elements provide the element type and the total size.
         We want the list of "members" as if this was a struct."""
 
@@ -442,84 +503,81 @@ class CvdumpTypesParser:
 
             (leaf_id, leaf_type) = match.groups()
             if leaf_type not in self.MODES_OF_INTEREST:
-                self.mode = None
                 continue
 
-            # Add the leaf to our dictionary and add details specific to the leaf type.
-            self.mode = leaf_type
-            self.keys[leaf_id] = {"type": leaf_type}
-
-            this_key = self.keys[leaf_id]
-
             try:
-                if self.mode == "LF_MODIFIER":
-                    this_key.update(self.read_modifier(leaf))
+                match leaf_type:
+                    case "LF_MODIFIER":
+                        self.keys[leaf_id] = self.read_modifier(leaf, leaf_type)
 
-                elif self.mode == "LF_ARRAY":
-                    this_key.update(self.read_array(leaf))
+                    case "LF_ARRAY":
+                        self.keys[leaf_id] = self.read_array(leaf, leaf_type)
 
-                elif self.mode == "LF_FIELDLIST":
-                    this_key.update(self.read_fieldlist(leaf))
+                    case "LF_FIELDLIST":
+                        self.keys[leaf_id] = self.read_fieldlist(leaf, leaf_type)
 
-                elif self.mode == "LF_ARGLIST":
-                    this_key.update(self.read_arglist(leaf))
+                    case "LF_ARGLIST":
+                        self.keys[leaf_id] = self.read_arglist(leaf, leaf_type)
 
-                elif self.mode == "LF_MFUNCTION":
-                    this_key.update(self.read_mfunction(leaf))
+                    case "LF_MFUNCTION":
+                        self.keys[leaf_id] = self.read_mfunction(leaf, leaf_type)
 
-                elif self.mode == "LF_PROCEDURE":
-                    this_key.update(self.read_procedure(leaf))
+                    case "LF_PROCEDURE":
+                        self.keys[leaf_id] = self.read_procedure(leaf, leaf_type)
 
-                elif self.mode in ["LF_CLASS", "LF_STRUCTURE"]:
-                    this_key.update(self.read_class_or_struct(leaf))
+                    case "LF_CLASS" | "LF_STRUCTURE":
+                        self.keys[leaf_id] = self.read_class_or_struct(leaf, leaf_type)
 
-                elif self.mode == "LF_POINTER":
-                    this_key.update(self.read_pointer(leaf))
+                    case "LF_POINTER":
+                        self.keys[leaf_id] = self.read_pointer(leaf, leaf_type)
 
-                elif self.mode == "LF_ENUM":
-                    this_key.update(self.read_enum(leaf))
+                    case "LF_ENUM":
+                        self.keys[leaf_id] = self.read_enum(leaf, leaf_type)
 
-                elif self.mode == "LF_UNION":
-                    this_key.update(self.read_union(leaf))
-                else:
-                    # Check for exhaustiveness
-                    logger.error("Unhandled data in mode: %s", self.mode)
+                    case "LF_UNION":
+                        self.keys[leaf_id] = self.read_union(leaf, leaf_type)
+
+                    case _:
+                        # Check for exhaustiveness
+                        logger.error("Unhandled data in mode: %s", leaf_type)
 
             except AssertionError:
                 logger.error("Failed to parse PDB types leaf:\n%s", leaf)
 
-    def read_modifier(self, leaf: str) -> dict[str, Any]:
+    def read_modifier(self, leaf: str, leaf_type: str) -> CvdumpParsedType:
         match = self.MODIFIES_RE.search(leaf)
         assert match is not None
 
         # For convenience, because this is essentially the same thing
         # as an LF_CLASS forward ref.
         return {
+            "type": leaf_type,
             "is_forward_ref": True,
             "modifies": normalize_type_id(match.group("type")),
         }
 
-    def read_array(self, leaf: str) -> dict[str, Any]:
+    def read_array(self, leaf: str, leaf_type: str) -> CvdumpParsedType:
         match = self.LF_ARRAY_RE.search(leaf)
         assert match is not None
 
         return {
+            "type": leaf_type,
             "array_type": normalize_type_id(match.group("type")),
             "size": int(match.group("length")),
         }
 
-    def read_fieldlist(self, leaf: str) -> dict[str, Any]:
-        obj: dict[str, Any] = {}
-        members = []
+    def read_fieldlist(self, leaf: str, leaf_type: str) -> CvdumpParsedType:
+        obj: CvdumpParsedType = {"type": leaf_type}
+        members: list[FieldListItem] = []
 
         # If this class has a vtable, create a mock member at offset 0
         if self.VTABLE_RE.search(leaf) is not None:
             # For our purposes, any pointer type will do
-            members.append({"offset": 0, "type": "T_32PVOID", "name": "vftable"})
+            members.append(FieldListItem(offset=0, type="T_32PVOID", name="vftable"))
 
         # Superclass is set here in the fieldlist rather than in LF_CLASS
         for match in self.SUPERCLASS_RE.finditer(leaf):
-            superclass_list: dict[str, int] = obj.setdefault("super", {})
+            superclass_list: dict[CvdumpTypeKey, int] = obj.setdefault("super", {})
             superclass_list[normalize_type_id(match.group("type"))] = int(
                 match.group("offset")
             )
@@ -565,11 +623,11 @@ class CvdumpTypesParser:
             virtual_base_pointer.bases.sort(key=lambda x: x.index)
 
         members += [
-            {
-                "offset": int(offset),
-                "type": normalize_type_id(type_),
-                "name": name,
-            }
+            FieldListItem(
+                offset=int(offset),
+                type=normalize_type_id(type_),
+                name=name,
+            )
             for (_, type_, offset, name) in self.LIST_RE.findall(leaf)
         ]
 
@@ -577,7 +635,7 @@ class CvdumpTypesParser:
             obj["members"] = members
 
         variants = [
-            {"name": name, "value": int(value)}
+            EnumItem(name=name, value=int(value))
             for value, name in self.LF_FIELDLIST_ENUMERATE.findall(leaf)
         ]
         if variants:
@@ -585,8 +643,8 @@ class CvdumpTypesParser:
 
         return obj
 
-    def read_class_or_struct(self, leaf: str) -> dict[str, Any]:
-        obj: dict[str, Any] = {}
+    def read_class_or_struct(self, leaf: str, leaf_type: str) -> CvdumpParsedType:
+        obj: CvdumpParsedType = {"type": leaf_type}
         # Match the reference to the associated LF_FIELDLIST
         match = self.CLASS_FIELD_RE.search(leaf)
         assert match is not None
@@ -612,7 +670,7 @@ class CvdumpTypesParser:
 
         return obj
 
-    def read_arglist(self, leaf: str) -> dict[str, Any]:
+    def read_arglist(self, leaf: str, leaf_type: str) -> CvdumpParsedType:
         match = self.LF_ARGLIST_ARGCOUNT.match(leaf)
         assert match is not None
         argcount = int(match.group("argcount"))
@@ -620,14 +678,14 @@ class CvdumpTypesParser:
         arglist = [arg_type for (_, arg_type) in self.LF_ARGLIST_ENTRY.findall(leaf)]
         assert len(arglist) == argcount
 
-        obj: dict[str, Any] = {"argcount": argcount}
+        obj: CvdumpParsedType = {"type": leaf_type, "argcount": argcount}
         # Set the arglist only when argcount > 0
         if arglist:
             obj["args"] = arglist
 
         return obj
 
-    def read_pointer(self, leaf: str) -> dict[str, Any]:
+    def read_pointer(self, leaf: str, leaf_type: str) -> CvdumpParsedType:
         match = self.LF_POINTER_RE.search(leaf)
         assert match is not None
 
@@ -645,23 +703,41 @@ class CvdumpTypesParser:
         )
 
         return {
+            "type": leaf_type,
             "element_type": match.group("element_type"),
             # `containing_class` is set to `None` if not present
             "containing_class": match.group("containing_class"),
         }
 
-    def read_mfunction(self, leaf: str) -> dict[str, Any]:
+    def read_mfunction(self, leaf: str, leaf_type: str) -> CvdumpParsedType:
         match = self.LF_MFUNCTION_RE.search(leaf)
         assert match is not None
-        return match.groupdict()
+        return {
+            "type": leaf_type,
+            "return_type": match.group("return_type"),
+            "class_type": match.group("class_type"),
+            "this_type": match.group("this_type"),
+            "call_type": match.group("call_type"),
+            "func_attr": match.group("func_attr"),
+            "num_params": int(match.group("num_params")),
+            "arg_list_type": match.group("arg_list_type"),
+            "this_adjust": int(match.group("this_adjust"), 16),
+        }
 
-    def read_procedure(self, leaf: str) -> dict[str, Any]:
+    def read_procedure(self, leaf: str, leaf_type: str) -> CvdumpParsedType:
         match = self.LF_PROCEDURE_RE.search(leaf)
         assert match is not None
-        return match.groupdict()
+        return {
+            "type": leaf_type,
+            "return_type": match.group("return_type"),
+            "call_type": match.group("call_type"),
+            "func_attr": match.group("func_attr"),
+            "num_params": int(match.group("num_params")),
+            "arg_list_type": match.group("arg_list_type"),
+        }
 
-    def read_enum(self, leaf: str) -> dict[str, Any]:
-        obj: dict[str, Any] = {}
+    def read_enum(self, leaf: str, leaf_type: str) -> CvdumpParsedType:
+        obj: CvdumpParsedType = {"type": leaf_type}
 
         # TODO: still parsing each line for now
         for line in leaf.splitlines()[1:]:
@@ -680,10 +756,12 @@ class CvdumpTypesParser:
         return obj
 
     # pylint: disable=too-many-return-statements
-    def parse_enum_attribute(self, attribute: str) -> dict[str, Any]:
-        for attribute_regex in self.LF_ENUM_ATTRIBUTES:
-            if (match := attribute_regex.match(attribute)) is not None:
-                return match.groupdict()
+    def parse_enum_attribute(self, attribute: str) -> LfEnumAttrs:
+        if (match := self.LF_ENUM_MEMBER_RE.match(attribute)) is not None:
+            return {"num_members": int(match.group("num_members"))}
+
+        if (match := self.LF_ENUM_NAME_RE.match(attribute)) is not None:
+            return {"name": match.group("name")}
 
         if attribute == "NESTED":
             return {"is_nested": True}
@@ -697,26 +775,30 @@ class CvdumpTypesParser:
             assert match is not None
             return {"udt": normalize_type_id(match.group("udt"))}
         if (match := self.LF_ENUM_TYPES.match(attribute)) is not None:
-            result = match.groupdict()
-            result["underlying_type"] = normalize_type_id(result["underlying_type"])
-            return result
+            return {
+                "underlying_type": normalize_type_id(match.group("underlying_type")),
+                "field_list_type": match.group("field_type"),
+            }
 
         logger.error("Unknown attribute in enum: %s", attribute)
         return {}
 
-    def read_union(self, leaf: str) -> dict[str, Any]:
-        """This is a rather barebones handler, only parsing the size"""
+    def read_union(self, leaf: str, leaf_type: str) -> CvdumpParsedType:
         match = self.LF_UNION_LINE.search(leaf)
         assert match is not None
 
-        obj: dict[str, Any] = {"name": match.group("name")}
+        obj: CvdumpParsedType = {"type": leaf_type, "name": match.group("name")}
 
         if match.group("field_type") == "0x0000":
             obj["is_forward_ref"] = True
+        else:
+            field_list_type = normalize_type_id(match.group("field_type"))
+            obj["field_list_type"] = field_list_type
 
-        obj["field_list_type"] = match.group("field_type")
+        udt = match.group("udt")
+        if udt is not None:
+            obj["udt"] = normalize_type_id(udt)
+
         obj["size"] = int(match.group("size"))
-        if match.group("udt") is not None:
-            obj["udt"] = normalize_type_id(match.group("udt"))
 
         return obj

@@ -1,6 +1,7 @@
 # C++ Parser utility functions and data structures
 import re
 from ast import literal_eval
+from typing import NamedTuple
 
 # The goal here is to just read whatever is on the next line, so some
 # flexibility in the formatting seems OK
@@ -20,7 +21,7 @@ blockCommentRegex = re.compile(r"(/\*.*?\*/)")
 regularCommentRegex = re.compile(r"(//.*)")
 
 # Get string contents, ignore escape characters that might interfere
-doubleQuoteRegex = re.compile(r"(\"(?:[^\"\\]|\\.)*\")")
+doubleQuoteRegex = re.compile(r'(L)?("(?:[^"\\]|\\.)*")')
 
 # Detect a line that would cause us to enter a new scope
 scopeDetectRegex = re.compile(r"(?:class|struct|namespace) (?P<name>\w+).*(?:{)?")
@@ -105,25 +106,24 @@ def get_class_name(line: str) -> str | None:
     return None
 
 
-global_regex = re.compile(r"(?P<name>(?:\w+::)*g_\w+)")
-less_strict_global_regex = re.compile(r"(?P<name>(?:\w+::)*\w+)(?:\)\(|\[.*|\s*=.*|;)")
+global_regex = re.compile(r"(?P<name>(?:\w+::)*\w+)(?:\)\(|\[.*|\s*=.*|;)")
 
 
 def get_variable_name(line: str) -> str | None:
-    """Grab the name of the variable annotated with the GLOBAL marker.
-    Correct syntax would have the variable start with the prefix "g_"
-    but we will try to match regardless."""
+    """Grab the name of the variable annotated with the GLOBAL marker."""
 
     if (match := global_regex.search(line)) is not None:
-        return match.group("name")
-
-    if (match := less_strict_global_regex.search(line)) is not None:
         return match.group("name")
 
     return None
 
 
-def get_string_contents(line: str) -> str | None:
+class ParserCodeString(NamedTuple):
+    text: str
+    is_widechar: bool
+
+
+def get_string_contents(line: str) -> ParserCodeString | None:
     """Return the first C string seen on this line.
     We have to unescape the string, and a simple way to do that is to use
     python's ast.literal_eval. I'm sure there are many pitfalls to doing
@@ -131,7 +131,9 @@ def get_string_contents(line: str) -> str | None:
 
     try:
         if (match := doubleQuoteRegex.search(line)) is not None:
-            return literal_eval(match.group(1))
+            is_widechar = match.group(1) is not None
+            text = literal_eval(match.group(2))
+            return ParserCodeString(text=text, is_widechar=is_widechar)
     # pylint: disable=broad-exception-caught
     # No way to predict what kind of exception could occur.
     except Exception:

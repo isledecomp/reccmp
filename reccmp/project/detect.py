@@ -9,7 +9,6 @@ from .config import (
     BuildFile,
     BuildFileTarget,
     ProjectFile,
-    ProjectFileTarget,
     UserFile,
     UserFileTarget,
 )
@@ -19,8 +18,8 @@ from .error import (
     RecCmpProjectException,
     RecCmpProjectNotFoundException,
     InvalidRecCmpProjectException,
-    InvalidRecCmpArgumentException,
     UnknownRecCmpTargetException,
+    IncompleteReccmpTargetError,
 )
 from .util import get_path_sha256
 
@@ -29,25 +28,41 @@ logger = logging.getLogger(__file__)
 
 
 def verify_target_names(
-    project_targets: dict[str, ProjectFileTarget],
-    user_targets: dict[str, UserFileTarget],
-    build_targets: dict[str, BuildFileTarget],
+    project_keys: set[str], user_keys: set[str], build_keys: set[str]
 ):
     """Warn if the user or build files have different targets than the canonical list in the project file."""
-    project_keys = set(project_targets.keys())
-    user_keys = set(user_targets.keys())
-    build_keys = set(build_targets.keys())
-    if project_keys - user_keys:
-        logger.warning("User config %s is missing target ids", RECCMP_USER_CONFIG)
-    if user_keys - project_keys:
+    user_missing_keys = project_keys - user_keys
+    user_extra_keys = user_keys - project_keys
+
+    if user_missing_keys:
         logger.warning(
-            "User config %s contains too many target ids", RECCMP_USER_CONFIG
+            "User config %s is missing target ids: %s",
+            RECCMP_USER_CONFIG,
+            ",".join(user_missing_keys),
         )
-    if project_keys - build_keys:
-        logger.warning("Build config %s is missing target ids", RECCMP_BUILD_CONFIG)
-    if build_keys - project_keys:
+
+    if user_extra_keys:
         logger.warning(
-            "Build config %s contains too many target ids", RECCMP_BUILD_CONFIG
+            "User config %s contains extra target ids: %s",
+            RECCMP_USER_CONFIG,
+            ",".join(user_extra_keys),
+        )
+
+    build_missing_keys = project_keys - build_keys
+    build_extra_keys = build_keys - project_keys
+
+    if build_missing_keys:
+        logger.warning(
+            "Build config %s is missing target ids: %s",
+            RECCMP_BUILD_CONFIG,
+            ",".join(build_missing_keys),
+        )
+
+    if build_extra_keys:
+        logger.warning(
+            "Build config %s contains extra target ids: %s",
+            RECCMP_BUILD_CONFIG,
+            ",".join(build_extra_keys),
         )
 
 
@@ -66,23 +81,93 @@ def find_filename_recursively(directory: Path, filename: str) -> Path | None:
 @dataclass
 class GhidraConfig:
     ignore_types: list[str] = field(default_factory=list)
+    """
+    Types that will be skipped in the Ghidra import. Matches by name.
+    Example value: `["Act2Actor"]`.
+    """
     ignore_functions: list[int] = field(default_factory=list)
+    """
+    Functions that will be skipped in the Ghidra import. Matches by original address.
+    Example value: `[0x100f8ad0]`.
+    """
+    name_substitutions: list[tuple[str, str]] = field(default_factory=list)
+    """
+    Configurable substitutions for function names. Example use case:
+    - There is a shared code base for multiple binaries
+    - The functions in the recomp have placeholder names FUN_12345678
+    - The address in the function name matches only one of the binaries
+
+    In that case one might want to rename the function while importing into another binary in order to tell
+    the function apart from Ghidra's auto-detected functions that have an auto-generated name of the same pattern.
+
+    The syntax matches `re.sub(key, value)`.
+
+    We use a list of tuples instead of a dict to guarantee a consistent order of the substitutions.
+
+    Example value: `[r"FUN_([0-9a-f]{8})", r"LEGO1_\\1"]`.
+    """
+
+
+@dataclass
+class ReportConfig:
+    ignore_functions: list[str] = field(default_factory=list)
+
+
+@dataclass
+class RecCmpPartialTarget:
+    # pylint: disable=too-many-instance-attributes
+    """Partial information for a target, which includes:
+    - Path to the binary file being decompiled/analyzed.
+    - Metadata to help locate that binary file on each user's system.
+    - Path the recompiled binary for comparison.
+    - Paths to the source code, pdb, and other data sources.
+    - Analysis and data export options.
+    The target is created by combining information from the three config files:
+    reccmp-project.yml, reccmp-user.yml, and reccmp-build.yml."""
+
+    # Unique ID for grouping the metadata.
+    # If none is given we will use the base filename minus the file extension.
+    target_id: str
+
+    # Base filename (not a path) of the binary for this target.
+    # "reccmp-project detect" uses this to search for the original and recompiled binaries
+    # when creating the reccmp-user.yml file.
+    filename: str
+
+    # SHA-256 checksum of the original binary.
+    sha256: str
+
+    # Ghidra-specific options for this target.
+    ghidra_config: GhidraConfig | None = None
+
+    # Report options for this target
+    report_config: ReportConfig | None = None
+
+    # Relative (to project root) directory of source code files for this target.
+    source_root: Path | None = None
+    original_path: Path | None = None
+    recompiled_path: Path | None = None
+    recompiled_pdb: Path | None = None
 
 
 @dataclass
 class RecCmpTarget:
-    """Partial information for a target (binary file) in the decomp project
-    This contains only the static information (same for all users).
-    Saved to project.yml. (See ProjectFileTarget)"""
+    # pylint: disable=too-many-instance-attributes
+    """Full information for a target. This has the same attributes as RecCmpPartialTarget
+    but with more strict datatypes. A project will only create this record if we can
+    guarantee that the target has the minimum viable set of attributes."""
 
     # Unique ID for grouping the metadata.
     # If none is given we will use the base filename minus the file extension.
-    target_id: str | None
+    target_id: str
 
     # Base filename (not a path) of the binary for this target.
     # "reccmp-project detect" uses this to search for the original and recompiled binaries
-    # when creating the user.yml file.
+    # when creating the reccmp-user.yml file.
     filename: str
+
+    # SHA-256 checksum of the original binary.
+    sha256: str
 
     # Relative (to project root) directory of source code files for this target.
     source_root: Path
@@ -90,10 +175,8 @@ class RecCmpTarget:
     # Ghidra-specific options for this target.
     ghidra_config: GhidraConfig
 
-
-@dataclass
-class RecCmpBuiltTarget(RecCmpTarget):
-    """Full information for a target. Used to load component files for reccmp analysis."""
+    # Report options for this target
+    report_config: ReportConfig
 
     original_path: Path
     recompiled_path: Path
@@ -101,167 +184,201 @@ class RecCmpBuiltTarget(RecCmpTarget):
 
 
 class RecCmpProject:
-    def __init__(
-        self,
-        project_config_path: Path,
-    ):
-        self.project_config_path = project_config_path
-        self.targets: dict[str, RecCmpTarget] = {}
-
-    @classmethod
-    def from_directory(cls, directory: Path) -> "RecCmpProject | None":
-        project_directory: Path | None
-        build_directory = find_filename_recursively(
-            directory=directory, filename=RECCMP_BUILD_CONFIG
-        )
-        if build_directory:
-            build_config = build_directory / RECCMP_BUILD_CONFIG
-            logger.debug("Using build config: %s", build_config)
-            build_data = BuildFile.from_file(build_config)
-
-            # The project directory can be relative to the build config
-            project_directory = build_config.parent.joinpath(build_data.project)
-        else:
-            project_directory = find_filename_recursively(
-                directory=directory, filename=RECCMP_PROJECT_CONFIG
-            )
-            if not project_directory:
-                return None
-        project_config_path = project_directory / RECCMP_PROJECT_CONFIG
-
-        project = cls(
-            project_config_path=project_config_path,
-        )
-        logger.debug("Using project config: %s", project_config_path)
-        project_data = ProjectFile.from_file(project_config_path)
-
-        for target_id, project_target_data in project_data.targets.items():
-            source_root = project_directory / project_target_data.source_root
-            filename = project_target_data.filename
-
-            ghidra = GhidraConfig(
-                ignore_types=project_target_data.ghidra.ignore_types,
-                ignore_functions=project_target_data.ghidra.ignore_functions,
-            )
-
-            project.targets[target_id] = RecCmpTarget(
-                target_id=target_id,
-                filename=filename,
-                source_root=source_root,
-                ghidra_config=ghidra,
-            )
-        return project
-
-
-class RecCmpBuiltProject:
     """Combines information from the project, user, and build yml files."""
 
+    project_config_path: Path | None
+    build_config_path: Path | None
+    user_config_path: Path | None
+    targets: dict[str, RecCmpPartialTarget]
+
     def __init__(
         self,
-        project_config_path: Path,
-        user_config: Path,
-        build_config: Path,
+        project_config_path: Path | None = None,
+        user_config_path: Path | None = None,
+        build_config_path: Path | None = None,
     ):
         self.project_config_path = project_config_path
-        self.user_config = user_config
-        self.build_config = build_config
-        self.targets: dict[str, RecCmpBuiltTarget] = {}
+        self.user_config_path = user_config_path
+        self.build_config_path = build_config_path
+        self.targets = {}
+
+    def get(self, target_id: str) -> RecCmpTarget:
+        try:
+            target = self.targets[target_id]
+        except KeyError as ex:
+            raise UnknownRecCmpTargetException(
+                f"Invalid target: must be one of {','.join(self.targets.keys())}"
+            ) from ex
+
+        # Make sure we have the minimum set of attributes.
+        # The error message should display the full list of missing attributes
+        # so we check it here instead of waiting for a single assert to fail.
+        required_attrs = (
+            "source_root",
+            "original_path",
+            "recompiled_path",
+            "recompiled_pdb",
+        )
+
+        missing_attrs = [
+            attr for attr in required_attrs if getattr(target, attr) is None
+        ]
+        if missing_attrs:
+            raise IncompleteReccmpTargetError(
+                f"Target {target_id} is missing data: {','.join(missing_attrs)}"
+            )
+
+        # This list should match the one above. These asserts are for mypy.
+        assert target.source_root is not None
+        assert target.original_path is not None
+        assert target.recompiled_path is not None
+        assert target.recompiled_pdb is not None
+
+        if target.ghidra_config is not None:
+            ghidra = target.ghidra_config
+        else:
+            ghidra = GhidraConfig()
+
+        if target.report_config is not None:
+            report = target.report_config
+        else:
+            report = ReportConfig()
+
+        return RecCmpTarget(
+            target_id=target.target_id,
+            filename=target.filename,
+            sha256=target.sha256,
+            original_path=target.original_path,
+            recompiled_path=target.recompiled_path,
+            recompiled_pdb=target.recompiled_pdb,
+            source_root=target.source_root,
+            ghidra_config=ghidra,
+            report_config=report,
+        )
+
+    def find_build_config(self, search_path: Path) -> BuildFile | None:
+        build_directory = find_filename_recursively(
+            directory=search_path, filename=RECCMP_BUILD_CONFIG
+        )
+
+        if not build_directory:
+            return None
+
+        self.build_config_path = build_directory / RECCMP_BUILD_CONFIG
+        logger.debug("Using build config: %s", self.build_config_path)
+        return BuildFile.from_file(self.build_config_path)
+
+    def find_project_config(self, search_path: Path) -> ProjectFile | None:
+        project_directory = find_filename_recursively(
+            directory=search_path, filename=RECCMP_PROJECT_CONFIG
+        )
+
+        if not project_directory:
+            return None
+
+        self.project_config_path = project_directory / RECCMP_PROJECT_CONFIG
+        logger.debug("Using project config: %s", self.project_config_path)
+        return ProjectFile.from_file(self.project_config_path)
+
+    def find_user_config(self, search_path: Path) -> UserFile | None:
+        user_config_path = search_path / RECCMP_USER_CONFIG
+        if not user_config_path.is_file():
+            return None
+
+        self.user_config_path = user_config_path
+        logger.debug("Using project config: %s", self.user_config_path)
+        return UserFile.from_file(self.user_config_path)
 
     @classmethod
-    def from_directory(cls, directory: Path) -> "RecCmpBuiltProject":
-        # Searching for build.yml
-        build_directory = find_filename_recursively(
-            directory=directory, filename=RECCMP_BUILD_CONFIG
-        )
-        if not build_directory:
+    def from_directory(cls, directory: Path) -> "RecCmpProject":
+        project = cls()
+
+        # Searching for reccmp-build.yml
+        build_data = project.find_build_config(directory)
+
+        if build_data is not None:
+            assert project.build_config_path is not None
+            # note that Path.joinpath() will ignore the first path if the second path is absolute
+            project_search_path = project.build_config_path.joinpath(build_data.project)
+
+            # If we found the build file, we must use its project path.
+            project_data = project.find_project_config(project_search_path)
+            if project_data is None:
+                raise InvalidRecCmpProjectException(
+                    f"{project.build_config_path}: .project is invalid ({project_search_path / RECCMP_PROJECT_CONFIG} does not exist)"
+                )
+        else:
+            # No build file. Look for the project in the directory.
+            project_data = project.find_project_config(directory)
+
+        if project_data is None:
             raise RecCmpProjectNotFoundException(
-                f"Cannot find {RECCMP_BUILD_CONFIG} in {directory} or any of its parents"
+                f"No project file in path: {directory}"
             )
-        build_config = build_directory / RECCMP_BUILD_CONFIG
-        logger.debug("Using build config: %s", build_config)
 
-        # Parse build.yml
-        build_data = BuildFile.from_file(build_config)
-
-        # Searching for project.yml
-        # note that Path.joinpath() will ignore the first path if the second path is absolute
-        project_directory = build_directory.joinpath(build_data.project)
-        project_config_path = project_directory / RECCMP_PROJECT_CONFIG
-        if not project_config_path.is_file():
-            raise InvalidRecCmpProjectException(
-                f"{build_config}: .project is invalid ({project_config_path} does not exist)"
-            )
-        logger.debug("Using project config: %s", project_config_path)
-
-        # Parse project.yml
-        project_data = ProjectFile.from_file(project_config_path)
-
-        # Searching for user.yml
-        user_config = project_directory / RECCMP_USER_CONFIG
-        if not user_config.is_file():
-            raise InvalidRecCmpProjectException(
-                f"Missing {RECCMP_USER_CONFIG}. First run 'reccmp-project detect'."
-            )
-        logger.debug("Using user config: %s", user_config)
-
-        # Parse user.yml
-        user_data = UserFile.from_file(user_config)
+        # We must have found the project if we are here.
+        assert project.project_config_path is not None
+        project_directory = project.project_config_path.parent
+        user_data = project.find_user_config(project_directory)
 
         verify_target_names(
-            project_targets=project_data.targets,
-            user_targets=user_data.targets,
-            build_targets=build_data.targets,
+            project_keys=set(project_data.targets) if project_data else set(),
+            user_keys=set(user_data.targets) if user_data else set(),
+            build_keys=set(build_data.targets) if build_data else set(),
         )
 
-        project = cls(
-            project_config_path=project_config_path,
-            user_config=user_config,
-            build_config=build_config,
-        )
-
-        # For each target in the project file, combine information from user and build files.
-        for target_id, project_target_data in project_data.targets.items():
-            user_target_data = user_data.targets.get(target_id, None)
-            build_target_data = build_data.targets.get(target_id, None)
-
-            # Skip this target if the build or user files do not have it.
-            if not user_target_data:
-                logger.warning(
-                    "%s: targets.%s is missing. Target will not be available.",
-                    user_config,
-                    target_id,
+        # Apply reccmp-project.yml
+        assert project_data is not None
+        for target_id, target in project_data.targets.items():
+            if target.ghidra is not None:
+                ghidra = GhidraConfig(
+                    ignore_types=target.ghidra.ignore_types,
+                    ignore_functions=target.ghidra.ignore_functions,
+                    name_substitutions=target.ghidra.name_substitutions,
                 )
-                continue
-
-            if not build_target_data:
-                logger.warning(
-                    "%s: targets.%s is missing. Target will not be available.",
-                    build_config,
-                    target_id,
+            else:
+                ghidra = None
+            if target.report is not None:
+                report = ReportConfig(
+                    ignore_functions=target.report.ignore_functions,
                 )
-                continue
+            else:
+                report = None
 
-            source_root = project_directory / project_target_data.source_root
-            filename = project_target_data.filename
-            original_path = user_target_data.path
+            source_root = project_directory / target.source_root
 
-            recompiled_path = build_directory.joinpath(build_target_data.path)
-            recompiled_pdb = build_directory.joinpath(build_target_data.pdb)
-
-            ghidra = GhidraConfig(
-                ignore_types=project_target_data.ghidra.ignore_types,
-                ignore_functions=project_target_data.ghidra.ignore_functions,
-            )
-
-            project.targets[target_id] = RecCmpBuiltTarget(
+            project.targets[target_id] = RecCmpPartialTarget(
                 target_id=target_id,
-                filename=filename,
-                original_path=original_path,
-                recompiled_path=recompiled_path,
-                recompiled_pdb=recompiled_pdb,
+                filename=target.filename,
+                sha256=target.hash.sha256,
                 source_root=source_root,
                 ghidra_config=ghidra,
+                report_config=report,
             )
+
+        # Apply reccmp-user.yml
+        if user_data is not None:
+            for target_id, user_target in user_data.targets.items():
+                if target_id not in project.targets:
+                    continue
+
+                project.targets[target_id].original_path = user_target.path
+
+        # Apply reccmp-build.yml
+        if build_data is not None:
+            assert project.build_config_path is not None
+            build_directory = project.build_config_path.parent
+            for target_id, build_target in build_data.targets.items():
+                if target_id not in project.targets:
+                    continue
+
+                project.targets[target_id].recompiled_path = build_directory.joinpath(
+                    build_target.path
+                )
+                project.targets[target_id].recompiled_pdb = build_directory.joinpath(
+                    build_target.pdb
+                )
+
         return project
 
 
@@ -270,82 +387,28 @@ class RecCmpPathsAction(argparse.Action):
         self, parser, namespace, values: Sequence[str] | None, option_string=None
     ):
         assert isinstance(values, Sequence)
-        target_id, source_root = values
+        original, recompiled, pdb, source_root = list(Path(o) for o in values)
+
+        # Assumes base filename of the original binary is the module name.
+        target_id = original.stem.upper()
+        # This happens before argparse_parse_logging() is called, so it will not match our format.
+        logger.warning('Assuming target name is "%s"', target_id)
+
         target = RecCmpTarget(
             target_id=target_id,
-            filename="???",
-            source_root=Path(source_root),
-            ghidra_config=GhidraConfig(),
-        )
-        setattr(namespace, self.dest, target)
-
-
-class RecCmpBuiltPathsAction(argparse.Action):
-    def __call__(
-        self, parser, namespace, values: Sequence[str] | None, option_string=None
-    ):
-        assert isinstance(values, Sequence)
-        original, recompiled, pdb, source_root = list(Path(o) for o in values)
-        target = RecCmpBuiltTarget(
-            target_id=None,
             filename=original.name,
+            sha256=get_path_sha256(original),
             original_path=original,
             recompiled_path=recompiled,
             recompiled_pdb=pdb,
             source_root=source_root,
             ghidra_config=GhidraConfig(),
+            report_config=ReportConfig(),
         )
         setattr(namespace, self.dest, target)
 
 
 def argparse_add_project_target_args(parser: argparse.ArgumentParser):
-    target_group = parser.add_mutually_exclusive_group(required=True)
-    target_group.add_argument(
-        "--target", metavar="<target-id>", help="ID of the target"
-    )
-    target_group.add_argument(
-        "--module-and-path",
-        metavar=("<module-id>", "<source-root>"),
-        nargs=2,
-        action=RecCmpPathsAction,
-        dest="target",
-        help="The original binary, the recompiled binary, the PDB of the recompiled binary, and the source root",
-    )
-    parser.add_argument(
-        "--path",
-        dest="path_target",
-        type=Path,
-        metavar="<source-root>",
-        default=Path.cwd(),
-        help="The source root",
-    )
-
-
-def argparse_parse_project_target(
-    args: argparse.Namespace,
-) -> RecCmpTarget:
-    if args.target:
-        project = RecCmpProject.from_directory(Path.cwd())
-        if not project:
-            raise RecCmpProjectNotFoundException(
-                f"Cannot find a reccmp project (missing {RECCMP_PROJECT_CONFIG}/{RECCMP_BUILD_CONFIG})"
-            )
-        if args.target not in project.targets:
-            raise InvalidRecCmpArgumentException(
-                f"Invalid --target: must be one of {','.join(project.targets)}"
-            )
-        target = project.targets[args.target]
-    else:
-        target = args.path_target
-
-    if not target.source_root.is_dir():
-        raise RecCmpProjectNotFoundException(
-            f"Source directory {target.source_root} does not exist"
-        )
-    return target
-
-
-def argparse_add_built_project_target_args(parser: argparse.ArgumentParser):
     target_group = parser.add_mutually_exclusive_group(required=True)
     target_group.add_argument(
         "--target", metavar="<target-id>", help="ID of the target"
@@ -359,26 +422,23 @@ def argparse_add_built_project_target_args(parser: argparse.ArgumentParser):
             "<source-root>",
         ),
         nargs=4,
-        action=RecCmpBuiltPathsAction,
+        action=RecCmpPathsAction,
         dest="paths_target",
         help="The original binary, the recompiled binary, the PDB of the recompiled binary, and the source root",
     )
 
 
-def argparse_parse_built_project_target(
+def argparse_parse_project_target(
     args: argparse.Namespace,
-) -> RecCmpBuiltTarget:
+) -> RecCmpTarget:
     if args.target:
-        project = RecCmpBuiltProject.from_directory(Path.cwd())
+        project = RecCmpProject.from_directory(Path.cwd())
         if not project:
             raise RecCmpProjectNotFoundException(
                 f"Cannot find a reccmp project (missing {RECCMP_PROJECT_CONFIG}/{RECCMP_BUILD_CONFIG})"
             )
-        if args.target not in project.targets:
-            raise UnknownRecCmpTargetException(
-                f"Invalid --target: must be one of {','.join(project.targets)}"
-            )
-        target = project.targets[args.target]
+
+        target = project.get(args.target)
     else:
         target = args.paths_target
 

@@ -4,6 +4,10 @@ from reccmp.isledecomp.compare.db import ReccmpEntity
 from reccmp.isledecomp.types import EntityType
 
 
+class AddrLookupProtocol(Protocol):
+    def __call__(self, addr: int, *, exact: bool) -> ReccmpEntity | None: ...
+
+
 class AddrTestProtocol(Protocol):
     def __call__(self, addr: int, /) -> bool: ...
 
@@ -15,7 +19,7 @@ class NameReplacementProtocol(Protocol):
 
 
 def create_name_lookup(
-    db_getter: Callable[[int, bool], ReccmpEntity | None],
+    db_getter: AddrLookupProtocol,
     bin_read: Callable[[int], int | None],
     addr_attribute: str,
 ) -> NameReplacementProtocol:
@@ -25,7 +29,7 @@ def create_name_lookup(
         """Read the pointer address and open the entity (if it exists) at the indirect location."""
         addr = bin_read(pointer)
         if addr is not None:
-            return db_getter(addr, True)
+            return db_getter(addr, exact=True)
 
         return None
 
@@ -48,7 +52,7 @@ def create_name_lookup(
         """Same as regular lookup but aware of the fact that the address is a pointer.
         Indirect implies exact search, so we drop both parameters from the lookup entry point.
         """
-        entity = db_getter(addr, True)
+        entity = db_getter(addr, exact=True)
         if entity is not None:
             # If the indirect call points at a variable initialized to a function,
             # prefer the variable name as this is more useful.
@@ -56,11 +60,13 @@ def create_name_lookup(
                 return entity.match_name()
 
             if entity.entity_type == EntityType.IMPORT:
-                import_name = entity.get("import_name")
+                import_name = entity.match_name()
                 if import_name is not None:
-                    return "->" + import_name + " (FUNCTION)"
+                    return "->" + import_name
 
-                return entity.match_name()
+                # If there's no name for the import, don't bother going further.
+                # The pointer is a dead end.
+                return None
 
         # No suitable entity at the base address. Read the pointer and see what we get.
         entity = follow_indirect(addr)
@@ -88,7 +94,7 @@ def create_name_lookup(
         if indirect:
             return indirect_lookup(addr)
 
-        entity = db_getter(addr, exact)
+        entity = db_getter(addr, exact=exact)
 
         if entity is None:
             return None

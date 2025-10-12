@@ -100,11 +100,8 @@ def test_unusual_reads(binfile: PEImage):
     with pytest.raises(InvalidVirtualReadError):
         binfile.read(0x100DB588, -1)
 
-    # There are fewer than 1000 bytes in .reloc at the location of this string.
-    # Chunk size is chosen arbitrarily for string reads. The reason is that we need
-    # to read until we hit a zero byte, so we don't use the memoryview directly.
     # This should not fail.
-    assert binfile.read_string(0x1010BFFC, 1000) == b"d3drm.dll"
+    assert binfile.read_string(0x1010BFFC) == b"d3drm.dll"
 
 
 STRING_ADDRESSES = (
@@ -120,6 +117,10 @@ STRING_ADDRESSES = (
 def test_strings(addr: int, string: bytes, binfile: PEImage):
     """Test string read utility function and the string search feature"""
     assert binfile.read_string(addr) == string
+
+
+def test_widechar(binfile: PEImage):
+    assert binfile.read_widechar(0x100DAAA0) == "(null)".encode("utf-16-le")
 
 
 def test_relocation(binfile: PEImage):
@@ -144,18 +145,6 @@ IMPORT_REFS = (
 @pytest.mark.parametrize("import_ref", IMPORT_REFS)
 def test_imports(import_ref: tuple[str, str, int], binfile: PEImage):
     assert import_ref in binfile.imports
-
-
-# Location of the JMP instruction and the import address.
-THUNKS = (
-    (0x100D3728, 0x1010B32C),  # DirectDrawCreate
-    (0x10098F9E, 0x1010B3D4),  # RtlUnwind
-)
-
-
-@pytest.mark.parametrize("thunk_ref", THUNKS)
-def test_thunks(thunk_ref: tuple[int, int], binfile: PEImage):
-    assert thunk_ref in binfile.thunks
 
 
 def test_exports(binfile: PEImage):

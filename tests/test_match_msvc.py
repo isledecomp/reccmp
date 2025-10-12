@@ -11,6 +11,7 @@ from reccmp.isledecomp.compare.match_msvc import (
     match_symbols,
     match_variables,
     match_vtables,
+    match_ref,
 )
 from reccmp.isledecomp.compare.event import ReccmpEvent, ReccmpReportProtocol
 
@@ -654,3 +655,27 @@ def test_match_strings_stable_order(db):
     assert db.get_by_orig(100).recomp_addr == 500
     assert db.get_by_orig(200).recomp_addr == 600
     assert db.get_by_orig(300).recomp_addr == 700
+
+
+def test_match_ref(db):
+    with db.batch() as batch:
+        # Main entity
+        batch.set_orig(100)
+        batch.set_recomp(500)
+        batch.match(100, 500)
+
+        # Orig thunks
+        batch.set_orig(200, ref_orig=100)
+        batch.set_orig(201, ref_orig=100)
+        batch.set_orig(202, ref_orig=100)
+
+        # Recomp thunks (reverse order to verify expected match)
+        batch.set_recomp(602, ref_recomp=500)
+        batch.set_recomp(601, ref_recomp=500)
+        batch.set_recomp(600, ref_recomp=500)
+
+    match_ref(db)
+
+    assert db.get_by_orig(200).recomp_addr == 600
+    assert db.get_by_orig(201).recomp_addr == 601
+    assert db.get_by_orig(202).recomp_addr == 602
