@@ -69,7 +69,7 @@ class PdbFunctionExtractor:
         return (
             None
             if type_name is None
-            else self.compare.cv.types.keys.get(type_name.lower())
+            else self.compare.types.keys.get(type_name.lower())
         )
 
     def get_func_signature(self, fn: SymbolsEntry) -> FunctionSignature | None:
@@ -80,7 +80,7 @@ class PdbFunctionExtractor:
 
         # get corresponding function type
 
-        function_type = self.compare.cv.types.keys.get(function_type_str.lower())
+        function_type = self.compare.types.keys.get(function_type_str.lower())
         if function_type is None:
             logger.error(
                 "Could not find function type %s for function %s", fn.func_type, fn.name

@@ -5,7 +5,7 @@ from reccmp.isledecomp.types import EntityType
 from .demangler import demangle_string_const, demangle_vtable
 from .parser import CvdumpParser, LineValue, NodeKey
 from .symbols import SymbolsEntry
-from .types import CvdumpKeyError, CvdumpIntegrityError, TypeInfo
+from .types import CvdumpKeyError, CvdumpIntegrityError, CvdumpTypesParser, TypeInfo
 
 
 class CvdumpNode:
@@ -94,11 +94,13 @@ class CvdumpAnalysis:
     """Collects the results from CvdumpParser into a list of nodes (i.e. symbols).
     These can then be analyzed by a downstream tool."""
 
+    parser: CvdumpParser
     lines: dict[PureWindowsPath, list[LineValue]]
 
     def __init__(self, parser: CvdumpParser):
         """Read in as much information as we have from the parser.
         The more sections we have, the better our information will be."""
+        self.parser = parser
         node_dict: dict[NodeKey, CvdumpNode] = {}
 
         # PUBLICS is our roadmap for everything that follows.
@@ -179,6 +181,10 @@ class CvdumpAnalysis:
             v for _, v in dict(sorted(node_dict.items())).items()
         ]
         self._estimate_size()
+
+    @property
+    def types(self) -> CvdumpTypesParser:
+        return self.parser.types
 
     def _estimate_size(self):
         """Get the distance between one section:offset value and the next one
