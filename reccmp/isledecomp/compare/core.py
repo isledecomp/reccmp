@@ -98,11 +98,11 @@ class Compare:
         )
 
     def run(self):
-        self._match_entry(self._db, self.orig_bin, self.recomp_bin)
-
         self._load_cvdump_types(self.cvdump_analysis, self.types)
         self._load_cvdump(self.cvdump_analysis, self._db, self.recomp_bin)
         self._load_cvdump_lines(self.cvdump_analysis, self._lines_db, self.recomp_bin)
+
+        self._match_entry(self._db, self.orig_bin, self.recomp_bin)
 
         self._load_markers(
             self.code_dir,
