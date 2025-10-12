@@ -30,17 +30,26 @@ TEST_SYMBOLS = [
 def test_cvdump_analysis_functions():
     parser = CvdumpParser()
     parser.symbols_parser.symbols = TEST_SYMBOLS
-
-    def test_node(node: CvdumpNode, sym: SymbolsEntry):
-        return (
-            node.section == sym.section
-            and node.offset == sym.offset
-            and node.friendly_name == sym.name
-            and node.confirmed_size == sym.size
-            and node.node_type == EntityType.FUNCTION
-            and node.symbol_entry == sym
-        )
-
     analysis = CvdumpAnalysis(parser)
-    assert len(analysis.nodes) == len(TEST_SYMBOLS)
-    assert all(map(test_node, analysis.nodes, TEST_SYMBOLS))
+
+    expected = [
+        CvdumpNode(
+            node_type=EntityType.FUNCTION,
+            section=1,
+            offset=0xCC3,
+            confirmed_size=0xA9,
+            symbol_entry=TEST_SYMBOLS[0],
+            friendly_name="__setargv",
+            estimated_size=1577,
+        ),
+        CvdumpNode(
+            node_type=EntityType.FUNCTION,
+            section=1,
+            offset=0x12EC,
+            confirmed_size=0x56,
+            symbol_entry=TEST_SYMBOLS[1],
+            friendly_name="check_managed_app",
+        ),
+    ]
+
+    assert analysis.nodes == expected
