@@ -154,7 +154,7 @@ class CvdumpSymbolsParser:
         symbol_type: str = line_match.group("symbol_type")
         second_part: str | None = line_match.group("second_part")
 
-        if symbol_type in ["S_GPROC32", "S_LPROC32"]:
+        if symbol_type in ("S_GPROC32", "S_LPROC32"):
             assert second_part is not None
             if (match := self._symbol_line_function_regex.match(second_part)) is None:
                 logger.error("Invalid function symbol: %s", line[:-1])

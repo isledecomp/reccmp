@@ -1,5 +1,6 @@
 """For collating the results from parsing cvdump.exe into a more directly useful format."""
 
+from dataclasses import dataclass
 from pathlib import PureWindowsPath
 from reccmp.isledecomp.types import EntityType
 from .demangler import demangle_string_const, demangle_vtable
@@ -8,6 +9,7 @@ from .symbols import SymbolsEntry
 from .types import CvdumpKeyError, CvdumpIntegrityError, CvdumpTypesParser, TypeInfo
 
 
+@dataclass
 class CvdumpNode:
     # pylint: disable=too-many-instance-attributes
     # These two are required and allow us to identify the symbol
@@ -38,9 +40,9 @@ class CvdumpNode:
     # Preliminary - only used for non-static variables at the moment
     data_type: TypeInfo | None = None
 
-    def __init__(self, section: int, offset: int) -> None:
-        self.section = section
-        self.offset = offset
+    @classmethod
+    def from_node_key(cls, key: NodeKey):
+        return cls(section=key.section, offset=key.offset)
 
     def set_decorated(self, name: str):
         self.decorated_name = name
@@ -107,21 +109,21 @@ class CvdumpAnalysis:
         for pub in parser.publics:
             key = NodeKey(pub.section, pub.offset)
             if key not in node_dict:
-                node_dict[key] = CvdumpNode(*key)
+                node_dict[key] = CvdumpNode.from_node_key(key)
 
             node_dict[key].set_decorated(pub.name)
 
         for sizeref in parser.sizerefs:
             key = NodeKey(sizeref.section, sizeref.offset)
             if key not in node_dict:
-                node_dict[key] = CvdumpNode(*key)
+                node_dict[key] = CvdumpNode.from_node_key(key)
 
             node_dict[key].section_contribution = sizeref.size
 
         for glo in parser.globals:
             key = NodeKey(glo.section, glo.offset)
             if key not in node_dict:
-                node_dict[key] = CvdumpNode(*key)
+                node_dict[key] = CvdumpNode.from_node_key(key)
 
             node_dict[key].node_type = EntityType.DATA
             node_dict[key].friendly_name = glo.name
@@ -148,7 +150,7 @@ class CvdumpAnalysis:
         for sym in parser.symbols:
             key = NodeKey(sym.section, sym.offset)
             if key not in node_dict:
-                node_dict[key] = CvdumpNode(*key)
+                node_dict[key] = CvdumpNode.from_node_key(key)
 
             if sym.type in ("S_GPROC32", "S_LPROC32"):
                 if sym.type == "S_LPROC32" and node_dict[key].symbol_entry is not None:
@@ -163,7 +165,7 @@ class CvdumpAnalysis:
                 for v in sym.static_variables:
                     key = NodeKey(v.section, v.offset)
                     if key not in node_dict:
-                        node_dict[key] = CvdumpNode(*key)
+                        node_dict[key] = CvdumpNode.from_node_key(key)
                     node_dict[key].node_type = EntityType.DATA
                     # TODO this format is required for `match_msvc::match_static_variables` to find the variable
                     # Look at either documenting this dependency or reworking the query
