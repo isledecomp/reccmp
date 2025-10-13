@@ -136,6 +136,48 @@ def patch_cmp_jmp(orig: list[str], recomp: list[str]) -> set[int]:
     return set()
 
 
+def patch_fld_fmul(orig: list[str], recomp: list[str]) -> set[int]:
+    """Can we resolve the diffs between orig and recomp by patching
+    swapped fld/fmul instructions?
+    For example:
+        fld [ebp - 4]                   fmul [ebp - 8]
+        fld [ebp - 8]                   fmul [ebp - 4]
+
+    Returns set of fixed lines
+    """
+
+    valid_following_ops = ["fmul", "fadd"]
+
+    # find the first "cmp" instruction
+    fld_index = next((i for i, s in enumerate(orig) if s.startswith("fld")), -1)
+    # return if not found, or only found on the last line
+    if (
+        fld_index in (-1, len(orig) - 1)
+        or
+        # recomp should also have a fld in the same line
+        not recomp[fld_index].startswith("fld")
+    ):
+        return set()
+
+    (_, _, orig_operand_a) = orig[fld_index].partition(" ")
+    (orig_mnemonic_b, _, orig_operand_b) = orig[fld_index + 1].partition(" ")
+
+    (_, _, recomp_operand_a) = recomp[fld_index].partition(" ")
+    (recomp_mnemonic_b, _, recomp_operand_b) = recomp[fld_index + 1].partition(" ")
+
+    # fld must be followed by fmul/fadd and orig and recomp must have the same mnenomic
+    # and the operands must be swapped
+    if (
+        orig_mnemonic_b in valid_following_ops
+        and orig_mnemonic_b == recomp_mnemonic_b
+        and orig_operand_a == recomp_operand_b
+        and orig_operand_b == recomp_operand_a
+    ):
+        return {fld_index, fld_index + 1}
+
+    return set()
+
+
 def patch_cmp_swaps(
     codes: Sequence[DiffOpcode], orig_asm: list[str], recomp_asm: list[str]
 ) -> set[int]:
@@ -148,7 +190,7 @@ def patch_cmp_swaps(
 
     fixed_lines = set()
 
-    patch_fns = [patch_cmp_jmp, patch_mov_cmp_jmp]
+    patch_fns = [patch_cmp_jmp, patch_mov_cmp_jmp, patch_fld_fmul]
 
     for code, i1, i2, j1, j2 in codes:
         # To save us the trouble of finding "compatible" cmp instructions

@@ -403,8 +403,14 @@ class RecCmpPathsAction(argparse.Action):
     ):
         assert isinstance(values, Sequence)
         original, recompiled, pdb, source_root = list(Path(o) for o in values)
+
+        # Assumes base filename of the original binary is the module name.
+        target_id = original.stem.upper()
+        # This happens before argparse_parse_logging() is called, so it will not match our format.
+        logger.warning('Assuming target name is "%s"', target_id)
+
         target = RecCmpTarget(
-            target_id=original.stem.upper(),
+            target_id=target_id,
             filename=original.name,
             sha256=get_path_sha256(original),
             original_path=original,
@@ -534,19 +540,29 @@ def detect_project(
         build_config_path = build_directory / RECCMP_BUILD_CONFIG
         build_data = BuildFile(project=project_directory.resolve(), targets={})
 
-        for target_id, target_data in project_data.targets.items():
-            filename = target_data.filename
+        def detect_recompiled(filename: str):
             for search_path_folder in search_path:
-                p = search_path_folder / filename
-                pdb = p.with_suffix(".pdb")
-                if p.is_file() and pdb.is_file():
-                    build_data.targets.setdefault(
-                        target_id, BuildFileTarget(path=p, pdb=pdb)
+                binary = search_path_folder / filename
+                pdb = binary.with_suffix(".pdb")
+                if binary.is_file():
+                    if pdb.is_file():
+                        build_data.targets.setdefault(
+                            target_id, BuildFileTarget(path=binary, pdb=pdb)
+                        )
+                        logger.info("Found %s -> %s", target_id, binary)
+                        logger.info("Found %s -> %s", target_id, pdb)
+                        return
+
+                    logger.warning(
+                        "Missing PDB file '%s' next to binary '%s'",
+                        pdb.name,
+                        str(binary),
                     )
-                    logger.info("Found %s -> %s", target_id, p)
-                    logger.info("Found %s -> %s", target_id, pdb)
-                    break
-            else:
-                logger.warning("Could not find %s", filename)
+
+            logger.warning("Failed to detect a recompile for '%s'", filename)
+
+        for target_id, target_data in project_data.targets.items():
+            detect_recompiled(target_data.filename)
+
         logger.info("Updating %s", build_config_path)
         build_data.write_file(build_config_path)
