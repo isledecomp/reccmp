@@ -6,6 +6,14 @@ Any metadata set from a CSV file will overwrite the same data from code annotati
 
 If the same address is repeated on multiple lines the same CSV file, or across multiple files, the metadata will be overwritten each time.
 
+## Motivation
+
+The CSV feature is optional. In most situations, we can gather enough information to run analysis and provide a diff for each function using only the code annotations and PDB.
+
+However, loading data via CSV allows the user to specify all aspects of entity metadata, including attributes like the entity size, which is not currently possible with code annotations.
+
+You may find it helpful to copy data from Ghidra and use it to bootstrap a new decomp project. For example: CRT or library functions.
+
 ## Setup
 
 Add the list of CSV files under the `data-sources` key for the target in `reccmp-project.yml`. For example:
