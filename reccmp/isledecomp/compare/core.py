@@ -41,6 +41,7 @@ from .ingest import (
     load_cvdump_types,
     load_cvdump_lines,
     load_markers,
+    load_data_sources,
 )
 from .mutate import (
     match_array_elements,
@@ -68,7 +69,9 @@ class Compare:
     target_id: str
     types: CvdumpTypesParser
     function_comparator: FunctionComparator
+    data_sources: list[Path]
 
+    # pylint: disable=too-many-arguments
     def __init__(
         self,
         orig_bin: PEImage,
@@ -76,12 +79,18 @@ class Compare:
         pdb_file: CvdumpAnalysis,
         code_dir: Path | str,
         target_id: str,
+        data_sources: list[Path] | None = None,
     ):
         self.orig_bin = orig_bin
         self.recomp_bin = recomp_bin
         self.cvdump_analysis = pdb_file
         self.code_dir = Path(code_dir)
         self.target_id = target_id
+
+        if isinstance(data_sources, list):
+            self.data_sources = data_sources
+        else:
+            self.data_sources = []
 
         # Controls whether we dump the asm output to a file
         self._debug = False
@@ -113,6 +122,8 @@ class Compare:
             self._db,
             self.report,
         )
+
+        load_data_sources(self._db, self.data_sources)
 
         # Match using PDB and annotation data
         match_symbols(self._db, self.report, truncate=True)
