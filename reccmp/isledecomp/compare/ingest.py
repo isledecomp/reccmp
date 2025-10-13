@@ -21,6 +21,7 @@ from reccmp.isledecomp.compare.event import (
     ReccmpReportProtocol,
     reccmp_report_nop,
 )
+from .csv import ReccmpCsvParserError, ReccmpCsvFatalParserError, csv_parse
 from .db import EntityDb, entity_name_from_string
 from .lines import LinesDb
 
@@ -307,3 +308,47 @@ def load_markers(
                 line=line.line_number,
                 type=EntityType.LINE,
             )
+
+
+def load_data_sources(db: EntityDb, data_sources: list[Path]):
+    for ds_file in data_sources:
+        if ds_file.suffix.lower() == ".csv":
+            load_csv(db, ds_file)
+        else:
+            logger.error(
+                "Skipped data source file '%s'. If this is csv, please add the extension.",
+                ds_file,
+            )
+
+
+def load_csv(db: EntityDb, path: Path):
+    rows = []
+
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            rowgen = csv_parse(f)
+            while True:
+                try:
+                    rows.append(next(rowgen))
+                except StopIteration:
+                    break
+                except ReccmpCsvParserError as ex:
+                    logger.error(
+                        "In csv file %s: %s",
+                        str(path),
+                        str(ex),
+                    )
+                    continue
+
+    except FileNotFoundError:
+        logger.error("Could not open csv file %s", str(path))
+        return
+    except ReccmpCsvFatalParserError as ex:
+        logger.error(
+            "Failed to parse csv file %s (%s)", str(path), ex.__class__.__name__
+        )
+        return
+
+    with db.batch() as batch:
+        for addr, values in rows:
+            batch.set_orig(addr, **values)
