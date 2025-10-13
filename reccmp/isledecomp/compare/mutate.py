@@ -1,3 +1,7 @@
+"""Part of the core analysis/comparison logic of `reccmp`.
+These functions create or update entities using the current information in the database.
+"""
+
 import logging
 from reccmp.isledecomp.cvdump.demangler import (
     get_function_arg_string,

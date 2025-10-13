@@ -1,3 +1,7 @@
+"""Part of the core analysis/comparison logic of `reccmp`.
+These functions update the entity database based on analysis of the binary files.
+"""
+
 from reccmp.isledecomp.formats.pe import PEImage
 from reccmp.isledecomp.types import EntityType
 from reccmp.isledecomp.analysis import (

@@ -1,3 +1,7 @@
+"""Part of the core analysis/comparison logic of `reccmp`.
+These functions load the entity and type databases with information from code annotations and PDB files.
+"""
+
 import logging
 from pathlib import Path
 from reccmp.isledecomp.formats.exceptions import (

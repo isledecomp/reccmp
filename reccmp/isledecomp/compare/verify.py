@@ -1,3 +1,7 @@
+"""Part of the core analysis/comparison logic of `reccmp`.
+These functions report problems with the current entities that limit or block further analysis.
+"""
+
 import logging
 import struct
 from reccmp.isledecomp.formats.pe import PEImage
