@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Iterable, Iterator
 import logging
 import colorama
 from pystache import Renderer  # type: ignore[import-untyped]
@@ -10,17 +11,71 @@ from reccmp.isledecomp.compare.report import (
 )
 
 
+def reccmp_pack_generator(lines: Iterable[str]) -> Iterator[str]:
+    """Emits only lines between the "reccmp-pack-begin" and "reccmp-pack-end" markers.
+    Intended to remove ES6 imports and exports that are not compatible with our
+    HTML report as served through the file:/// protocol."""
+    copy = False
+
+    for line in lines:
+        if line.strip() == "// reccmp-pack-begin":
+            copy = True
+        elif line.strip() == "// reccmp-pack-end":
+            copy = False
+        elif copy:
+            yield line
+
+    yield "\n"
+
+
+def read_js_file(filename: str) -> str:
+    """Read the given file from the assets directory and prepare
+    to be packed into the main distribution .js file.
+    This only captures lines between "reccmp-pack-begin" and "reccmp-pack-end"
+    and adds a header with the source filename."""
+    js_path = get_asset_file(filename)
+    lines = []
+
+    with open(js_path, "r", encoding="utf-8") as f:
+        lines = list(reccmp_pack_generator(f))
+
+    horiz_line = f"/{'*' * 78}/\n"
+    return horiz_line + f"// {filename}\n" + "".join(lines)
+
+
 def write_html_report(html_file: str, report: ReccmpStatusReport):
     """Create the interactive HTML diff viewer with the given report."""
-    js_path = get_asset_file("../assets/reccmp.js")
-    with open(js_path, "r", encoding="utf-8") as f:
-        reccmp_js = f.read()
+    # For the flat-file report, the component JS files must be added in a particular order
+    # so that any dependencies required by a particular file have already been resolved.
+    js_files = [
+        "globals.js",
+        "events.js",
+        "state.js",
+        "provider.js",
+        "components/clickToCopy.js",
+        "components/diffDisplay.js",
+        "components/hidePerfect.js",
+        "components/hideStub.js",
+        "components/listingTable.js",
+        "components/nextPageButton.js",
+        "components/pageNumberOf.js",
+        "components/pageSelect.js",
+        "components/prevPageButton.js",
+        "components/resultCount.js",
+        "components/showRecomp.js",
+        "components/searchbar.js",
+        "components/searchOptions.js",
+        "main.js",
+    ]
+    reccmp_js = ""
+    for file in js_files:
+        reccmp_js += read_js_file(file)
 
     # Convert the report to a JSON string to insert in the HTML template.
     report_str = serialize_reccmp_report(report, diff_included=True)
 
     output_data = Renderer().render_path(
-        get_asset_file("../assets/template.html"),
+        get_asset_file("template.html"),
         {"report": report_str, "reccmp_js": reccmp_js},
     )
 
