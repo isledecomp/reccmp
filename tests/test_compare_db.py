@@ -348,6 +348,12 @@ def test_generic_used_function(db):
     assert db.used(ImageId.RECOMP, 100) is True
 
 
+def test_generic_used_invalid_id(db):
+    """Should fail if the image id is outside the enum"""
+    with pytest.raises(AssertionError):
+        db.used(2, 100)
+
+
 def test_generic_set_function(db):
     """set() has a parameter to select which address space to update."""
     with db.batch() as batch:
@@ -363,6 +369,13 @@ def test_generic_set_function(db):
     e = db.get_by_recomp(100)
     assert e is not None
     assert e.name == "Test"
+
+
+def test_generic_set_invalid_id(db):
+    """Should fail if the image id is outside the enum"""
+    with pytest.raises(AssertionError):
+        with db.batch() as batch:
+            batch.set(2, 100, name="Test")
 
 
 def test_ref_alteration(db):

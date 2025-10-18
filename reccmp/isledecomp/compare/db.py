@@ -201,21 +201,21 @@ class EntityBatch:
     def set_recomp(self, addr: int, **kwargs):
         self._recomp.setdefault(addr, {}).update(kwargs)
 
-    def set(self, img: ImageId, addr: int, **kwargs):
+    def set(self, img: ImageId, addr: int, *, ref: int | None = None, **kwargs):
         if img == ImageId.ORIG:
-            if "ref" in kwargs:
-                kwargs["ref_orig"] = kwargs["ref"]
-                del kwargs["ref"]
+            if ref is not None:
+                kwargs["ref_orig"] = ref
 
             self.set_orig(addr, **kwargs)
-            return
 
-        if img == ImageId.RECOMP:
-            if "ref" in kwargs:
-                kwargs["ref_recomp"] = kwargs["ref"]
-                del kwargs["ref"]
+        elif img == ImageId.RECOMP:
+            if ref is not None:
+                kwargs["ref_recomp"] = ref
+
             self.set_recomp(addr, **kwargs)
-            return
+
+        else:
+            assert False, "Invalid image id"
 
     def match(self, orig: int, recomp: int):
         self._matches.append((orig, recomp))
@@ -464,7 +464,7 @@ class EntityDb:
         if img == ImageId.RECOMP:
             return self.recomp_used(addr)
 
-        return False
+        assert False, "Invalid image id"
 
     def set_pair(
         self, orig: int, recomp: int, entity_type: EntityType | None = None
