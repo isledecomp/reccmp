@@ -39,8 +39,8 @@ def read_js_file(filename: str) -> str:
     with open(js_path, "r", encoding="utf-8") as f:
         lines = list(reccmp_pack_generator(f))
 
-    horiz_line = f"/{'*' * 78}/\n"
-    return horiz_line + f"// {filename}\n" + "".join(lines)
+    file_header = f"/{'*' * 78}/\n// {filename}\n"
+    return file_header + "".join(lines)
 
 
 def write_html_report(html_file: str, report: ReccmpStatusReport):
