@@ -3,7 +3,7 @@ These functions update the entity database based on analysis of the binary files
 """
 
 from reccmp.isledecomp.formats.pe import PEImage
-from reccmp.isledecomp.types import EntityType
+from reccmp.isledecomp.types import EntityType, ImageId
 from reccmp.isledecomp.analysis import (
     find_float_consts,
     find_import_thunks,
@@ -20,31 +20,20 @@ def match_entry(db: EntityDb, orig_bin: PEImage, recomp_bin: PEImage):
         batch.match(orig_bin.entry, recomp_bin.entry)
 
 
-def find_strings(db: EntityDb, orig_bin: PEImage, recomp_bin: PEImage):
+def create_analysis_strings(db: EntityDb, img_id: ImageId, binfile: PEImage):
     """Search both binaries for Latin1 strings.
     We use the insert_() method so that thse strings will not overwrite
     an existing entity. It's possible that some variables or pointers
     will be mistakenly identified as short strings."""
     with db.batch() as batch:
-        for addr, string in orig_bin.iter_string("latin1"):
+        for addr, string in binfile.iter_string("latin1"):
             # If the address is the site of a relocation, this is a pointer, not a string.
-            if addr in orig_bin.relocations:
+            if addr in binfile.relocations:
                 continue
 
-            if is_likely_latin1(string) and not db.orig_used(addr):
-                batch.set_orig(
-                    addr,
-                    type=EntityType.STRING,
-                    name=entity_name_from_string(string),
-                    size=len(string) + 1,  # including null-terminator
-                )
-
-        for addr, string in recomp_bin.iter_string("latin1"):
-            if addr in recomp_bin.relocations:
-                continue
-
-            if is_likely_latin1(string) and not db.recomp_used(addr):
-                batch.set_recomp(
+            if is_likely_latin1(string) and not db.used(img_id, addr):
+                batch.set(
+                    img_id,
                     addr,
                     type=EntityType.STRING,
                     name=entity_name_from_string(string),
@@ -52,21 +41,19 @@ def find_strings(db: EntityDb, orig_bin: PEImage, recomp_bin: PEImage):
                 )
 
 
-def find_float_const(db: EntityDb, orig_bin: PEImage, recomp_bin: PEImage):
+def create_analysis_floats(db: EntityDb, img_id: ImageId, binfile: PEImage):
     """Add floating point constants in each binary to the database.
     We are not matching anything right now because these values are not
     deduped like strings."""
     with db.batch() as batch:
-        for addr, size, float_value in find_float_consts(orig_bin):
-            if not db.orig_used(addr):
-                batch.set_orig(
-                    addr, type=EntityType.FLOAT, name=str(float_value), size=size
-                )
-
-        for addr, size, float_value in find_float_consts(recomp_bin):
-            if not db.recomp_used(addr):
-                batch.set_recomp(
-                    addr, type=EntityType.FLOAT, name=str(float_value), size=size
+        for addr, size, float_value in find_float_consts(binfile):
+            if not db.used(img_id, addr):
+                batch.set(
+                    img_id,
+                    addr,
+                    type=EntityType.FLOAT,
+                    name=str(float_value),
+                    size=size,
                 )
 
 
@@ -130,32 +117,24 @@ def match_imports(db: EntityDb, orig_bin: PEImage, recomp_bin: PEImage):
             )
 
 
-def create_thunks(db: EntityDb, orig_bin: PEImage, recomp_bin: PEImage):
+def create_thunks(db: EntityDb, img_id: ImageId, binfile: PEImage):
     """Create entities for any thunk functions in the image.
     These are the result of an incremental build."""
     with db.batch() as batch:
-        for orig_thunk, orig_addr in orig_bin.thunks:
-            if not db.orig_used(orig_thunk):
-                batch.set_orig(
-                    orig_thunk,
+        for thunk_addr, func_addr in binfile.thunks:
+            if not db.used(img_id, thunk_addr):
+                batch.set(
+                    img_id,
+                    thunk_addr,
                     type=EntityType.FUNCTION,
                     size=5,
-                    ref_orig=orig_addr,
+                    ref=func_addr,
                     skip=True,
                 )
 
             # We can only match two thunks if we have already matched both
             # their parent entities. There is nothing to compare because
             # they will either be equal or left unmatched. Set skip=True.
-
-        for recomp_thunk, recomp_addr in recomp_bin.thunks:
-            if not db.recomp_used(recomp_thunk):
-                batch.set_recomp(
-                    recomp_thunk,
-                    type=EntityType.FUNCTION,
-                    size=5,
-                    ref_recomp=recomp_addr,
-                )
 
 
 def match_exports(db: EntityDb, orig_bin: PEImage, recomp_bin: PEImage):
