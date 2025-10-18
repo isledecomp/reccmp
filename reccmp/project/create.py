@@ -215,7 +215,7 @@ def create_project(
 
         project_config_data.targets[target_id] = ProjectFileTarget(
             filename=target_filename,
-            source_root=".",
+            source_root=Path("."),
             hash=Hash(sha256=hash_sha256),
         )
 
@@ -223,7 +223,7 @@ def create_project(
             target_id=target_id,
             filename=target_filename,
             sha256=hash_sha256,
-            source_root=".",
+            source_root=Path("."),
             ghidra_config=GhidraConfig(),
         )
 
