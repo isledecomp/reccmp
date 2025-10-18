@@ -7,14 +7,28 @@ import logging
 import json
 from functools import cached_property
 from typing import Any, Iterable, Iterator
-from reccmp.isledecomp.types import EntityType
+from reccmp.isledecomp.types import EntityType, ImageId
 
 _SETUP_SQL = """
     CREATE TABLE entities (
         orig_addr int unique,
         recomp_addr int unique,
-        kvstore text default '{}'
+        kvstore text default '{}',
+        ref_orig integer as (json_extract(kvstore, '$.ref_orig')),
+        ref_recomp integer as (json_extract(kvstore, '$.ref_recomp'))
     );
+
+    CREATE VIEW orig_refs (orig_addr, ref_id, nth) AS
+        SELECT thunk.orig_addr, ref.rowid,
+            Row_number() OVER (partition BY thunk.ref_orig order by thunk.orig_addr) nth
+        FROM entities thunk
+        INNER JOIN entities ref on thunk.ref_orig = ref.orig_addr;
+
+    CREATE VIEW recomp_refs (recomp_addr, ref_id, nth) AS
+        SELECT thunk.recomp_addr, ref.rowid,
+            Row_number() OVER (partition BY thunk.ref_recomp order by thunk.recomp_addr) nth
+        FROM entities thunk
+        INNER JOIN entities ref on thunk.ref_recomp = ref.recomp_addr;
 
     CREATE VIEW orig_unmatched (orig_addr, kvstore) AS
         SELECT orig_addr, kvstore FROM entities
@@ -34,6 +48,13 @@ _SETUP_SQL = """
     CREATE VIEW matched_entity_factory AS
         SELECT * FROM entity_factory WHERE orig_addr IS NOT NULL AND recomp_addr IS NOT NULL;
 """
+
+
+def entity_name_from_string(text: str, wide: bool = False) -> str:
+    """Create an entity name for the given string by escaping
+    control characters and double quotes, then wrapping in double quotes."""
+    escaped = text.encode("unicode_escape").decode("utf-8").replace('"', '\\"')
+    return f'{"L" if wide else ""}"{escaped}"'
 
 
 EntityTypeLookup: dict[int, str] = {
@@ -102,16 +123,6 @@ class ReccmpEntity:
         """Combination of the name and compare type.
         Intended for name substitution in the diff. If there is a diff,
         it will be more obvious what this symbol indicates."""
-
-        # Special handling for strings that might contain newlines.
-        if self.entity_type == EntityType.STRING:
-            if self.name is not None:
-                # Escape newlines so they do not interfere
-                # with asm sanitize and diff calculation.
-                return f"{repr(self.name)} (STRING)"
-
-            return None
-
         best_name = self.best_name()
         if best_name is None:
             return None
@@ -162,46 +173,27 @@ logger = logging.getLogger(__name__)
 class EntityBatch:
     base: "EntityDb"
 
-    # To be inserted only if the address is unused
-    _orig_insert: dict[int, dict[str, Any]]
-    _recomp_insert: dict[int, dict[str, Any]]
-
-    # To be upserted
     _orig: dict[int, dict[str, Any]]
     _recomp: dict[int, dict[str, Any]]
+    _matches: list[tuple[int, int]]
 
-    # Matches
-    _orig_to_recomp: dict[int, int]
-    _recomp_to_orig: dict[int, int]
-
-    # Set recomp address
+    # Sets the recomp_addr of an entity with only an orig_addr.
+    # This isn't possible using set_orig() or by matching.
     _recomp_addr: dict[int, int]
 
     def __init__(self, backref: "EntityDb") -> None:
         self.base = backref
-        self._orig_insert = {}
-        self._recomp_insert = {}
         self._orig = {}
         self._recomp = {}
-        self._orig_to_recomp = {}
-        self._recomp_to_orig = {}
+        self._matches = []
         self._recomp_addr = {}
 
     def reset(self):
         """Clear all pending changes"""
-        self._orig_insert.clear()
-        self._recomp_insert.clear()
         self._orig.clear()
         self._recomp.clear()
-        self._orig_to_recomp.clear()
-        self._recomp_to_orig.clear()
+        self._matches.clear()
         self._recomp_addr.clear()
-
-    def insert_orig(self, addr: int, **kwargs):
-        self._orig_insert.setdefault(addr, {}).update(kwargs)
-
-    def insert_recomp(self, addr: int, **kwargs):
-        self._recomp_insert.setdefault(addr, {}).update(kwargs)
 
     def set_orig(self, addr: int, **kwargs):
         self._orig.setdefault(addr, {}).update(kwargs)
@@ -209,34 +201,58 @@ class EntityBatch:
     def set_recomp(self, addr: int, **kwargs):
         self._recomp.setdefault(addr, {}).update(kwargs)
 
-    def match(self, orig: int, recomp: int):
-        # Integrity check: orig and recomp addr must be used only once
-        if (used_orig := self._recomp_to_orig.pop(recomp, None)) is not None:
-            self._orig_to_recomp.pop(used_orig, None)
+    def set(self, img: ImageId, addr: int, *, ref: int | None = None, **kwargs):
+        if img == ImageId.ORIG:
+            if ref is not None:
+                kwargs["ref_orig"] = ref
 
-        self._orig_to_recomp[orig] = recomp
-        self._recomp_to_orig[recomp] = orig
+            self.set_orig(addr, **kwargs)
+
+        elif img == ImageId.RECOMP:
+            if ref is not None:
+                kwargs["ref_recomp"] = ref
+
+            self.set_recomp(addr, **kwargs)
+
+        else:
+            assert False, "Invalid image id"
+
+    def match(self, orig: int, recomp: int):
+        self._matches.append((orig, recomp))
 
     def set_recomp_addr(self, orig: int, recomp: int):
         self._recomp_addr[orig] = recomp
 
+    def _finalized_matches(self) -> Iterator[tuple[int, int]]:
+        """Reduce the list of matches so that each orig and recomp addr appears once.
+        If an address is repeated, retain the first pair where it is used and ignore any others.
+        """
+        used_orig = set()
+        used_recomp = set()
+
+        # This should have the same effect as the original implementation
+        # that used two dicts to check uniqueness during each call to match().
+        for orig, recomp in self._matches:
+            if orig not in used_orig and recomp not in used_recomp:
+                used_orig.add(orig)
+                used_recomp.add(recomp)
+                yield ((orig, recomp))
+            else:
+                logger.warning(
+                    "Match (%x, %x) collides with previous staged match", orig, recomp
+                )
+
     def commit(self):
         # SQL transaction
         with self.base.sql:
-            if self._orig_insert:
-                self.base.bulk_orig_insert(self._orig_insert.items())
-
-            if self._recomp_insert:
-                self.base.bulk_recomp_insert(self._recomp_insert.items())
-
             if self._orig:
                 self.base.bulk_orig_insert(self._orig.items(), upsert=True)
 
             if self._recomp:
                 self.base.bulk_recomp_insert(self._recomp.items(), upsert=True)
 
-            if self._orig_to_recomp:
-                self.base.bulk_match(self._orig_to_recomp.items())
+            if self._matches:
+                self.base.bulk_match(self._finalized_matches())
 
             if self._recomp_addr:
                 self.base.bulk_set_recomp_addr(self._recomp_addr.items())
@@ -433,18 +449,27 @@ class EntityDb:
         cur.row_factory = matched_entity_factory
         yield from cur
 
-    def _orig_used(self, addr: int) -> bool:
+    def orig_used(self, addr: int) -> bool:
         cur = self._sql.execute("SELECT 1 FROM entities WHERE orig_addr = ?", (addr,))
         return cur.fetchone() is not None
 
-    def _recomp_used(self, addr: int) -> bool:
+    def recomp_used(self, addr: int) -> bool:
         cur = self._sql.execute("SELECT 1 FROM entities WHERE recomp_addr = ?", (addr,))
         return cur.fetchone() is not None
+
+    def used(self, img: ImageId, addr: int) -> bool:
+        if img == ImageId.ORIG:
+            return self.orig_used(addr)
+
+        if img == ImageId.RECOMP:
+            return self.recomp_used(addr)
+
+        assert False, "Invalid image id"
 
     def set_pair(
         self, orig: int, recomp: int, entity_type: EntityType | None = None
     ) -> bool:
-        if self._orig_used(orig):
+        if self.orig_used(orig):
             logger.debug("Original address %s not unique!", hex(orig))
             return False
 

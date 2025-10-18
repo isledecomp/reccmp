@@ -69,21 +69,6 @@ def test_name_hierarchy(db):
     assert "Test" not in entity
 
 
-def test_string_escape_newlines(db):
-    """Make sure newlines are removed from the string.
-    This overlap with tests on the ReccmpEntity name functions, but it is more vital
-    to ensure there are no newlines at this stage because they will disrupt the asm diff.
-    """
-    with db.batch() as batch:
-        batch.set_orig(100, name="Test\nTest", type=EntityType.STRING)
-
-    lookup = create_lookup(db)
-    entity = lookup(100)
-
-    assert entity is not None
-    assert "\n" not in entity
-
-
 def test_offset_name(db):
     """For some entities (i.e. variables) we will return a name if the search address
     is inside the address range of the entity. This is determined by the size attribute.
@@ -182,36 +167,34 @@ def test_indirect_import(db):
     attribute used in the result. This will probably contain the DLL and function name.
     """
     with db.batch() as batch:
-        batch.set_orig(100, import_name="Hello", name="Test", type=EntityType.IMPORT)
+        batch.set_orig(100, name="Hello", type=EntityType.IMPORT)
 
     # No mock needed here because we will not need to read any data.
     lookup = create_lookup(db)
 
-    # Should use import name with arrow to suggest indirect call.
+    # Should use arrow to suggest indirect call.
     name = lookup(100, indirect=True)
     assert name is not None
     assert "Hello" in name
     assert "->" in name
 
-    # Show the entity name instead. (e.g. __imp__ symbol)
+    # No arrow.
     name = lookup(100, indirect=False)
     assert name is not None
-    assert "Test" in name
+    assert "Hello" in name
     assert "->" not in name
 
 
-def test_indirect_import_missing_data(db):
-    """Edge cases for indirect lookup on an IMPORT entity.."""
+def test_import_without_name(db):
+    """If the import entity doesn't have a name, the lookup should return None."""
     with db.batch() as batch:
-        batch.set_orig(100, name="Test", type=EntityType.IMPORT)
+        batch.set_orig(100, type=EntityType.IMPORT)  # No name
 
     lookup = create_lookup(db)
 
-    # No import name. Use the regular entity name instead (i.e. match indirect=False lookup)
-    name = lookup(100, indirect=True)
-    assert name is not None
-    assert "Test" in name
-    assert "->" not in name
+    # Should not follow the pointer because it is an RVA, not a real virtual address.
+    assert lookup(100, indirect=True) is None
+    assert lookup(100, indirect=False) is None
 
 
 def test_indirect_failed_lookup(db):

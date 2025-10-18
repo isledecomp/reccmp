@@ -5,6 +5,7 @@ import struct
 from itertools import pairwise
 from typing import Callable, Iterator, NamedTuple
 from reccmp.isledecomp.compare.lines import LinesDb
+from reccmp.isledecomp.difflib import DiffOpcode
 from reccmp.isledecomp.compare.pinned_sequences import SequenceMatcherWithPins
 from reccmp.isledecomp.compare.asm.fixes import assert_fixup, find_effective_match
 from reccmp.isledecomp.compare.asm.parse import AsmExcerpt, ParseAsm
@@ -13,22 +14,18 @@ from reccmp.isledecomp.compare.asm.replacement import (
     create_name_lookup,
 )
 from reccmp.isledecomp.compare.db import EntityDb, ReccmpMatch
-from reccmp.isledecomp.compare.diff import (
-    CombinedDiffOutput,
-    DiffReport,
-    combined_diff,
-)
 from reccmp.isledecomp.compare.event import ReccmpEvent, ReccmpReportProtocol
 from reccmp.isledecomp.formats.exceptions import (
     InvalidVirtualAddressError,
     InvalidVirtualReadError,
 )
 from reccmp.isledecomp.formats.pe import PEImage
-from reccmp.isledecomp.types import EntityType
 
 
 class FunctionCompareResult(NamedTuple):
-    diff: CombinedDiffOutput
+    codes: list[DiffOpcode]
+    orig_inst: list[tuple[str, str]]
+    recomp_inst: list[tuple[str, str]]
     is_effective_match: bool
     match_ratio: float
 
@@ -136,7 +133,7 @@ class FunctionComparator:
             return None
         return f"{path_line_pair[0].name}:{path_line_pair[1]}"
 
-    def compare_function(self, match: ReccmpMatch) -> DiffReport:
+    def compare_function(self, match: ReccmpMatch) -> FunctionCompareResult:
         # Detect when the recomp function size would cause us to read
         # enough bytes from the original function that we cross into
         # the next annotated function.
@@ -181,20 +178,8 @@ class FunctionComparator:
             orig_combined, recomp_combined, line_annotations
         )
 
-        diff_result = self._compare_function_assembly(
+        return self._compare_function_assembly(
             orig_combined, recomp_combined, split_points
-        )
-
-        best_name = match.best_name()
-        assert best_name is not None
-        return DiffReport(
-            match_type=EntityType.FUNCTION,
-            orig_addr=match.orig_addr,
-            recomp_addr=match.recomp_addr,
-            name=best_name,
-            udiff=diff_result.diff,
-            ratio=diff_result.match_ratio,
-            is_effective_match=diff_result.is_effective_match,
         )
 
     @staticmethod
@@ -231,39 +216,34 @@ class FunctionComparator:
             is_effective = find_effective_match(
                 diff.get_opcodes(), orig_asm, recomp_asm
             )
-
-            # Convert the addresses to hex string for the diff output
-            orig_for_printing = [
-                (hex(addr) if addr is not None else "", instr) for addr, instr in orig
-            ]
-
-            recomp_for_printing = [
-                (
-                    hex(addr) if addr is not None else "",
-                    self._print_recomp_instruction(
-                        instruction,
-                        source_ref=self._source_ref_of_recomp_addr(addr),
-                        is_pinned=any(
-                            recomp_addr == line_index for _, recomp_addr in split_points
-                        ),
-                    ),
-                )
-                for line_index, (addr, instruction) in enumerate(recomp)
-            ]
-
-            unified_diff = combined_diff(
-                diff.get_grouped_opcodes(n=10),
-                orig_for_printing,
-                recomp_for_printing,
-            )
         else:
-            unified_diff = []
             is_effective = False
 
+        # Convert the addresses to hex string for the diff output
+        orig_for_printing = [
+            (hex(addr) if addr is not None else "", instr) for addr, instr in orig
+        ]
+
+        recomp_for_printing = [
+            (
+                hex(addr) if addr is not None else "",
+                self._print_recomp_instruction(
+                    instruction,
+                    source_ref=self._source_ref_of_recomp_addr(addr),
+                    is_pinned=any(
+                        recomp_addr == line_index for _, recomp_addr in split_points
+                    ),
+                ),
+            )
+            for line_index, (addr, instruction) in enumerate(recomp)
+        ]
+
         return FunctionCompareResult(
-            unified_diff,
-            is_effective,
-            diff.ratio(),
+            codes=diff.get_opcodes(),
+            orig_inst=orig_for_printing,
+            recomp_inst=recomp_for_printing,
+            is_effective_match=is_effective,
+            match_ratio=diff.ratio(),
         )
 
     def _collect_line_annotations(self, recomp: AsmExcerpt) -> list[ReccmpMatch]:

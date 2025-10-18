@@ -10,6 +10,7 @@ from .util import (
     get_synthetic_name,
     remove_trailing_comment,
     get_string_contents,
+    ParserCodeString,
     sanitize_code_line,
     scopeDetectRegex,
 )
@@ -306,23 +307,24 @@ class DecompParser:
             self.state = ReaderState.IN_GLOBAL
 
     def _variable_done(
-        self, variable_name: str | None = None, string_value: str | None = None
+        self, variable_name: str | None = None, string: ParserCodeString | None = None
     ):
-        if variable_name is None and string_value is None:
+        if variable_name is None and string is None:
             self._syntax_error(ParserError.NO_SUITABLE_NAME)
             return
 
         for marker in self.var_markers.iter():
             if marker.is_string():
-                assert string_value is not None
+                assert string is not None
                 self._symbols.append(
                     ParserString(
                         type=marker.type,
                         line_number=self.line_number,
                         module=marker.module,
                         offset=marker.offset,
-                        name=string_value,
+                        name=string.text,
                         filename=self.filename,
+                        is_widechar=string.is_widechar,
                     )
                 )
             else:
@@ -570,9 +572,8 @@ class DecompParser:
                 else:
                     variable_name = get_variable_name(line)
 
-            string_name = get_string_contents(line)
-
-            self._variable_done(variable_name, string_name)
+            string = get_string_contents(line)
+            self._variable_done(variable_name, string)
 
         elif self.state == ReaderState.IN_VTABLE:
             vtable_class = get_class_name(line)

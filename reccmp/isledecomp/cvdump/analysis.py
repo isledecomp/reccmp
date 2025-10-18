@@ -1,13 +1,15 @@
 """For collating the results from parsing cvdump.exe into a more directly useful format."""
 
+from dataclasses import dataclass
 from pathlib import PureWindowsPath
 from reccmp.isledecomp.types import EntityType
 from .demangler import demangle_string_const, demangle_vtable
 from .parser import CvdumpParser, LineValue, NodeKey
 from .symbols import SymbolsEntry
-from .types import CvdumpKeyError, CvdumpIntegrityError, TypeInfo
+from .types import CvdumpKeyError, CvdumpIntegrityError, CvdumpTypesParser, TypeInfo
 
 
+@dataclass
 class CvdumpNode:
     # pylint: disable=too-many-instance-attributes
     # These two are required and allow us to identify the symbol
@@ -38,9 +40,9 @@ class CvdumpNode:
     # Preliminary - only used for non-static variables at the moment
     data_type: TypeInfo | None = None
 
-    def __init__(self, section: int, offset: int) -> None:
-        self.section = section
-        self.offset = offset
+    @classmethod
+    def from_node_key(cls, key: NodeKey):
+        return cls(section=key.section, offset=key.offset)
 
     def set_decorated(self, name: str):
         self.decorated_name = name
@@ -94,32 +96,34 @@ class CvdumpAnalysis:
     """Collects the results from CvdumpParser into a list of nodes (i.e. symbols).
     These can then be analyzed by a downstream tool."""
 
+    parser: CvdumpParser
     lines: dict[PureWindowsPath, list[LineValue]]
 
     def __init__(self, parser: CvdumpParser):
         """Read in as much information as we have from the parser.
         The more sections we have, the better our information will be."""
+        self.parser = parser
         node_dict: dict[NodeKey, CvdumpNode] = {}
 
         # PUBLICS is our roadmap for everything that follows.
         for pub in parser.publics:
             key = NodeKey(pub.section, pub.offset)
             if key not in node_dict:
-                node_dict[key] = CvdumpNode(*key)
+                node_dict[key] = CvdumpNode.from_node_key(key)
 
             node_dict[key].set_decorated(pub.name)
 
         for sizeref in parser.sizerefs:
             key = NodeKey(sizeref.section, sizeref.offset)
             if key not in node_dict:
-                node_dict[key] = CvdumpNode(*key)
+                node_dict[key] = CvdumpNode.from_node_key(key)
 
             node_dict[key].section_contribution = sizeref.size
 
         for glo in parser.globals:
             key = NodeKey(glo.section, glo.offset)
             if key not in node_dict:
-                node_dict[key] = CvdumpNode(*key)
+                node_dict[key] = CvdumpNode.from_node_key(key)
 
             node_dict[key].node_type = EntityType.DATA
             node_dict[key].friendly_name = glo.name
@@ -146,9 +150,11 @@ class CvdumpAnalysis:
         for sym in parser.symbols:
             key = NodeKey(sym.section, sym.offset)
             if key not in node_dict:
-                node_dict[key] = CvdumpNode(*key)
+                node_dict[key] = CvdumpNode.from_node_key(key)
 
-            if sym.type == "S_GPROC32":
+            if sym.type in ("S_GPROC32", "S_LPROC32"):
+                if sym.type == "S_LPROC32" and node_dict[key].symbol_entry is not None:
+                    continue
                 node_dict[key].friendly_name = sym.name
                 node_dict[key].confirmed_size = sym.size
                 node_dict[key].node_type = EntityType.FUNCTION
@@ -159,7 +165,7 @@ class CvdumpAnalysis:
                 for v in sym.static_variables:
                     key = NodeKey(v.section, v.offset)
                     if key not in node_dict:
-                        node_dict[key] = CvdumpNode(*key)
+                        node_dict[key] = CvdumpNode.from_node_key(key)
                     node_dict[key].node_type = EntityType.DATA
                     # TODO this format is required for `match_msvc::match_static_variables` to find the variable
                     # Look at either documenting this dependency or reworking the query
@@ -177,6 +183,10 @@ class CvdumpAnalysis:
             v for _, v in dict(sorted(node_dict.items())).items()
         ]
         self._estimate_size()
+
+    @property
+    def types(self) -> CvdumpTypesParser:
+        return self.parser.types
 
     def _estimate_size(self):
         """Get the distance between one section:offset value and the next one

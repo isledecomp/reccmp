@@ -81,7 +81,36 @@ def find_filename_recursively(directory: Path, filename: str) -> Path | None:
 @dataclass
 class GhidraConfig:
     ignore_types: list[str] = field(default_factory=list)
+    """
+    Types that will be skipped in the Ghidra import. Matches by name.
+    Example value: `["Act2Actor"]`.
+    """
     ignore_functions: list[int] = field(default_factory=list)
+    """
+    Functions that will be skipped in the Ghidra import. Matches by original address.
+    Example value: `[0x100f8ad0]`.
+    """
+    name_substitutions: list[tuple[str, str]] = field(default_factory=list)
+    """
+    Configurable substitutions for function names. Example use case:
+    - There is a shared code base for multiple binaries
+    - The functions in the recomp have placeholder names FUN_12345678
+    - The address in the function name matches only one of the binaries
+
+    In that case one might want to rename the function while importing into another binary in order to tell
+    the function apart from Ghidra's auto-detected functions that have an auto-generated name of the same pattern.
+
+    The syntax matches `re.sub(key, value)`.
+
+    We use a list of tuples instead of a dict to guarantee a consistent order of the substitutions.
+
+    Example value: `[r"FUN_([0-9a-f]{8})", r"LEGO1_\\1"]`.
+    """
+
+
+@dataclass
+class ReportConfig:
+    ignore_functions: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -110,6 +139,9 @@ class RecCmpPartialTarget:
 
     # Ghidra-specific options for this target.
     ghidra_config: GhidraConfig | None = None
+
+    # Report options for this target
+    report_config: ReportConfig | None = None
 
     # Relative (to project root) directory of source code files for this target.
     source_root: Path | None = None
@@ -142,6 +174,9 @@ class RecCmpTarget:
 
     # Ghidra-specific options for this target.
     ghidra_config: GhidraConfig
+
+    # Report options for this target
+    report_config: ReportConfig
 
     original_path: Path
     recompiled_path: Path
@@ -204,6 +239,11 @@ class RecCmpProject:
         else:
             ghidra = GhidraConfig()
 
+        if target.report_config is not None:
+            report = target.report_config
+        else:
+            report = ReportConfig()
+
         return RecCmpTarget(
             target_id=target.target_id,
             filename=target.filename,
@@ -213,6 +253,7 @@ class RecCmpProject:
             recompiled_pdb=target.recompiled_pdb,
             source_root=target.source_root,
             ghidra_config=ghidra,
+            report_config=report,
         )
 
     def find_build_config(self, search_path: Path) -> BuildFile | None:
@@ -293,9 +334,16 @@ class RecCmpProject:
                 ghidra = GhidraConfig(
                     ignore_types=target.ghidra.ignore_types,
                     ignore_functions=target.ghidra.ignore_functions,
+                    name_substitutions=target.ghidra.name_substitutions,
                 )
             else:
                 ghidra = None
+            if target.report is not None:
+                report = ReportConfig(
+                    ignore_functions=target.report.ignore_functions,
+                )
+            else:
+                report = None
 
             source_root = project_directory / target.source_root
 
@@ -305,6 +353,7 @@ class RecCmpProject:
                 sha256=target.hash.sha256,
                 source_root=source_root,
                 ghidra_config=ghidra,
+                report_config=report,
             )
 
         # Apply reccmp-user.yml
@@ -339,8 +388,14 @@ class RecCmpPathsAction(argparse.Action):
     ):
         assert isinstance(values, Sequence)
         original, recompiled, pdb, source_root = list(Path(o) for o in values)
+
+        # Assumes base filename of the original binary is the module name.
+        target_id = original.stem.upper()
+        # This happens before argparse_parse_logging() is called, so it will not match our format.
+        logger.warning('Assuming target name is "%s"', target_id)
+
         target = RecCmpTarget(
-            target_id=original.stem.upper(),
+            target_id=target_id,
             filename=original.name,
             sha256=get_path_sha256(original),
             original_path=original,
@@ -348,6 +403,7 @@ class RecCmpPathsAction(argparse.Action):
             recompiled_pdb=pdb,
             source_root=source_root,
             ghidra_config=GhidraConfig(),
+            report_config=ReportConfig(),
         )
         setattr(namespace, self.dest, target)
 
@@ -469,19 +525,29 @@ def detect_project(
         build_config_path = build_directory / RECCMP_BUILD_CONFIG
         build_data = BuildFile(project=project_directory.resolve(), targets={})
 
-        for target_id, target_data in project_data.targets.items():
-            filename = target_data.filename
+        def detect_recompiled(filename: str):
             for search_path_folder in search_path:
-                p = search_path_folder / filename
-                pdb = p.with_suffix(".pdb")
-                if p.is_file() and pdb.is_file():
-                    build_data.targets.setdefault(
-                        target_id, BuildFileTarget(path=p, pdb=pdb)
+                binary = search_path_folder / filename
+                pdb = binary.with_suffix(".pdb")
+                if binary.is_file():
+                    if pdb.is_file():
+                        build_data.targets.setdefault(
+                            target_id, BuildFileTarget(path=binary, pdb=pdb)
+                        )
+                        logger.info("Found %s -> %s", target_id, binary)
+                        logger.info("Found %s -> %s", target_id, pdb)
+                        return
+
+                    logger.warning(
+                        "Missing PDB file '%s' next to binary '%s'",
+                        pdb.name,
+                        str(binary),
                     )
-                    logger.info("Found %s -> %s", target_id, p)
-                    logger.info("Found %s -> %s", target_id, pdb)
-                    break
-            else:
-                logger.warning("Could not find %s", filename)
+
+            logger.warning("Failed to detect a recompile for '%s'", filename)
+
+        for target_id, target_data in project_data.targets.items():
+            detect_recompiled(target_data.filename)
+
         logger.info("Updating %s", build_config_path)
         build_data.write_file(build_config_path)

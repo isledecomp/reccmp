@@ -5,6 +5,7 @@
 
 import logging
 from abc import ABC, abstractmethod
+from typing import Iterable, Sequence
 
 from ghidra.program.model.listing import Function, Parameter
 from ghidra.program.flatapi import FlatProgramAPI
@@ -24,12 +25,17 @@ from .pdb_extraction import (
 )
 from .ghidra_helper import (
     add_data_type_or_reuse_existing,
-    get_namespace_and_name,
+    get_class_namespace_and_name,
     get_or_add_pointer_type,
 )
 
-from .exceptions import StackOffsetMismatchError, Lego1Exception
+from .exceptions import (
+    StackOffsetMismatchError,
+    ReccmpGhidraException,
+    TypeNotImplementedError,
+)
 from .type_importer import PdbTypeImporter
+from .types import CompiledRegexReplacements
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +48,7 @@ class PdbFunctionImporter(ABC):
         api: FlatProgramAPI,
         func: PdbFunction,
         type_importer: "PdbTypeImporter",
+        name_substitutions: CompiledRegexReplacements,
     ):
         self.api = api
         self.match_info = func.match_info
@@ -49,20 +56,33 @@ class PdbFunctionImporter(ABC):
 
         assert self.match_info.name is not None
 
-        self.namespace, self.name = get_namespace_and_name(
+        self.namespace, self.name = get_class_namespace_and_name(
             self.api,
             self.match_info.name,
         )
+
+        for pattern, substitution in name_substitutions:
+            new_name = pattern.sub(substitution, self.name)
+            if new_name != self.name:
+                logger.debug(
+                    "Substituting function name: %s -> %s", self.name, new_name
+                )
+                self.name = new_name
 
     def get_full_name(self) -> str:
         return f"{self.namespace.getName()}::{self.name}"
 
     @staticmethod
-    def build(api: FlatProgramAPI, func: PdbFunction, type_importer: "PdbTypeImporter"):
+    def build(
+        api: FlatProgramAPI,
+        func: PdbFunction,
+        type_importer: "PdbTypeImporter",
+        name_substitutions: CompiledRegexReplacements,
+    ):
         return (
-            ThunkPdbFunctionImport(api, func, type_importer)
+            ThunkPdbFunctionImport(api, func, type_importer, name_substitutions)
             if func.signature is None
-            else FullPdbFunctionImporter(api, func, type_importer)
+            else FullPdbFunctionImporter(api, func, type_importer, name_substitutions)
         )
 
     @abstractmethod
@@ -77,7 +97,7 @@ class ThunkPdbFunctionImport(PdbFunctionImporter):
     Only the name of the function will be imported."""
 
     def matches_ghidra_function(self, ghidra_function: Function) -> bool:
-        name_match = self.name == ghidra_function.getName(False)
+        name_match = self.name == ghidra_function.getName()
         namespace_match = self.namespace == ghidra_function.getParentNamespace()
 
         logger.debug("Matches: namespace=%s name=%s", namespace_match, name_match)
@@ -98,8 +118,9 @@ class FullPdbFunctionImporter(PdbFunctionImporter):
         api: FlatProgramAPI,
         func: PdbFunction,
         type_importer: "PdbTypeImporter",
+        name_substitutions: CompiledRegexReplacements,
     ):
-        super().__init__(api, func, type_importer)
+        super().__init__(api, func, type_importer, name_substitutions)
 
         assert func.signature is not None
         self.signature = func.signature
@@ -113,7 +134,14 @@ class FullPdbFunctionImporter(PdbFunctionImporter):
         self.return_type = type_importer.import_pdb_type_into_ghidra(
             self.signature.return_type
         )
-        self.arguments = [
+
+        if "T_NOTYPE(0000)" in self.signature.arglist:
+            # Variadric functions have a T_NOTYPE as their last argument
+            raise TypeNotImplementedError(
+                f"Function '{self.get_full_name()}' is probably variadric, which is not implemented yet."
+            )
+
+        self.arguments: Sequence[ParameterImpl] = [
             ParameterImpl(
                 f"param{index}",
                 type_importer.import_pdb_type_into_ghidra(type_name),
@@ -124,7 +152,7 @@ class FullPdbFunctionImporter(PdbFunctionImporter):
 
     def matches_ghidra_function(self, ghidra_function: Function) -> bool:
         """Checks whether this function declaration already matches the description in Ghidra"""
-        name_match = self.name == ghidra_function.getName(False)
+        name_match = self.name == ghidra_function.getName()
         namespace_match = self.namespace == ghidra_function.getParentNamespace()
         ghidra_return_type = ghidra_function.getReturnType()
         return_type_match = self.return_type == ghidra_return_type
@@ -258,7 +286,7 @@ class FullPdbFunctionImporter(PdbFunctionImporter):
                 Function.FunctionUpdateType.DYNAMIC_STORAGE_ALL_PARAMS,  # this implicitly sets custom variable storage to False
                 True,
                 SourceType.USER_DEFINED,
-                [
+                *[
                     param
                     for param in ghidra_function.getParameters()
                     if param.getName() != "this"
@@ -266,7 +294,7 @@ class FullPdbFunctionImporter(PdbFunctionImporter):
             )
 
         if ghidra_function.hasCustomVariableStorage():
-            raise Lego1Exception("Failed to disable custom variable storage.")
+            raise ReccmpGhidraException("Failed to disable custom variable storage.")
 
         ghidra_function.setName(self.name, SourceType.USER_DEFINED)
         ghidra_function.setParentNamespace(self.namespace)
@@ -282,7 +310,7 @@ class FullPdbFunctionImporter(PdbFunctionImporter):
                 Function.FunctionUpdateType.DYNAMIC_STORAGE_ALL_PARAMS,
                 True,  # force
                 SourceType.USER_DEFINED,
-                self.arguments,
+                *self.arguments,
             )
             self._import_parameter_names(ghidra_function)
 
@@ -294,7 +322,7 @@ class FullPdbFunctionImporter(PdbFunctionImporter):
         # When we call `ghidra_function.replaceParameters`, Ghidra will generate the layout.
         # Now we read the parameters again and match them against the stack layout in the PDB,
         # both to verify the layout and to set the parameter names.
-        ghidra_parameters: list[Parameter] = ghidra_function.getParameters()
+        ghidra_parameters: Iterable[Parameter] = ghidra_function.getParameters()
 
         # Try to add Ghidra function names
         for index, param in enumerate(ghidra_parameters):

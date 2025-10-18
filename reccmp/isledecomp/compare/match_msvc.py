@@ -338,7 +338,7 @@ def match_strings(db: EntityDb, report: ReccmpReportProtocol = reccmp_report_nop
                 report(
                     ReccmpEvent.NO_MATCH,
                     orig_addr,
-                    msg=f"Failed to match string {repr(text)} at 0x{orig_addr:x}",
+                    msg=f"Failed to match string {text} at 0x{orig_addr:x}",
                 )
 
 
@@ -388,3 +388,21 @@ def match_lines(
                     orig_addr,
                     f"Found no matching debug symbol for {filename}:{line}",
                 )
+
+
+def match_ref(
+    db: EntityDb,
+    _: ReccmpReportProtocol = reccmp_report_nop,
+):
+    """Matches entities that refer to the same parent entity
+    via the ref_orig and ref_recomp attributes."""
+    with db.batch() as batch:
+        for orig_addr, recomp_addr in db.sql.execute(
+            """
+            SELECT x.orig_addr, y.recomp_addr
+            FROM orig_refs x
+            INNER JOIN recomp_refs y
+            ON x.ref_id = y.ref_id and x.nth = y.nth
+            """
+        ):
+            batch.match(orig_addr, recomp_addr)

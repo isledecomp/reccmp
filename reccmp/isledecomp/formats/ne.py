@@ -151,3 +151,6 @@ class NEImage(Image):
             header=header,
             segments=segments,
         )
+
+    def seek(self, vaddr: int) -> tuple[bytes, int]:
+        raise NotImplementedError

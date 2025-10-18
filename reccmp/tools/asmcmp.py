@@ -92,9 +92,12 @@ def print_match_verbose(
         if match.ratio == 1.0:
             print(f"{addrs}: {match.name} 100% match.\n\n{ok_text}\n\n")
         else:
+            print_combined_diff(match.udiff, is_plain, show_both_addrs)
+
             print(
-                f"{addrs}: {match.name} Effective 100% match. (Differs in register allocation only)\n\n{ok_text} (still differs in register allocation)\n\n"
+                f"\n{addrs}: {match.name} 100% effective match (differs, but only in ways that don't affect behavior).\n\n{ok_text}\n\n"
             )
+
     else:
         print_combined_diff(match.udiff, is_plain, show_both_addrs)
 
@@ -185,6 +188,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Don't display text summary of matches",
     )
+    parser.add_argument(
+        "--nolib",
+        action="store_true",
+        help="Exclude LIBRARY annotations from the analysis",
+    )
     argparse_add_logging_args(parser)
 
     args = parser.parse_args()
@@ -237,6 +245,15 @@ def main():
     report = ReccmpStatusReport(filename=target.original_path.name.lower())
 
     for match in isle_compare.compare_all():
+        # if we are ignoring this function, skip to next one and don't add it to the entities list
+        if (
+            match.match_type == EntityType.FUNCTION
+            and match.name in target.report_config.ignore_functions
+        ):
+            continue
+        if args.nolib and match.is_library:
+            continue
+
         if not args.silent and args.diff is None:
             print_match_oneline(
                 match, show_both_addrs=args.print_rec_addr, is_plain=args.no_color

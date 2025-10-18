@@ -154,7 +154,7 @@ class CvdumpSymbolsParser:
         symbol_type: str = line_match.group("symbol_type")
         second_part: str | None = line_match.group("second_part")
 
-        if symbol_type in ["S_GPROC32", "S_LPROC32"]:
+        if symbol_type in ("S_GPROC32", "S_LPROC32"):
             assert second_part is not None
             if (match := self._symbol_line_function_regex.match(second_part)) is None:
                 logger.error("Invalid function symbol: %s", line[:-1])
@@ -203,8 +203,12 @@ class CvdumpSymbolsParser:
                     type=match.group("type"),
                     name=match.group("name"),
                 )
-                assert self.current_function is not None
-                self.current_function.static_variables.append(new_var)
+
+                # An S_LDATA32 that appears between S_GPROC32 and S_END blocks then
+                # we consider it to be a static variable from the enclosing function.
+                # If S_LDATA32 appears outside a function, ignore it.
+                if self.current_function is not None:
+                    self.current_function.static_variables.append(new_var)
 
         elif symbol_type in self._unhandled_symbols:
             return
