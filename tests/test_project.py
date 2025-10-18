@@ -11,6 +11,10 @@ from reccmp.project.create import (
     create_project,
     RecCmpProjectAlreadyExistsError,
 )
+from reccmp.project.config import (
+    ProjectFile,
+    UserFile,
+)
 from reccmp.project.detect import detect_project, DetectWhat, RecCmpProject
 from reccmp.project.error import (
     RecCmpProjectException,
@@ -342,17 +346,30 @@ def test_project_creation(tmp_path_factory, binfile: PEImage):
     bin_path = Path(binfile.filepath)
     project_config_path = project_root / "reccmp-project.yml"
     user_config_path = project_root / "reccmp-user.yml"
-    project = create_project(
+    create_project(
         project_directory=project_root, original_paths=[bin_path], scm=True, cmake=True
     )
     assert project_config_path.is_file()
     assert user_config_path.is_file()
     target_name = bin_path.stem.upper()
+
+    project = ProjectFile.from_file(project_config_path)
     assert len(project.targets) == 1
     assert target_name in project.targets
-    assert project.targets[target_name].target_id == target_name
     assert project.targets[target_name].filename == bin_path.name
-    assert project.targets[target_name].source_root == project_root
+
+    # Must use relative paths in project file. Each contributor uses the same file.
+    assert project.targets[target_name].source_root.is_absolute() is False
+
+    # We assume the source root directory is the location of reccmp-project.yml.
+    assert project_root / project.targets[target_name].source_root == project_root
+
+    # Make sure the target list is established in reccmp-user.yml.
+    user_config = UserFile.from_file(user_config_path)
+    assert target_name in user_config.targets
+    assert user_config.targets[target_name].path == bin_path
+
+    # CMake and Git options enabled. Make sure we created the files.
     assert (project_root / ".gitignore").is_file()
     assert (project_root / "CMakeLists.txt").is_file()
     assert (project_root / "cmake/reccmp.cmake").is_file()
