@@ -19,7 +19,7 @@
         margin: auto;
       }
 
-      #search {
+      search-bar > input {
         width: 100%;
         box-sizing: border-box;
         background: #303030;
@@ -29,7 +29,7 @@
         border-radius: 0.5em;
       }
 
-      #search::placeholder {
+      search-bar > input::placeholder {
         color: #b0b0b0;
       }
 
@@ -110,10 +110,6 @@
         text-align: center;
       }
 
-      sort-indicator {
-        user-select: none;
-      }
-
       .filters {
         align-items: top;
         display: flex;
@@ -122,18 +118,24 @@
         margin: 0.5em 0 1em 0;
       }
 
-      .filters > fieldset {
-        /* checkbox and radio buttons v-aligned with text */
+      label, button, input[type=checkbox], input[type=radio] {
+        cursor: pointer;
+        user-select: none;
+      }
+
+      /* Spread out inputs horizontally. */
+      fieldset, search-options {
         align-items: center;
         display: flex;
       }
 
-      .filters > fieldset > input, .filters > fieldset > label {
-        cursor: pointer;
+      search-options {
+        gap: 10px;
       }
 
-      .filters > fieldset > label {
-        margin-right: 10px;
+      fieldset:not(#pageDisplay) {
+        gap: 10px;
+        padding-right: 20px;
       }
 
       table.diffTable {
@@ -165,15 +167,16 @@
       }
 
       label {
+        align-items: center;
+        display: flex;
         user-select: none;
       }
 
-      #pageDisplay > button {
-        cursor: pointer;
+      prev-page-button > button, next-page-button > button {
         padding: 0.25em 0.5em;
       }
 
-      #pageDisplay select {
+      page-select > select {
         cursor: pointer;
         padding: 0.25em;
         margin: 0 0.5em;
@@ -229,11 +232,11 @@
         text-align: right;
       }
 
-      can-copy {
+      click-to-copy {
         position: relative;
         cursor: pointer;
       }
-      can-copy::after {
+      click-to-copy::after {
         background-color: #fff;
         color: #222;
         display: none;
@@ -250,62 +253,51 @@
         transition: .1s;
         content: 'Copy to clipboard';
       }
-      can-copy:hover {
+      click-to-copy:hover {
         text-decoration: underline;
         text-decoration-style: dotted;
       }
-      can-copy:hover::after {
+      click-to-copy:hover::after {
         display: block;
       }
-      can-copy[copied]:hover::after {
+      click-to-copy[copied]:hover::after {
         content: 'Copied!';
       }
     </style>
     <script>
-      var report = {{{report}}};
-      var data = report["data"];
+      window.global_reccmp_report = {{{report}}};
     </script>
     <script>{{{reccmp_js}}}</script>
-    </script>
   </head>
   <body>
     <div class="main">
       <h1>Decompilation Status</h1>
-      <listing-options>
-        <input id="search" type="search" placeholder="Search for offset or function name...">
+      <reccmp-provider>
+        <search-bar></search-bar>
         <div class="filters">
           <fieldset>
             <legend>Options:</legend>
-            <input type="checkbox" id="cbHidePerfect" />
-            <label for="cbHidePerfect">Hide 100% match</label>
-            <input type="checkbox" id="cbHideStub" />
-            <label for="cbHideStub">Hide stubs</label>
-            <input type="checkbox" id="cbShowRecomp" />
-            <label for="cbShowRecomp">Show recomp address</label>
+            <hide-perfect></hide-perfect>
+            <hide-stub></hide-stub>
+            <show-recomp></show-recomp>
           </fieldset>
           <fieldset>
             <legend>Search filters on:</legend>
-            <input type="radio" name="filterType" id="filterName" value=1 checked />
-            <label for="filterName">Name/address</label>
-            <input type="radio" name="filterType" id="filterAsm" value=2 />
-            <label for="filterAsm">Asm output</label>
-            <input type="radio" name="filterType" id="filterDiff" value=3 />
-            <label for="filterDiff">Asm diffs only</label>
+            <search-options></search-options>
           </fieldset>
         </div>
         <div class="filters">
-          <p class="rowcount">Results: <span id="rowcount"></span></p>
+          <p class="rowcount">Results: <result-count></result-count></p>
           <fieldset id="pageDisplay">
-            <legend>Page</legend>
-            <button id="pagePrev">prev</button>
-            <select id="pageSelect">
-            </select>
-            <button id="pageNext">next</button>
+            <legend><page-number-of></page-number-of></legend>
+            <prev-page-button></prev-page-button>
+            <page-select></page-select>
+            <next-page-button></next-page-button>
           </fieldset>
         </div>
-      </listing-options>
-      <listing-table>
-      </listing-table>
+        <listing-table>
+        </listing-table>
+      </reccmp-provider>
     </div>
   </body>
 </html>
