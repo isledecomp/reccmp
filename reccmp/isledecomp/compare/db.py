@@ -7,7 +7,7 @@ import logging
 import json
 from functools import cached_property
 from typing import Any, Iterable, Iterator
-from reccmp.isledecomp.types import EntityType
+from reccmp.isledecomp.types import EntityType, ImageId
 
 _SETUP_SQL = """
     CREATE TABLE entities (
@@ -200,6 +200,22 @@ class EntityBatch:
 
     def set_recomp(self, addr: int, **kwargs):
         self._recomp.setdefault(addr, {}).update(kwargs)
+
+    def set(self, img: ImageId, addr: int, **kwargs):
+        if img == ImageId.ORIG:
+            if "ref" in kwargs:
+                kwargs["ref_orig"] = kwargs["ref"]
+                del kwargs["ref"]
+
+            self.set_orig(addr, **kwargs)
+            return
+
+        if img == ImageId.RECOMP:
+            if "ref" in kwargs:
+                kwargs["ref_recomp"] = kwargs["ref"]
+                del kwargs["ref"]
+            self.set_recomp(addr, **kwargs)
+            return
 
     def match(self, orig: int, recomp: int):
         self._matches.append((orig, recomp))
@@ -440,6 +456,15 @@ class EntityDb:
     def recomp_used(self, addr: int) -> bool:
         cur = self._sql.execute("SELECT 1 FROM entities WHERE recomp_addr = ?", (addr,))
         return cur.fetchone() is not None
+
+    def used(self, img: ImageId, addr: int) -> bool:
+        if img == ImageId.ORIG:
+            return self.orig_used(addr)
+
+        if img == ImageId.RECOMP:
+            return self.recomp_used(addr)
+
+        return False
 
     def set_pair(
         self, orig: int, recomp: int, entity_type: EntityType | None = None

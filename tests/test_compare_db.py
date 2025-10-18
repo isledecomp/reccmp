@@ -4,6 +4,7 @@ import sqlite3
 from unittest.mock import patch
 import pytest
 from reccmp.isledecomp.compare.db import EntityDb
+from reccmp.isledecomp.types import ImageId
 
 
 @pytest.fixture(name="db")
@@ -327,3 +328,59 @@ def test_batch_sqlite_exception(db):
     # Should rollback everything
     assert db.get_by_orig(100) is None
     assert db.get_by_recomp(200) is None
+
+
+def test_generic_used_function(db):
+    """used() has a parameter to select which address space to check."""
+    assert db.used(ImageId.ORIG, 100) is False
+    assert db.used(ImageId.RECOMP, 100) is False
+
+    with db.batch() as batch:
+        batch.set_orig(100, name="Test")
+
+    assert db.used(ImageId.ORIG, 100) is True
+    assert db.used(ImageId.RECOMP, 100) is False
+
+    with db.batch() as batch:
+        batch.set_recomp(100, name="Test")
+
+    assert db.used(ImageId.ORIG, 100) is True
+    assert db.used(ImageId.RECOMP, 100) is True
+
+
+def test_generic_set_function(db):
+    """set() has a parameter to select which address space to update."""
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, name="Test")
+
+    e = db.get_by_orig(100)
+    assert e is not None
+    assert e.name == "Test"
+
+    with db.batch() as batch:
+        batch.set(ImageId.RECOMP, 100, name="Test")
+
+    e = db.get_by_recomp(100)
+    assert e is not None
+    assert e.name == "Test"
+
+
+def test_ref_alteration(db):
+    """If the generic 'ref' key is used, set it to either 'ref_orig' or 'ref_recomp' before saving to the db."""
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, ref=200)
+
+    e = db.get_by_orig(100)
+    assert e is not None
+    assert e.get("ref") is None
+    assert e.get("ref_orig") == 200
+    assert e.get("ref_recomp") is None
+
+    with db.batch() as batch:
+        batch.set(ImageId.RECOMP, 100, ref=200)
+
+    e = db.get_by_recomp(100)
+    assert e is not None
+    assert e.get("ref") is None
+    assert e.get("ref_orig") is None
+    assert e.get("ref_recomp") == 200
