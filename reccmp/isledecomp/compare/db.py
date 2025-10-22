@@ -418,6 +418,17 @@ class EntityDb:
         cur.row_factory = entity_factory
         return cur.fetchone()
 
+    def get(
+        self, img: ImageId, addr: int, *, exact: bool = True
+    ) -> ReccmpEntity | None:
+        if img == ImageId.ORIG:
+            return self.get_by_orig(addr, exact=exact)
+
+        if img == ImageId.RECOMP:
+            return self.get_by_recomp(addr, exact=exact)
+
+        assert False, "Invalid image id"
+
     def get_matches_by_type(self, entity_type: EntityType) -> Iterator[ReccmpMatch]:
         cur = self._sql.execute(
             """SELECT * FROM matched_entity_factory

@@ -330,7 +330,7 @@ def test_batch_sqlite_exception(db):
     assert db.get_by_recomp(200) is None
 
 
-def test_generic_used_function(db):
+def test_generic_used_function(db: EntityDb):
     """used() has a parameter to select which address space to check."""
     assert db.used(ImageId.ORIG, 100) is False
     assert db.used(ImageId.RECOMP, 100) is False
@@ -348,13 +348,13 @@ def test_generic_used_function(db):
     assert db.used(ImageId.RECOMP, 100) is True
 
 
-def test_generic_used_invalid_id(db):
+def test_generic_used_invalid_id(db: EntityDb):
     """Should fail if the image id is outside the enum"""
     with pytest.raises(AssertionError):
-        db.used(2, 100)
+        db.used(2, 100)  # type: ignore
 
 
-def test_generic_set_function(db):
+def test_generic_set_function(db: EntityDb):
     """set() has a parameter to select which address space to update."""
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 100, name="Test")
@@ -371,14 +371,45 @@ def test_generic_set_function(db):
     assert e.name == "Test"
 
 
-def test_generic_set_invalid_id(db):
+def test_generic_set_invalid_id(db: EntityDb):
     """Should fail if the image id is outside the enum"""
     with pytest.raises(AssertionError):
         with db.batch() as batch:
-            batch.set(2, 100, name="Test")
+            batch.set(2, 100, name="Test")  # type: ignore
 
 
-def test_ref_alteration(db):
+def test_generic_get_function(db: EntityDb):
+    """used() has a parameter to select which address space to check."""
+    assert db.get(ImageId.ORIG, 100) is None
+    assert db.get(ImageId.ORIG, 110, exact=False) is None
+
+    with db.batch() as batch:
+        batch.set_orig(100, name="Test")
+
+    e = db.get(ImageId.ORIG, 100)
+    assert e is not None
+    assert e.get("name") == "Test"
+    assert db.get(ImageId.ORIG, 110, exact=False) is not None
+
+    assert db.get(ImageId.RECOMP, 100) is None
+    assert db.get(ImageId.RECOMP, 110, exact=False) is None
+
+    with db.batch() as batch:
+        batch.set_recomp(100, name="Test")
+
+    e = db.get(ImageId.RECOMP, 100)
+    assert e is not None
+    assert e.get("name") == "Test"
+    assert db.get(ImageId.RECOMP, 110, exact=False) is not None
+
+
+def test_generic_get_invalid_id(db: EntityDb):
+    """Should fail if the image id is outside the enum"""
+    with pytest.raises(AssertionError):
+        db.get(2, 100)  # type: ignore
+
+
+def test_ref_alteration(db: EntityDb):
     """If the generic 'ref' key is used, set it to either 'ref_orig' or 'ref_recomp' before saving to the db."""
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 100, ref=200)
