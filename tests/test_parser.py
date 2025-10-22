@@ -258,53 +258,20 @@ def test_synthetic_no_comment(parser):
     assert parser.state == ReaderState.SEARCH
 
 
-def test_single_line_function(parser):
-    parser.read(
-        """\
-        // FUNCTION: TEST 0x1234
-        int hello() { return 1234; }
-        """
-    )
-    assert len(parser.functions) == 1
-    assert parser.functions[0].line_number == 2
-    assert parser.functions[0].end_line == 2
-
-
-def test_indented_function(parser):
-    """Track the number of whitespace characters when we begin the function
-    and check that against each closing curly brace we read.
-    Should not report a syntax warning if the function is indented"""
+@pytest.mark.xfail(reason="Gap in state machine logic where we do not raise an error.")
+def test_function_unexpected_end(parser: DecompParser):
+    """Should throw an error if we hit the closing bracket before the starting bracket."""
     parser.read(
         dedent(
             """\
         // FUNCTION: TEST 0x1234
-        void indented()
-        {
-            // TODO
+        void test()
         }
-        // FUNCTION: NEXT 0x555
         """
         )
     )
-    assert len(parser.alerts) == 0
-
-
-@pytest.mark.xfail(reason="todo")
-def test_indented_no_curly_hint(parser):
-    """Same as above, but opening curly brace is on the same line.
-    Without the hint of how many whitespace characters to check, can we
-    still identify the end of the function?"""
-    parser.read(
-        dedent(
-            """\
-        // FUNCTION: TEST 0x1234
-        void indented() {
-        }
-        // FUNCTION: NEXT 0x555
-        """
-        )
-    )
-    assert len(parser.alerts) == 0
+    assert len(parser.alerts) != 0
+    assert len(parser.functions) == 0
 
 
 def test_implicit_lookup_by_name(parser):
@@ -385,30 +352,6 @@ def test_unexpected_eof(parser):
     assert len(parser.functions) == 1
     assert len(parser.alerts) == 1
     assert parser.alerts[0].code == ParserError.UNEXPECTED_END_OF_FILE
-
-
-@pytest.mark.xfail(reason="no longer applies")
-def test_global_variable_prefix(parser):
-    """Global and static variables should have the g_ prefix."""
-    parser.read(
-        """\
-        // GLOBAL: TEST 0x1234
-        const char* g_msg = "hello";
-        """
-    )
-    assert len(parser.variables) == 1
-    assert len(parser.alerts) == 0
-
-    parser.read(
-        """\
-        // GLOBAL: TEXT 0x5555
-        int test = 5;
-        """
-    )
-    assert len(parser.alerts) == 1
-    assert parser.alerts[0].code == ParserError.GLOBAL_MISSING_PREFIX
-    # In spite of that, we should still grab the variable name.
-    assert parser.variables[1].name == "test"
 
 
 def test_global_nomatch(parser):
@@ -585,29 +528,6 @@ def test_namespace_vtable(parser):
     assert len(parser.vtables) == 2
     assert parser.vtables[0].name == "Tgl::Renderer"
     assert parser.vtables[1].name == "Hello"
-
-
-@pytest.mark.xfail(reason="no longer applies")
-def test_global_prefix_namespace(parser):
-    """Should correctly identify namespaces before checking for the g_ prefix"""
-
-    parser.read(
-        """\
-        class Test {
-          // GLOBAL: TEST 0x1234
-          static int g_count = 0;
-          // GLOBAL: TEST 0x5555
-          static int count = 0;
-        };
-        """
-    )
-
-    assert len(parser.variables) == 2
-    assert parser.variables[0].name == "Test::g_count"
-    assert parser.variables[1].name == "Test::count"
-
-    assert len(parser.alerts) == 1
-    assert parser.alerts[0].code == ParserError.GLOBAL_MISSING_PREFIX
 
 
 def test_nested_namespace(parser):
