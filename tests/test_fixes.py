@@ -210,8 +210,9 @@ def test_fix_fld_fsub_invalid():
     assert is_effective is False
 
 
-@pytest.mark.xfail
+@pytest.mark.xfail(reason="Limitation of naive_register_replacement")
 def test_this_should_not_be_marked_as_effective():
+    """The instructions `mov eax, 0` and `mov ecx, 1` cannot have their registers swapped."""
 
     orig_asm = [
         "mov eax, dword ptr [esi + 0x100]",
