@@ -24,6 +24,131 @@ from reccmp.isledecomp.types import EntityType
 #   .reloc │ 10110000 │    10c58 │    10e00
 
 
+def test_size_estimate(binfile: PEImage):
+    """If there is no better size given for an entity, estimate the size
+    based on the distance to the next entity in the same section.
+    If there is no such entity, use the size of the section"""
+    db = EntityDb()
+    parser = CvdumpParser()
+    parser.read_section(
+        "PUBLICS",
+        dedent(
+            """\
+        S_PUB32: [0003:0001292A], Flags: 00000000, __OP_LOG10jmptab
+        S_PUB32: [0003:0001294A], Flags: 00000000, __OP_LOGjmptab
+        """
+        ),
+    )
+
+    cvdump_analysis = CvdumpAnalysis(parser)
+    load_cvdump(cvdump_analysis, db, binfile)
+
+    # There are 32 bytes between this and __OP_LOGjmptab
+    entity = db.get_by_recomp(0x1010292A)
+    assert entity is not None
+    assert entity.get("symbol") == "__OP_LOG10jmptab"
+    assert entity.get("size") == 0x20
+
+    # Calculate the distance to the end of the .data section.
+    entity = db.get_by_recomp(0x1010294A)
+    assert entity is not None
+    assert entity.get("symbol") == "__OP_LOGjmptab"
+    assert entity.get("size") == 0x100F0000 + 0x1A734 - 0x1010294A
+
+
+def test_size_estimate_different_sections(binfile: PEImage):
+    """Do not cross section boundaries when estimating size."""
+    db = EntityDb()
+    parser = CvdumpParser()
+    parser.read_section(
+        "PUBLICS",
+        dedent(
+            """\
+        S_PUB32: [0002:00000018], Flags: 00000000, ??_7Score@@6B@
+        S_PUB32: [0003:0001292A], Flags: 00000000, __OP_LOG10jmptab
+        """
+        ),
+    )
+
+    cvdump_analysis = CvdumpAnalysis(parser)
+    load_cvdump(cvdump_analysis, db, binfile)
+
+    # Calculate the distance to the end of the .rdata section.
+    # n.b. The physical size is aligned to the image FileAlignment value
+    # so it is used instead of the smaller virtual size.
+    entity = db.get_by_recomp(0x100D4018)
+    assert entity is not None
+    assert entity.get("size") == 0x100D4000 + 0x1B600 - 0x100D4018
+
+    # Calculate the distance to the end of the .data section.
+    entity = db.get_by_recomp(0x1010292A)
+    assert entity is not None
+    assert entity.get("size") == 0x100F0000 + 0x1A734 - 0x1010292A
+
+
+def test_size_estimate_section_contrib(binfile: PEImage):
+    """If the entity has data from section contributions, use it as the size
+    UNLESS the distance to the next entity is smaller."""
+    db = EntityDb()
+    parser = CvdumpParser()
+    parser.read_section(
+        "PUBLICS",
+        dedent(
+            """\
+        S_PUB32: [0003:0001292A], Flags: 00000000, __OP_LOG10jmptab
+        S_PUB32: [0003:0001294A], Flags: 00000000, __OP_LOGjmptab
+        S_PUB32: [0003:0001296A], Flags: 00000000, __OP_EXPjmptab
+        """
+        ),
+    )
+    parser.read_section(
+        "SECTION CONTRIBUTIONS",
+        dedent(
+            """\
+          0032  0003:0001292A  00000100  40303040
+          0032  0003:0001294A  00000010  40303040
+          0032  0003:0001296A  00000010  40303040
+        """
+        ),
+    )
+
+    cvdump_analysis = CvdumpAnalysis(parser)
+    load_cvdump(cvdump_analysis, db, binfile)
+
+    # Distance to next entity is smaller than section contribution.
+    entity = db.get_by_recomp(0x1010292A)
+    assert entity is not None
+    assert entity.get("symbol") == "__OP_LOG10jmptab"
+    assert entity.get("size") == 0x20
+
+    # Section contribution size is smaller than distance to next entity.
+    entity = db.get_by_recomp(0x1010294A)
+    assert entity is not None
+    assert entity.get("symbol") == "__OP_LOGjmptab"
+    assert entity.get("size") == 0x10
+
+    # Prefer section contribution size over distance to end of section.
+    entity = db.get_by_recomp(0x1010296A)
+    assert entity is not None
+    assert entity.get("symbol") == "__OP_EXPjmptab"
+    assert entity.get("size") == 0x10
+
+
+def test_no_entity_for_section_contributions_only(binfile: PEImage):
+    """Do not create an entity if the only data we have is from SECTION CONTRIBUTIONS."""
+    db = EntityDb()
+    parser = CvdumpParser()
+    parser.read_section(
+        "SECTION CONTRIBUTIONS",
+        "  0032  0003:0001292A  00000100  40303040",
+    )
+
+    cvdump_analysis = CvdumpAnalysis(parser)
+    load_cvdump(cvdump_analysis, db, binfile)
+
+    assert db.get_by_recomp(0x1010292A) is None
+
+
 def test_symbol_overwrite(binfile: PEImage):
     """Library functions may have multiple linker names for the same address.
     New entries for the same address will overwrite the previous one."""
