@@ -12,6 +12,18 @@ from reccmp.isledecomp.formats.exceptions import (
 )
 
 
+# The section layout for the `binfile` fixture is:
+#
+#     name │    start │   v.size │ raw size
+# ─────────┼──────────┼──────────┼─────────
+#    .text │ 10001000 │    d2a66 │    d2c00
+#   .rdata │ 100d4000 │    1b5b6 │    1b600
+#    .data │ 100f0000 │    1a734 │    12c00
+#   .idata │ 1010b000 │     1006 │     1200
+#    .rsrc │ 1010d000 │     21d8 │     2200
+#   .reloc │ 10110000 │    10c58 │    10e00
+
+
 def test_basic(binfile: PEImage):
     assert binfile.entry == 0x1008C860
     assert len(binfile.sections) == 6
@@ -151,3 +163,60 @@ def test_exports(binfile: PEImage):
     assert len(binfile.exports) == 130
     assert (0x1003BFB0, b"??0LegoBackgroundColor@@QAE@PBD0@Z") in binfile.exports
     assert (0x10091EE0, b"_DllMain@12") in binfile.exports
+
+
+def test_section_not_found_error(binfile: PEImage):
+    with pytest.raises(SectionNotFoundError):
+        binfile.get_section_by_index(0)
+
+    with pytest.raises(SectionNotFoundError):
+        binfile.get_section_by_index(7)
+
+    with pytest.raises(SectionNotFoundError):
+        binfile.get_section_by_name("text")
+
+    with pytest.raises(SectionNotFoundError):
+        binfile.get_section_by_name(".text\x00")
+
+
+def test_is_valid_section(binfile: PEImage):
+    """Should not raise exception for an invalid section."""
+    assert binfile.is_valid_section(0) is False
+    assert binfile.is_valid_section(7) is False
+
+    for i in range(1, 7):
+        assert binfile.is_valid_section(i) is True
+
+
+ADDR_CONVERSION_SAMPLES = (
+    # Section starts
+    ((1, 0), 0x10001000),
+    ((2, 0), 0x100D4000),
+    ((3, 0), 0x100F0000),
+    ((4, 0), 0x1010B000),
+    ((5, 0), 0x1010D000),
+    ((6, 0), 0x10110000),
+    # Section ends (virtual size - 1)
+    ((1, 0xD2A65), 0x10001000 + 0xD2A65),
+    ((2, 0x1B5B5), 0x100D4000 + 0x1B5B5),
+    ((3, 0x1A733), 0x100F0000 + 0x1A733),
+    ((4, 0x01005), 0x1010B000 + 0x01005),
+    ((5, 0x021D7), 0x1010D000 + 0x021D7),
+    ((6, 0x10C57), 0x10110000 + 0x10C57),
+)
+
+
+@pytest.mark.parametrize("relative, absolute", ADDR_CONVERSION_SAMPLES)
+def test_addr_conversion_absolute(
+    binfile: PEImage, relative: tuple[int, int], absolute: int
+):
+    """Testing conversion from seg:offset to absolute address."""
+    assert binfile.get_abs_addr(*relative) == absolute
+
+
+@pytest.mark.parametrize("relative, absolute", ADDR_CONVERSION_SAMPLES)
+def test_addr_conversion_relative(
+    binfile: PEImage, relative: tuple[int, int], absolute: int
+):
+    """Testing conversion from absolute address to seg:offset."""
+    assert binfile.get_relative_addr(absolute) == relative
