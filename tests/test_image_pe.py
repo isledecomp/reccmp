@@ -170,7 +170,7 @@ def test_section_not_found_error(binfile: PEImage):
         binfile.get_section_by_index(0)
 
     with pytest.raises(SectionNotFoundError):
-        binfile.get_section_by_index(8)
+        binfile.get_section_by_index(7)
 
     with pytest.raises(SectionNotFoundError):
         binfile.get_section_by_name("text")
@@ -180,9 +180,12 @@ def test_section_not_found_error(binfile: PEImage):
 
 
 def test_is_valid_section(binfile: PEImage):
-    """Should not raise exception"""
+    """Should not raise exception for an invalid section."""
     assert binfile.is_valid_section(0) is False
-    assert binfile.is_valid_section(8) is False
+    assert binfile.is_valid_section(7) is False
+
+    for i in range(1, 7):
+        assert binfile.is_valid_section(i) is True
 
 
 ADDR_CONVERSION_SAMPLES = (
