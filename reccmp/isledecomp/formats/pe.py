@@ -410,35 +410,8 @@ class PESection:
         """Get the highest possible offset of this section"""
         return max(self.size_of_raw_data, self.virtual_size)
 
-    def match_name(self, name: str) -> bool:
-        return self.name == name
-
     def contains_vaddr(self, vaddr: int) -> bool:
         return self.virtual_address <= vaddr < self.virtual_address + self.extent
-
-    def read_virtual(self, vaddr: int, size: int) -> memoryview:
-        ofs = vaddr - self.virtual_address
-
-        # Negative index will read from the end, which we don't want
-        if ofs < 0:
-            raise InvalidVirtualAddressError
-
-        try:
-            return self.view[ofs : ofs + size]
-        except IndexError as ex:
-            raise InvalidVirtualAddressError from ex
-
-    def addr_is_uninitialized(self, vaddr: int) -> bool:
-        """We cannot rely on the IMAGE_SCN_CNT_UNINITIALIZED_DATA flag (0x80) in
-        the characteristics field so instead we determine it this way."""
-        if not self.contains_vaddr(vaddr):
-            return False
-
-        # Should include the case where size_of_raw_data == 0,
-        # meaning the entire section is uninitialized
-        return (self.virtual_size > self.size_of_raw_data) and (
-            vaddr - self.virtual_address >= self.size_of_raw_data
-        )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -488,15 +461,7 @@ class PEImage(Image):
     optional_header: PEImageOptionalHeader
     section_headers: tuple[PEImageSectionHeader, ...]
     sections: tuple[PESection, ...]
-
-    # FIXME: do these belong to PEImage? Shouldn't the loade apply these to the data?
-    _relocated_addrs: set[int] = dataclasses.field(default_factory=set, repr=False)
-    relocations: set[int] = dataclasses.field(default_factory=set, repr=False)
-    # find_str: bool = dataclasses.field(default=False, repr=False)
-    exports: list[tuple[int, bytes]] = dataclasses.field(
-        default_factory=list, repr=False
-    )
-    thunks: list[tuple[int, int]] = dataclasses.field(default_factory=list, repr=False)
+    section_map: dict[str, PESection]
 
     @classmethod
     def from_memory(
@@ -524,6 +489,7 @@ class PEImage(Image):
             )
             for section_header in section_headers
         )
+        section_map = {section.name: section for section in sections}
         image = cls(
             filepath=filepath,
             data=data,
@@ -533,6 +499,7 @@ class PEImage(Image):
             optional_header=optional_header,
             section_headers=section_headers,
             sections=sections,
+            section_map=section_map,
         )
         image.load()
         return image
@@ -542,11 +509,6 @@ class PEImage(Image):
             raise ValueError(
                 f"reccmp only supports i386 binaries: {self.header.machine}."
             )
-
-        self._populate_relocations()
-        self._populate_thunks()
-        # Export dir is always first
-        self._populate_exports()
 
         return self
 
@@ -631,7 +593,8 @@ class PEImage(Image):
                     result.append(section)
         return result
 
-    def _populate_relocations(self):
+    @cached_property
+    def relocations(self) -> set[int]:
         """The relocation table in .reloc gives each virtual address where the next four
         bytes are, itself, another virtual address. During loading, these values will be
         patched according to the virtual address space for the image, as provided by Windows.
@@ -640,11 +603,11 @@ class PEImage(Image):
         jump destinations given by local offset) will be here.
         One use case is to tell whether an immediate value in an operand represents
         a virtual address or just a big number."""
-
         reloc_sections = self.get_sections_in_data_directory(
             PEDataDirectoryItemType.BASE_RELOCATION_TABLE
         )
-        reloc_addrs = []
+
+        relocations = set()
 
         for reloc_section in reloc_sections:
             reloc = reloc_section.view
@@ -662,27 +625,37 @@ class PEImage(Image):
                 if block_size == 0:
                     break
 
-                # HACK: ignore the relocation type for now (the top 4 bits of the value).
-                values = list(
-                    struct.iter_unpack("<H", reloc[ofs + 8 : ofs + block_size])
-                )
-                reloc_addrs += [
-                    self.imagebase + page_base + (v[0] & 0xFFF)
-                    for v in values
-                    if v[0] != 0
+                values = [
+                    v[0]
+                    for v in struct.iter_unpack("<H", reloc[ofs + 8 : ofs + block_size])
                 ]
+                relocations.update(
+                    [
+                        # HACK: ignore the relocation type for now (the top 4 bits of the value).
+                        self.imagebase + page_base + (v & 0xFFF)
+                        for v in values
+                        if v != 0
+                    ]
+                )
 
                 ofs += block_size
 
-        # We are now interested in the relocated addresses themselves. Seek to the
-        # address where there is a relocation, then read the four bytes into our set.
-        reloc_addrs.sort()
-        self.relocations = set(reloc_addrs)
+        return relocations
 
-        for section_id, offset in map(self.get_relative_addr, reloc_addrs):
-            section = self.get_section_by_index(section_id)
-            (relocated_addr,) = struct.unpack("<I", section.view[offset : offset + 4])
-            self._relocated_addrs.add(relocated_addr)
+    @cached_property
+    def _relocated_addrs(self) -> set[int]:
+        """We are now interested in the relocated addresses themselves. Seek to the
+        address where there is a relocation, then read the four bytes into our set."""
+        relocated = set()
+
+        for reloc_addr in self.relocations:
+            view, _ = self.seek(reloc_addr)
+            # If we can read a pointer:
+            if len(view) >= 4:
+                (relocated_addr,) = struct.unpack_from("<I", view)
+                relocated.add(relocated_addr)
+
+        return relocated
 
     def get_import_descriptors(self) -> Iterator[tuple[int, int, int]]:
         import_directory = self.get_data_directory_region(
@@ -742,13 +715,15 @@ class PEImage(Image):
     def imports(self) -> list[tuple[str, str, int]]:
         return list(self.get_imports())
 
-    def _populate_thunks(self):
+    @cached_property
+    def thunks(self) -> list[tuple[int, int]]:
         """For each imported function, we generate a thunk function. The only
         instruction in the function is a jmp to the address in .idata.
         Search .text to find these functions."""
 
         text_sect = self.get_section_by_name(".text")
         text_start = text_sect.virtual_address
+        thunks = []
 
         # If this is a debug build, read the thunks at the start of .text
         # Terminated by a big block of 0xcc padding bytes before the first
@@ -762,10 +737,13 @@ class PEImage(Image):
 
                 thunk_ofs = text_start + ofs
                 jmp_ofs = text_start + ofs + 5 + operand
-                self.thunks.append((thunk_ofs, jmp_ofs))
+                thunks.append((thunk_ofs, jmp_ofs))
                 ofs += 5
 
-    def _populate_exports(self):
+        return thunks
+
+    @cached_property
+    def exports(self) -> list[tuple[int, bytes]]:
         """If you are missing a lot of annotations in your file
         (e.g. debug builds) then you can at least match up the
         export symbol names."""
@@ -774,7 +752,7 @@ class PEImage(Image):
             PEDataDirectoryItemType.EXPORT_TABLE
         )
         if not export_directory:
-            return
+            return []
         export_start = export_directory.virtual_address
 
         export_table = ExportDirectoryTable(
@@ -798,7 +776,7 @@ class PEImage(Image):
         ]
 
         combined = zip(func_addrs, name_addrs)
-        self.exports = [
+        return [
             (func_addr, self.read_string(name_addr))
             for (func_addr, name_addr) in combined
         ]
@@ -824,15 +802,17 @@ class PEImage(Image):
 
     def get_section_by_name(self, name: str) -> PESection:
         try:
-            return next(
-                section for section in self.sections if section.match_name(name)
-            )
-        except StopIteration as exc:
-            raise SectionNotFoundError from exc
+            return self.section_map[name]
+        except KeyError as ex:
+            raise SectionNotFoundError from ex
 
     def get_section_by_index(self, index: int) -> PESection:
         """Convert 1-based index into 0-based."""
-        return self.sections[index - 1]
+        try:
+            assert index > 0
+            return self.sections[index - 1]
+        except (AssertionError, IndexError) as ex:
+            raise SectionNotFoundError from ex
 
     def get_section_extent_by_index(self, index: int) -> int:
         return self.get_section_by_index(index).extent
@@ -857,10 +837,10 @@ class PEImage(Image):
         return self.get_section_offset_by_index(section) + offset
 
     @cached_property
-    def vaddr_ranges(self) -> list[tuple[int, int]]:
+    def vaddr_ranges(self) -> list[range]:
         """Return the start and end virtual address of each section in the file."""
         return list(
-            (
+            range(
                 self.imagebase + section.virtual_address,
                 self.imagebase
                 + section.virtual_address
@@ -872,9 +852,9 @@ class PEImage(Image):
     def get_relative_addr(self, addr: int) -> tuple[int, int]:
         """Convert an absolute address back into a (section_id, offset) pair.
         n.b. section_id is 1-based to match PDB output."""
-        for i, (start, end) in enumerate(self.vaddr_ranges):
-            if start <= addr < end:
-                return i + 1, addr - start
+        for i, range_ in enumerate(self.vaddr_ranges):
+            if addr in range_:
+                return i + 1, addr - range_.start
 
         raise InvalidVirtualAddressError(f"{self.filepath} : 0x{addr:x}")
 
@@ -884,17 +864,17 @@ class PEImage(Image):
         try:
             _ = self.get_section_by_index(section_id)
             return True
-        except IndexError:
+        except SectionNotFoundError:
             return False
 
     def is_valid_vaddr(self, vaddr: int) -> bool:
         """Is this virtual address part of the image when loaded?"""
         # Use max here just in case the section headers are not ordered by v.addr
-        (_, last_vaddr) = max(self.vaddr_ranges, key=lambda s: s[1])
-        return self.imagebase <= vaddr < last_vaddr
+        last_range = max(self.vaddr_ranges, key=lambda r: r.stop)
+        return self.imagebase <= vaddr < last_range.stop
 
     @cached_property
-    def uninitialized_ranges(self) -> list[tuple[int, int]]:
+    def uninitialized_ranges(self) -> list[range]:
         """Return a start and end range of each region in the file that holds uninitialized data.
         This can be an entire section (.bss) or the gap between the end of the physical data
         and the virtual size. These ranges do not correspond to section ids."""
@@ -905,7 +885,7 @@ class PEImage(Image):
                 & PESectionFlags.IMAGE_SCN_CNT_UNINITIALIZED_DATA
             ):
                 output.append(
-                    (
+                    range(
                         self.imagebase + section.virtual_address,
                         self.imagebase + section.virtual_address + section.virtual_size,
                     )
@@ -913,7 +893,7 @@ class PEImage(Image):
             elif section.virtual_size > section.size_of_raw_data:
                 # Should also cover the case where size_of_raw_data = 0.
                 output.append(
-                    (
+                    range(
                         self.imagebase
                         + section.virtual_address
                         + section.size_of_raw_data,
@@ -924,11 +904,11 @@ class PEImage(Image):
         return output
 
     def addr_is_uninitialized(self, vaddr: int) -> bool:
-        return any(start <= vaddr < end for start, end in self.uninitialized_ranges)
+        return any(vaddr in range_ for range_ in self.uninitialized_ranges)
 
     def seek(self, vaddr: int) -> tuple[bytes, int]:
-        for sect, (start, end) in zip(self.sections, self.vaddr_ranges):
-            if start <= vaddr < end:
-                return (sect.view[vaddr - start :], end - vaddr)
+        for sect, range_ in zip(self.sections, self.vaddr_ranges):
+            if vaddr in range_:
+                return (sect.view[vaddr - range_.start :], range_.stop - vaddr)
 
         raise InvalidVirtualAddressError(f"{self.filepath} : 0x{vaddr:x}")
