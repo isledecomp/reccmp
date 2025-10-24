@@ -151,3 +151,23 @@ def test_exports(binfile: PEImage):
     assert len(binfile.exports) == 130
     assert (0x1003BFB0, b"??0LegoBackgroundColor@@QAE@PBD0@Z") in binfile.exports
     assert (0x10091EE0, b"_DllMain@12") in binfile.exports
+
+
+def test_section_not_found_error(binfile: PEImage):
+    with pytest.raises(SectionNotFoundError):
+        binfile.get_section_by_index(0)
+
+    with pytest.raises(SectionNotFoundError):
+        binfile.get_section_by_index(8)
+
+    with pytest.raises(SectionNotFoundError):
+        binfile.get_section_by_name("text")
+
+    with pytest.raises(SectionNotFoundError):
+        binfile.get_section_by_name(".text\x00")
+
+
+def test_is_valid_section(binfile: PEImage):
+    """Should not raise exception"""
+    assert binfile.is_valid_section(0) is False
+    assert binfile.is_valid_section(8) is False
