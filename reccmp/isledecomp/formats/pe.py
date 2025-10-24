@@ -649,9 +649,9 @@ class PEImage(Image):
         relocated = set()
 
         for reloc_addr in self.relocations:
-            view, bytes_remaining = self.seek(reloc_addr)
+            view, _ = self.seek(reloc_addr)
             # If we can read a pointer:
-            if bytes_remaining >= 4:
+            if len(view) >= 4:
                 (relocated_addr,) = struct.unpack_from("<I", view)
                 relocated.add(relocated_addr)
 
