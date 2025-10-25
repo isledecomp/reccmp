@@ -31,6 +31,7 @@ from .analyze import (
     create_thunks,
     create_analysis_floats,
     create_analysis_strings,
+    create_partial_floats,
     match_entry,
     match_exports,
     match_imports,
@@ -46,7 +47,6 @@ from .mutate import (
     match_array_elements,
     name_thunks,
     unique_names_for_overloaded_functions,
-    create_partial_floats,
 )
 from .verify import (
     check_vtables,

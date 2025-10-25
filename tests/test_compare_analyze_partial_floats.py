@@ -1,5 +1,5 @@
 import pytest
-from reccmp.isledecomp.compare.mutate import (
+from reccmp.isledecomp.compare.analyze import (
     create_partial_floats,
 )
 from reccmp.isledecomp.types import EntityType, ImageId
