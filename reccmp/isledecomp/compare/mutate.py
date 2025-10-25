@@ -3,13 +3,19 @@ These functions create or update entities using the current information in the d
 """
 
 import logging
+import struct
 from reccmp.isledecomp.cvdump.demangler import (
     get_function_arg_string,
 )
 from reccmp.isledecomp.cvdump import CvdumpTypesParser
-from reccmp.isledecomp.types import EntityType
+from reccmp.isledecomp.types import EntityType, ImageId
+from reccmp.isledecomp.formats import PEImage
+from reccmp.isledecomp.formats.exceptions import (
+    InvalidVirtualAddressError,
+    InvalidVirtualReadError,
+)
 from .db import EntityDb
-from .queries import get_overloaded_functions, get_named_thunks
+from .queries import get_overloaded_functions, get_named_thunks, get_floats_without_data
 
 
 logger = logging.getLogger(__name__)
@@ -135,3 +141,27 @@ def unique_names_for_overloaded_functions(db: EntityDb):
                 batch.set_orig(func.orig_addr, computed_name=new_name)
             elif func.recomp_addr is not None:
                 batch.set_recomp(func.recomp_addr, computed_name=new_name)
+
+
+def create_partial_floats(db: EntityDb, image_id: ImageId, binfile: PEImage):
+    """For each float entity without any data,
+    read the value the binary and set the entity name."""
+    if image_id not in (ImageId.ORIG, ImageId.RECOMP):
+        assert False, "Invalid image id"
+
+    with db.batch() as batch:
+        for addr, is_double in get_floats_without_data(db, image_id):
+            try:
+                if is_double:
+                    (float_value,) = struct.unpack("<d", binfile.read(addr, 8))
+                else:
+                    (float_value,) = struct.unpack("<f", binfile.read(addr, 4))
+
+                batch.set(image_id, addr, name=str(float_value))
+            except (InvalidVirtualReadError, InvalidVirtualAddressError):
+                logger.error(
+                    "Failed to read %s from %s at 0x%x",
+                    ("double" if is_double else "float"),
+                    image_id.name.lower(),
+                    addr,
+                )

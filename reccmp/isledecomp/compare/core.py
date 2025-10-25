@@ -46,6 +46,7 @@ from .mutate import (
     match_array_elements,
     name_thunks,
     unique_names_for_overloaded_functions,
+    create_partial_floats,
 )
 from .verify import (
     check_vtables,
@@ -131,6 +132,7 @@ class Compare:
             create_analysis_floats(self._db, img_id, binfile)
             create_analysis_strings(self._db, img_id, binfile)
             create_thunks(self._db, img_id, binfile)
+            create_partial_floats(self._db, img_id, binfile)
 
         match_imports(self._db, self.orig_bin, self.recomp_bin)
         match_exports(self._db, self.orig_bin, self.recomp_bin)
