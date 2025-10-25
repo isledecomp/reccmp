@@ -138,6 +138,15 @@ def load_cvdump(cvdump_analysis: CvdumpAnalysis, db: EntityDb, recomp_bin: PEIma
                     size=string_size,
                     verified=True,
                 )
+            elif sym.node_type == EntityType.FLOAT:
+                # Leave the entity name blank to start. (Don't use the symbol.)
+                # We will read the float's value from the binary.
+                batch.set_recomp(
+                    addr,
+                    type=sym.node_type,
+                    symbol=sym.decorated_name,
+                    size=sym.size(),
+                )
             else:
                 # Non-string entities.
                 batch.set_recomp(
