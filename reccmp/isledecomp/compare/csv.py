@@ -184,6 +184,11 @@ class ReccmpCsvReader:
         except PythonCsvError as ex:
             raise CsvNoDelimiterError from ex
 
+        # The default way to escape double quotes is to double them up.
+        # Our parser requires you to escape them using the backslash.
+        dialect.doublequote = False
+        dialect.escapechar = "\\"
+
         self.reader = csv.DictReader(preprocessed, dialect=dialect)
 
         # Could this happen?

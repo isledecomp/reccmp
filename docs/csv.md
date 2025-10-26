@@ -75,11 +75,26 @@ address|type|size
 0x10001090|function|10
 ```
 
-If the value contains the delimiter, wrap the entire thing in double quotes. For example:
+If the value contains the delimiter, one approach is to wrap the entire thing in double quotes. For example, in this entity name that contains a comma:
 
 ```csv
 address,name
 101310a0,"set<MxAtom *,MxAtomCompare,allocator<MxAtom *> >::set<MxAtom *,MxAtomCompare,allocator<MxAtom *> >"
+```
+
+You can also escape the delimiter or double quote character with a backslash as needed. For example, one way to get the strings `"hello world"` followed by two ways to get `"hello, world"`:
+
+```csv
+address,name
+10001000,\"hello world\"
+10002000,"\"hello, world\""
+10003000,\"hello\, world\"
+```
+
+If you need to escape the _escape character_, use two backslashes, as in:
+```csv
+address,name
+10004000,te\\st
 ```
 
 ### Non-standard syntax

@@ -492,9 +492,9 @@ def test_docs_example_null_field():
 def test_docs_example_quoted_field():
     """Can parse double-quote-wrapped field that contains delimiter"""
     text = dedent(
-        """\
+        '''\
         address,name
-        101310a0,\"set<MxAtom *,MxAtomCompare,allocator<MxAtom *> >::set<MxAtom *,MxAtomCompare,allocator<MxAtom *> >\""""
+        101310a0,"set<MxAtom *,MxAtomCompare,allocator<MxAtom *> >::set<MxAtom *,MxAtomCompare,allocator<MxAtom *> >"'''
     )
     assert (
         0x101310A0,
@@ -502,6 +502,36 @@ def test_docs_example_quoted_field():
             "name": "set<MxAtom *,MxAtomCompare,allocator<MxAtom *> >::set<MxAtom *,MxAtomCompare,allocator<MxAtom *> >"
         },
     ) in list(csv_parse(text))
+
+
+def test_docs_example_escaping():
+    """Can escape the double quote character or the delimiter as needed."""
+    text = dedent(
+        """\
+        address,name
+        10001000,\\"hello world\\"
+        10002000,"\\"hello, world\\""
+        10003000,\\"hello\\, world\\"
+        """
+    )
+    assert list(csv_parse(text)) == [
+        (0x10001000, {"name": '"hello world"'}),
+        (0x10002000, {"name": '"hello, world"'}),
+        (0x10003000, {"name": '"hello, world"'}),
+    ]
+
+
+def test_docs_example_escape_escape():
+    """Can escape the escape character if this is needed."""
+    text = dedent(
+        """\
+        address,name
+        10004000,te\\\\st
+        """
+    )
+    assert list(csv_parse(text)) == [
+        (0x10004000, {"name": "te\\st"}),
+    ]
 
 
 def test_docs_example_comments_and_blanks():
