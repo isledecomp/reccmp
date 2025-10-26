@@ -557,3 +557,22 @@ def test_ignore_skip():
     """Should ignore 'skip' field until we reinstate it."""
     text = "address|skip\n1234|1"
     assert (0x1234, {}) in list(csv_parse(text))
+
+
+def test_non_function_entity_types():
+    """Should parse all entity types not covered in previous tests."""
+
+    text = dedent(
+        """\
+        address,type
+        1000,global
+        2000,string
+        3000,float
+        4000,vtable"""
+    )
+    assert list(csv_parse(text)) == [
+        (0x1000, {"type": EntityType.DATA}),
+        (0x2000, {"type": EntityType.STRING}),
+        (0x3000, {"type": EntityType.FLOAT}),
+        (0x4000, {"type": EntityType.VTABLE}),
+    ]
