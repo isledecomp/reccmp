@@ -86,8 +86,7 @@ def get_floats_without_data(
 ) -> Iterator[tuple[int, bool]]:
     """For each partially-created float entity (without data) in the given address space,
     return the address and whether it has double precision."""
-    if image_id not in (ImageId.ORIG, ImageId.RECOMP):
-        assert False, "Invalid image id"
+    assert image_id in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
 
     for orig_addr, recomp_addr, size in db.sql.execute(
         """SELECT orig_addr, recomp_addr, json_extract(kvstore,'$.size') size

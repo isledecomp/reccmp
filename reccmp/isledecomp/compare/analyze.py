@@ -214,8 +214,7 @@ def match_vtordisp(db: EntityDb, orig_bin: PEImage, recomp_bin: PEImage):
 def create_partial_floats(db: EntityDb, image_id: ImageId, binfile: PEImage):
     """For each float entity without any data,
     read the value the binary and set the entity name."""
-    if image_id not in (ImageId.ORIG, ImageId.RECOMP):
-        assert False, "Invalid image id"
+    assert image_id in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
 
     with db.batch() as batch:
         for addr, is_double in get_floats_without_data(db, image_id):
