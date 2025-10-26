@@ -4,6 +4,7 @@ These functions load the entity and type databases with information from code an
 
 import logging
 from pathlib import Path
+from typing import Iterable
 from reccmp.isledecomp.formats.exceptions import (
     InvalidVirtualReadError,
     InvalidStringError,
@@ -15,7 +16,7 @@ from reccmp.isledecomp.cvdump.demangler import (
 from reccmp.isledecomp.cvdump import CvdumpTypesParser, CvdumpAnalysis
 from reccmp.isledecomp.parser import DecompCodebase
 from reccmp.isledecomp.dir import walk_source_dir
-from reccmp.isledecomp.types import EntityType
+from reccmp.isledecomp.types import EntityType, TextContainer
 from reccmp.isledecomp.compare.event import (
     ReccmpEvent,
     ReccmpReportProtocol,
@@ -310,42 +311,40 @@ def load_markers(
             )
 
 
-def load_data_sources(db: EntityDb, data_sources: list[Path]):
+def load_data_sources(db: EntityDb, data_sources: Iterable[TextContainer]):
     for ds_file in data_sources:
-        if ds_file.suffix.lower() == ".csv":
+        if ds_file.path.suffix.lower() == ".csv":
             load_csv(db, ds_file)
         else:
             logger.error(
                 "Skipped data source file '%s'. If this is csv, please add the extension.",
-                ds_file,
+                ds_file.path,
             )
 
 
-def load_csv(db: EntityDb, path: Path):
+def load_csv(db: EntityDb, csv_file: TextContainer):
     rows = []
 
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            rowgen = csv_parse(f)
-            while True:
-                try:
-                    rows.append(next(rowgen))
-                except StopIteration:
-                    break
-                except ReccmpCsvParserError as ex:
-                    logger.error(
-                        "In csv file %s: %s",
-                        str(path),
-                        str(ex),
-                    )
-                    continue
+        rowgen = csv_parse(csv_file.text)
+        while True:
+            try:
+                rows.append(next(rowgen))
+            except StopIteration:
+                break
+            except ReccmpCsvParserError as ex:
+                logger.error(
+                    "In csv file %s: %s",
+                    str(csv_file.path),
+                    str(ex),
+                )
+                continue
 
-    except FileNotFoundError:
-        logger.error("Could not open csv file %s", str(path))
-        return
     except ReccmpCsvFatalParserError as ex:
         logger.error(
-            "Failed to parse csv file %s (%s)", str(path), ex.__class__.__name__
+            "Failed to parse csv file %s (%s)",
+            str(csv_file.path),
+            ex.__class__.__name__,
         )
         return
 
