@@ -9,7 +9,7 @@ from reccmp.isledecomp.compare.functions import FunctionComparator
 from reccmp.isledecomp.formats.detect import detect_image
 from reccmp.isledecomp.formats.pe import PEImage
 from reccmp.isledecomp.cvdump import Cvdump, CvdumpTypesParser, CvdumpAnalysis
-from reccmp.isledecomp.types import EntityType
+from reccmp.isledecomp.types import EntityType, ImageId
 from reccmp.isledecomp.compare.event import (
     ReccmpReportProtocol,
     create_logging_wrapper,
@@ -29,8 +29,8 @@ from .diff import DiffReport, combined_diff
 from .lines import LinesDb
 from .analyze import (
     create_thunks,
-    find_float_const,
-    find_strings,
+    create_analysis_floats,
+    create_analysis_strings,
     match_entry,
     match_exports,
     match_imports,
@@ -135,11 +135,16 @@ class Compare:
 
         match_array_elements(self._db, self.types)
         # Detect floats first to eliminate potential overlap with string data
-        find_float_const(self._db, self.orig_bin, self.recomp_bin)
-        find_strings(self._db, self.orig_bin, self.recomp_bin)
+        for img_id, binfile in (
+            (ImageId.ORIG, self.orig_bin),
+            (ImageId.RECOMP, self.recomp_bin),
+        ):
+            create_analysis_floats(self._db, img_id, binfile)
+            create_analysis_strings(self._db, img_id, binfile)
+            create_thunks(self._db, img_id, binfile)
+
         match_imports(self._db, self.orig_bin, self.recomp_bin)
         match_exports(self._db, self.orig_bin, self.recomp_bin)
-        create_thunks(self._db, self.orig_bin, self.recomp_bin)
         check_vtables(self._db, self.orig_bin)
         match_ref(self._db, self.report)
         unique_names_for_overloaded_functions(self._db)

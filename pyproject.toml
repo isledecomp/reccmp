@@ -9,3 +9,6 @@ max-line-length = 120
 
 [tool.mypy]
 check_untyped_defs = true
+
+[tool.pytest.ini_options]
+xfail_strict=true

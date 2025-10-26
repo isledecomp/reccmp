@@ -7,7 +7,7 @@ import logging
 import json
 from functools import cached_property
 from typing import Any, Iterable, Iterator
-from reccmp.isledecomp.types import EntityType
+from reccmp.isledecomp.types import EntityType, ImageId
 
 _SETUP_SQL = """
     CREATE TABLE entities (
@@ -200,6 +200,22 @@ class EntityBatch:
 
     def set_recomp(self, addr: int, **kwargs):
         self._recomp.setdefault(addr, {}).update(kwargs)
+
+    def set(self, img: ImageId, addr: int, *, ref: int | None = None, **kwargs):
+        if img == ImageId.ORIG:
+            if ref is not None:
+                kwargs["ref_orig"] = ref
+
+            self.set_orig(addr, **kwargs)
+
+        elif img == ImageId.RECOMP:
+            if ref is not None:
+                kwargs["ref_recomp"] = ref
+
+            self.set_recomp(addr, **kwargs)
+
+        else:
+            assert False, "Invalid image id"
 
     def match(self, orig: int, recomp: int):
         self._matches.append((orig, recomp))
@@ -402,6 +418,17 @@ class EntityDb:
         cur.row_factory = entity_factory
         return cur.fetchone()
 
+    def get(
+        self, img: ImageId, addr: int, *, exact: bool = True
+    ) -> ReccmpEntity | None:
+        if img == ImageId.ORIG:
+            return self.get_by_orig(addr, exact=exact)
+
+        if img == ImageId.RECOMP:
+            return self.get_by_recomp(addr, exact=exact)
+
+        assert False, "Invalid image id"
+
     def get_matches_by_type(self, entity_type: EntityType) -> Iterator[ReccmpMatch]:
         cur = self._sql.execute(
             """SELECT * FROM matched_entity_factory
@@ -440,6 +467,15 @@ class EntityDb:
     def recomp_used(self, addr: int) -> bool:
         cur = self._sql.execute("SELECT 1 FROM entities WHERE recomp_addr = ?", (addr,))
         return cur.fetchone() is not None
+
+    def used(self, img: ImageId, addr: int) -> bool:
+        if img == ImageId.ORIG:
+            return self.orig_used(addr)
+
+        if img == ImageId.RECOMP:
+            return self.recomp_used(addr)
+
+        assert False, "Invalid image id"
 
     def set_pair(
         self, orig: int, recomp: int, entity_type: EntityType | None = None
