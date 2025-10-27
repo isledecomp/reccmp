@@ -9,7 +9,7 @@ from reccmp.isledecomp.compare.functions import FunctionComparator
 from reccmp.isledecomp.formats.detect import detect_image
 from reccmp.isledecomp.formats.pe import PEImage
 from reccmp.isledecomp.cvdump import Cvdump, CvdumpTypesParser, CvdumpAnalysis
-from reccmp.isledecomp.types import EntityType, ImageId, TextContainer
+from reccmp.isledecomp.types import EntityType, ImageId, TextFile
 from reccmp.isledecomp.compare.event import (
     ReccmpReportProtocol,
     create_logging_wrapper,
@@ -69,7 +69,7 @@ class Compare:
     target_id: str
     types: CvdumpTypesParser
     function_comparator: FunctionComparator
-    data_sources: list[TextContainer]
+    data_sources: list[TextFile]
 
     # pylint: disable=too-many-arguments
     def __init__(
@@ -79,7 +79,7 @@ class Compare:
         pdb_file: CvdumpAnalysis,
         code_dir: Path | str,
         target_id: str,
-        data_sources: list[TextContainer] | None = None,
+        data_sources: list[TextFile] | None = None,
     ):
         self.orig_bin = orig_bin
         self.recomp_bin = recomp_bin
@@ -179,7 +179,7 @@ class Compare:
         data_sources = []
         for path in target.data_sources:
             try:
-                data_sources.append(TextContainer.from_file(path))
+                data_sources.append(TextFile.from_file(path))
             except FileNotFoundError:
                 logger.error("Could not open data source file %s", str(path))
 

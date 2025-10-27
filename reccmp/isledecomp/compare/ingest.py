@@ -16,7 +16,7 @@ from reccmp.isledecomp.cvdump.demangler import (
 from reccmp.isledecomp.cvdump import CvdumpTypesParser, CvdumpAnalysis
 from reccmp.isledecomp.parser import DecompCodebase
 from reccmp.isledecomp.dir import walk_source_dir
-from reccmp.isledecomp.types import EntityType, TextContainer
+from reccmp.isledecomp.types import EntityType, TextFile
 from reccmp.isledecomp.compare.event import (
     ReccmpEvent,
     ReccmpReportProtocol,
@@ -311,7 +311,7 @@ def load_markers(
             )
 
 
-def load_data_sources(db: EntityDb, data_sources: Iterable[TextContainer]):
+def load_data_sources(db: EntityDb, data_sources: Iterable[TextFile]):
     for ds_file in data_sources:
         if ds_file.path.suffix.lower() == ".csv":
             load_csv(db, ds_file)
@@ -322,7 +322,7 @@ def load_data_sources(db: EntityDb, data_sources: Iterable[TextContainer]):
             )
 
 
-def load_csv(db: EntityDb, csv_file: TextContainer):
+def load_csv(db: EntityDb, csv_file: TextFile):
     rows = []
 
     try:

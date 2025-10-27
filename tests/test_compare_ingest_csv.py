@@ -3,7 +3,7 @@ from pathlib import PurePath
 import pytest
 from reccmp.isledecomp.compare.db import EntityDb
 from reccmp.isledecomp.compare.ingest import load_csv, load_data_sources
-from reccmp.isledecomp.types import EntityType, TextContainer
+from reccmp.isledecomp.types import EntityType, TextFile
 
 
 @pytest.fixture(name="db")
@@ -14,7 +14,7 @@ def fixture_db() -> EntityDb:
 def test_load_data_sources(db: EntityDb):
     """Should create an entity by parsing the CSV."""
     ds_files = (
-        TextContainer(
+        TextFile(
             PurePath("test.csv"),
             dedent(
                 """\
@@ -35,7 +35,7 @@ def test_load_data_sources(db: EntityDb):
 def test_load_data_sources_skip_unknown(db: EntityDb):
     """Should skip files we cannot parse and create entities from the rest."""
     ds_files = (
-        TextContainer(
+        TextFile(
             PurePath("test.txt"),
             dedent(
                 """\
@@ -44,7 +44,7 @@ def test_load_data_sources_skip_unknown(db: EntityDb):
             """
             ),
         ),
-        TextContainer(
+        TextFile(
             PurePath("test.csv"),
             dedent(
                 """\
@@ -66,7 +66,7 @@ def test_load_data_sources_skip_unknown(db: EntityDb):
 
 def test_load_csv(db: EntityDb):
     """Should create an entity by parsing the CSV."""
-    csv_file = TextContainer(
+    csv_file = TextFile(
         PurePath("test.csv"),
         dedent(
             """\
@@ -86,7 +86,7 @@ def test_load_csv(db: EntityDb):
 def test_load_csv_overwrite(db: EntityDb):
     """Should overwrite (additively) if the same address is used in multiple CSV files."""
     csv_files = (
-        TextContainer(
+        TextFile(
             PurePath("test.csv"),
             dedent(
                 """\
@@ -97,7 +97,7 @@ def test_load_csv_overwrite(db: EntityDb):
             """
             ),
         ),
-        TextContainer(
+        TextFile(
             PurePath("zzzz.csv"),
             dedent(
                 """\
@@ -126,7 +126,7 @@ def test_load_csv_overwrite(db: EntityDb):
 
 def test_load_csv_with_errors(db: EntityDb):
     """Should skip lines with a syntax error and create entities for the rest."""
-    csv_file = TextContainer(
+    csv_file = TextFile(
         PurePath("test.csv"),
         dedent(
             """\
@@ -154,7 +154,7 @@ def test_load_csv_with_errors(db: EntityDb):
 
 def test_load_csv_with_fatal_error(db: EntityDb):
     """Should not create entities from a CSV with a fatal parsing error."""
-    csv_file = TextContainer(
+    csv_file = TextFile(
         PurePath("test.csv"),
         dedent(
             """\
