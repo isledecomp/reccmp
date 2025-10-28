@@ -565,3 +565,38 @@ def test_gproc_with_static_var(binfile: PEImage):
     assert symbol is not None
     assert "g_dwStyle" in symbol
     assert "EnableResizing" in symbol
+
+
+def test_floats(binfile: PEImage):
+    db = EntityDb()
+    parser = CvdumpParser()
+    parser.read_section(
+        "PUBLICS",
+        dedent(
+            """\
+        S_PUB32: [0002:00001740], Flags: 00000000, __real@4@00000000000000000000
+        S_PUB32: [0002:00001748], Flags: 00000000, __real@8@00000000000000000000
+        """
+        ),
+    )
+
+    cvdump_analysis = CvdumpAnalysis(parser)
+    load_cvdump(cvdump_analysis, db, binfile)
+
+    # Zero in single precision
+    entity = db.get_by_recomp(0x100D5740)
+    assert entity is not None
+    assert entity.get("symbol") == "__real@4@00000000000000000000"
+    assert entity.get("type") == EntityType.FLOAT
+    assert entity.get("size") == 4
+
+    # The name will be blank until we read from the binary in a later step.
+    assert entity.get("name") is None
+
+    # Zero in double precision
+    entity = db.get_by_recomp(0x100D5748)
+    assert entity is not None
+    assert entity.get("symbol") == "__real@8@00000000000000000000"
+    assert entity.get("type") == EntityType.FLOAT
+    assert entity.get("size") == 8
+    assert entity.get("name") is None
