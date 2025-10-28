@@ -1,16 +1,14 @@
 """Tests for creating/matching entities using code annotations."""
 
-from textwrap import dedent
 from pathlib import PurePath, Path, PureWindowsPath
+from textwrap import dedent
+from typing import Iterable
 import pytest
-from reccmp.isledecomp.types import EntityType
+from reccmp.isledecomp.types import EntityType, TextFile
 from reccmp.isledecomp.formats import PEImage
 from reccmp.isledecomp.compare.ingest import load_markers
 from reccmp.isledecomp.compare.db import EntityDb
 from reccmp.isledecomp.compare.lines import LinesDb
-
-
-SampleFilesType = tuple[tuple[PurePath, str], ...]
 
 
 @pytest.fixture(name="db")
@@ -23,14 +21,14 @@ def fixture_lines_db():
     return LinesDb()
 
 
-def create_test_files(code_dir: Path, files: SampleFilesType):
+def create_test_files(code_dir: Path, files: Iterable[TextFile]):
     """Helper to establish the given code files in the base directory. (pytest tmp_path fixture)
     This is needed while DecompCodebase still depends on the filesystem."""
-    for path, text in files:
-        file_path = code_dir / path
+    for mock_file in files:
+        file_path = code_dir / mock_file.path
         file_path.parent.mkdir(parents=True, exist_ok=True)
         with file_path.open("w+") as f:
-            f.write(text)
+            f.write(mock_file.text)
 
 
 def test_load_code_invalid_addr(
@@ -38,7 +36,7 @@ def test_load_code_invalid_addr(
 ):
     """Should not create entity for an invalid address."""
     files = (
-        (
+        TextFile(
             PurePath("test.cpp"),
             dedent(
                 """\
@@ -62,7 +60,7 @@ def test_load_code_duplicate_addr(
     Files are loaded in the order returned by os.walk.
     Create the entity from the annotation that appears first."""
     files = (
-        (
+        TextFile(
             PurePath("test.h"),
             dedent(
                 """\
@@ -71,7 +69,7 @@ def test_load_code_duplicate_addr(
                 """
             ),
         ),
-        (
+        TextFile(
             PurePath("zzz.h"),
             dedent(
                 """\
@@ -95,7 +93,7 @@ def test_load_code_cpp_symbol_function(
 ):
     """Function namerefs that begin with '?' are assumed to refer to the entity symbol."""
     files = (
-        (
+        TextFile(
             PurePath("test.h"),
             dedent(
                 """\
@@ -119,7 +117,7 @@ def test_load_code_cpp_symbol_global(
 ):
     """Global namerefs that begin with '?' are assumed to refer to the entity symbol."""
     files = (
-        (
+        TextFile(
             PurePath("test.h"),
             dedent(
                 """\
@@ -144,7 +142,7 @@ def test_load_code_c_symbol_implicit(
     """Namerefs that begin with '_' are NOT assumed to be the symbol.
     This would cause problems for (e.g.) STL entities like '_Tree...'"""
     files = (
-        (
+        TextFile(
             PurePath("test.h"),
             dedent(
                 """\
@@ -168,7 +166,7 @@ def test_load_code_c_symbol_explicit(
 ):
     """If the SYMBOL annotation modifier is used, set the entity symbol instead of the name."""
     files = (
-        (
+        TextFile(
             PurePath("test.h"),
             dedent(
                 """\
@@ -192,7 +190,7 @@ def test_load_code_function_nameref_variants(
 ):
     """Should set extra properties for STUB and LIBRARY annotations."""
     files = (
-        (
+        TextFile(
             PurePath("test.h"),
             dedent(
                 """\
@@ -266,7 +264,7 @@ def test_load_code_lineref(
 ):
     """Should create a function entity for a line-based annotation."""
     files = (
-        (
+        TextFile(
             PurePath("test.cpp"),
             dedent(
                 """\
@@ -294,7 +292,7 @@ def test_load_code_match_line(
 ):
     """Should match the function based on its file path and line number."""
     files = (
-        (
+        TextFile(
             PurePath("test.cpp"),
             dedent(
                 """\
@@ -332,7 +330,7 @@ def test_load_code_no_match_line(
 ):
     """Don't match the function if the line number does not match."""
     files = (
-        (
+        TextFile(
             PurePath("test.cpp"),
             dedent(
                 """\
@@ -367,7 +365,7 @@ def test_load_code_string(
 ):
     """Should create a string entity from a STRING annotation."""
     files = (
-        (
+        TextFile(
             PurePath("test.cpp"),
             dedent(
                 """\
@@ -392,7 +390,7 @@ def test_load_code_string_no_match(
 ):
     """Do not add the string entity if the text does not match the bytes at the address."""
     files = (
-        (
+        TextFile(
             PurePath("test.cpp"),
             dedent(
                 """\
@@ -414,7 +412,7 @@ def test_load_code_widechar(
 ):
     """Should create a widechar entity from a STRING annotation."""
     files = (
-        (
+        TextFile(
             PurePath("test.cpp"),
             dedent(
                 """\
@@ -440,7 +438,7 @@ def test_load_code_string_with_nulls(
     """Should read string with nulls included.
     Using the unicode string '(null)' from the above example."""
     files = (
-        (
+        TextFile(
             PurePath("test.cpp"),
             dedent(
                 """\
@@ -466,7 +464,7 @@ def test_load_code_widechar_invalid(
     """Should not create entity if we cannot read a widechar.
     Decoding from this address throws a UnicodeDecodeError."""
     files = (
-        (
+        TextFile(
             PurePath("test.cpp"),
             dedent(
                 """\
@@ -487,7 +485,7 @@ def test_load_code_vtable(
     tmp_path: Path, db: EntityDb, lines_db: LinesDb, binfile: PEImage
 ):
     files = (
-        (
+        TextFile(
             PurePath("test.h"),
             dedent(
                 """\
@@ -515,7 +513,7 @@ def test_load_code_vtable_vbase(
 ):
     """Should set base_class for VTABLE entities with virtual inheritance."""
     files = (
-        (
+        TextFile(
             PurePath("test.h"),
             dedent(
                 """\
@@ -548,7 +546,7 @@ def test_load_code_variable(
     tmp_path: Path, db: EntityDb, lines_db: LinesDb, binfile: PEImage
 ):
     files = (
-        (
+        TextFile(
             PurePath("test.cpp"),
             dedent(
                 """\
@@ -572,7 +570,7 @@ def test_load_code_static_variable(
 ):
     """Should create a static variable entity if the function is also annotated."""
     files = (
-        (
+        TextFile(
             PurePath("test.cpp"),
             dedent(
                 """\
@@ -603,7 +601,7 @@ def test_load_code_static_variable_no_function(
 ):
     """Will create static variable entity even if function is not annotated."""
     files = (
-        (
+        TextFile(
             PurePath("test.cpp"),
             dedent(
                 """\
@@ -631,7 +629,7 @@ def test_load_code_line_marker(
 ):
     """Should create a LINE entity with the local file path and line number."""
     files = (
-        (
+        TextFile(
             PurePath("test.cpp"),
             dedent(
                 """\
