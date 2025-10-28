@@ -1,6 +1,8 @@
 """Types shared by other modules"""
 
 from enum import IntEnum
+from pathlib import Path, PurePath
+from typing import NamedTuple
 
 
 class EntityType(IntEnum):
@@ -19,3 +21,15 @@ class EntityType(IntEnum):
 class ImageId(IntEnum):
     ORIG = 0
     RECOMP = 1
+
+
+class TextFile(NamedTuple):
+    """Wrapper to abstract file access in cases where we still need a path reference."""
+
+    path: PurePath
+    text: str
+
+    @classmethod
+    def from_file(cls, path: Path, encoding: str = "utf-8") -> "TextFile":
+        with open(path, "r", encoding=encoding) as f:
+            return cls(path, f.read())

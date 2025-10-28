@@ -9,7 +9,7 @@ from reccmp.isledecomp.compare.functions import FunctionComparator
 from reccmp.isledecomp.formats.detect import detect_image
 from reccmp.isledecomp.formats.pe import PEImage
 from reccmp.isledecomp.cvdump import Cvdump, CvdumpTypesParser, CvdumpAnalysis
-from reccmp.isledecomp.types import EntityType, ImageId
+from reccmp.isledecomp.types import EntityType, ImageId, TextFile
 from reccmp.isledecomp.compare.event import (
     ReccmpReportProtocol,
     create_logging_wrapper,
@@ -42,6 +42,7 @@ from .ingest import (
     load_cvdump_types,
     load_cvdump_lines,
     load_markers,
+    load_data_sources,
 )
 from .mutate import (
     match_array_elements,
@@ -69,7 +70,9 @@ class Compare:
     target_id: str
     types: CvdumpTypesParser
     function_comparator: FunctionComparator
+    data_sources: list[TextFile]
 
+    # pylint: disable=too-many-arguments
     def __init__(
         self,
         orig_bin: PEImage,
@@ -77,12 +80,18 @@ class Compare:
         pdb_file: CvdumpAnalysis,
         code_dir: Path | str,
         target_id: str,
+        data_sources: list[TextFile] | None = None,
     ):
         self.orig_bin = orig_bin
         self.recomp_bin = recomp_bin
         self.cvdump_analysis = pdb_file
         self.code_dir = Path(code_dir)
         self.target_id = target_id
+
+        if isinstance(data_sources, list):
+            self.data_sources = data_sources
+        else:
+            self.data_sources = []
 
         # Controls whether we dump the asm output to a file
         self._debug = False
@@ -114,6 +123,8 @@ class Compare:
             self._db,
             self.report,
         )
+
+        load_data_sources(self._db, self.data_sources)
 
         # Match using PDB and annotation data
         match_symbols(self._db, self.report, truncate=True)
@@ -167,12 +178,20 @@ class Compare:
         )
         pdb_file = CvdumpAnalysis(cvdump)
 
+        data_sources = []
+        for path in target.data_sources:
+            try:
+                data_sources.append(TextFile.from_file(path))
+            except FileNotFoundError:
+                logger.error("Could not open data source file %s", str(path))
+
         compare = cls(
             origfile,
             recompfile,
             pdb_file,
             target.source_root,
             target_id=target.target_id,
+            data_sources=data_sources,
         )
         compare.run()
         return compare
