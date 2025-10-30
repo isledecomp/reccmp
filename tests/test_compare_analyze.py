@@ -1,11 +1,13 @@
 from unittest.mock import Mock, patch
 import pytest
 from reccmp.isledecomp.compare.db import EntityDb
+from reccmp.isledecomp.formats import PEImage
 from reccmp.isledecomp.types import EntityType, ImageId
 from reccmp.isledecomp.compare.analyze import (
     create_analysis_floats,
     create_analysis_strings,
     create_thunks,
+    create_analysis_vtordisps,
 )
 
 
@@ -131,3 +133,38 @@ def test_create_analysis_floats_do_not_replace(db: EntityDb):
     e = db.get_by_orig(100)
     assert e is not None
     assert e.get("type") != EntityType.FLOAT
+
+
+def test_create_analysis_vtordisps(db: EntityDb, binfile: PEImage):
+    """Should create entities for the detected vtordisp and the referenced functions."""
+    create_analysis_vtordisps(db, ImageId.ORIG, binfile)
+
+    # Using the first vtordisp as an example
+    e = db.get_by_orig(0x1000FB50)
+    assert e is not None
+    assert e.get("type") == EntityType.FUNCTION
+    assert e.get("ref_orig") == 0x1000FB60
+    assert e.get("vtordisp") is True
+    assert e.get("size") == 8
+    # Displacement values are not set on the entity (yet)
+
+    # Should also set up the function entity (if it does not already exist)
+    e = db.get_by_orig(0x1000FB60)
+    assert e is not None
+    assert e.get("type") == EntityType.FUNCTION
+
+
+def test_create_analysis_vtordisps_no_overwrite(db: EntityDb, binfile: PEImage):
+    """Should not overwrite an entity on the referenced function if it exists."""
+    with db.batch() as batch:
+        # Using addrs from above example.
+        batch.set_orig(0x1000FB60, type=EntityType.STRING)
+
+    create_analysis_vtordisps(db, ImageId.ORIG, binfile)
+
+    # For now: Don't overwrite the entity type of the referenced function.
+    # This is probably fine to do in the long run, but we want to protect against
+    # changes to how regular thunks are identified if/when they get their own type.
+    e = db.get_by_orig(0x1000FB60)
+    assert e is not None
+    assert e.get("type") != EntityType.FUNCTION

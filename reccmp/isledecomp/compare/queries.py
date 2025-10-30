@@ -73,6 +73,8 @@ def get_named_thunks(db: EntityDb):
         AND ((e.orig_addr is null and e.ref_orig is null) or e.ref_orig = r.orig_addr)
         AND ((e.recomp_addr is null and e.ref_recomp is null) or e.ref_recomp = r.recomp_addr)
         AND json_extract(r.kvstore, '$.type') = ?
+        -- Exclude vtordisp functions
+        AND json_extract(e.kvstore, '$.vtordisp') IS NULL
     """,
         (EntityType.FUNCTION,),
     ):

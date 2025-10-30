@@ -188,6 +188,19 @@ def test_named_thunks_ignore_incomplete_ref(db: EntityDb):
     assert len(names) == 0
 
 
+def test_named_thunks_ignore_vtordisp(db: EntityDb):
+    """Vtordisp functions are named in a different function.
+    They should not acquire the 'Thunk of' prefix."""
+    with db.batch() as batch:
+        batch.set_orig(100, name="Hello", type=EntityType.FUNCTION)
+        batch.set_orig(200, ref_orig=100, vtordisp=True)
+        batch.set_recomp(500, name="Test", type=EntityType.FUNCTION)
+        batch.set_recomp(600, ref_recomp=500, vtordisp=True)
+
+    names = list(get_named_thunks(db))
+    assert len(names) == 0
+
+
 def test_named_thunks_ignore_incomplete_if_matched(db: EntityDb):
     """If ref_orig and ref_recomp don't point at the same entity
     don't return a name even if each parent entity is separately matched.

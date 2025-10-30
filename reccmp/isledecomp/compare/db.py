@@ -22,13 +22,15 @@ _SETUP_SQL = """
         SELECT thunk.orig_addr, ref.rowid,
             Row_number() OVER (partition BY thunk.ref_orig order by thunk.orig_addr) nth
         FROM entities thunk
-        INNER JOIN entities ref on thunk.ref_orig = ref.orig_addr;
+        INNER JOIN entities ref on thunk.ref_orig = ref.orig_addr
+        WHERE json_extract(thunk.kvstore, '$.vtordisp') IS NULL;
 
     CREATE VIEW recomp_refs (recomp_addr, ref_id, nth) AS
         SELECT thunk.recomp_addr, ref.rowid,
             Row_number() OVER (partition BY thunk.ref_recomp order by thunk.recomp_addr) nth
         FROM entities thunk
-        INNER JOIN entities ref on thunk.ref_recomp = ref.recomp_addr;
+        INNER JOIN entities ref on thunk.ref_recomp = ref.recomp_addr
+        WHERE json_extract(thunk.kvstore, '$.vtordisp') IS NULL;
 
     CREATE VIEW orig_unmatched (orig_addr, kvstore) AS
         SELECT orig_addr, kvstore FROM entities
