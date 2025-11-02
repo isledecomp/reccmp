@@ -64,6 +64,16 @@ class CvdumpNode:
             assert demangled is not None
             self.confirmed_size = demangled.len
 
+        elif self.decorated_name.startswith("__real@4"):
+            # Single precision float
+            self.node_type = EntityType.FLOAT
+            self.confirmed_size = 4
+
+        elif self.decorated_name.startswith("__real@8"):
+            # Double precision float
+            self.node_type = EntityType.FLOAT
+            self.confirmed_size = 8
+
         elif not self.decorated_name.startswith("?") and "@" in self.decorated_name:
             # C mangled symbol. The trailing at-sign with number tells the number of bytes
             # in the parameter list for __stdcall, __fastcall, or __vectorcall
