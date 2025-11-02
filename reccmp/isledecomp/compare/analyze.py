@@ -2,7 +2,13 @@
 These functions update the entity database based on analysis of the binary files.
 """
 
+import logging
+import struct
 from reccmp.isledecomp.formats.pe import PEImage
+from reccmp.isledecomp.formats.exceptions import (
+    InvalidVirtualAddressError,
+    InvalidVirtualReadError,
+)
 from reccmp.isledecomp.types import EntityType, ImageId
 from reccmp.isledecomp.analysis import (
     find_float_consts,
@@ -11,6 +17,10 @@ from reccmp.isledecomp.analysis import (
     is_likely_latin1,
 )
 from .db import EntityDb, entity_name_from_string
+from .queries import get_floats_without_data
+
+
+logger = logging.getLogger(__name__)
 
 
 def match_entry(db: EntityDb, orig_bin: PEImage, recomp_bin: PEImage):
@@ -199,3 +209,26 @@ def match_vtordisp(db: EntityDb, orig_bin: PEImage, recomp_bin: PEImage):
                 batch.set_recomp(recomp_vtor.addr, name=new_name)
 
             batch.match(vtor.addr, recomp_vtor.addr)
+
+
+def create_partial_floats(db: EntityDb, image_id: ImageId, binfile: PEImage):
+    """For each float entity without any data,
+    read the value the binary and set the entity name."""
+    assert image_id in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
+
+    with db.batch() as batch:
+        for addr, is_double in get_floats_without_data(db, image_id):
+            try:
+                if is_double:
+                    (float_value,) = struct.unpack("<d", binfile.read(addr, 8))
+                else:
+                    (float_value,) = struct.unpack("<f", binfile.read(addr, 4))
+
+                batch.set(image_id, addr, name=str(float_value))
+            except (InvalidVirtualReadError, InvalidVirtualAddressError):
+                logger.error(
+                    "Failed to read %s from %s at 0x%x",
+                    ("double" if is_double else "float"),
+                    image_id.name.lower(),
+                    addr,
+                )
