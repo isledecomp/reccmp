@@ -679,3 +679,21 @@ def test_match_ref(db):
     assert db.get_by_orig(200).recomp_addr == 600
     assert db.get_by_orig(201).recomp_addr == 601
     assert db.get_by_orig(202).recomp_addr == 602
+
+
+def test_match_ref_exclude_vtordisp(db):
+    """Although they also use the `ref_` attributes, vtordisp functions must be
+    matched separately. We need to match using the referenced address *and* the
+    displacement values."""
+    with db.batch() as batch:
+        batch.set_orig(100)
+        batch.set_recomp(500)
+        batch.match(100, 500)
+
+        batch.set_orig(200, ref_orig=100, vtordisp=True)
+        batch.set_recomp(600, ref_recomp=500, vtordisp=True)
+
+    match_ref(db)
+
+    assert db.get_by_orig(200).recomp_addr is None
+    assert db.get_by_recomp(600).orig_addr is None

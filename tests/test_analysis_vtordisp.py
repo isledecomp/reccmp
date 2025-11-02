@@ -18,10 +18,10 @@ def test_detection(binfile: PEImage):
     vtors = list(find_vtordisp(binfile))
 
     # {byte, 0}
-    assert (0x1000FBB0, (-4, 0), 0x1000FBC0) in vtors
+    assert (0x1000FBB0, (-4, 0), 0x1000FBC0, 8) in vtors
 
     # {byte, dword}
-    assert (0x10014CD0, (-4, 4294966924), 0x1001C290) in vtors
+    assert (0x10014CD0, (-4, 4294966924), 0x1001C290, 14) in vtors
 
     # {byte, byte}
-    assert (0x100432B0, (-4, 64), 0x1001C870) in vtors
+    assert (0x100432B0, (-4, 64), 0x1001C870, 11) in vtors

@@ -174,6 +174,26 @@ def match_exports(db: EntityDb, orig_bin: PEImage, recomp_bin: PEImage):
             batch.match(orig_addr, recomp_addr)
 
 
+def create_analysis_vtordisps(db: EntityDb, img_id: ImageId, binfile: PEImage):
+    """Creates entities for each detected vtordisp function in the image.
+    The critical step is to set the 'vtordisp' attribute to True, which distinguishes
+    these entities from others (i.e. thunks) that have the 'ref_' attribute set."""
+    with db.batch() as batch:
+        for vtor in find_vtordisp(binfile):
+            batch.set(
+                img_id,
+                vtor.addr,
+                type=EntityType.FUNCTION,
+                ref=vtor.func_addr,
+                size=vtor.size,
+                vtordisp=True,
+            )
+
+            # Create an entity for the referenced function, but do not overwrite an existing entity (for now).
+            if not db.used(img_id, vtor.func_addr):
+                batch.set(img_id, vtor.func_addr, type=EntityType.FUNCTION)
+
+
 def match_vtordisp(db: EntityDb, orig_bin: PEImage, recomp_bin: PEImage):
     """Find each vtordisp function in each image and match them using
     both the displacement values and the thunk address.
