@@ -1,5 +1,6 @@
 import re
 import dataclasses
+from typing import Iterator
 from pathlib import Path
 from .exceptions import InvalidVirtualReadError, InvalidStringError
 
@@ -8,6 +9,22 @@ r_szstring = re.compile(rb"[^\x00]*")
 
 # Matches pairs of bytes until both are null.
 r_widestring = re.compile(rb"(?:(?:[^\x00]\x00)|(?:\x00[^\x00])|(?:[^\x00][^\x00]))*")
+
+
+@dataclasses.dataclass(frozen=True)
+class ImageRegion:
+    addr: int
+    data: bytes
+    size: int = 0
+
+    def __post_init__(self):
+        """The optional size parameter allows you to set virtual size for the region
+        if this is larger than the number of physical bytes."""
+        object.__setattr__(self, "size", max(len(self.data), self.size))
+
+    @property
+    def range(self) -> range:
+        return range(self.addr, self.addr + self.size)
 
 
 @dataclasses.dataclass
@@ -23,6 +40,15 @@ class Image:
             a. bytes or memoryview with the relevant stream of data that begins at the address.
             b. number of valid bytes remaining (including the size of whatever is in 'a').
         3. If the address is not valid, raise InvalidVirtualAddressError"""
+        raise NotImplementedError
+
+    def get_code_regions(self) -> Iterator[ImageRegion]:
+        raise NotImplementedError
+
+    def get_data_regions(self) -> Iterator[ImageRegion]:
+        raise NotImplementedError
+
+    def get_const_regions(self) -> Iterator[ImageRegion]:
         raise NotImplementedError
 
     def read_string(self, vaddr: int) -> bytes:
