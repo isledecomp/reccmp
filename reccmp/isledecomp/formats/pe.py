@@ -874,12 +874,12 @@ class PEImage(Image):
         return self.imagebase <= vaddr < last_range.stop
 
     def get_code_regions(self) -> Iterator[ImageRegion]:
-        # TODO
+        # TODO: Don't depend on section names. (#72)
         for sect in (self.get_section_by_name(".text"),):
             yield ImageRegion(sect.virtual_address, sect.view, sect.extent)
 
     def get_data_regions(self) -> Iterator[ImageRegion]:
-        # TODO
+        # TODO: Don't depend on section names. (#72)
         for sect in (
             self.get_section_by_name(".rdata"),
             self.get_section_by_name(".data"),
@@ -887,7 +887,7 @@ class PEImage(Image):
             yield ImageRegion(sect.virtual_address, sect.view, sect.extent)
 
     def get_const_regions(self) -> Iterator[ImageRegion]:
-        # TODO
+        # TODO: Don't depend on section names. (#72)
         for sect in (self.get_section_by_name(".rdata"),):
             yield ImageRegion(sect.virtual_address, sect.view, sect.extent)
 
