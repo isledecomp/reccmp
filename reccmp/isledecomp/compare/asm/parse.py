@@ -38,9 +38,11 @@ class ParseAsm:
         self,
         addr_test: AddrTestProtocol | None = None,
         name_lookup: NameReplacementProtocol | None = None,
+        is_32bit: bool = True,
     ) -> None:
         self.addr_test = addr_test
         self.name_lookup = name_lookup
+        self.is_32bit = is_32bit
 
         self.replacements: dict[int, str] = {}
         self.indirect_replacements: dict[int, str] = {}
@@ -194,7 +196,7 @@ class ParseAsm:
         self.reset()
         asm: AsmExcerpt = []
 
-        ig = InstructGen(data, start_addr)
+        ig = InstructGen(data, start_addr, self.is_32bit)
 
         for section in ig.sections:
             if section.type == SectionType.CODE:
@@ -212,7 +214,9 @@ class ParseAsm:
                     # The exception is jumps which are as small as 2 bytes
                     # but are still useful to sanitize.
                     if "0x" in inst.op_str and (
-                        inst.mnemonic in JUMP_MNEMONICS or inst.size > 4
+                        inst.mnemonic in JUMP_MNEMONICS
+                        or inst.size > 4
+                        or not self.is_32bit
                     ):
                         result = self.sanitize(inst)
                     else:

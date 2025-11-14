@@ -88,6 +88,7 @@ class FunctionComparator:
     report: ReccmpReportProtocol
     runid: str = timestamp_string()
     debug: bool = False
+    is_32bit: bool = True
 
     def __post_init__(self):
         self.orig_sanitize = ParseAsm(
@@ -97,6 +98,7 @@ class FunctionComparator:
             name_lookup=create_name_lookup(
                 self.db.get_by_orig, create_bin_lookup(self.orig_bin), "orig_addr"
             ),
+            is_32bit=self.is_32bit,
         )
         self.recomp_sanitize = ParseAsm(
             addr_test=create_valid_addr_lookup(
@@ -107,6 +109,7 @@ class FunctionComparator:
                 create_bin_lookup(self.recomp_bin),
                 "recomp_addr",
             ),
+            is_32bit=self.is_32bit,
         )
 
     def _dump_asm(self, orig_combined, recomp_combined):

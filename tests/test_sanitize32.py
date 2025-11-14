@@ -458,3 +458,21 @@ def test_consistent_numbering():
     assert p.replacements[0x1000] == "<OFFSET1>"
     assert p.replacements[0x1234] == "<OFFSET2>"
     assert p.replacements[0x2000] == "<OFFSET3>"
+
+
+def test_16bit_mode():
+    """Demonstrating the difference in asm output."""
+    code = b"\xe8\xbb\x00\xd1\xe3"
+
+    # Interpreted as CALL to 32-bit pointer
+    p = ParseAsm(is_32bit=True)
+    assert p.parse_asm(code, 0x1000) == [
+        (0x1000, "call <OFFSET1>"),
+    ]
+
+    # Interpreted as CALL to cs:offset
+    p = ParseAsm(is_32bit=False)
+    assert p.parse_asm(code, 0x1000) == [
+        (0x1000, "call <OFFSET1>"),
+        (0x1003, "shl bx, 1"),
+    ]

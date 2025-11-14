@@ -4,13 +4,18 @@ switch statements and local jump/call destinations."""
 import re
 import bisect
 import struct
+from functools import cache
 from enum import Enum, auto
 from typing import Iterable, Literal, NamedTuple
-from capstone import Cs, CS_ARCH_X86, CS_MODE_32  # type: ignore
+from capstone import Cs, CS_ARCH_X86, CS_MODE_16, CS_MODE_32  # type: ignore
 from .const import JUMP_MNEMONICS
 from .types import DisasmLiteInst
 
-disassembler = Cs(CS_ARCH_X86, CS_MODE_32)
+
+@cache
+def get_disassembler(is_32: bool = True) -> Cs:
+    return Cs(CS_ARCH_X86, CS_MODE_32 if is_32 else CS_MODE_16)
+
 
 DisasmLiteTuple = tuple[int, int, str, str]
 
@@ -54,7 +59,8 @@ def stop_at_int3(
 
 class InstructGen:
     # pylint: disable=too-many-instance-attributes
-    def __init__(self, blob: bytes, start: int) -> None:
+    def __init__(self, blob: bytes, start: int, is_32bit: bool = True) -> None:
+        self.is_32bit = is_32bit
         self.blob = blob
         self.start = start
         self.end = len(blob) + start
@@ -152,6 +158,7 @@ class InstructGen:
         # jump table is finished. We could disassemble up to the next verified
         # code address and stitch it together)
 
+        disassembler = get_disassembler(self.is_32bit)
         blob_cropped = self.blob[addr - self.start :]
         instructions = [
             DisasmLiteInst(*inst)
