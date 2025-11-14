@@ -71,8 +71,5 @@ def find_displacements(buf: bytes, base_addr: int = 0) -> Iterator[VtordispFunct
 
 
 def find_vtordisp(image: PEImage) -> Iterator[VtordispFunction]:
-    # TODO: Should check all code sections.
-    code_sections = (image.get_section_by_name(".text"),)
-
-    for sect in code_sections:
-        yield from find_displacements(sect.view, sect.virtual_address)
+    for region in image.get_code_regions():
+        yield from find_displacements(region.data, region.addr)

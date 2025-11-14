@@ -8,6 +8,7 @@ from reccmp.isledecomp.formats.exceptions import (
 )
 
 
+# pylint: disable=abstract-method
 @dataclasses.dataclass
 class RawImage(Image):
     """For testing functions implemented in the base Image class."""

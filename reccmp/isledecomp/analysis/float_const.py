@@ -94,12 +94,10 @@ def find_float_consts(image: PEImage) -> Iterator[FloatConstant]:
     # Return each float only once from this function.
     seen = set()
 
-    # TODO: Should check all code and const data sections.
-    code_sections = (image.get_section_by_name(".text"),)
-    const_sections = (image.get_section_by_name(".rdata"),)
+    const_regions = list(image.get_const_regions())
 
-    for sect in code_sections:
-        for inst in find_float_instructions_in_buffer(sect.view, sect.virtual_address):
+    for region in image.get_code_regions():
+        for inst in find_float_instructions_in_buffer(region.data, region.addr):
             if inst.pointer in seen:
                 continue
 
@@ -110,9 +108,7 @@ def find_float_consts(image: PEImage) -> Iterator[FloatConstant]:
                 continue
 
             # Ignore instructions that point to variables
-            if any(
-                const_sect.contains_vaddr(inst.pointer) for const_sect in const_sections
-            ):
+            if any(inst.pointer in region.range for region in const_regions):
                 if inst.opcode in SINGLE_PRECISION_OPCODES:
                     # dword ptr -- single precision
                     (float_value,) = struct.unpack("<f", image.read(inst.pointer, 4))

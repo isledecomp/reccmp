@@ -40,13 +40,8 @@ def find_import_thunks(image: PEImage) -> Iterator[ImportThunk]:
     if not import_addrs:
         return
 
-    # TODO: Should check all code sections.
-    code_sections = (image.get_section_by_name(".text"),)
-
-    for sect in code_sections:
-        for addr, jmp_dest in find_absolute_jumps_in_bytes(
-            sect.view, sect.virtual_address
-        ):
+    for region in image.get_code_regions():
+        for addr, jmp_dest in find_absolute_jumps_in_bytes(region.data, region.addr):
             if addr + 2 not in image.relocations:
                 continue
 
