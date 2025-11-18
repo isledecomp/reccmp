@@ -6,8 +6,7 @@ from typing import Iterable, Iterator
 from reccmp.project.detect import RecCmpTarget
 from reccmp.isledecomp.difflib import get_grouped_opcodes
 from reccmp.isledecomp.compare.functions import FunctionComparator
-from reccmp.isledecomp.formats.detect import detect_image
-from reccmp.isledecomp.formats.pe import PEImage
+from reccmp.isledecomp.formats import Image, PEImage, detect_image
 from reccmp.isledecomp.cvdump import Cvdump, CvdumpTypesParser, CvdumpAnalysis
 from reccmp.isledecomp.types import EntityType, ImageId, TextFile
 from reccmp.isledecomp.compare.event import (
@@ -65,8 +64,8 @@ class Compare:
     _lines_db: LinesDb
     code_dir: Path
     cvdump_analysis: CvdumpAnalysis
-    orig_bin: PEImage
-    recomp_bin: PEImage
+    orig_bin: Image
+    recomp_bin: Image
     report: ReccmpReportProtocol
     target_id: str
     types: CvdumpTypesParser
@@ -76,8 +75,8 @@ class Compare:
     # pylint: disable=too-many-arguments
     def __init__(
         self,
-        orig_bin: PEImage,
-        recomp_bin: PEImage,
+        orig_bin: Image,
+        recomp_bin: Image,
         pdb_file: CvdumpAnalysis,
         code_dir: Path | str,
         target_id: str,
@@ -110,6 +109,11 @@ class Compare:
         )
 
     def run(self):
+        if not isinstance(self.orig_bin, PEImage) or not isinstance(
+            self.recomp_bin, PEImage
+        ):
+            return
+
         load_cvdump_types(self.cvdump_analysis, self.types)
         load_cvdump(self.cvdump_analysis, self._db, self.recomp_bin)
         load_cvdump_lines(self.cvdump_analysis, self._lines_db, self.recomp_bin)
@@ -160,12 +164,7 @@ class Compare:
     @classmethod
     def from_target(cls, target: RecCmpTarget):
         origfile = detect_image(filepath=target.original_path)
-        if not isinstance(origfile, PEImage):
-            raise ValueError(f"{target.original_path} is not a PE executable")
-
         recompfile = detect_image(filepath=target.recompiled_path)
-        if not isinstance(recompfile, PEImage):
-            raise ValueError(f"{target.recompiled_path} is not a PE executable")
 
         logger.info("Parsing %s ...", target.recompiled_pdb)
         cvdump = (

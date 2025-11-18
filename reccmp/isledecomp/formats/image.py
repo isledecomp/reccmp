@@ -42,6 +42,16 @@ class Image:
         3. If the address is not valid, raise InvalidVirtualAddressError"""
         raise NotImplementedError
 
+    @property
+    def imagebase(self) -> int:
+        raise NotImplementedError
+
+    def get_relative_addr(self, addr: int) -> tuple[int, int]:
+        raise NotImplementedError
+
+    def is_relocated_addr(self, addr: int) -> bool:
+        raise NotImplementedError
+
     def get_code_regions(self) -> Iterator[ImageRegion]:
         raise NotImplementedError
 
