@@ -104,27 +104,21 @@ def match_imports(db: EntityDb, orig_bin: PEImage, recomp_bin: PEImage):
                 batch.match(orig_addr, recomp_addr)
 
     with db.batch() as batch:
-        for thunk in find_import_thunks(orig_bin):
-            name = f"{thunk.dll_name}::{thunk.func_name}"
-            batch.set_orig(
-                thunk.addr,
-                name=name,
-                type=EntityType.FUNCTION,
-                skip=True,
-                size=thunk.size,
-                ref_orig=thunk.import_addr,
-            )
-
-        for thunk in find_import_thunks(recomp_bin):
-            name = f"{thunk.dll_name}::{thunk.func_name}"
-            batch.set_recomp(
-                thunk.addr,
-                name=name,
-                type=EntityType.FUNCTION,
-                skip=True,
-                size=thunk.size,
-                ref_recomp=thunk.import_addr,
-            )
+        for image_id, binfile in (
+            (ImageId.ORIG, orig_bin),
+            (ImageId.RECOMP, recomp_bin),
+        ):
+            for thunk in find_import_thunks(binfile):
+                name = f"{thunk.dll_name}::{thunk.func_name}"
+                batch.set(
+                    image_id,
+                    thunk.addr,
+                    name=name,
+                    type=EntityType.FUNCTION,
+                    skip=True,
+                    size=thunk.size,
+                )
+                batch.set_ref(image_id, thunk.addr, ref=thunk.import_addr)
 
 
 def create_thunks(db: EntityDb, img_id: ImageId, binfile: PEImage):
@@ -136,11 +130,11 @@ def create_thunks(db: EntityDb, img_id: ImageId, binfile: PEImage):
                 batch.set(
                     img_id,
                     thunk_addr,
-                    type=EntityType.FUNCTION,
+                    type=EntityType.THUNK,
                     size=5,
-                    ref=func_addr,
                     skip=True,
                 )
+                batch.set_ref(img_id, thunk_addr, ref=func_addr)
 
             # We can only match two thunks if we have already matched both
             # their parent entities. There is nothing to compare because
@@ -183,52 +177,16 @@ def create_analysis_vtordisps(db: EntityDb, img_id: ImageId, binfile: PEImage):
             batch.set(
                 img_id,
                 vtor.addr,
-                type=EntityType.FUNCTION,
-                ref=vtor.func_addr,
+                type=EntityType.VTORDISP,
                 size=vtor.size,
-                vtordisp=True,
+            )
+            batch.set_ref(
+                img_id, vtor.addr, displacement=vtor.displacement, ref=vtor.func_addr
             )
 
             # Create an entity for the referenced function, but do not overwrite an existing entity (for now).
             if not db.used(img_id, vtor.func_addr):
                 batch.set(img_id, vtor.func_addr, type=EntityType.FUNCTION)
-
-
-def match_vtordisp(db: EntityDb, orig_bin: PEImage, recomp_bin: PEImage):
-    """Find each vtordisp function in each image and match them using
-    both the displacement values and the thunk address.
-
-    Should be run after matching all other functions because we depend on
-    the thunked functions being matched first.
-
-    PDB does not include the `vtordisp{x, y}' name. We could demangle
-    the symbol and get it that way, but instead we just set it here."""
-
-    # Build a reverse mapping from the thunked function and displacement in recomp to the vtordisp address.
-    recomp_vtor_reverse = {
-        (vt.func_addr, vt.displacement): vt for vt in find_vtordisp(recomp_bin)
-    }
-
-    with db.batch() as batch:
-        for vtor in find_vtordisp(orig_bin):
-            # Follow the link to the thunked function.
-            # We want the recomp function addr.
-            func = db.get_by_orig(vtor.func_addr)
-            if func is None or func.recomp_addr is None:
-                continue
-
-            # Now get the recomp vtor reference.
-            recomp_vtor = recomp_vtor_reverse.get((func.recomp_addr, vtor.displacement))
-            if recomp_vtor is None:
-                continue
-
-            # Add the vtordisp name here.
-            entity = db.get_by_recomp(recomp_vtor.addr)
-            if entity is not None and entity.name is not None:
-                new_name = f"{entity.name}`vtordisp{{{recomp_vtor.displacement[0]}, {recomp_vtor.displacement[1]}}}'"
-                batch.set_recomp(recomp_vtor.addr, name=new_name)
-
-            batch.match(vtor.addr, recomp_vtor.addr)
 
 
 def create_partial_floats(db: EntityDb, image_id: ImageId, binfile: PEImage):

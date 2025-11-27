@@ -10,27 +10,37 @@ from typing import Any, Iterable, Iterator
 from reccmp.isledecomp.types import EntityType, ImageId
 
 _SETUP_SQL = """
+    CREATE TABLE names (
+        img integer not null,
+        addr integer not null,
+        name text,
+        computed_name text,
+        primary key (img, addr)
+    );
+
     CREATE TABLE entities (
         orig_addr int unique,
         recomp_addr int unique,
-        kvstore text default '{}',
-        ref_orig integer as (json_extract(kvstore, '$.ref_orig')),
-        ref_recomp integer as (json_extract(kvstore, '$.ref_recomp'))
+        kvstore text default '{}'
     );
 
-    CREATE VIEW orig_refs (orig_addr, ref_id, nth) AS
-        SELECT thunk.orig_addr, ref.rowid,
-            Row_number() OVER (partition BY thunk.ref_orig order by thunk.orig_addr) nth
-        FROM entities thunk
-        INNER JOIN entities ref on thunk.ref_orig = ref.orig_addr
-        WHERE json_extract(thunk.kvstore, '$.vtordisp') IS NULL;
+    CREATE TABLE refs (
+        img integer not null,
+        addr integer not null,
+        ref integer not null,
+        disp0 integer not null default 0,
+        disp1 integer not null default 0,
+        primary key (img, addr)
+    );
 
-    CREATE VIEW recomp_refs (recomp_addr, ref_id, nth) AS
-        SELECT thunk.recomp_addr, ref.rowid,
-            Row_number() OVER (partition BY thunk.ref_recomp order by thunk.recomp_addr) nth
-        FROM entities thunk
-        INNER JOIN entities ref on thunk.ref_recomp = ref.recomp_addr
-        WHERE json_extract(thunk.kvstore, '$.vtordisp') IS NULL;
+    CREATE VIEW matches (match_id, addr_x, addr_y) AS
+        SELECT rowid, orig_addr, recomp_addr FROM entities
+        WHERE orig_addr IS NOT NULL AND recomp_addr IS NOT NULL;
+
+    CREATE VIEW matched_ids (img, addr) AS
+        SELECT 0, addr_x FROM matches
+        UNION ALL
+        SELECT 1, addr_y FROM matches;
 
     CREATE VIEW orig_unmatched (orig_addr, kvstore) AS
         SELECT orig_addr, kvstore FROM entities
@@ -183,12 +193,15 @@ class EntityBatch:
     # This isn't possible using set_orig() or by matching.
     _recomp_addr: dict[int, int]
 
+    _refs: list[tuple[ImageId, int, int, int, int]]
+
     def __init__(self, backref: "EntityDb") -> None:
         self.base = backref
         self._orig = {}
         self._recomp = {}
         self._matches = []
         self._recomp_addr = {}
+        self._refs = []
 
     def reset(self):
         """Clear all pending changes"""
@@ -196,6 +209,7 @@ class EntityBatch:
         self._recomp.clear()
         self._matches.clear()
         self._recomp_addr.clear()
+        self._refs.clear()
 
     def set_orig(self, addr: int, **kwargs):
         self._orig.setdefault(addr, {}).update(kwargs)
@@ -203,21 +217,25 @@ class EntityBatch:
     def set_recomp(self, addr: int, **kwargs):
         self._recomp.setdefault(addr, {}).update(kwargs)
 
-    def set(self, img: ImageId, addr: int, *, ref: int | None = None, **kwargs):
+    def set(self, img: ImageId, addr: int, **kwargs):
         if img == ImageId.ORIG:
-            if ref is not None:
-                kwargs["ref_orig"] = ref
-
             self.set_orig(addr, **kwargs)
 
         elif img == ImageId.RECOMP:
-            if ref is not None:
-                kwargs["ref_recomp"] = ref
-
             self.set_recomp(addr, **kwargs)
 
         else:
             assert False, "Invalid image id"
+
+    def set_ref(
+        self,
+        img: ImageId,
+        addr: int,
+        *,
+        ref: int,
+        displacement: tuple[int, int] = (0, 0),
+    ):
+        self._refs.append((img, addr, ref, *displacement))
 
     def match(self, orig: int, recomp: int):
         self._matches.append((orig, recomp))
@@ -252,6 +270,12 @@ class EntityBatch:
 
             if self._recomp:
                 self.base.bulk_recomp_insert(self._recomp.items(), upsert=True)
+
+            if self._refs:
+                self.base.sql.executemany(
+                    "INSERT OR REPLACE INTO refs (img, addr, ref, disp0, disp1) VALUES (?,?,?,?,?)",
+                    self._refs,
+                )
 
             if self._matches:
                 self.base.bulk_match(self._finalized_matches())
@@ -431,6 +455,19 @@ class EntityDb:
 
         assert False, "Invalid image id"
 
+    def get_functions(self) -> Iterator[ReccmpMatch]:
+        """Return all function-like matched entities. Previously, all functions
+        had type=FUNCTION but there are now THUNK and VTORDISP types."""
+        cur = self._sql.execute(
+            """SELECT * FROM matched_entity_factory
+            WHERE json_extract(kvstore, '$.type') IN (?, ?, ?)
+            ORDER BY orig_addr
+            """,
+            (EntityType.FUNCTION, EntityType.THUNK, EntityType.VTORDISP),
+        )
+        cur.row_factory = matched_entity_factory
+        yield from cur
+
     def get_matches_by_type(self, entity_type: EntityType) -> Iterator[ReccmpMatch]:
         cur = self._sql.execute(
             """SELECT * FROM matched_entity_factory
@@ -513,3 +550,35 @@ class EntityDb:
         ).fetchone()
 
         return result[0] if result is not None else None
+
+    def populate_names_table(self):
+        """Copy the name/computed_name of non-thunk function entities into the NAMES table.
+        NAMES is keyed by (image, addr), unlike the ENTITIES table."""
+        self._sql.execute(
+            """INSERT INTO names (img, addr, name, computed_name)
+            SELECT img, addr, json_extract(kvstore, '$.name') name, json_extract(kvstore, '$.computed_name') FROM (
+                SELECT 0 img, orig_addr addr, kvstore FROM entities WHERE orig_addr IS NOT NULL
+                UNION ALL
+                SELECT 1 img, recomp_addr addr, kvstore FROM entities WHERE recomp_addr IS NOT NULL
+            )
+            WHERE name IS NOT NULL
+            AND json_extract(kvstore, '$.type') = ?
+            """,
+            (EntityType.FUNCTION,),
+        )
+
+    def propagate_thunk_names(self) -> bool:
+        """Copy name/computed_name from parent to child (referencing) entities.
+        Return value tells whether any entities were updated.
+        Can be repeated to cover chains of thunk/vtordisp entities."""
+        cur = self._sql.execute(
+            """INSERT INTO names (img, addr, name, computed_name)
+            SELECT r.img, r.addr, x.name, x.computed_name
+            FROM refs r
+            INNER JOIN names x ON r.img = x.img and r.ref = x.addr
+            LEFT JOIN names y ON r.img = y.img and r.addr = y.addr
+            WHERE y.addr IS NULL
+            """
+        )
+
+        return cur.rowcount > 0

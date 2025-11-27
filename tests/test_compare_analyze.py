@@ -79,9 +79,8 @@ def test_create_thunks(db: EntityDb):
 
     e = db.get_by_orig(100)
     assert e is not None
-    assert e.get("type") == EntityType.FUNCTION
+    assert e.get("type") == EntityType.THUNK
     assert e.get("size") == 5
-    assert e.get("ref_orig") == 200
 
 
 def test_create_thunks_do_not_replace(db: EntityDb):
@@ -142,9 +141,7 @@ def test_create_analysis_vtordisps(db: EntityDb, binfile: PEImage):
     # Using the first vtordisp as an example
     e = db.get_by_orig(0x1000FB50)
     assert e is not None
-    assert e.get("type") == EntityType.FUNCTION
-    assert e.get("ref_orig") == 0x1000FB60
-    assert e.get("vtordisp") is True
+    assert e.get("type") == EntityType.VTORDISP
     assert e.get("size") == 8
     # Displacement values are not set on the entity (yet)
 

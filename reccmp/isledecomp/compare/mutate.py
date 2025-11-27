@@ -107,14 +107,30 @@ def match_array_elements(db: EntityDb, types: CvdumpTypesParser):
     batch.commit()
 
 
-def name_thunks(db: EntityDb):
-    with db.batch() as batch:
-        for thunk in get_named_thunks(db):
-            if thunk.orig_addr is not None:
-                batch.set_orig(thunk.orig_addr, name=f"Thunk of '{thunk.name}'")
+def propagate_names(db: EntityDb):
+    """Copy the name and computed_name attributes from a parent entity
+    down to any thunks or vtordisp entities that refer back to it."""
+    db.populate_names_table()
 
-            elif thunk.recomp_addr is not None:
-                batch.set_recomp(thunk.recomp_addr, name=f"Thunk of '{thunk.name}'")
+    # If there are chains of thunks (e.g. thunk -> vtordisp -> thunk -> function )
+    # we need to repeat the name propagation step to cover all entities.
+    # Stop if no names were added on this pass.
+    for _ in range(10):
+        if not db.propagate_thunk_names():
+            break
+
+
+def name_thunks(db: EntityDb):
+    """Add the 'Thunk of' prefix or 'vtordisp{x,y}' suffix to thunk or vtordisp entities.
+    Should be run after propagate_names() or this will have no effect.
+    (i.e. It needs data in the NAMES table.)
+    The current behavior is to use the computed_name (disambiguated) for an entity as the
+    entity's "name" attribute."""
+    propagate_names(db)
+
+    with db.batch() as batch:
+        for img, addr, name in get_named_thunks(db):
+            batch.set(img, addr, name=name)
 
 
 def unique_names_for_overloaded_functions(db: EntityDb):

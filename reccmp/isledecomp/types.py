@@ -16,6 +16,8 @@ class EntityType(IntEnum):
     FLOAT = 6
     IMPORT = 7
     LINE = 8
+    THUNK = 9
+    VTORDISP = 10
 
 
 class ImageId(IntEnum):
