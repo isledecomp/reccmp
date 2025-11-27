@@ -393,11 +393,13 @@ def match_lines(
 
 def match_ref(
     db: EntityDb,
-    _: ReccmpReportProtocol = reccmp_report_nop,
+    report: ReccmpReportProtocol = reccmp_report_nop,
 ):
     """Matches child entities that refer to the same parent entity.
     Repeats until there are no new matches."""
-    for __ in range(10):
+    new_matches = False
+
+    for _ in range(10):
         new_matches = False
         with db.batch() as batch:
             for orig_addr, recomp_addr in get_referencing_entity_matches(db):
@@ -406,3 +408,11 @@ def match_ref(
 
             if not new_matches:
                 break
+
+    # If we did not break out of the loop:
+    if new_matches:
+        report(
+            ReccmpEvent.GENERAL_WARNING,
+            -1,
+            "Reached maximum iteration depth while matching referencing entities.",
+        )

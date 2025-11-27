@@ -1,6 +1,6 @@
 """Tests MSVC-specific match strategies"""
 
-from unittest.mock import Mock, ANY
+from unittest.mock import Mock, ANY, patch
 import pytest
 from reccmp.isledecomp.types import EntityType, ImageId
 from reccmp.isledecomp.compare.db import EntityDb
@@ -801,3 +801,29 @@ def test_match_ref_include_vtordisp_order(db):
     assert db.get_by_orig(200).recomp_addr == 600
     assert db.get_by_orig(201).recomp_addr == 601
     assert db.get_by_orig(202).recomp_addr == 602
+
+
+def test_match_ref_maximum_depth(db, report):
+    """If we cannot match all referencing entities in 10 iterations, report a warning."""
+
+    # No entities to match: should not report.
+    match_ref(db, report)
+    report.assert_not_called()
+
+    # Run one iteration: should not report.
+    with patch(
+        "reccmp.isledecomp.compare.match_msvc.get_referencing_entity_matches",
+        return_value=iter([(100, 100)]),
+    ) as getter:
+        match_ref(db, report)
+        assert getter.call_count == 2  # Yields nothing on the second call.
+        report.assert_not_called()
+
+    # Run indefinitely: should report.
+    with patch(
+        "reccmp.isledecomp.compare.match_msvc.get_referencing_entity_matches",
+        return_value=[(100, 100)],
+    ) as getter:
+        match_ref(db, report)
+        assert getter.call_count == 10
+        report.assert_called_once()
