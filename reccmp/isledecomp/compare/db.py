@@ -24,6 +24,9 @@ _SETUP_SQL = """
         kvstore text default '{}'
     );
 
+    -- REFS stores the destination of the JMP instruction in each thunk/vtordisp.
+    -- vtordisp functions have 1 or 2 displacement values that modify ECX.
+    -- If both are zero, this is a regular thunk with the jump only.
     CREATE TABLE refs (
         img integer not null,
         addr integer not null,
@@ -33,14 +36,14 @@ _SETUP_SQL = """
         primary key (img, addr)
     );
 
-    CREATE VIEW matches (match_id, addr_x, addr_y) AS
+    CREATE VIEW matches (match_id, orig_addr, recomp_addr) AS
         SELECT rowid, orig_addr, recomp_addr FROM entities
         WHERE orig_addr IS NOT NULL AND recomp_addr IS NOT NULL;
 
     CREATE VIEW matched_ids (img, addr) AS
-        SELECT 0, addr_x FROM matches
+        SELECT 0, orig_addr FROM matches
         UNION ALL
-        SELECT 1, addr_y FROM matches;
+        SELECT 1, recomp_addr FROM matches;
 
     CREATE VIEW orig_unmatched (orig_addr, kvstore) AS
         SELECT orig_addr, kvstore FROM entities

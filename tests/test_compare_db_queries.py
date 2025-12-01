@@ -4,6 +4,7 @@ import pytest
 from reccmp.isledecomp.compare.db import EntityDb
 from reccmp.isledecomp.compare.queries import (
     get_overloaded_functions,
+    get_referencing_entity_matches,
 )
 from reccmp.isledecomp.types import EntityType, ImageId
 
@@ -85,3 +86,54 @@ def test_overloaded_functions_ignore_thunks(db: EntityDb):
     # Should only include the duplicate names where both are not ref entities.
     overloaded = list(get_overloaded_functions(db))
     assert [func.orig_addr for func in overloaded] == [500, 600]
+
+
+def test_get_referencing_entity_matches(db: EntityDb):
+    """Demo of the behavior for the test_get_referencing_entity_matches query.
+    It should returns only new matches for child entities."""
+
+    # Set up matched parent entity.
+    with db.batch() as batch:
+        batch.set_orig(100)
+        batch.set_recomp(100)
+        batch.match(100, 100)
+
+    # There are no referencing entities.
+    assert not list(get_referencing_entity_matches(db))
+
+    # Set up child entities with reference link.
+    with db.batch() as batch:
+        batch.set_orig(200)
+        batch.set_recomp(300)
+
+        batch.set_ref(ImageId.ORIG, 200, ref=100)
+        batch.set_ref(ImageId.RECOMP, 300, ref=100)
+
+    # Can match these child entities that point to the same matched parent.
+    assert not list(get_referencing_entity_matches(db))
+
+    # Create the match as directed by the query.
+    with db.batch() as batch:
+        batch.match(200, 300)
+
+    # All child entities have already been matched.
+    assert not list(get_referencing_entity_matches(db))
+
+
+@pytest.mark.xfail(reason="Will match child entities of different types.")
+def test_get_referencing_entity_matches_check_entity_type(db: EntityDb):
+    """Possible future behavior of the query: require types of child entities
+    to match along with checking reference and displacement values."""
+    with db.batch() as batch:
+        batch.set_orig(100)
+        batch.set_recomp(100)
+        batch.match(100, 100)
+
+        batch.set_orig(200, type=EntityType.THUNK)
+        batch.set_recomp(300, type=EntityType.FUNCTION)
+
+        batch.set_ref(ImageId.ORIG, 200, ref=100)
+        batch.set_ref(ImageId.RECOMP, 300, ref=100)
+
+    # Should not return any matches: child entities have different type.
+    assert not list(get_referencing_entity_matches(db))

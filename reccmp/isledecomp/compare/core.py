@@ -311,6 +311,8 @@ class Compare:
                 is_stub=True,
             )
 
+        # Thunks are matched using the destination of their JMP instruction.
+        # They always match 100%. There is nothing to compare.
         if match.entity_type in (EntityType.FUNCTION, EntityType.VTORDISP):
             best_name = match.best_name()
             assert best_name is not None

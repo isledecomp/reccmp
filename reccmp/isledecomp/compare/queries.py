@@ -19,17 +19,17 @@ def get_overloaded_functions(db: EntityDb) -> Iterator[OverloadedFunctionEntity]
     the entity's symbol so we return that too."""
     for orig_addr, recomp_addr, name, symbol, nth in db.sql.execute(
         """SELECT orig_addr, recomp_addr,
-        json_extract(kvstore,'$.name') as name,
+        json_extract(kvstore,'$.name') AS name,
         json_extract(kvstore,'$.symbol'),
-        Row_number() OVER (partition BY json_extract(kvstore,'$.name') ORDER BY orig_addr nulls last, recomp_addr)
-        from entities where json_extract(kvstore,'$.type') = ?
-            and name in (
+        row_number() OVER (PARTITION BY json_extract(kvstore,'$.name') ORDER BY orig_addr NULLS LAST, recomp_addr)
+        FROM entities WHERE json_extract(kvstore,'$.type') = ?
+            AND name IN (
             -- Subquery: build a list of names that are
             -- repeated among FUNCTION entities.
-            select json_extract(kvstore,'$.name') as name from entities
-            where json_extract(kvstore,'$.type') = ?
-            and name is not null
-            group by name having count(name) > 1
+            SELECT json_extract(kvstore,'$.name') AS name FROM entities
+            WHERE json_extract(kvstore,'$.type') = ?
+            AND name IS NOT NULL
+            GROUP by name HAVING COUNT(name) > 1
         )
         """,
         (EntityType.FUNCTION, EntityType.FUNCTION),
@@ -113,12 +113,12 @@ def get_referencing_entity_matches(db: EntityDb) -> Iterator[tuple[int, int]]:
         """
         WITH linked_refs AS (
             SELECT r.img, r.addr, m.match_id, disp0, disp1,
-            Row_number() OVER (partition BY r.img, m.match_id, disp0, disp1 order by r.addr) nth
+            row_number() OVER (PARTITION BY r.img, m.match_id, disp0, disp1 ORDER BY r.addr) nth
             FROM refs r
             -- Convert the referenced address to a unique ID to allow for matching.
             INNER JOIN matches m
-                ON (r.img = 0 AND r.ref = m.addr_x)
-                OR (r.img = 1 AND r.ref = m.addr_y)
+                ON (r.img = 0 AND r.ref = m.orig_addr)
+                OR (r.img = 1 AND r.ref = m.recomp_addr)
             -- Exclude thunk entities that have been matched.
             INNER JOIN (
                 SELECT img, addr FROM refs
