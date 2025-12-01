@@ -6,6 +6,7 @@ from reccmp.isledecomp.compare.event import (
     ReccmpReportProtocol,
     reccmp_report_nop,
 )
+from reccmp.isledecomp.compare.queries import get_referencing_entity_matches
 
 
 class EntityIndex:
@@ -392,17 +393,26 @@ def match_lines(
 
 def match_ref(
     db: EntityDb,
-    _: ReccmpReportProtocol = reccmp_report_nop,
+    report: ReccmpReportProtocol = reccmp_report_nop,
 ):
-    """Matches entities that refer to the same parent entity
-    via the ref_orig and ref_recomp attributes."""
-    with db.batch() as batch:
-        for orig_addr, recomp_addr in db.sql.execute(
-            """
-            SELECT x.orig_addr, y.recomp_addr
-            FROM orig_refs x
-            INNER JOIN recomp_refs y
-            ON x.ref_id = y.ref_id and x.nth = y.nth
-            """
-        ):
-            batch.match(orig_addr, recomp_addr)
+    """Matches child entities that refer to the same parent entity.
+    Repeats until there are no new matches."""
+    new_matches = False
+
+    for _ in range(10):
+        new_matches = False
+        with db.batch() as batch:
+            for orig_addr, recomp_addr in get_referencing_entity_matches(db):
+                new_matches = True
+                batch.match(orig_addr, recomp_addr)
+
+            if not new_matches:
+                break
+
+    # If we did not break out of the loop:
+    if new_matches:
+        report(
+            ReccmpEvent.GENERAL_WARNING,
+            -1,
+            "Reached maximum iteration depth while matching referencing entities.",
+        )

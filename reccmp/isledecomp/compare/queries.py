@@ -19,24 +19,18 @@ def get_overloaded_functions(db: EntityDb) -> Iterator[OverloadedFunctionEntity]
     the entity's symbol so we return that too."""
     for orig_addr, recomp_addr, name, symbol, nth in db.sql.execute(
         """SELECT orig_addr, recomp_addr,
-        json_extract(kvstore,'$.name') as name,
+        json_extract(kvstore,'$.name') AS name,
         json_extract(kvstore,'$.symbol'),
-        Row_number() OVER (partition BY json_extract(kvstore,'$.name') ORDER BY orig_addr nulls last, recomp_addr)
-        from entities where json_extract(kvstore,'$.type') = ?
-            and name in (
+        row_number() OVER (PARTITION BY json_extract(kvstore,'$.name') ORDER BY orig_addr NULLS LAST, recomp_addr)
+        FROM entities WHERE json_extract(kvstore,'$.type') = ?
+            AND name IN (
             -- Subquery: build a list of names that are
             -- repeated among FUNCTION entities.
-            select json_extract(kvstore,'$.name') as name from entities
-            where json_extract(kvstore,'$.type') = ?
-            and name is not null
-            -- Ignore thunks (ref entities) because we only consider a name
-            -- to be non-unique if it is used by 2 or more real functions.
-            and ref_orig is null and ref_recomp is null
-            group by name having count(name) > 1
+            SELECT json_extract(kvstore,'$.name') AS name FROM entities
+            WHERE json_extract(kvstore,'$.type') = ?
+            AND name IS NOT NULL
+            GROUP by name HAVING COUNT(name) > 1
         )
-        -- Ignore any thunks using a name from our list of non-unique names.
-        -- We don't want to rename them at this stage.
-        and ref_orig is null and ref_recomp is null
         """,
         (EntityType.FUNCTION, EntityType.FUNCTION),
     ):
@@ -51,36 +45,38 @@ class ThunkWithName(NamedTuple):
     """Entity address(es) and the name (computed or base name)
     of the referenced (thunked) entity."""
 
-    orig_addr: int | None
-    recomp_addr: int | None
+    img_id: ImageId
+    addr: int
     name: str
 
 
 def get_named_thunks(db: EntityDb) -> Iterator[ThunkWithName]:
-    """For each entity with a ref_orig or ref_recomp attribute,
-    if the parent entity is a function, return:
-        - one or both addresses of the referencing entity
-        - the name (or computed name) of the parent entity"""
-    for orig_addr, recomp_addr, name in db.sql.execute(
-        """SELECT e.orig_addr, e.recomp_addr,
-        coalesce(json_extract(r.kvstore, '$.computed_name'), json_extract(r.kvstore, '$.name')) name
-        FROM entities e
-        INNER JOIN entities r
-        ON e.ref_orig = r.orig_addr or e.ref_recomp = r.recomp_addr
-        WHERE name is not null
-        -- Do not return rows where (for example) orig_addr and ref_recomp are set.
-        -- If the entity has both ref_orig and ref_recomp, they must point to the same (matched) entity.
-        AND ((e.orig_addr is null and e.ref_orig is null) or e.ref_orig = r.orig_addr)
-        AND ((e.recomp_addr is null and e.ref_recomp is null) or e.ref_recomp = r.recomp_addr)
-        AND json_extract(r.kvstore, '$.type') = ?
-        -- Exclude vtordisp functions
-        AND json_extract(e.kvstore, '$.vtordisp') IS NULL
-    """,
-        (EntityType.FUNCTION,),
+    """Return a modified name to set for each thunk and vtordisp entity.
+    The name is copied from the parent function entity.
+    Must run db.populate_names_table() and db,propagate_thunk_names() first."""
+    for img, addr, name, disp0, disp1 in db.sql.execute(
+        """SELECT n.img, n.addr, coalesce(n.computed_name, n.name) name, r.disp0, r.disp1
+        FROM names n
+        INNER JOIN refs r
+            ON n.img = r.img AND n.addr = r.addr
+        INNER JOIN entities e
+            ON (r.img = 0 AND r.addr = e.orig_addr)
+            OR (r.img = 1 AND r.addr = e.recomp_addr)
+        -- Rename thunk and vtordisp entities only.
+        WHERE json_extract(e.kvstore, '$.type') IN (?, ?)
+        AND name IS NOT NULL
+        -- Performance: we only need to yield one addr for a matched entity.
+        GROUP BY e.rowid""",
+        (EntityType.THUNK, EntityType.VTORDISP),
     ):
-        assert isinstance(orig_addr, int) or isinstance(recomp_addr, int)
+        assert img in (ImageId.ORIG, ImageId.RECOMP)
+        assert isinstance(addr, int)
         assert isinstance(name, str)
-        yield ThunkWithName(orig_addr, recomp_addr, name)
+
+        if disp0 == 0 and disp1 == 0:
+            yield ThunkWithName(img, addr, f"Thunk of '{name}'")
+        else:
+            yield ThunkWithName(img, addr, f"{name}`vtordisp{{{disp0}, {disp1}}}'")
 
 
 def get_floats_without_data(
@@ -105,3 +101,42 @@ def get_floats_without_data(
             yield (orig_addr, size == 8)
         elif image_id == ImageId.RECOMP and isinstance(recomp_addr, int):
             yield (recomp_addr, size == 8)
+
+
+def get_referencing_entity_matches(db: EntityDb) -> Iterator[tuple[int, int]]:
+    """Return new matches for child entities that refer to the same parent entity.
+    These can be import thunks, incremental build thunks, or vtordisps.
+    To match, the child entities must have the same displacement values (or none).
+    If we cannot match uniquely, match by child address order in each address space.
+    """
+    for orig_addr, recomp_addr in db.sql.execute(
+        """
+        WITH linked_refs AS (
+            SELECT r.img, r.addr, m.match_id, disp0, disp1,
+            row_number() OVER (PARTITION BY r.img, m.match_id, disp0, disp1 ORDER BY r.addr) nth
+            FROM refs r
+            -- Convert the referenced address to a unique ID to allow for matching.
+            INNER JOIN matches m
+                ON (r.img = 0 AND r.ref = m.orig_addr)
+                OR (r.img = 1 AND r.ref = m.recomp_addr)
+            -- Exclude thunk entities that have been matched.
+            INNER JOIN (
+                SELECT img, addr FROM refs
+                EXCEPT
+                SELECT img, addr FROM matched_ids
+            ) x
+            ON r.img = x.img AND r.addr = x.addr
+        )
+        SELECT x.addr, y.addr FROM
+        (SELECT * FROM linked_refs WHERE img = 0) x
+        INNER JOIN
+        (SELECT * FROM linked_refs WHERE img = 1) y
+        ON  x.disp0 = y.disp0
+        AND x.disp1 = y.disp1
+        AND x.nth = y.nth
+        AND x.match_id = y.match_id
+        """
+    ):
+        assert isinstance(orig_addr, int)
+        assert isinstance(recomp_addr, int)
+        yield (orig_addr, recomp_addr)

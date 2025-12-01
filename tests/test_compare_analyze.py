@@ -16,6 +16,30 @@ def fixture_db():
     return EntityDb()
 
 
+def get_ref_addr(db: EntityDb, img: ImageId, addr: int) -> int | None:
+    """Helper function to retrieve the ref address from the refs table.
+    It is not visible through the ReccmpEntity / ReccmpMatch API."""
+    for (ref,) in db.sql.execute(
+        "SELECT ref FROM refs WHERE img = ? AND addr = ?", (img, addr)
+    ):
+        return ref
+
+    return None
+
+
+def get_ref_displacement(
+    db: EntityDb, img: ImageId, addr: int
+) -> tuple[int, int] | None:
+    """Helper function to retrieve the displacement from the refs table.
+    It is not visible through the ReccmpEntity / ReccmpMatch API."""
+    for disp in db.sql.execute(
+        "SELECT disp0, disp1 FROM refs WHERE img = ? AND addr = ?", (img, addr)
+    ):
+        return disp
+
+    return None
+
+
 def test_create_analysis_strings(db: EntityDb):
     """Should add this ordinary string to the database."""
     binfile = Mock(spec=[])
@@ -79,9 +103,8 @@ def test_create_thunks(db: EntityDb):
 
     e = db.get_by_orig(100)
     assert e is not None
-    assert e.get("type") == EntityType.FUNCTION
+    assert e.get("type") == EntityType.THUNK
     assert e.get("size") == 5
-    assert e.get("ref_orig") == 200
 
 
 def test_create_thunks_do_not_replace(db: EntityDb):
@@ -142,11 +165,10 @@ def test_create_analysis_vtordisps(db: EntityDb, binfile: PEImage):
     # Using the first vtordisp as an example
     e = db.get_by_orig(0x1000FB50)
     assert e is not None
-    assert e.get("type") == EntityType.FUNCTION
-    assert e.get("ref_orig") == 0x1000FB60
-    assert e.get("vtordisp") is True
+    assert e.get("type") == EntityType.VTORDISP
     assert e.get("size") == 8
-    # Displacement values are not set on the entity (yet)
+    assert get_ref_addr(db, ImageId.ORIG, 0x1000FB50) == 0x1000FB60
+    assert get_ref_displacement(db, ImageId.ORIG, 0x1000FB50) == (-4, 0)
 
     # Should also set up the function entity (if it does not already exist)
     e = db.get_by_orig(0x1000FB60)

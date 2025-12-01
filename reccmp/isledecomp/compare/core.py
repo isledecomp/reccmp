@@ -36,7 +36,6 @@ from .analyze import (
     match_entry,
     match_exports,
     match_imports,
-    match_vtordisp,
 )
 from .ingest import (
     load_cvdump,
@@ -153,7 +152,6 @@ class Compare:
         match_ref(self._db, self.report)
         unique_names_for_overloaded_functions(self._db)
         name_thunks(self._db)
-        match_vtordisp(self._db, self.orig_bin, self.recomp_bin)
 
         match_strings(self._db, self.report)
 
@@ -313,7 +311,9 @@ class Compare:
                 is_stub=True,
             )
 
-        if match.entity_type == EntityType.FUNCTION:
+        # Thunks are matched using the destination of their JMP instruction.
+        # They always match 100%. There is nothing to compare.
+        if match.entity_type in (EntityType.FUNCTION, EntityType.VTORDISP):
             best_name = match.best_name()
             assert best_name is not None
 
@@ -367,7 +367,7 @@ class Compare:
         return self._db.get_all()
 
     def get_functions(self) -> Iterator[ReccmpMatch]:
-        return self._db.get_matches_by_type(EntityType.FUNCTION)
+        return self._db.get_functions()
 
     def get_vtables(self) -> Iterator[ReccmpMatch]:
         return self._db.get_matches_by_type(EntityType.VTABLE)
