@@ -110,7 +110,7 @@ def test_get_referencing_entity_matches(db: EntityDb):
         batch.set_ref(ImageId.RECOMP, 300, ref=100)
 
     # Can match these child entities that point to the same matched parent.
-    assert not list(get_referencing_entity_matches(db))
+    assert list(get_referencing_entity_matches(db)) == [(200, 300)]
 
     # Create the match as directed by the query.
     with db.batch() as batch:
