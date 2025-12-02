@@ -79,6 +79,7 @@ _entity_type_map = {
     # Other types:
     "global": EntityType.DATA,
     "string": EntityType.STRING,
+    "widechar": EntityType.WIDECHAR,
     "float": EntityType.FLOAT,
     "vtable": EntityType.VTABLE,
 }

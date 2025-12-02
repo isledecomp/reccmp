@@ -33,6 +33,7 @@ from .analyze import (
     create_analysis_strings,
     create_analysis_vtordisps,
     create_partial_floats,
+    create_partial_strings,
     match_entry,
     match_exports,
     match_imports,
@@ -145,6 +146,7 @@ class Compare:
             create_thunks(self._db, img_id, binfile)
             create_analysis_vtordisps(self._db, img_id, binfile)
             create_partial_floats(self._db, img_id, binfile)
+            create_partial_strings(self._db, img_id, binfile)
 
         match_imports(self._db, self.orig_bin, self.recomp_bin)
         match_exports(self._db, self.orig_bin, self.recomp_bin)

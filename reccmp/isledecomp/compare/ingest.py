@@ -6,13 +6,9 @@ import logging
 from pathlib import Path
 from typing import Iterable
 from reccmp.isledecomp.formats.exceptions import (
-    InvalidVirtualReadError,
     InvalidStringError,
 )
 from reccmp.isledecomp.formats.pe import PEImage
-from reccmp.isledecomp.cvdump.demangler import (
-    demangle_string_const,
-)
 from reccmp.isledecomp.cvdump import CvdumpTypesParser, CvdumpAnalysis
 from reccmp.isledecomp.parser import DecompCodebase
 from reccmp.isledecomp.dir import walk_source_dir
@@ -72,74 +68,28 @@ def load_cvdump(cvdump_analysis: CvdumpAnalysis, db: EntityDb, recomp_bin: PEIma
                     recomp_bin.get_section_extent_by_index(sym.section) - sym.offset
                 )
 
-            if sym.node_type == EntityType.STRING:
-                assert sym.decorated_name is not None
-                string_info = demangle_string_const(sym.decorated_name)
-                if string_info is None:
-                    logger.debug(
-                        "Could not demangle string symbol: %s", sym.decorated_name
-                    )
-                    continue
+            if sym.node_type in (EntityType.STRING, EntityType.WIDECHAR):
+                # Use the section contribution size if we have it. It is more accurate
+                # than the number embedded in the string symbol:
+                #
+                #     e.g. ??_C@_0BA@EFDM@MxObjectFactory?$AA@
+                #     reported length: 16 (includes null terminator)
+                #     c.f. ??_C@_03DPKJ@enz?$AA@
+                #     reported length: 3 (does NOT include terminator)
+                #
+                # Using a known length enables us to read strings that include null bytes.
+                # string_size is the total memory footprint, including null-terminator.
+                string_size = None
+                if sym.section_contribution is not None:
+                    string_size = sym.section_contribution
 
-                try:
-                    # Use the section contribution size if we have it. It is more accurate
-                    # than the number embedded in the string symbol:
-                    #
-                    #     e.g. ??_C@_0BA@EFDM@MxObjectFactory?$AA@
-                    #     reported length: 16 (includes null terminator)
-                    #     c.f. ??_C@_03DPKJ@enz?$AA@
-                    #     reported length: 3 (does NOT include terminator)
-                    #
-                    # Using a known length enables us to read strings that include null bytes.
-                    # string_size is the total memory footprint, including null-terminator.
-                    if string_info.is_utf16:
-                        if sym.section_contribution is not None:
-                            string_size = sym.section_contribution
-                            # Remove 2-byte null-terminator before decoding
-                            raw = recomp_bin.read(addr, string_size)[:-2]
-                        else:
-                            raw = recomp_bin.read_widechar(addr)
-                            string_size = len(raw) + 2
-
-                        decoded_string = raw.decode("utf-16-le")
-                    else:
-                        if sym.section_contribution is not None:
-                            string_size = sym.section_contribution
-                            # Remove 1-byte null-terminator before decoding
-                            raw = recomp_bin.read(addr, string_size)[:-1]
-                        else:
-                            raw = recomp_bin.read_string(addr)
-                            string_size = len(raw) + 1
-
-                        decoded_string = raw.decode("latin1")
-
-                except (InvalidVirtualReadError, InvalidStringError):
-                    logger.warning(
-                        "Could not read string from recomp 0x%x, wide=%s",
-                        addr,
-                        string_info.is_utf16,
-                    )
-
-                except UnicodeDecodeError:
-                    logger.warning(
-                        "Could not decode string: %s, wide=%s",
-                        raw,
-                        string_info.is_utf16,
-                    )
-                    continue
-
-                # Special handling for string entities.
-                # Make sure the entity size includes the string null-terminator.
                 batch.set_recomp(
                     addr,
                     type=sym.node_type,
-                    name=entity_name_from_string(
-                        decoded_string, wide=string_info.is_utf16
-                    ),
                     symbol=sym.decorated_name,
                     size=string_size,
-                    verified=True,
                 )
+
             elif sym.node_type == EntityType.FLOAT:
                 # Leave the entity name blank to start. (Don't use the symbol.)
                 # We will read the float's value from the binary.

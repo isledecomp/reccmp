@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from pathlib import PureWindowsPath
 from reccmp.isledecomp.types import EntityType
-from .demangler import demangle_string_const, demangle_vtable
+from .demangler import demangle_vtable
 from .parser import CvdumpParser, LineValue, NodeKey
 from .symbols import SymbolsEntry
 from .types import CvdumpKeyError, CvdumpIntegrityError, CvdumpTypesParser, TypeInfo
@@ -58,11 +58,11 @@ class CvdumpNode:
             self.node_type = EntityType.DATA
             self.friendly_name = demangle_vtable(self.decorated_name)
 
-        elif self.decorated_name.startswith("??_C@"):
+        elif self.decorated_name.startswith("??_C@_0"):
             self.node_type = EntityType.STRING
-            demangled = demangle_string_const(self.decorated_name)
-            assert demangled is not None
-            self.confirmed_size = demangled.len
+
+        elif self.decorated_name.startswith("??_C@_1"):
+            self.node_type = EntityType.WIDECHAR
 
         elif self.decorated_name.startswith("__real@4"):
             # Single precision float

@@ -18,6 +18,7 @@ class EntityType(IntEnum):
     LINE = 8
     THUNK = 9
     VTORDISP = 10
+    WIDECHAR = 11
 
 
 class ImageId(IntEnum):
