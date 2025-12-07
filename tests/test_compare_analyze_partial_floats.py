@@ -1,6 +1,7 @@
+from unittest.mock import Mock
 import pytest
 from reccmp.isledecomp.compare.analyze import (
-    create_partial_floats,
+    complete_partial_floats,
 )
 from reccmp.isledecomp.types import EntityType, ImageId
 from reccmp.isledecomp.compare.db import EntityDb
@@ -13,7 +14,7 @@ def fixture_db() -> EntityDb:
 
 
 @pytest.mark.parametrize("image_id", ImageId)
-def test_create_partial_floats(db: EntityDb, binfile: PEImage, image_id: ImageId):
+def test_complete_partial_floats(db: EntityDb, binfile: PEImage, image_id: ImageId):
     floats = (
         (0x100D5740, 4, "0.0"),
         (0x100D5748, 8, "0.0"),
@@ -25,7 +26,7 @@ def test_create_partial_floats(db: EntityDb, binfile: PEImage, image_id: ImageId
         for addr, size, _ in floats:
             batch.set(image_id, addr, type=EntityType.FLOAT, size=size)
 
-    create_partial_floats(db, image_id, binfile)
+    complete_partial_floats(db, image_id, binfile)
 
     for addr, _, value in floats:
         e = db.get(image_id, addr)
@@ -34,14 +35,14 @@ def test_create_partial_floats(db: EntityDb, binfile: PEImage, image_id: ImageId
 
 
 @pytest.mark.parametrize("image_id", ImageId)
-def test_create_partial_floats_do_not_overwrite(
+def test_complete_partial_floats_do_not_overwrite(
     db: EntityDb, binfile: PEImage, image_id: ImageId
 ):
     """If a float entity already has a name (for whatever reason) then leave it alone."""
     with db.batch() as batch:
         batch.set(image_id, 0x100D5740, type=EntityType.FLOAT, size=4, name="MyFloat")
 
-    create_partial_floats(db, image_id, binfile)
+    complete_partial_floats(db, image_id, binfile)
 
     entity = db.get(image_id, 0x100D5740)
     assert entity is not None
@@ -49,7 +50,7 @@ def test_create_partial_floats_do_not_overwrite(
 
 
 @pytest.mark.parametrize("image_id", ImageId)
-def test_create_partial_floats_invalid_addr(
+def test_complete_partial_floats_invalid_addr(
     db: EntityDb, binfile: PEImage, image_id: ImageId
 ):
     """Should catch any exceptions raised by reading an invalid address."""
@@ -59,11 +60,11 @@ def test_create_partial_floats_invalid_addr(
         # Cannot read 8 bytes from here
         batch.set(image_id, 0x100EF5FE, type=EntityType.FLOAT, size=8)
 
-    create_partial_floats(db, image_id, binfile)
+    complete_partial_floats(db, image_id, binfile)
 
 
 @pytest.mark.parametrize("image_id", ImageId)
-def test_create_partial_floats_invalid_size(
+def test_complete_partial_floats_invalid_size(
     db: EntityDb, binfile: PEImage, image_id: ImageId
 ):
     """Should ignore float entities with size that is not 4 or 8 bytes."""
@@ -71,7 +72,7 @@ def test_create_partial_floats_invalid_size(
         batch.set(image_id, 0x100D5740, type=EntityType.FLOAT, size=3)
         batch.set(image_id, 0x100D5748, type=EntityType.FLOAT)
 
-    create_partial_floats(db, image_id, binfile)
+    complete_partial_floats(db, image_id, binfile)
 
     for addr in (0x100D5740, 0x100D5748):
         entity = db.get(image_id, addr)
@@ -81,7 +82,7 @@ def test_create_partial_floats_invalid_size(
 
 
 @pytest.mark.parametrize("image_id", ImageId)
-def test_create_partial_floats_matched(
+def test_complete_partial_floats_matched(
     db: EntityDb, binfile: PEImage, image_id: ImageId
 ):
     """Will update matched entities by reading from whichever binary is provided."""
@@ -90,13 +91,47 @@ def test_create_partial_floats_matched(
         batch.match(0x100D5748, 0x100D5748)
 
     # Parametrized so we will use both address spaces as the key.
-    create_partial_floats(db, image_id, binfile)
+    complete_partial_floats(db, image_id, binfile)
 
     entity = db.get(image_id, 0x100D5748)
     assert entity is not None
     assert entity.get("name") == "0.0"
 
 
-def test_create_partial_floats_invalid_id(db: EntityDb, binfile: PEImage):
+def test_complete_partial_floats_invalid_id(db: EntityDb, binfile: PEImage):
     with pytest.raises(AssertionError):
-        create_partial_floats(db, 2, binfile)  # type: ignore
+        complete_partial_floats(db, 2, binfile)  # type: ignore
+
+
+@pytest.mark.parametrize("image_id", ImageId)
+def test_mocked_binfile_complete_partial_floats(db: EntityDb, image_id: ImageId):
+    """Should read data for a partially-initialized float entity.
+    Redundancy that does not rely on the sample PE image."""
+    binfile = Mock(spec=[])
+    binfile.read = Mock(return_value=b"\x00\x00\x00\x3f")
+
+    with db.batch() as batch:
+        batch.set(image_id, 100, type=EntityType.FLOAT, size=4)
+
+    complete_partial_floats(db, image_id, binfile)
+
+    e = db.get(image_id, 100)
+    assert e is not None
+    assert e.name == "0.5"
+
+
+@pytest.mark.parametrize("image_id", ImageId)
+def test_mocked_binfile_complete_partial_floats_double(db: EntityDb, image_id: ImageId):
+    """Should read data for a partially-initialized float entity (double precision).
+    Redundancy that does not rely on the sample PE image."""
+    binfile = Mock(spec=[])
+    binfile.read = Mock(return_value=b"\x18\x2d\x44\x54\xfb\x21\x09\x40")
+
+    with db.batch() as batch:
+        batch.set(image_id, 100, type=EntityType.FLOAT, size=8)
+
+    complete_partial_floats(db, image_id, binfile)
+
+    e = db.get(image_id, 100)
+    assert e is not None
+    assert e.name == "3.141592653589793"

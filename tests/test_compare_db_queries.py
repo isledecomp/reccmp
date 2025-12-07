@@ -5,6 +5,8 @@ from reccmp.isledecomp.compare.db import EntityDb
 from reccmp.isledecomp.compare.queries import (
     get_overloaded_functions,
     get_referencing_entity_matches,
+    get_floats_without_data,
+    get_strings_without_data,
 )
 from reccmp.isledecomp.types import EntityType, ImageId
 
@@ -137,3 +139,57 @@ def test_get_referencing_entity_matches_check_entity_type(db: EntityDb):
 
     # Should not return any matches: child entities have different type.
     assert not list(get_referencing_entity_matches(db))
+
+
+@pytest.mark.parametrize("image_id", ImageId)
+def test_get_floats_without_data(db: EntityDb, image_id: ImageId):
+    assert not list(get_floats_without_data(db, image_id))
+
+    with db.batch() as batch:
+        # No size.
+        batch.set(image_id, 100, type=EntityType.FLOAT)
+        # Already has data.
+        batch.set(image_id, 200, type=EntityType.FLOAT, size=4, name="0.5")
+        # Invalid size.
+        batch.set(image_id, 300, type=EntityType.FLOAT, size=10)
+
+    assert not list(get_floats_without_data(db, image_id))
+
+    with db.batch() as batch:
+        # Single and double-precision floats without data.
+        batch.set(image_id, 400, type=EntityType.FLOAT, size=4)
+        batch.set(image_id, 500, type=EntityType.FLOAT, size=8)
+
+    assert list(get_floats_without_data(db, image_id)) == [(400, False), (500, True)]
+
+
+@pytest.mark.parametrize("image_id", ImageId)
+def test_get_strings_without_data(db: EntityDb, image_id: ImageId):
+    assert not list(get_strings_without_data(db, image_id))
+
+    with db.batch() as batch:
+        # String entities with data already set.
+        batch.set(image_id, 100, type=EntityType.STRING, name='"Test"')
+        batch.set(image_id, 200, type=EntityType.WIDECHAR, name='L"Test"')
+
+    assert not list(get_strings_without_data(db, image_id))
+
+    with db.batch() as batch:
+        # Strings without a known size.
+        batch.set(image_id, 300, type=EntityType.STRING)
+        batch.set(image_id, 400, type=EntityType.WIDECHAR)
+
+    assert list(get_strings_without_data(db, image_id)) == [
+        (300, None, False),
+        (400, None, True),
+    ]
+
+    with db.batch() as batch:
+        # Set a size for the strings.
+        batch.set(image_id, 300, size=5)
+        batch.set(image_id, 400, size=10)
+
+    assert list(get_strings_without_data(db, image_id)) == [
+        (300, 5, False),
+        (400, 10, True),
+    ]

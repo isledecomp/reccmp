@@ -103,6 +103,28 @@ def get_floats_without_data(
             yield (recomp_addr, size == 8)
 
 
+def get_strings_without_data(
+    db: EntityDb, image_id: ImageId
+) -> Iterator[tuple[int, int | None, bool]]:
+    assert image_id in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
+
+    for orig_addr, recomp_addr, size, type_ in db.sql.execute(
+        """SELECT orig_addr, recomp_addr, json_extract(kvstore,'$.size') size, json_extract(kvstore,'$.type') type
+        FROM entities
+        WHERE type IN (?, ?)
+        -- TODO: #27. We are using the name field to store the data for now,
+        -- but we should put this data in its own table.
+        AND json_extract(kvstore,'$.name') IS NULL
+        """,
+        (EntityType.STRING, EntityType.WIDECHAR),
+    ):
+
+        if image_id == ImageId.ORIG and isinstance(orig_addr, int):
+            yield (orig_addr, size, type_ == EntityType.WIDECHAR)
+        elif image_id == ImageId.RECOMP and isinstance(recomp_addr, int):
+            yield (recomp_addr, size, type_ == EntityType.WIDECHAR)
+
+
 def get_referencing_entity_matches(db: EntityDb) -> Iterator[tuple[int, int]]:
     """Return new matches for child entities that refer to the same parent entity.
     These can be import thunks, incremental build thunks, or vtordisps.

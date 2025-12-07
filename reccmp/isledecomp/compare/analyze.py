@@ -8,6 +8,7 @@ from reccmp.isledecomp.formats.pe import PEImage
 from reccmp.isledecomp.formats.exceptions import (
     InvalidVirtualAddressError,
     InvalidVirtualReadError,
+    InvalidStringError,
 )
 from reccmp.isledecomp.types import EntityType, ImageId
 from reccmp.isledecomp.analysis import (
@@ -17,7 +18,7 @@ from reccmp.isledecomp.analysis import (
     is_likely_latin1,
 )
 from .db import EntityDb, entity_name_from_string
-from .queries import get_floats_without_data
+from .queries import get_floats_without_data, get_strings_without_data
 
 
 logger = logging.getLogger(__name__)
@@ -189,9 +190,9 @@ def create_analysis_vtordisps(db: EntityDb, img_id: ImageId, binfile: PEImage):
                 batch.set(img_id, vtor.func_addr, type=EntityType.FUNCTION)
 
 
-def create_partial_floats(db: EntityDb, image_id: ImageId, binfile: PEImage):
+def complete_partial_floats(db: EntityDb, image_id: ImageId, binfile: PEImage):
     """For each float entity without any data,
-    read the value the binary and set the entity name."""
+    read the value from the binary and set the entity name."""
     assert image_id in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
 
     with db.batch() as batch:
@@ -207,6 +208,61 @@ def create_partial_floats(db: EntityDb, image_id: ImageId, binfile: PEImage):
                 logger.error(
                     "Failed to read %s from %s at 0x%x",
                     ("double" if is_double else "float"),
+                    image_id.name.lower(),
+                    addr,
+                )
+
+
+def complete_partial_strings(db: EntityDb, image_id: ImageId, binfile: PEImage):
+    """For each string/widechar entity without any data,
+    read the value from the binary and set the entity name.
+    If the entity has no size, read until we hit a null-terminator."""
+    assert image_id in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
+
+    with db.batch() as batch:
+        for addr, string_size, is_widechar in get_strings_without_data(db, image_id):
+            try:
+                if is_widechar:
+                    if string_size is not None:
+                        # Remove 2-byte null-terminator before decoding
+                        raw = binfile.read(addr, string_size)[:-2]
+                    else:
+                        raw = binfile.read_widechar(addr)
+                        string_size = len(raw) + 2
+
+                    decoded_string = raw.decode("utf-16-le")
+                else:
+                    if string_size is not None:
+                        # Remove 1-byte null-terminator before decoding
+                        raw = binfile.read(addr, string_size)[:-1]
+                    else:
+                        raw = binfile.read_string(addr)
+                        string_size = len(raw) + 1
+
+                    decoded_string = raw.decode("latin1")
+
+                batch.set(
+                    image_id,
+                    addr,
+                    name=entity_name_from_string(decoded_string, is_widechar),
+                    size=string_size,
+                )
+
+            except (
+                InvalidVirtualReadError,
+                InvalidStringError,
+                InvalidVirtualAddressError,
+            ):
+                logger.error(
+                    "Failed to read %s from %s at 0x%x",
+                    ("widechar" if is_widechar else "string"),
+                    image_id.name.lower(),
+                    addr,
+                )
+            except UnicodeDecodeError:
+                logger.error(
+                    "Could not decode %s from %s at 0x%x",
+                    ("widechar" if is_widechar else "string"),
                     image_id.name.lower(),
                     addr,
                 )

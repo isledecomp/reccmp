@@ -3,11 +3,17 @@ import pytest
 from reccmp.isledecomp.compare.db import EntityDb
 from reccmp.isledecomp.formats import PEImage
 from reccmp.isledecomp.types import EntityType, ImageId
+from reccmp.isledecomp.formats.exceptions import (
+    InvalidVirtualAddressError,
+    InvalidVirtualReadError,
+    InvalidStringError,
+)
 from reccmp.isledecomp.compare.analyze import (
     create_analysis_floats,
     create_analysis_strings,
     create_thunks,
     create_analysis_vtordisps,
+    complete_partial_strings,
 )
 
 
@@ -190,3 +196,105 @@ def test_create_analysis_vtordisps_no_overwrite(db: EntityDb, binfile: PEImage):
     e = db.get_by_orig(0x1000FB60)
     assert e is not None
     assert e.get("type") != EntityType.FUNCTION
+
+
+def test_complete_partial_strings(db: EntityDb):
+    """Should read data for a partially-initialized string entity."""
+    binfile = Mock(spec=[])
+    binfile.read_string = Mock(return_value=b"Hello")
+
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, type=EntityType.STRING)
+
+    complete_partial_strings(db, ImageId.ORIG, binfile)
+
+    # Entity size set according to string length plus null-terminator.
+    e = db.get_by_orig(100)
+    assert e is not None
+    assert e.get("size") == 6
+    assert e.name == '"Hello"'
+
+    # Do not report a failed match if this string does not exist in both binaries.
+    assert not e.get("verified")
+
+
+def test_complete_partial_strings_with_nulls(db: EntityDb):
+    """Should read a string with nulls if we provide the size."""
+    binfile = Mock(spec=[])
+    binfile.read = Mock(return_value=b"\x00test\x00")
+
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, type=EntityType.STRING, size=6)
+
+    complete_partial_strings(db, ImageId.ORIG, binfile)
+
+    e = db.get_by_orig(100)
+    assert e is not None
+    assert e.name == '"\\x00test"'
+
+
+def test_complete_partial_strings_widechar(db: EntityDb):
+    """Should read data for a partially-initialized widechar entity."""
+    binfile = Mock(spec=[])
+    binfile.read_widechar = Mock(return_value="Hello".encode("utf-16-le"))
+
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, type=EntityType.WIDECHAR)
+
+    complete_partial_strings(db, ImageId.ORIG, binfile)
+
+    # Entity size set according to string length plus null-terminator.
+    e = db.get_by_orig(100)
+    assert e is not None
+    assert e.get("size") == 12
+    assert e.name == 'L"Hello"'
+
+
+PARTIAL_STRING_EXCEPTIONS = (
+    InvalidVirtualAddressError,
+    InvalidVirtualReadError,
+    InvalidStringError,
+)
+
+
+@pytest.mark.parametrize("ex_type", PARTIAL_STRING_EXCEPTIONS)
+def test_complete_partial_strings_exceptions(db: EntityDb, ex_type: Exception):
+    """Should handle various exceptions while reading string data."""
+
+    def exception(*_):
+        raise ex_type
+
+    binfile = Mock(spec=[])
+    binfile.read_string = Mock(side_effect=exception)
+
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, type=EntityType.STRING)
+
+    complete_partial_strings(db, ImageId.ORIG, binfile)
+
+    # Should not modify the entity.
+    e = db.get_by_orig(100)
+    assert e is not None
+    assert e.name is None
+
+
+def test_complete_partial_strings_unicode_exception(db: EntityDb):
+    """Should handle a UnicodeDecodeError."""
+
+    # This value cannot be decoded as UTF-16LE.
+    value = b"\x00\xd8\x8c"
+    with pytest.raises(UnicodeDecodeError):
+        value.decode("utf-16-le")
+
+    binfile = Mock(spec=[])
+    binfile.read_widechar = Mock(return_value=value)
+
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, type=EntityType.WIDECHAR)
+
+    complete_partial_strings(db, ImageId.ORIG, binfile)
+
+    # Should not modify the entity.
+    e = db.get_by_orig(100)
+    assert e is not None
+    assert e.name is None

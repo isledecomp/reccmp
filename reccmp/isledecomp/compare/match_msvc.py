@@ -319,8 +319,8 @@ def match_strings(db: EntityDb, report: ReccmpReportProtocol = reccmp_report_nop
     for recomp_addr, text in db.sql.execute(
         """SELECT recomp_addr, json_extract(kvstore, '$.name') as name
         from recomp_unmatched where name is not null
-        and json_extract(kvstore,'$.type') = ?""",
-        (EntityType.STRING,),
+        and json_extract(kvstore,'$.type') IN (?, ?)""",
+        (EntityType.STRING, EntityType.WIDECHAR),
     ):
         string_index.add(text, recomp_addr)
 
@@ -329,8 +329,8 @@ def match_strings(db: EntityDb, report: ReccmpReportProtocol = reccmp_report_nop
             """SELECT orig_addr, json_extract(kvstore, '$.name') as name,
             coalesce(json_extract(kvstore,'$.verified'), 0)
             from orig_unmatched where name is not null
-            and json_extract(kvstore,'$.type') = ?""",
-            (EntityType.STRING,),
+            and json_extract(kvstore,'$.type') IN (?, ?)""",
+            (EntityType.STRING, EntityType.WIDECHAR),
         ):
             if text in string_index:
                 recomp_addr = string_index.pop(text)

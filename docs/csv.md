@@ -55,6 +55,7 @@ The `"name"` field is the name for the entity, as you would expect. `"size"` is 
 - `function, template, synthetic, library, stub` for function entities
 - `global`
 - `string`
+- `widechar`
 - `float`
 - `vtable`
 
@@ -126,6 +127,6 @@ These fields can appear in the CSV file:
 | `address` | Address of the entity. Required. | Hex number with or without `0x` prefix |
 | `name` | Name for the entity (e.g. the fully-qualified function name) | text |
 | `symbol` | Linker name | text |
-| `type` | Entity type | one of: `function, template, synthetic, library, stub, global, string, float, vtable` |
+| `type` | Entity type | one of: `function, template, synthetic, library, stub, global, string, widechar, float, vtable` |
 
 All other fields are ignored.

@@ -191,11 +191,11 @@ def test_string_without_section_contrib(binfile: PEImage):
     assert entity.get("type") == EntityType.STRING
     assert entity.get("symbol") == "??_C@_08LIDF@December?$AA@"
 
-    # Name set during string decode
-    assert entity.get("name") == '"December"'
+    # Name to be set later.
+    assert entity.get("name") is None
 
-    # Size includes null-terminator.
-    assert entity.get("size") == 9
+    # Size will be determined after reading from the binary.
+    assert entity.get("size") is None
 
 
 def test_string_with_section_contrib(binfile: PEImage):
@@ -221,8 +221,8 @@ def test_string_with_section_contrib(binfile: PEImage):
     assert entity.get("type") == EntityType.STRING
     assert entity.get("symbol") == "??_C@_08LIDF@December?$AA@"
 
-    # Name set during string decode
-    assert entity.get("name") == '"December"'
+    # Name to be set later.
+    assert entity.get("name") is None
 
     # Size includes null-terminator
     assert entity.get("size") == 9
@@ -243,17 +243,17 @@ def test_utf16_without_section_contrib(binfile: PEImage):
 
     entity = db.get_by_recomp(0x100DAAA0)
     assert entity is not None
-    assert entity.get("type") == EntityType.STRING
+    assert entity.get("type") == EntityType.WIDECHAR
     assert (
         entity.get("symbol")
         == "??_C@_1O@POHA@?$AA?$CI?$AAn?$AAu?$AAl?$AAl?$AA?$CJ?$AA?$AA?$AA?$AA?$AA?$AH?$AA?$AA?$AA?$AA?$AA?$AA?$AA?$9A?$AE?$;I@"
     )
 
-    # Name set during string decode
-    assert entity.get("name") == 'L"(null)"'
+    # Name to be set later.
+    assert entity.get("name") is None
 
-    # Size includes two-byte null-terminator
-    assert entity.get("size") == 14
+    # Size will be determined after reading from the binary.
+    assert entity.get("size") is None
 
 
 def test_utf16_with_section_contrib(binfile: PEImage):
@@ -274,14 +274,14 @@ def test_utf16_with_section_contrib(binfile: PEImage):
 
     entity = db.get_by_recomp(0x100DAAA0)
     assert entity is not None
-    assert entity.get("type") == EntityType.STRING
+    assert entity.get("type") == EntityType.WIDECHAR
     assert (
         entity.get("symbol")
         == "??_C@_1O@POHA@?$AA?$CI?$AAn?$AAu?$AAl?$AAl?$AA?$CJ?$AA?$AA?$AA?$AA?$AA?$AH?$AA?$AA?$AA?$AA?$AA?$AA?$AA?$9A?$AE?$;I@"
     )
 
-    # Name set during string decode
-    assert entity.get("name") == 'L"(null)"'
+    # Name to be set later.
+    assert entity.get("name") is None
 
     # Size includes two-byte null-terminator
     assert entity.get("size") == 14
