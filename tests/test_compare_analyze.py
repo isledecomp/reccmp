@@ -13,7 +13,6 @@ from reccmp.isledecomp.compare.analyze import (
     create_analysis_strings,
     create_thunks,
     create_analysis_vtordisps,
-    complete_partial_floats,
     complete_partial_strings,
 )
 
@@ -197,36 +196,6 @@ def test_create_analysis_vtordisps_no_overwrite(db: EntityDb, binfile: PEImage):
     e = db.get_by_orig(0x1000FB60)
     assert e is not None
     assert e.get("type") != EntityType.FUNCTION
-
-
-def test_complete_partial_floats(db: EntityDb):
-    """Should read data for a partially-initialized float entity."""
-    binfile = Mock(spec=[])
-    binfile.read = Mock(return_value=b"\x00\x00\x00\x3f")
-
-    with db.batch() as batch:
-        batch.set(ImageId.ORIG, 100, type=EntityType.FLOAT, size=4)
-
-    complete_partial_floats(db, ImageId.ORIG, binfile)
-
-    e = db.get_by_orig(100)
-    assert e is not None
-    assert e.name == "0.5"
-
-
-def test_complete_partial_floats_double(db: EntityDb):
-    """Should read data for a partially-initialized float entity (double precision)."""
-    binfile = Mock(spec=[])
-    binfile.read = Mock(return_value=b"\x18\x2d\x44\x54\xfb\x21\x09\x40")
-
-    with db.batch() as batch:
-        batch.set(ImageId.ORIG, 100, type=EntityType.FLOAT, size=8)
-
-    complete_partial_floats(db, ImageId.ORIG, binfile)
-
-    e = db.get_by_orig(100)
-    assert e is not None
-    assert e.name == "3.141592653589793"
 
 
 def test_complete_partial_strings(db: EntityDb):

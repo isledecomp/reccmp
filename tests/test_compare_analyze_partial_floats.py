@@ -1,3 +1,4 @@
+from unittest.mock import Mock
 import pytest
 from reccmp.isledecomp.compare.analyze import (
     complete_partial_floats,
@@ -100,3 +101,37 @@ def test_complete_partial_floats_matched(
 def test_complete_partial_floats_invalid_id(db: EntityDb, binfile: PEImage):
     with pytest.raises(AssertionError):
         complete_partial_floats(db, 2, binfile)  # type: ignore
+
+
+@pytest.mark.parametrize("image_id", ImageId)
+def test_mocked_binfile_complete_partial_floats(db: EntityDb, image_id: ImageId):
+    """Should read data for a partially-initialized float entity.
+    Redundancy that does not rely on the sample PE image."""
+    binfile = Mock(spec=[])
+    binfile.read = Mock(return_value=b"\x00\x00\x00\x3f")
+
+    with db.batch() as batch:
+        batch.set(image_id, 100, type=EntityType.FLOAT, size=4)
+
+    complete_partial_floats(db, image_id, binfile)
+
+    e = db.get(image_id, 100)
+    assert e is not None
+    assert e.name == "0.5"
+
+
+@pytest.mark.parametrize("image_id", ImageId)
+def test_mocked_binfile_complete_partial_floats_double(db: EntityDb, image_id: ImageId):
+    """Should read data for a partially-initialized float entity (double precision).
+    Redundancy that does not rely on the sample PE image."""
+    binfile = Mock(spec=[])
+    binfile.read = Mock(return_value=b"\x18\x2d\x44\x54\xfb\x21\x09\x40")
+
+    with db.batch() as batch:
+        batch.set(image_id, 100, type=EntityType.FLOAT, size=8)
+
+    complete_partial_floats(db, image_id, binfile)
+
+    e = db.get(image_id, 100)
+    assert e is not None
+    assert e.name == "3.141592653589793"
