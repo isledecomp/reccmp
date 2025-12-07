@@ -13,8 +13,8 @@ from reccmp.isledecomp.compare.analyze import (
     create_analysis_strings,
     create_thunks,
     create_analysis_vtordisps,
-    create_partial_floats,
-    create_partial_strings,
+    complete_partial_floats,
+    complete_partial_strings,
 )
 
 
@@ -199,7 +199,7 @@ def test_create_analysis_vtordisps_no_overwrite(db: EntityDb, binfile: PEImage):
     assert e.get("type") != EntityType.FUNCTION
 
 
-def test_create_partial_floats(db: EntityDb):
+def test_complete_partial_floats(db: EntityDb):
     """Should read data for a partially-initialized float entity."""
     binfile = Mock(spec=[])
     binfile.read = Mock(return_value=b"\x00\x00\x00\x3f")
@@ -207,14 +207,14 @@ def test_create_partial_floats(db: EntityDb):
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 100, type=EntityType.FLOAT, size=4)
 
-    create_partial_floats(db, ImageId.ORIG, binfile)
+    complete_partial_floats(db, ImageId.ORIG, binfile)
 
     e = db.get_by_orig(100)
     assert e is not None
     assert e.name == "0.5"
 
 
-def test_create_partial_floats_double(db: EntityDb):
+def test_complete_partial_floats_double(db: EntityDb):
     """Should read data for a partially-initialized float entity (double precision)."""
     binfile = Mock(spec=[])
     binfile.read = Mock(return_value=b"\x18\x2d\x44\x54\xfb\x21\x09\x40")
@@ -222,14 +222,14 @@ def test_create_partial_floats_double(db: EntityDb):
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 100, type=EntityType.FLOAT, size=8)
 
-    create_partial_floats(db, ImageId.ORIG, binfile)
+    complete_partial_floats(db, ImageId.ORIG, binfile)
 
     e = db.get_by_orig(100)
     assert e is not None
     assert e.name == "3.141592653589793"
 
 
-def test_create_partial_strings(db: EntityDb):
+def test_complete_partial_strings(db: EntityDb):
     """Should read data for a partially-initialized string entity."""
     binfile = Mock(spec=[])
     binfile.read_string = Mock(return_value=b"Hello")
@@ -237,7 +237,7 @@ def test_create_partial_strings(db: EntityDb):
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 100, type=EntityType.STRING)
 
-    create_partial_strings(db, ImageId.ORIG, binfile)
+    complete_partial_strings(db, ImageId.ORIG, binfile)
 
     # Entity size set according to string length plus null-terminator.
     e = db.get_by_orig(100)
@@ -249,7 +249,7 @@ def test_create_partial_strings(db: EntityDb):
     assert not e.get("verified")
 
 
-def test_create_partial_strings_with_nulls(db: EntityDb):
+def test_complete_partial_strings_with_nulls(db: EntityDb):
     """Should read a string with nulls if we provide the size."""
     binfile = Mock(spec=[])
     binfile.read = Mock(return_value=b"\x00test\x00")
@@ -257,14 +257,14 @@ def test_create_partial_strings_with_nulls(db: EntityDb):
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 100, type=EntityType.STRING, size=6)
 
-    create_partial_strings(db, ImageId.ORIG, binfile)
+    complete_partial_strings(db, ImageId.ORIG, binfile)
 
     e = db.get_by_orig(100)
     assert e is not None
     assert e.name == '"\\x00test"'
 
 
-def test_create_partial_strings_widechar(db: EntityDb):
+def test_complete_partial_strings_widechar(db: EntityDb):
     """Should read data for a partially-initialized widechar entity."""
     binfile = Mock(spec=[])
     binfile.read_widechar = Mock(return_value="Hello".encode("utf-16-le"))
@@ -272,7 +272,7 @@ def test_create_partial_strings_widechar(db: EntityDb):
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 100, type=EntityType.WIDECHAR)
 
-    create_partial_strings(db, ImageId.ORIG, binfile)
+    complete_partial_strings(db, ImageId.ORIG, binfile)
 
     # Entity size set according to string length plus null-terminator.
     e = db.get_by_orig(100)
@@ -289,7 +289,7 @@ PARTIAL_STRING_EXCEPTIONS = (
 
 
 @pytest.mark.parametrize("ex_type", PARTIAL_STRING_EXCEPTIONS)
-def test_create_partial_strings_exceptions(db: EntityDb, ex_type: Exception):
+def test_complete_partial_strings_exceptions(db: EntityDb, ex_type: Exception):
     """Should handle various exceptions while reading string data."""
 
     def exception(*_):
@@ -301,7 +301,7 @@ def test_create_partial_strings_exceptions(db: EntityDb, ex_type: Exception):
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 100, type=EntityType.STRING)
 
-    create_partial_strings(db, ImageId.ORIG, binfile)
+    complete_partial_strings(db, ImageId.ORIG, binfile)
 
     # Should not modify the entity.
     e = db.get_by_orig(100)
@@ -309,7 +309,7 @@ def test_create_partial_strings_exceptions(db: EntityDb, ex_type: Exception):
     assert e.name is None
 
 
-def test_create_partial_strings_unicode_exception(db: EntityDb):
+def test_complete_partial_strings_unicode_exception(db: EntityDb):
     """Should handle a UnicodeDecodeError."""
 
     # This value cannot be decoded as UTF-16LE.
@@ -323,7 +323,7 @@ def test_create_partial_strings_unicode_exception(db: EntityDb):
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 100, type=EntityType.WIDECHAR)
 
-    create_partial_strings(db, ImageId.ORIG, binfile)
+    complete_partial_strings(db, ImageId.ORIG, binfile)
 
     # Should not modify the entity.
     e = db.get_by_orig(100)

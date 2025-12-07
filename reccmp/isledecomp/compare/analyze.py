@@ -190,7 +190,7 @@ def create_analysis_vtordisps(db: EntityDb, img_id: ImageId, binfile: PEImage):
                 batch.set(img_id, vtor.func_addr, type=EntityType.FUNCTION)
 
 
-def create_partial_floats(db: EntityDb, image_id: ImageId, binfile: PEImage):
+def complete_partial_floats(db: EntityDb, image_id: ImageId, binfile: PEImage):
     """For each float entity without any data,
     read the value the binary and set the entity name."""
     assert image_id in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
@@ -213,7 +213,7 @@ def create_partial_floats(db: EntityDb, image_id: ImageId, binfile: PEImage):
                 )
 
 
-def create_partial_strings(db: EntityDb, image_id: ImageId, binfile: PEImage):
+def complete_partial_strings(db: EntityDb, image_id: ImageId, binfile: PEImage):
     """For each string/widechar entity without any data,
     read the value the binary and set the entity name.
     If the entity has no size, read until we hit a null-terminator."""
