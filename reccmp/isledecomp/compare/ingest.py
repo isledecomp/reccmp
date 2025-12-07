@@ -73,21 +73,22 @@ def load_cvdump(cvdump_analysis: CvdumpAnalysis, db: EntityDb, recomp_bin: PEIma
                 # than the number embedded in the string symbol:
                 #
                 #     e.g. ??_C@_0BA@EFDM@MxObjectFactory?$AA@
+                #     text: "MxObjectFactory"
                 #     reported length: 16 (includes null terminator)
+                #
                 #     c.f. ??_C@_03DPKJ@enz?$AA@
+                #     text: "enz"
                 #     reported length: 3 (does NOT include terminator)
                 #
                 # Using a known length enables us to read strings that include null bytes.
-                # string_size is the total memory footprint, including null-terminator.
-                string_size = None
-                if sym.section_contribution is not None:
-                    string_size = sym.section_contribution
+                # If section contribution is null, and no other data source sets the size,
+                # the string reading function will read until it hits the null-terminator.
 
                 batch.set_recomp(
                     addr,
                     type=sym.node_type,
                     symbol=sym.decorated_name,
-                    size=string_size,
+                    size=sym.section_contribution,
                 )
 
             elif sym.node_type == EntityType.FLOAT:
