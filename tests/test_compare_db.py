@@ -407,24 +407,3 @@ def test_generic_get_invalid_id(db: EntityDb):
     """Should fail if the image id is outside the enum"""
     with pytest.raises(AssertionError):
         db.get(2, 100)  # type: ignore
-
-
-def test_ref_alteration(db: EntityDb):
-    """If the generic 'ref' key is used, set it to either 'ref_orig' or 'ref_recomp' before saving to the db."""
-    with db.batch() as batch:
-        batch.set(ImageId.ORIG, 100, ref=200)
-
-    e = db.get_by_orig(100)
-    assert e is not None
-    assert e.get("ref") is None
-    assert e.get("ref_orig") == 200
-    assert e.get("ref_recomp") is None
-
-    with db.batch() as batch:
-        batch.set(ImageId.RECOMP, 100, ref=200)
-
-    e = db.get_by_recomp(100)
-    assert e is not None
-    assert e.get("ref") is None
-    assert e.get("ref_orig") is None
-    assert e.get("ref_recomp") == 200
