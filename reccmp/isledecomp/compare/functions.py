@@ -19,7 +19,7 @@ from reccmp.isledecomp.formats.exceptions import (
     InvalidVirtualAddressError,
     InvalidVirtualReadError,
 )
-from reccmp.isledecomp.formats.pe import PEImage
+from reccmp.isledecomp.formats import Image, PEImage
 
 
 class FunctionCompareResult(NamedTuple):
@@ -34,10 +34,17 @@ def timestamp_string() -> str:
     return datetime.now().strftime("%Y%m%d-%H%M%S")
 
 
+def has_asserts(image: Image) -> bool:
+    if isinstance(image, PEImage):
+        return image.is_debug
+
+    return False
+
+
 def create_valid_addr_lookup(
     db_getter: AddrLookupProtocol,
     is_recomp: bool,
-    bin_file: PEImage,
+    bin_file: Image,
 ) -> Callable[[int], bool]:
     """
     Function generator for a lookup whether an address from a call is valid
@@ -65,7 +72,7 @@ def create_valid_addr_lookup(
     return lookup
 
 
-def create_bin_lookup(bin_file: PEImage) -> Callable[[int], int | None]:
+def create_bin_lookup(bin_file: Image) -> Callable[[int], int | None]:
     """Function generator to read a pointer from the bin file"""
 
     def lookup(addr: int) -> int | None:
@@ -83,8 +90,8 @@ class FunctionComparator:
     # pylint: disable=too-many-instance-attributes
     db: EntityDb
     lines_db: LinesDb
-    orig_bin: PEImage
-    recomp_bin: PEImage
+    orig_bin: Image
+    recomp_bin: Image
     report: ReccmpReportProtocol
     runid: str = timestamp_string()
     debug: bool = False
@@ -171,8 +178,10 @@ class FunctionComparator:
             self._dump_asm(orig_combined, recomp_combined)
 
         # Check for assert calls only if we expect to find them
-        if self.orig_bin.is_debug or self.recomp_bin.is_debug:
+        if has_asserts(self.orig_bin):
             assert_fixup(orig_combined)
+
+        if has_asserts(self.recomp_bin):
             assert_fixup(recomp_combined)
 
         line_annotations = self._collect_line_annotations(recomp_combined)
