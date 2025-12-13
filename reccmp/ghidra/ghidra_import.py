@@ -52,7 +52,7 @@ def main():
         logger.info("Program opened. Starting reccmp import...")
 
         program_hash = program.getExecutableSHA256()
-        if target.sha256 != program_hash:
+        if target.ghidra_config.require_hash_match and target.sha256 != program_hash:
             logger.critical(
                 "The program hashes mismatch (Ghidra: '%s', reccmp project: '%s')",
                 program_hash,
