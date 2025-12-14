@@ -349,7 +349,7 @@ def test_create_import_thunks(db: EntityDb):
     assert get_ref_addr(db, ImageId.ORIG, 0x2000) == 0x1000
 
 
-def test_create_import_thunks_PE_only(db: EntityDb):
+def test_create_import_thunks_pe_only(db: EntityDb):
     """At the moment, we have seen import thunks on PE images only.
     create_import_thunks should be a no-op if the image is not PE."""
     pe_image = Mock(spec=PEImage)
