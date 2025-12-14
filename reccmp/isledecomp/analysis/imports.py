@@ -14,8 +14,6 @@ class ImportThunk(NamedTuple):
     # The size of the JMP instruction for the thunk
     # (i.e. the size of the thunk function)
     size: int
-    dll_name: str
-    func_name: str
 
 
 def find_absolute_jumps_in_bytes(
@@ -36,7 +34,7 @@ def find_import_thunks(image: PEImage) -> Iterator[ImportThunk]:
     The functions given may or may not be thunks. For example: MSVC  _getSystemCP function
     """
 
-    import_addrs = {i[2]: i for i in image.get_imports()}
+    import_addrs = set(imp.addr for imp in image.imports)
     if not import_addrs:
         return
 
@@ -46,6 +44,4 @@ def find_import_thunks(image: PEImage) -> Iterator[ImportThunk]:
                 continue
 
             if jmp_dest in import_addrs:
-                (dll_name, func_name, _) = import_addrs[jmp_dest]
-
-                yield ImportThunk(addr, jmp_dest, 6, dll_name, func_name)
+                yield ImportThunk(addr, jmp_dest, 6)

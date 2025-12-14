@@ -4,7 +4,7 @@ These functions update the entity database based on analysis of the binary files
 
 import logging
 import struct
-from reccmp.isledecomp.formats.pe import PEImage
+from reccmp.isledecomp.formats import Image, PEImage
 from reccmp.isledecomp.formats.exceptions import (
     InvalidVirtualAddressError,
     InvalidVirtualReadError,
@@ -68,58 +68,37 @@ def create_analysis_floats(db: EntityDb, img_id: ImageId, binfile: PEImage):
                 )
 
 
-def match_imports(db: EntityDb, orig_bin: PEImage, recomp_bin: PEImage):
-    """We can match imported functions based on the DLL name and
-    function symbol name."""
-    orig_byaddr = {addr: (dll.upper(), name) for (dll, name, addr) in orig_bin.imports}
-    recomp_byname = {
-        (dll.upper(), name): addr for (dll, name, addr) in recomp_bin.imports
-    }
-
+def create_imports(db: EntityDb, image_id: ImageId, binfile: Image):
     with db.batch() as batch:
-        for dll, name, addr in orig_bin.imports:
-            import_name = f"{dll}::{name}"
-            batch.set_orig(
-                addr,
+        for imp in binfile.imports:
+            if imp.name:
+                import_name = f"{imp.module}::{imp.name}"
+            else:
+                import_name = f"{imp.module}::Ordinal_{imp.ordinal}"
+
+            batch.set(
+                image_id,
+                imp.addr,
                 name=import_name,
                 size=4,
                 type=EntityType.IMPORT,
             )
 
-        for dll, name, addr in recomp_bin.imports:
-            import_name = f"{dll}::{name}"
-            batch.set_recomp(
-                addr,
-                name=import_name,
-                size=4,
-                type=EntityType.IMPORT,
-            )
 
-        # Combine these two dictionaries. We don't care about imports from recomp
-        # not found in orig because:
-        # 1. They shouldn't be there
-        # 2. They are already identified via cvdump
-        for orig_addr, pair in orig_byaddr.items():
-            recomp_addr = recomp_byname.get(pair, None)
-            if recomp_addr is not None:
-                batch.match(orig_addr, recomp_addr)
+def create_import_thunks(db: EntityDb, image_id: ImageId, binfile: Image):
+    if not isinstance(binfile, PEImage):
+        return
 
     with db.batch() as batch:
-        for image_id, binfile in (
-            (ImageId.ORIG, orig_bin),
-            (ImageId.RECOMP, recomp_bin),
-        ):
-            for thunk in find_import_thunks(binfile):
-                name = f"{thunk.dll_name}::{thunk.func_name}"
-                batch.set(
-                    image_id,
-                    thunk.addr,
-                    name=name,
-                    type=EntityType.FUNCTION,
-                    skip=True,
-                    size=thunk.size,
-                )
-                batch.set_ref(image_id, thunk.addr, ref=thunk.import_addr)
+        for thunk in find_import_thunks(binfile):
+            batch.set(
+                image_id,
+                thunk.addr,
+                type=EntityType.IMPORT_THUNK,
+                skip=True,
+                size=thunk.size,
+            )
+            batch.set_ref(image_id, thunk.addr, ref=thunk.import_addr)
 
 
 def create_thunks(db: EntityDb, img_id: ImageId, binfile: PEImage):

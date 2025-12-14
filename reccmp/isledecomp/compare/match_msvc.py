@@ -416,3 +416,32 @@ def match_ref(
             -1,
             "Reached maximum iteration depth while matching referencing entities.",
         )
+
+
+def match_imports(db: EntityDb):
+    orig_query = """
+        SELECT orig_addr, json_extract(kvstore, '$.name') name
+        FROM orig_unmatched
+        WHERE json_extract(kvstore, '$.type') = ?
+        AND name IS NOT NULL
+    """
+
+    recomp_query = """
+        SELECT recomp_addr, json_extract(kvstore, '$.name') name
+        FROM recomp_unmatched
+        WHERE json_extract(kvstore, '$.type') = ?
+        AND name IS NOT NULL
+    """
+
+    # n.b. Case insensitive match here to preserve previous behavior.
+    # The final entity will use the name from the recomp side.
+    orig_imports = {
+        name.upper(): addr
+        for addr, name in db.sql.execute(orig_query, (EntityType.IMPORT,))
+    }
+
+    with db.batch() as batch:
+        for recomp_addr, name in db.sql.execute(recomp_query, (EntityType.IMPORT,)):
+            orig_addr = orig_imports.get(name.upper())
+            if orig_addr is not None:
+                batch.match(orig_addr, recomp_addr)

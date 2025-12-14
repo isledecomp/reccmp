@@ -22,11 +22,14 @@ from .match_msvc import (
     match_variables,
     match_strings,
     match_ref,
+    match_imports,
 )
 from .db import EntityDb, ReccmpEntity, ReccmpMatch
 from .diff import DiffReport, combined_diff
 from .lines import LinesDb
 from .analyze import (
+    create_imports,
+    create_import_thunks,
     create_thunks,
     create_analysis_floats,
     create_analysis_strings,
@@ -35,7 +38,6 @@ from .analyze import (
     complete_partial_strings,
     match_entry,
     match_exports,
-    match_imports,
 )
 from .ingest import (
     load_cvdump,
@@ -145,6 +147,8 @@ class Compare:
             (ImageId.ORIG, self.orig_bin),
             (ImageId.RECOMP, self.recomp_bin),
         ):
+            create_imports(self._db, img_id, binfile)
+            create_import_thunks(self._db, img_id, binfile)
             create_analysis_floats(self._db, img_id, binfile)
             create_analysis_strings(self._db, img_id, binfile)
             create_thunks(self._db, img_id, binfile)
@@ -152,7 +156,7 @@ class Compare:
             complete_partial_floats(self._db, img_id, binfile)
             complete_partial_strings(self._db, img_id, binfile)
 
-        match_imports(self._db, self.orig_bin, self.recomp_bin)
+        match_imports(self._db)
         match_exports(self._db, self.orig_bin, self.recomp_bin)
         check_vtables(self._db, self.orig_bin)
         match_ref(self._db, self.report)

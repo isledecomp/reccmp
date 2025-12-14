@@ -52,6 +52,56 @@ def test_name_thunks_vtordisp(db: EntityDb, image_id: ImageId):
 
 
 @pytest.mark.parametrize("image_id", ImageId)
+def test_name_thunks_imports(db: EntityDb, image_id: ImageId):
+    """If the thunk is a reference to an import descriptor, copy the name only.
+    Do not apply a prefix or suffix."""
+    with db.batch() as batch:
+        batch.set(image_id, 100, type=EntityType.IMPORT, name="Hello")
+        batch.set(image_id, 200, type=EntityType.IMPORT_THUNK)
+        batch.set_ref(image_id, 200, ref=100)
+
+    name_thunks(db)
+
+    e = db.get(image_id, 200)
+    assert e is not None
+    assert e.get("name") == "Hello"
+
+
+@pytest.mark.parametrize("image_id", ImageId)
+def test_name_thunks_using_type(db: EntityDb, image_id: ImageId):
+    """The type of the referencing entity determines its name format."""
+    with db.batch() as batch:
+        # Parent entity
+        batch.set(image_id, 100, type=EntityType.FUNCTION, name="Hello")
+
+        # Thunk with a displacement value
+        batch.set(image_id, 200, type=EntityType.THUNK)
+        batch.set_ref(image_id, 200, ref=100, displacement=(-4, 0))
+
+        # Vtordisp without a displacement
+        batch.set(image_id, 300, type=EntityType.VTORDISP)
+        batch.set_ref(image_id, 300, ref=100)
+
+    name_thunks(db)
+
+    # Should ignore displacement values and not apply vtordisp suffix
+    e = db.get(image_id, 200)
+    assert e is not None
+    name = e.get("name")
+    assert name is not None
+    assert "Thunk" in name
+    assert "vtordisp" not in name
+
+    # Should apply vtordisp suffix even though displacement values are both zero.
+    e = db.get(image_id, 300)
+    assert e is not None
+    name = e.get("name")
+    assert name is not None
+    assert "Thunk" not in name
+    assert "vtordisp" in name
+
+
+@pytest.mark.parametrize("image_id", ImageId)
 def test_name_thunks_chained(db: EntityDb, image_id: ImageId):
     """Should name each thunk in a chain of child entities."""
     with db.batch() as batch:
