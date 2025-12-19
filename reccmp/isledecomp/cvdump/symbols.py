@@ -111,6 +111,7 @@ class CvdumpSymbolsParser:
         "S_LABEL32",
         "S_REGREL32",  # TODO: Seen as early as MSVC 7.00; might be relevant to Ghidra and/or stackcmp
         "S_UDT",
+        "S_FRAMEPROC",
     ]
 
     """Parser for cvdump output, SYMBOLS section."""
