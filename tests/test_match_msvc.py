@@ -12,6 +12,7 @@ from reccmp.isledecomp.compare.match_msvc import (
     match_variables,
     match_vtables,
     match_ref,
+    match_imports,
 )
 from reccmp.isledecomp.compare.event import ReccmpEvent, ReccmpReportProtocol
 
@@ -827,3 +828,25 @@ def test_match_ref_maximum_depth(db, report):
         match_ref(db, report)
         assert getter.call_count == 10
         report.assert_called_once()
+
+
+def test_match_imports(db: EntityDb):
+    """Match import descriptors using case-insensitive pairing."""
+    with db.batch() as batch:
+        # Same case
+        batch.set(ImageId.ORIG, 100, type=EntityType.IMPORT, name="TEST.DLL::Test")
+        batch.set(ImageId.RECOMP, 100, type=EntityType.IMPORT, name="TEST.DLL::Test")
+
+        # Different case
+        batch.set(ImageId.ORIG, 200, type=EntityType.IMPORT, name="Test.Dll::Hello")
+        batch.set(ImageId.RECOMP, 200, type=EntityType.IMPORT, name="TEST.DLL::hello")
+
+    match_imports(db)
+
+    e = db.get_by_orig(100)
+    assert e is not None
+    assert e.recomp_addr == 100
+
+    e = db.get_by_orig(200)
+    assert e is not None
+    assert e.recomp_addr == 200

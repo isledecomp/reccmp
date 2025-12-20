@@ -4,6 +4,7 @@
 These are some basic smoke tests."""
 
 import pytest
+from reccmp.isledecomp.formats.image import ImageImport
 from reccmp.isledecomp.formats import PEImage
 from reccmp.isledecomp.formats.exceptions import (
     SectionNotFoundError,
@@ -149,14 +150,14 @@ def test_relocation(binfile: PEImage):
 
 # Not sanitizing dll name case. Do we care?
 IMPORT_REFS = (
-    ("KERNEL32.dll", "CreateMutexA", 0x1010B3D0),
-    ("WINMM.dll", "midiOutPrepareHeader", 0x1010B550),
+    ImageImport(module="KERNEL32.dll", name="CreateMutexA", addr=0x1010B3D0),
+    ImageImport(module="WINMM.dll", name="midiOutPrepareHeader", addr=0x1010B550),
 )
 
 
 @pytest.mark.parametrize("import_ref", IMPORT_REFS)
 def test_imports(import_ref: tuple[str, str, int], binfile: PEImage):
-    assert import_ref in binfile.imports
+    assert import_ref in tuple(binfile.imports)
 
 
 def test_exports(binfile: PEImage):

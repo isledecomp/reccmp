@@ -16,7 +16,7 @@ from .exceptions import (
     InvalidVirtualAddressError,
     SectionNotFoundError,
 )
-from .image import Image, ImageRegion
+from .image import Image, ImageRegion, ImageImport
 from .mz import ImageDosHeader
 
 # pylint: disable=too-many-lines
@@ -681,7 +681,7 @@ class PEImage(Image):
                 self.imagebase + rva_iat,
             )
 
-    def get_imports(self) -> Iterator[tuple[str, str, int]]:
+    def get_imports(self) -> Iterator[ImageImport]:
         # ILT = Import Lookup Table
         # IAT = Import Address Table
         # ILT gives us the symbol name of the import.
@@ -701,19 +701,21 @@ class PEImage(Image):
                 # MSB set if this is an ordinal import
                 if lookup_addr & 0x80000000 != 0:
                     ordinal_num = lookup_addr & 0x7FFF
-                    symbol_name = f"Ordinal_{ordinal_num}"
+                    yield ImageImport(
+                        addr=ofs_iat, module=dll_name, ordinal=ordinal_num
+                    )
                 else:
                     # Skip the "Hint" field, 2 bytes
                     name_ofs = lookup_addr + self.imagebase + 2
                     symbol_name = self.read_string(name_ofs).decode("ascii")
+                    yield ImageImport(addr=ofs_iat, module=dll_name, name=symbol_name)
 
-                yield dll_name, symbol_name, ofs_iat
                 ofs_ilt += 4
                 ofs_iat += 4
 
     @property
-    def imports(self) -> list[tuple[str, str, int]]:
-        return list(self.get_imports())
+    def imports(self) -> Iterator[ImageImport]:
+        return self.get_imports()
 
     @cached_property
     def thunks(self) -> list[tuple[int, int]]:
