@@ -354,6 +354,7 @@ class RecCmpProject:
                     ignore_types=target.ghidra.ignore_types,
                     ignore_functions=target.ghidra.ignore_functions,
                     name_substitutions=target.ghidra.name_substitutions,
+                    require_hash_match=target.ghidra.require_hash_match,
                 )
             else:
                 ghidra = None

@@ -38,10 +38,19 @@ class YmlGhidraConfig(BaseModel):
         default_factory=list,
         validation_alias=AliasChoices("name-substitutions", "name_substitutions"),
     )
+    require_hash_match: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("require-hash-match", "require_hash_match"),
+    )
 
     @classmethod
     def default(cls) -> "YmlGhidraConfig":
-        return cls(ignore_types=[], ignore_functions=[], name_substitutions=[])
+        return cls(
+            ignore_types=[],
+            ignore_functions=[],
+            name_substitutions=[],
+            require_hash_match=True,
+        )
 
 
 class YmlReportConfig(BaseModel):
