@@ -263,7 +263,7 @@ def load_markers(
             batch.set_orig(
                 line.offset,
                 name=line.name,
-                filename=line.filename,
+                filename=str(line.filename),
                 line=line.line_number,
                 type=EntityType.LINE,
             )

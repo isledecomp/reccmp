@@ -19,7 +19,7 @@ class DecompCodebase:
 
         parser = DecompParser()
         for f in files:
-            parser.reset_and_set_filename(str(f.path))
+            parser.reset_and_set_filename(f.path)
             parser.read(f.text)
 
             self._symbols += parser.iter_symbols(module)

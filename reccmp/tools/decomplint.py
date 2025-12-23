@@ -91,7 +91,7 @@ def process_files(
 
     linter = DecompLinter()
     for file in files:
-        success = linter.read(file.text, str(file.path), module)
+        success = linter.read(file.text, file.path, module)
 
         warnings = [a for a in linter.alerts if a.is_warning()]
         errors = [a for a in linter.alerts if a.is_error()]
@@ -108,7 +108,7 @@ def process_files(
 
 def main():
     args = parse_args()
-    files_to_check: list[str] = []
+    files_to_check: list[Path] = []
 
     if not args.paths:
         # No path specified. Try to find the project file.
@@ -127,7 +127,7 @@ def main():
             if path.is_dir():
                 files_to_check.extend(walk_source_dir(path))
             elif path.is_file():
-                files_to_check.append(str(path))
+                files_to_check.append(path)
             else:
                 logger.error("Invalid path: %s", path)
 
