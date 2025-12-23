@@ -577,5 +577,5 @@ def test_load_code_line_marker(db: EntityDb, lines_db: LinesDb, binfile: PEImage
     entity = db.get_by_orig(0x10001038)
     assert entity is not None
     assert entity.get("type") == EntityType.LINE
-    assert entity.get("filename") == str("test.cpp")
+    assert entity.get("filename") == "test.cpp"
     assert entity.get("line") == 3
