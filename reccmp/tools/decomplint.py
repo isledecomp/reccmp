@@ -2,21 +2,27 @@
 
 import argparse
 import logging
-from pathlib import Path
+from pathlib import Path, PurePath
+from typing import Iterable
 import colorama
 import reccmp
-from reccmp.isledecomp.dir import walk_source_dir, is_file_c_like
+from reccmp.isledecomp.dir import walk_source_dir
 from reccmp.isledecomp.parser import DecompLinter
+from reccmp.isledecomp.parser.error import ParserAlert
 from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
 from reccmp.project.detect import RecCmpProject
+from reccmp.isledecomp.types import TextFile
 
 logger = logging.getLogger(__name__)
 
 colorama.just_fix_windows_console()
 
 
-def display_errors(alerts, filename):
+def display_errors(alerts: Iterable[ParserAlert], filename: PurePath):
     sorted_alerts = sorted(alerts, key=lambda a: a.line_number)
+
+    print(colorama.Fore.LIGHTWHITE_EX, end="")
+    print(filename)
 
     for alert in sorted_alerts:
         error_type = (
@@ -25,19 +31,21 @@ def display_errors(alerts, filename):
             else f"{colorama.Fore.YELLOW}warning: "
         )
         components = [
+            "  ",
             colorama.Fore.LIGHTWHITE_EX,
-            filename,
-            ":",
-            str(alert.line_number),
+            f"{alert.line_number:4}",
             " : ",
+            " ",
             error_type,
             colorama.Fore.LIGHTWHITE_EX,
             alert.code.name.lower(),
         ]
-        print("".join(components))
+        print("".join(components), end="")
 
         if alert.line is not None:
-            print(f"{colorama.Fore.WHITE}  {alert.line}")
+            print(f"{colorama.Fore.WHITE}  {alert.line}", end="")
+
+        print()
 
 
 def parse_args() -> argparse.Namespace:
@@ -75,13 +83,15 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def process_files(files, module=None):
+def process_files(
+    files: Iterable[TextFile], module: str | None = None
+) -> tuple[int, int]:
     warning_count = 0
     error_count = 0
 
     linter = DecompLinter()
-    for filename in files:
-        success = linter.check_file(filename, module)
+    for file in files:
+        success = linter.read(file.text, str(file.path), module)
 
         warnings = [a for a in linter.alerts if a.is_warning()]
         errors = [a for a in linter.alerts if a.is_error()]
@@ -90,7 +100,7 @@ def process_files(files, module=None):
         warning_count += len(warnings)
 
         if not success:
-            display_errors(linter.alerts, filename)
+            display_errors(linter.alerts, file.path)
             print()
 
     return (warning_count, error_count)
@@ -98,27 +108,53 @@ def process_files(files, module=None):
 
 def main():
     args = parse_args()
+    files_to_check: list[str] = []
 
     if not args.paths:
+        # No path specified. Try to find the project file.
         project = RecCmpProject.from_directory(directory=Path.cwd())
         if not project:
             logger.error("Cannot find reccmp project")
             return 1
-        print(project.targets)
-        args.paths = list(
-            set(target.source_root for target in project.targets.values())
-        )
 
-    files_to_check: list[str] = []
-    for path in args.paths:
-        if path.is_dir():
-            files_to_check.extend(walk_source_dir(path))
-        elif path.is_file() and is_file_c_like(path):
-            files_to_check.append(str(path))
-        else:
-            logger.error("Invalid path: %s", path)
+        # Read each target from the reccmp-project file
+        # then get all filenames from each code directory.
+        for target in project.targets.values():
+            if target.source_root:
+                files_to_check.extend(walk_source_dir(target.source_root))
+    else:
+        for path in args.paths:
+            if path.is_dir():
+                files_to_check.extend(walk_source_dir(path))
+            elif path.is_file():
+                files_to_check.append(str(path))
+            else:
+                logger.error("Invalid path: %s", path)
 
-    (warning_count, error_count) = process_files(files_to_check, module=args.module)
+    # Use set() so we check each file only once.
+    reduced_file_list = sorted(set(files_to_check))
+
+    codefiles = []
+    for filename in reduced_file_list:
+        try:
+            # resolve() removes any '..' references from the path
+            path = Path(filename).resolve()
+            codefiles.append(TextFile.from_file(path))
+
+        except FileNotFoundError:
+            # resolve() may have failed. Use the input string.
+            logger.error("Could not open '%s'", filename)
+
+        except UnicodeDecodeError as ex:
+            logger.error(
+                "Failed to decode '%s' as %s (reason: %s, position: %d)",
+                filename,
+                ex.encoding,
+                ex.reason,
+                ex.start,
+            )
+
+    (warning_count, error_count) = process_files(codefiles, module=args.module)
 
     print(colorama.Style.RESET_ALL, end="")
 

@@ -5,6 +5,7 @@ import struct
 from typing import Iterable, Iterator
 from reccmp.project.detect import RecCmpTarget
 from reccmp.isledecomp.difflib import get_grouped_opcodes
+from reccmp.isledecomp.dir import walk_source_dir
 from reccmp.isledecomp.compare.functions import FunctionComparator
 from reccmp.isledecomp.formats import Image, PEImage, detect_image
 from reccmp.isledecomp.cvdump import Cvdump, CvdumpTypesParser, CvdumpAnalysis
@@ -64,7 +65,7 @@ class Compare:
     _db: EntityDb
     _debug: bool
     _lines_db: LinesDb
-    code_dir: Path
+    code_files: list[TextFile]
     cvdump_analysis: CvdumpAnalysis
     orig_bin: Image
     recomp_bin: Image
@@ -80,15 +81,19 @@ class Compare:
         orig_bin: Image,
         recomp_bin: Image,
         pdb_file: CvdumpAnalysis,
-        code_dir: Path | str,
         target_id: str,
+        code_files: list[TextFile] | None = None,
         data_sources: list[TextFile] | None = None,
     ):
         self.orig_bin = orig_bin
         self.recomp_bin = recomp_bin
         self.cvdump_analysis = pdb_file
-        self.code_dir = Path(code_dir)
         self.target_id = target_id
+
+        if isinstance(code_files, list):
+            self.code_files = code_files
+        else:
+            self.code_files = []
 
         if isinstance(data_sources, list):
             self.data_sources = data_sources
@@ -123,7 +128,7 @@ class Compare:
         match_entry(self._db, self.orig_bin, self.recomp_bin)
 
         load_markers(
-            self.code_dir,
+            self.code_files,
             self._lines_db,
             self.orig_bin,
             self.target_id,
@@ -183,6 +188,25 @@ class Compare:
         )
         pdb_file = CvdumpAnalysis(cvdump)
 
+        code_files = []
+        for filename in walk_source_dir(target.source_root):
+            try:
+                path = Path(filename)
+                code_files.append(TextFile.from_file(path))
+
+            except FileNotFoundError:
+                # resolve() may have failed. Use the input string.
+                logger.error("Could not open '%s'", filename)
+
+            except UnicodeDecodeError as ex:
+                logger.error(
+                    "Failed to decode '%s' as %s (reason: %s, position: %d)",
+                    filename,
+                    ex.encoding,
+                    ex.reason,
+                    ex.start,
+                )
+
         data_sources = []
         for path in target.data_sources:
             try:
@@ -194,9 +218,9 @@ class Compare:
             origfile,
             recompfile,
             pdb_file,
-            target.source_root,
             target_id=target.target_id,
             data_sources=data_sources,
+            code_files=code_files,
         )
         compare.run()
         return compare
