@@ -537,7 +537,7 @@ class EntityDb:
         """Return the original address (matched or not) that follows
         the one given. If our recomp function size would cause us to read
         too many bytes for the original function, we can adjust it.
-        Skips LINE-type symbols since these these are always contained
+        Skips LINE and LABEL type entities since these these are always contained
         within functions.
         """
         result = self._sql.execute(
@@ -546,10 +546,12 @@ class EntityDb:
             WHERE
               orig_addr > ?
             AND
-              json_extract(kvstore,'$.type') != ?
+              json_extract(kvstore,'$.type') IS NOT NULL
+            AND
+              json_extract(kvstore,'$.type') NOT IN (?, ?)
             ORDER BY orig_addr
             LIMIT 1""",
-            (addr, EntityType.LINE),
+            (addr, EntityType.LINE, EntityType.LABEL),
         ).fetchone()
 
         return result[0] if result is not None else None
