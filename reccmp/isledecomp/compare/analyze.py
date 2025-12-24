@@ -79,9 +79,15 @@ def create_seh_entities(db: EntityDb, img_id: ImageId, binfile: PEImage):
             batch.set(
                 img_id,
                 handler_addr,
+                type=EntityType.LABEL,
                 name="__ehhandler",
             )
-            batch.set(img_id, funcinfo.addr, name="__ehfuncinfo")
+            batch.set(
+                img_id,
+                funcinfo.addr,
+                type=EntityType.DATA,
+                name="__ehfuncinfo",
+            )
 
 
 def create_imports(db: EntityDb, image_id: ImageId, binfile: Image):
