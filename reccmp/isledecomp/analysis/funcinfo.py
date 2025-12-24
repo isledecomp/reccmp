@@ -18,9 +18,14 @@ FUNCINFO_MAGIC_RE = re.compile(rb"\x20\x05\x93\x19", flags=re.S)
 MOV_EAX_RE = re.compile(rb"(?=\xb8(.{4})\xe9)", flags=re.S)
 
 
+class UnwindMapEntry(NamedTuple):
+    target_state: int
+    action_addr: int
+
+
 class FuncInfo(NamedTuple):
     addr: int
-    unwinds: list[tuple[int, int]]
+    unwinds: tuple[UnwindMapEntry, ...]
 
 
 def find_funcinfo_offsets_in_buffer(buf: bytes) -> Iterator[int]:
@@ -34,13 +39,15 @@ def find_funcinfo_in_buffer(buf: bytes, base_addr: int) -> Iterator[FuncInfo]:
     for ofs in find_funcinfo_offsets_in_buffer(buf):
         # TODO: The structure may vary depending on the magic string.
         # We support format 19930520 to start.
-        (n_unwind, unwind_addr) = struct.unpack_from("<4x2I", buf, offset=ofs)
+        (max_state, unwind_map_addr) = struct.unpack_from("<4x2I", buf, offset=ofs)
 
         # Unwind offset is an absolute address.
-        unwind_ofs = unwind_addr - base_addr
-        unwinds = list(
-            struct.unpack_from("<iI", buf, offset=unwind_ofs + 8 * i)
-            for i in range(n_unwind)
+        unwind_map_ofs = unwind_map_addr - base_addr
+        unwinds = tuple(
+            UnwindMapEntry(
+                *struct.unpack_from("<iI", buf, offset=unwind_map_ofs + 8 * i)
+            )
+            for i in range(max_state)
         )
 
         yield FuncInfo(addr=base_addr + ofs, unwinds=unwinds)
@@ -50,6 +57,14 @@ def find_funcinfo(image: PEImage) -> Iterator[FuncInfo]:
     """Find all FuncInfo structs in the image."""
     for region in image.get_const_regions():
         yield from find_funcinfo_in_buffer(region.data, region.addr)
+
+
+def find_mov_eax_jmp_in_buffer(
+    buf: bytes, base_addr: int = 0
+) -> Iterator[tuple[int, bytes]]:
+    """Return offsets in the buffer that match a `mov eax, ____` instruction followed by `jmp`."""
+    for match in MOV_EAX_RE.finditer(buf):
+        yield (base_addr + match.start(), match.group(1))
 
 
 def find_eh_handlers(image: PEImage) -> Iterator[tuple[int, FuncInfo]]:
@@ -64,8 +79,10 @@ def find_eh_handlers(image: PEImage) -> Iterator[tuple[int, FuncInfo]]:
     bytes_to_addr = {struct.pack("<I", f.addr): f for f in all_funcinfo}
 
     for region in image.get_code_regions():
-        for match in MOV_EAX_RE.finditer(region.data):
+        for handler_addr, funcinfo_bytes in find_mov_eax_jmp_in_buffer(
+            region.data, region.addr
+        ):
             # If the address in the MOV EAX is one of our FuncInfo addresses
-            if (funcinfo := bytes_to_addr.get(match.group(1))) is not None:
-                # Return the EH handler address and the FuncInfo address used
-                yield (region.addr + match.start(), funcinfo)
+            if (funcinfo := bytes_to_addr.get(funcinfo_bytes)) is not None:
+                # Return the EH handler address and the referenced FuncInfo struct
+                yield (handler_addr, funcinfo)
