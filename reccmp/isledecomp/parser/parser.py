@@ -157,9 +157,9 @@ class DecompParser:
         self.function_start: int = 0
         self.function_sig: str = ""
 
-        self.filename = ""
+        self.filename: PurePath = PurePath("")
 
-    def reset_and_set_filename(self, filename: str):
+    def reset_and_set_filename(self, filename: PurePath):
         self._symbols = []
         self.alerts = []
 
@@ -365,14 +365,13 @@ class DecompParser:
             self.state = ReaderState.SEARCH
 
     def _line_marker(self, marker: DecompMarker):
-        file_path = PurePath(self.filename)
         self._symbols.append(
             ParserLineSymbol(
                 type=marker.type,
                 line_number=self.line_number,
                 module=marker.module,
                 offset=marker.offset,
-                name=f"{file_path.name}:{self.line_number}",
+                name=f"{self.filename.name}:{self.line_number}",
                 filename=self.filename,
             )
         )

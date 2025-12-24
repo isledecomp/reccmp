@@ -1,3 +1,4 @@
+from pathlib import PurePath
 import pytest
 from reccmp.isledecomp.parser import DecompLinter
 from reccmp.isledecomp.parser.error import ParserError
@@ -18,7 +19,7 @@ def test_order_in_order(linter: DecompLinter):
         // FUNCTION: TEST 0x3000
         void function3() {}
         """
-    assert linter.read(code, "test.cpp", "TEST") is True
+    assert linter.read(code, PurePath("test.cpp"), "TEST") is True
 
 
 def test_order_out_of_order(linter: DecompLinter):
@@ -31,7 +32,7 @@ def test_order_out_of_order(linter: DecompLinter):
         // FUNCTION: TEST 0x2000
         void function2() {}
         """
-    assert linter.read(code, "test.cpp", "TEST") is False
+    assert linter.read(code, PurePath("test.cpp"), "TEST") is False
     assert len(linter.alerts) == 1
 
     assert linter.alerts[0].code == ParserError.FUNCTION_OUT_OF_ORDER
@@ -50,7 +51,7 @@ def test_order_ignore_lookup_by_name(linter: DecompLinter):
         void function2() {}
         """
 
-    assert linter.read(code, "test.h", "TEST") is True
+    assert linter.read(code, PurePath("test.h"), "TEST") is True
 
 
 def test_order_module_isolation(linter: DecompLinter):
@@ -67,9 +68,9 @@ def test_order_module_isolation(linter: DecompLinter):
         void function3() {}
         """
 
-    assert linter.read(code, "test.cpp", "TEST") is True
+    assert linter.read(code, PurePath("test.cpp"), "TEST") is True
     linter.full_reset()
-    assert linter.read(code, "test.cpp", "ALPHA") is False
+    assert linter.read(code, PurePath("test.cpp"), "ALPHA") is False
 
 
 def test_byname_headers_only(linter: DecompLinter):
@@ -79,9 +80,9 @@ def test_byname_headers_only(linter: DecompLinter):
         // MyClass::~MyClass
         """
 
-    assert linter.read(code, "test.h", "TEST") is True
+    assert linter.read(code, PurePath("test.h"), "TEST") is True
     linter.full_reset()
-    assert linter.read(code, "test.cpp", "TEST") is False
+    assert linter.read(code, PurePath("test.cpp"), "TEST") is False
     assert linter.alerts[0].code == ParserError.BYNAME_FUNCTION_IN_CPP
 
 
@@ -94,21 +95,21 @@ def test_duplicate_offsets_module_scope(linter: DecompLinter):
         """
 
     # Should not fail for duplicate offset 0x1000 because the modules are unique.
-    assert linter.read(code, "test.h", "TEST") is True
+    assert linter.read(code, PurePath("test.h"), "TEST") is True
 
     # Simulate a failure by reading the same file twice.
-    assert linter.read(code, "test.h", "TEST") is False
+    assert linter.read(code, PurePath("test.h"), "TEST") is False
 
     # Only one error because we are focused on the TEST module
     assert len(linter.alerts) == 1
     assert all(a.code == ParserError.DUPLICATE_OFFSET for a in linter.alerts)
 
     # Partial reset (i.e. starting a new file) will retain the list of seen offsets.
-    assert linter.read(code, "test.h", "TEST") is False
+    assert linter.read(code, PurePath("test.h"), "TEST") is False
 
     # Full reset will forget seen offsets.
     linter.full_reset()
-    assert linter.read(code, "test.h", "TEST") is True
+    assert linter.read(code, PurePath("test.h"), "TEST") is True
 
 
 def test_duplicate_offsets_all(linter: DecompLinter):
@@ -120,8 +121,8 @@ def test_duplicate_offsets_all(linter: DecompLinter):
         """
 
     # Simulate a failure by reading the same file twice.
-    assert linter.read(code, "test.h", None) is True
-    assert linter.read(code, "test.h", None) is False
+    assert linter.read(code, PurePath("test.h"), None) is True
+    assert linter.read(code, PurePath("test.h"), None) is False
     assert all(a.code == ParserError.DUPLICATE_OFFSET for a in linter.alerts)
 
 
@@ -137,13 +138,13 @@ def test_duplicate_offsets_isolation(linter: DecompLinter):
         """
 
     # No module = check everything
-    assert linter.read(code, "test.h", None) is False
+    assert linter.read(code, PurePath("test.h"), None) is False
 
     linter.full_reset()
-    assert linter.read(code, "test.h", "TEST") is False
+    assert linter.read(code, PurePath("test.h"), "TEST") is False
 
     linter.full_reset()
-    assert linter.read(code, "test.h", "HELLO") is True
+    assert linter.read(code, PurePath("test.h"), "HELLO") is True
 
 
 def test_duplicate_strings(linter: DecompLinter):
@@ -154,8 +155,8 @@ def test_duplicate_strings(linter: DecompLinter):
         """
 
     # No problem to use this marker twice.
-    assert linter.read(string_lines, "test.h", "TEST") is True
-    assert linter.read(string_lines, "test.h", "TEST") is True
+    assert linter.read(string_lines, PurePath("test.h"), "TEST") is True
+    assert linter.read(string_lines, PurePath("test.h"), "TEST") is True
 
     different_string = """\
         // STRING: TEST 0x1000
@@ -163,7 +164,7 @@ def test_duplicate_strings(linter: DecompLinter):
         """
 
     # Same address but the string is different
-    assert linter.read(different_string, "greeting.h", "TEST") is False
+    assert linter.read(different_string, PurePath("greeting.h"), "TEST") is False
     assert len(linter.alerts) == 1
     assert linter.alerts[0].code == ParserError.WRONG_STRING
 
@@ -173,4 +174,4 @@ def test_duplicate_strings(linter: DecompLinter):
         """
 
     # This will fail like any other offset reuse.
-    assert linter.read(same_addr_reused, "other.h", "TEST") is False
+    assert linter.read(same_addr_reused, PurePath("other.h"), "TEST") is False

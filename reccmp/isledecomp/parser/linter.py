@@ -1,3 +1,4 @@
+from pathlib import PurePath
 from typing import Sequence
 from .parser import DecompParser
 from .error import ParserAlert, ParserError
@@ -13,7 +14,7 @@ class DecompLinter:
     def __init__(self) -> None:
         self.alerts: list[ParserAlert] = []
         self._parser = DecompParser()
-        self._filename: str = ""
+        self._filename: PurePath = PurePath("")
         self._module: str | None = None
         # Set of (str, int) tuples for each module/offset pair seen while scanning.
         # This is _not_ reset between files and is intended to report offset reuse
@@ -23,7 +24,7 @@ class DecompLinter:
         # Module/offset can be repeated for string markers but the strings must match.
         self._strings: dict[tuple[str, int], str] = {}
 
-    def start_new_file(self, filename: str, module: str | None):
+    def start_new_file(self, filename: PurePath, module: str | None):
         self.alerts = []
         self._module = module
         self._filename = filename
@@ -34,7 +35,7 @@ class DecompLinter:
         self._strings = {}
 
     def file_is_header(self):
-        return self._filename.lower().endswith(".h")
+        return self._filename.suffix.lower() == ".h"
 
     def _load_offsets_from_list(self, marker_list: Sequence[ParserSymbol]):
         """Helper for loading (module, offset) tuples while the DecompParser
@@ -119,7 +120,7 @@ class DecompLinter:
                     )
                 )
 
-    def read(self, code: str, filename: str, module=None) -> bool:
+    def read(self, code: str, filename: PurePath, module: str | None = None) -> bool:
         self.start_new_file(filename, module)
 
         self._parser.read(code)
@@ -136,8 +137,3 @@ class DecompLinter:
                 self._check_function_order()
 
         return len(self.alerts) == 0
-
-    def check_file(self, filename: str, module=None):
-        """Convenience method for decomplint cli tool"""
-        with open(filename, "r", encoding="utf-8") as f:
-            return self.read(f.read(), filename, module)

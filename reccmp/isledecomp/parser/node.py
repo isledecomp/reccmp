@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from pathlib import PurePath
 from .marker import MarkerType
 
 
@@ -15,7 +16,7 @@ class ParserSymbol:
 
     # The parser doesn't (currently) know about the code filename, but if you
     # wanted to set it here after the fact, here's the spot.
-    filename: str
+    filename: PurePath
 
     def should_skip(self) -> bool:
         """The default is to compare any symbols we have"""

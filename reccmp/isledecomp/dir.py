@@ -148,14 +148,14 @@ def is_file_c_like(filename: Path | str) -> bool:
     )
 
 
-def walk_source_dir(source: Path, recursive: bool = True) -> Iterator[str]:
+def walk_source_dir(source: Path, recursive: bool = True) -> Iterator[Path]:
     """Generator to walk the given directory recursively and return
     any C++ files found."""
 
-    for subdir, _, files in os.walk(source.absolute()):
+    for subdir, _, files in source.walk():
         for file in files:
             if is_file_c_like(file):
-                yield os.path.join(subdir, file)
+                yield subdir / file
 
         if not recursive:
             break
