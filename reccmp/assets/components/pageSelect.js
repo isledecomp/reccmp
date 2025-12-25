@@ -52,29 +52,29 @@ class PageSelect extends window.HTMLElement {
     const select = this.querySelector('select');
 
     if (results.length === 0) {
-        select.setAttribute('disabled', '');
-        const option = document.createElement('option');
-        option.textContent = '- no results -';
-        select.replaceChildren(option);
-        return;
+      select.setAttribute('disabled', '');
+      const option = document.createElement('option');
+      option.textContent = '- no results -';
+      select.replaceChildren(option);
+      return;
     }
 
     select.removeAttribute('disabled');
 
-    let options = [];
+    const options = [];
     for (const [value, fromText, toText] of pageHeadings(pages, sortCol)) {
-        const option = document.createElement('option');
-        option.value = value;
-        if (pageNumber === value) {
-            option.setAttribute('selected', '');
-        }
-        option.textContent = `${sortCol}: ${fromText} to ${toText}`;
-        options.push(option);
+      const option = document.createElement('option');
+      option.value = value;
+      if (pageNumber === value) {
+        option.setAttribute('selected', '');
+      }
+      option.textContent = `${sortCol}: ${fromText} to ${toText}`;
+      options.push(option);
     }
 
     select.replaceChildren(...options);
   }
-};
+}
 
 // reccmp-pack-end
 export default PageSelect;

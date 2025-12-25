@@ -7,9 +7,9 @@ class ResultCount extends window.HTMLElement {
   }
 
   update({ results }) {
-    this.textContent = results.length
+    this.textContent = results.length;
   }
-};
+}
 
 // reccmp-pack-end
 export default ResultCount;
