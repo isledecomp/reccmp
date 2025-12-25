@@ -286,15 +286,20 @@ def main():
 
     # Compare with saved diff report.
     if args.diff is not None:
-        with open(args.diff, "r", encoding="utf-8") as f:
-            saved_data = deserialize_reccmp_report(f.read())
+        try:
+            with open(args.diff, "r", encoding="utf-8") as f:
+                saved_data = deserialize_reccmp_report(f.read())
 
-        diff_json(
-            saved_data,
-            report,
-            show_both_addrs=args.print_rec_addr,
-            is_plain=args.no_color,
-        )
+            diff_json(
+                saved_data,
+                report,
+                show_both_addrs=args.print_rec_addr,
+                is_plain=args.no_color,
+            )
+        except FileNotFoundError:
+            # In a CI workflow, the JSON file might not exist on the first run in a new branch.
+            # Continue without a fatal error so users don't have to bother handling this situation.
+            logger.error("Could not open JSON report file '%s' for diff", args.diff)
 
     ## Generate files and show summary.
 

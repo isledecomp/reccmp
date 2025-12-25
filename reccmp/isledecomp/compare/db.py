@@ -537,7 +537,7 @@ class EntityDb:
         """Return the original address (matched or not) that follows
         the one given. If our recomp function size would cause us to read
         too many bytes for the original function, we can adjust it.
-        Skips LINE-type symbols since these these are always contained
+        Skips LINE and LABEL type entities since these these are always contained
         within functions.
         """
         result = self._sql.execute(
@@ -546,16 +546,18 @@ class EntityDb:
             WHERE
               orig_addr > ?
             AND
-              json_extract(kvstore,'$.type') != ?
+              json_extract(kvstore,'$.type') IS NOT NULL
+            AND
+              json_extract(kvstore,'$.type') NOT IN (?, ?)
             ORDER BY orig_addr
             LIMIT 1""",
-            (addr, EntityType.LINE),
+            (addr, EntityType.LINE, EntityType.LABEL),
         ).fetchone()
 
         return result[0] if result is not None else None
 
     def populate_names_table(self):
-        """Copy the name/computed_name of non-thunk function entities into the NAMES table.
+        """Copy the name/computed_name of non-thunk functions or imports into the NAMES table.
         NAMES is keyed by (image, addr), unlike the ENTITIES table."""
         self._sql.execute(
             """INSERT INTO names (img, addr, name, computed_name)
@@ -565,9 +567,13 @@ class EntityDb:
                 SELECT 1 img, recomp_addr addr, kvstore FROM entities WHERE recomp_addr IS NOT NULL
             )
             WHERE name IS NOT NULL
-            AND json_extract(kvstore, '$.type') = ?
+            AND json_extract(kvstore, '$.type') IN (?, ?)
             """,
-            (EntityType.FUNCTION,),
+            # These types are chosen because they are the possible sources for the name of a thunk function.
+            (
+                EntityType.FUNCTION,
+                EntityType.IMPORT,
+            ),
         )
 
     def propagate_thunk_names(self) -> bool:
