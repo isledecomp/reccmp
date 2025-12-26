@@ -153,7 +153,7 @@ MxAtomId* g_introScript = NULL;
 
 ## Strings
 
-String values should be annotated using the `STRING` marker, which includes the module name and address of the text content. Note that this is usually not required since most strings can be auto-detected. If you want, you can use this for bookeeping, but it will usually not affect the `reccmp` match.
+String values should be annotated using the `STRING` marker, which includes the module name and address of the text content. Note that this is usually not required since most strings can be auto-detected. If you want, you can use this for bookkeeping, but it will usually not affect the `reccmp` match.
 
 ```c++
 inline virtual const char* ClassName() const override // vtable+0x0c
