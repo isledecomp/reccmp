@@ -23,7 +23,7 @@ class SearchOptions extends window.HTMLElement {
       radio.checked = checked;
     });
   }
-};
+}
 
 // reccmp-pack-end
 export default SearchOptions;

@@ -14,7 +14,7 @@ class HidePerfect extends window.HTMLElement {
   update({ hidePerfect }) {
     this.querySelector('input[type=checkbox]').checked = hidePerfect;
   }
-};
+}
 
 // reccmp-pack-end
 export default HidePerfect;

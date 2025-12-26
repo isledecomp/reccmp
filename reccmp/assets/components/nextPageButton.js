@@ -19,7 +19,7 @@ class NextPageButton extends window.HTMLElement {
       button.removeAttribute('disabled');
     }
   }
-};
+}
 
 // reccmp-pack-end
 export default NextPageButton;
