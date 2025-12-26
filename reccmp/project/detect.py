@@ -106,15 +106,15 @@ class GhidraConfig:
 
     Example value: `[r"FUN_([0-9a-f]{8})", r"LEGO1_\\1"]`.
     """
-    require_hash_match: bool = True
+    allow_hash_mismatch: bool = False
     """
-    When enabled, we abort the Ghidra import if the hash of the currently opened binary
-    does not match the target hash in reccmp-project.yml.
+    When enabled, we allow the Ghidra import to continue even if the hash of the
+    binary reported by Ghidra does not match the target hash in reccmp-project.yml.
+
+    By default, we stop the import if the hashes do not match.
 
     This is intended as a safety feature to prevent the user from adding metadata to the
     wrong Ghidra file.
-
-    Disable this if the original binary hash varies (e.g. from manual byte patching).
     """
 
 
@@ -354,7 +354,7 @@ class RecCmpProject:
                     ignore_types=target.ghidra.ignore_types,
                     ignore_functions=target.ghidra.ignore_functions,
                     name_substitutions=target.ghidra.name_substitutions,
-                    require_hash_match=target.ghidra.require_hash_match,
+                    allow_hash_mismatch=target.ghidra.allow_hash_mismatch,
                 )
             else:
                 ghidra = None

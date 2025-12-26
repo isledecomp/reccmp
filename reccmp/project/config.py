@@ -38,9 +38,9 @@ class YmlGhidraConfig(BaseModel):
         default_factory=list,
         validation_alias=AliasChoices("name-substitutions", "name_substitutions"),
     )
-    require_hash_match: bool = Field(
-        default=True,
-        validation_alias=AliasChoices("require-hash-match", "require_hash_match"),
+    allow_hash_mismatch: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("allow-hash-mismatch", "allow_hash_mismatch"),
     )
 
     @classmethod
@@ -49,7 +49,7 @@ class YmlGhidraConfig(BaseModel):
             ignore_types=[],
             ignore_functions=[],
             name_substitutions=[],
-            require_hash_match=True,
+            allow_hash_mismatch=False,
         )
 
 

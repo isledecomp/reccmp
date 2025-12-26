@@ -52,14 +52,13 @@ def main():
         logger.info("Program opened. Starting reccmp import...")
 
         program_hash = program.getExecutableSHA256()
-        # If Ghidra's hash does not match the reccmp target
-        # hash, abort the import unless the user has set
-        # `require-hash-match` to false.
+        # If Ghidra's hash does not match the reccmp target hash, abort
+        # the import unless the user has enabled `allow-hash-mismatch`.
         if target.sha256 != program_hash:
             hash_mismatch_log_level = (
-                logging.CRITICAL
-                if target.ghidra_config.require_hash_match
-                else logging.WARNING
+                logging.WARNING
+                if target.ghidra_config.allow_hash_mismatch
+                else logging.CRITICAL
             )
             logger.log(
                 hash_mismatch_log_level,
@@ -68,7 +67,7 @@ def main():
                 target.sha256,
             )
 
-            if target.ghidra_config.require_hash_match:
+            if not target.ghidra_config.allow_hash_mismatch:
                 return 1
 
         # Not exactly sure why this is necessary, but it can't hurt
