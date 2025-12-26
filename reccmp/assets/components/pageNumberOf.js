@@ -7,9 +7,9 @@ class PageNumberOf extends window.HTMLElement {
   }
 
   update({ pageNumber, maxPageNumber }) {
-    this.textContent = `Page ${pageNumber + 1} of ${maxPageNumber + 1}`
+    this.textContent = `Page ${pageNumber + 1} of ${maxPageNumber + 1}`;
   }
-};
+}
 
 // reccmp-pack-end
 export default PageNumberOf;

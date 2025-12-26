@@ -14,7 +14,7 @@ class HideStub extends window.HTMLElement {
   update({ hideStub }) {
     this.querySelector('input[type=checkbox]').checked = hideStub;
   }
-};
+}
 
 // reccmp-pack-end
 export default HideStub;

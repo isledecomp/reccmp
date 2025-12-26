@@ -14,7 +14,7 @@ class ShowRecomp extends window.HTMLElement {
   update({ showRecomp }) {
     this.querySelector('input[type=checkbox]').checked = showRecomp;
   }
-};
+}
 
 // reccmp-pack-end
 export default ShowRecomp;

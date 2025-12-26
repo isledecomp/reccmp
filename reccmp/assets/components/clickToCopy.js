@@ -14,7 +14,9 @@ class ClickToCopy extends window.HTMLElement {
       this.setAttribute('copied', '');
       // Display "copied!" message for up to 2 seconds
       // if the user keeps their mouse on the link.
-      setTimeout(() => { this.removeAttribute('copied'); }, 2000);
+      setTimeout(() => {
+        this.removeAttribute('copied');
+      }, 2000);
     });
   }
 }
