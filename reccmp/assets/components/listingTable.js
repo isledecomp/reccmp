@@ -170,9 +170,7 @@ class ListingTable extends window.HTMLElement {
       // Clicking the name column toggles the diff detail row.
       // This is added or removed without replacing the entire <tbody>.
       row.querySelector('td[data-col="name"]').addEventListener('click', () => {
-        this.dispatchEvent(
-          new CustomEvent('toggleExpanded', { bubbles: true, detail: row.dataset.address }),
-        );
+        this.dispatchEvent(new CustomEvent('toggleExpanded', { bubbles: true, detail: row.dataset.address }));
       });
     });
   }

@@ -20,6 +20,7 @@ class EntityType(IntEnum):
     VTORDISP = 10
     WIDECHAR = 11
     IMPORT_THUNK = 12
+    LABEL = 13
 
 
 class ImageId(IntEnum):

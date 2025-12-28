@@ -15,6 +15,7 @@ from reccmp.isledecomp.analysis import (
     find_float_consts,
     find_import_thunks,
     find_vtordisp,
+    find_eh_handlers,
     is_likely_latin1,
 )
 from .db import EntityDb, entity_name_from_string
@@ -66,6 +67,27 @@ def create_analysis_floats(db: EntityDb, img_id: ImageId, binfile: PEImage):
                     name=str(float_value),
                     size=size,
                 )
+
+
+def create_seh_entities(db: EntityDb, img_id: ImageId, binfile: PEImage):
+    """Create entities for the SEH (structured exception handling)
+    handler and funcinfo struct. For images without a relocation table,
+    this will allow us to replace the addresses for both items."""
+    with db.batch() as batch:
+        for handler_addr, funcinfo in find_eh_handlers(binfile):
+            # Using names derived from symbols in .cpp.s generated asm.
+            batch.set(
+                img_id,
+                handler_addr,
+                type=EntityType.LABEL,
+                name="__ehhandler",
+            )
+            batch.set(
+                img_id,
+                funcinfo.addr,
+                type=EntityType.DATA,
+                name="__ehfuncinfo",
+            )
 
 
 def create_imports(db: EntityDb, image_id: ImageId, binfile: Image):
