@@ -1,15 +1,19 @@
 import logging
 import difflib
-from pathlib import Path
 import struct
 from typing import Iterable, Iterator
 from reccmp.project.detect import RecCmpTarget
 from reccmp.isledecomp.difflib import get_grouped_opcodes
 from reccmp.isledecomp.dir import walk_source_dir
 from reccmp.isledecomp.compare.functions import FunctionComparator
-from reccmp.isledecomp.formats import Image, PEImage, detect_image
+from reccmp.isledecomp.formats import (
+    Image,
+    PEImage,
+    TextFile,
+    detect_image,
+)
 from reccmp.isledecomp.cvdump import Cvdump, CvdumpTypesParser, CvdumpAnalysis
-from reccmp.isledecomp.types import EntityType, ImageId, TextFile
+from reccmp.isledecomp.types import EntityType, ImageId
 from reccmp.isledecomp.compare.event import (
     ReccmpReportProtocol,
     create_logging_wrapper,
@@ -190,31 +194,10 @@ class Compare:
         )
         pdb_file = CvdumpAnalysis(cvdump)
 
-        code_files = []
-        for filename in walk_source_dir(target.source_root):
-            try:
-                path = Path(filename)
-                code_files.append(TextFile.from_file(path))
+        code_paths = walk_source_dir(target.source_root)
+        code_files = list(TextFile.from_files(code_paths, allow_error=True))
 
-            except FileNotFoundError:
-                # resolve() may have failed. Use the input string.
-                logger.error("Could not open '%s'", filename)
-
-            except UnicodeDecodeError as ex:
-                logger.error(
-                    "Failed to decode '%s' as %s (reason: %s, position: %d)",
-                    filename,
-                    ex.encoding,
-                    ex.reason,
-                    ex.start,
-                )
-
-        data_sources = []
-        for path in target.data_sources:
-            try:
-                data_sources.append(TextFile.from_file(path))
-            except FileNotFoundError:
-                logger.error("Could not open data source file %s", str(path))
+        data_sources = list(TextFile.from_files(target.data_sources, allow_error=True))
 
         compare = cls(
             origfile,

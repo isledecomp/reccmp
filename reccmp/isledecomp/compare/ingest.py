@@ -8,10 +8,10 @@ from collections.abc import Sequence
 from reccmp.isledecomp.formats.exceptions import (
     InvalidStringError,
 )
-from reccmp.isledecomp.formats.pe import PEImage
+from reccmp.isledecomp.formats import PEImage, TextFile
 from reccmp.isledecomp.cvdump import CvdumpTypesParser, CvdumpAnalysis
 from reccmp.isledecomp.parser import DecompCodebase
-from reccmp.isledecomp.types import EntityType, TextFile
+from reccmp.isledecomp.types import EntityType
 from reccmp.isledecomp.compare.event import (
     ReccmpEvent,
     ReccmpReportProtocol,

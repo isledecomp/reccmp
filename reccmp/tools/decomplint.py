@@ -11,7 +11,7 @@ from reccmp.isledecomp.parser import DecompLinter
 from reccmp.isledecomp.parser.error import ParserAlert
 from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
 from reccmp.project.detect import RecCmpProject
-from reccmp.isledecomp.types import TextFile
+from reccmp.isledecomp.formats import TextFile
 
 logger = logging.getLogger(__name__)
 
@@ -134,25 +134,7 @@ def main():
     # Use set() so we check each file only once.
     reduced_file_list = sorted(set(files_to_check))
 
-    codefiles = []
-    for filename in reduced_file_list:
-        try:
-            # resolve() removes any '..' references from the path
-            path = Path(filename).resolve()
-            codefiles.append(TextFile.from_file(path))
-
-        except FileNotFoundError:
-            # resolve() may have failed. Use the input string.
-            logger.error("Could not open '%s'", filename)
-
-        except UnicodeDecodeError as ex:
-            logger.error(
-                "Failed to decode '%s' as %s (reason: %s, position: %d)",
-                filename,
-                ex.encoding,
-                ex.reason,
-                ex.start,
-            )
+    codefiles = list(TextFile.from_files(reduced_file_list, allow_error=True))
 
     (warning_count, error_count) = process_files(codefiles, module=args.module)
 

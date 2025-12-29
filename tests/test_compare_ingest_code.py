@@ -3,8 +3,8 @@
 from pathlib import PurePath, PureWindowsPath
 from textwrap import dedent
 import pytest
-from reccmp.isledecomp.types import EntityType, TextFile
-from reccmp.isledecomp.formats import PEImage
+from reccmp.isledecomp.types import EntityType
+from reccmp.isledecomp.formats import PEImage, TextFile
 from reccmp.isledecomp.compare.ingest import load_markers
 from reccmp.isledecomp.compare.db import EntityDb
 from reccmp.isledecomp.compare.lines import LinesDb
