@@ -3,16 +3,15 @@ These functions load the entity and type databases with information from code an
 """
 
 import logging
-from pathlib import Path
 from typing import Iterable
+from collections.abc import Sequence
 from reccmp.isledecomp.formats.exceptions import (
     InvalidStringError,
 )
-from reccmp.isledecomp.formats.pe import PEImage
+from reccmp.isledecomp.formats import PEImage, TextFile
 from reccmp.isledecomp.cvdump import CvdumpTypesParser, CvdumpAnalysis
 from reccmp.isledecomp.parser import DecompCodebase
-from reccmp.isledecomp.dir import walk_source_dir
-from reccmp.isledecomp.types import EntityType, TextFile
+from reccmp.isledecomp.types import EntityType
 from reccmp.isledecomp.compare.event import (
     ReccmpEvent,
     ReccmpReportProtocol,
@@ -138,16 +137,15 @@ def load_cvdump_lines(
 
 
 def load_markers(
-    code_dir: Path,
+    code_files: Sequence[TextFile],
     lines_db: LinesDb,
     orig_bin: PEImage,
     target_id: str,
     db: EntityDb,
     report: ReccmpReportProtocol = reccmp_report_nop,
 ):
-    codefiles = [Path(p) for p in walk_source_dir(code_dir)]
-    lines_db.add_local_paths(codefiles)
-    codebase = DecompCodebase(codefiles, target_id)
+    lines_db.add_local_paths((f.path for f in code_files))
+    codebase = DecompCodebase(code_files, target_id)
 
     # If the address of any annotation would cause an exception,
     # remove it and report an error.
@@ -265,7 +263,7 @@ def load_markers(
             batch.set_orig(
                 line.offset,
                 name=line.name,
-                filename=line.filename,
+                filename=str(line.filename),
                 line=line.line_number,
                 type=EntityType.LINE,
             )

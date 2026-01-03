@@ -1,7 +1,7 @@
 """For aggregating decomp markers read from an entire directory and for a single module."""
 
-from pathlib import Path
 from typing import Callable, Iterable, Iterator
+from reccmp.isledecomp.formats import TextFile
 from .parser import DecompParser
 from .node import (
     ParserLineSymbol,
@@ -14,14 +14,13 @@ from .node import (
 
 
 class DecompCodebase:
-    def __init__(self, paths: Iterable[Path], module: str) -> None:
+    def __init__(self, files: Iterable[TextFile], module: str) -> None:
         self._symbols: list[ParserSymbol] = []
 
         parser = DecompParser()
-        for path in paths:
-            parser.reset_and_set_filename(str(path))
-            with open(path, "r", encoding="utf-8") as f:
-                parser.read(f.read())
+        for f in files:
+            parser.reset_and_set_filename(f.path)
+            parser.read(f.text)
 
             self._symbols += parser.iter_symbols(module)
 

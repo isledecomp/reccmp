@@ -3,3 +3,4 @@ from .image import Image
 from .mz import MZImage
 from .ne import NEImage
 from .pe import PEImage
+from .textfile import TextFile

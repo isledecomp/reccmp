@@ -1,11 +1,10 @@
 """Tests for creating/matching entities using code annotations."""
 
-from pathlib import PurePath, Path, PureWindowsPath
+from pathlib import PurePath, PureWindowsPath
 from textwrap import dedent
-from typing import Iterable
 import pytest
-from reccmp.isledecomp.types import EntityType, TextFile
-from reccmp.isledecomp.formats import PEImage
+from reccmp.isledecomp.types import EntityType
+from reccmp.isledecomp.formats import PEImage, TextFile
 from reccmp.isledecomp.compare.ingest import load_markers
 from reccmp.isledecomp.compare.db import EntityDb
 from reccmp.isledecomp.compare.lines import LinesDb
@@ -21,19 +20,7 @@ def fixture_lines_db():
     return LinesDb()
 
 
-def create_test_files(code_dir: Path, files: Iterable[TextFile]):
-    """Helper to establish the given code files in the base directory. (pytest tmp_path fixture)
-    This is needed while DecompCodebase still depends on the filesystem."""
-    for mock_file in files:
-        file_path = code_dir / mock_file.path
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        with file_path.open("w+") as f:
-            f.write(mock_file.text)
-
-
-def test_load_code_invalid_addr(
-    tmp_path: Path, db: EntityDb, lines_db: LinesDb, binfile: PEImage
-):
+def test_load_code_invalid_addr(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     """Should not create entity for an invalid address."""
     files = (
         TextFile(
@@ -46,16 +33,13 @@ def test_load_code_invalid_addr(
             ),
         ),
     )
-    create_test_files(tmp_path, files)
-    load_markers(tmp_path, lines_db, binfile, "TEST", db)
+    load_markers(files, lines_db, binfile, "TEST", db)
 
     # No exception raised
     assert db.get_by_orig(0x11001000) is None
 
 
-def test_load_code_duplicate_addr(
-    tmp_path: Path, db: EntityDb, lines_db: LinesDb, binfile: PEImage
-):
+def test_load_code_duplicate_addr(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     """Each address can only be used once.
     Files are loaded in the order returned by os.walk.
     Create the entity from the annotation that appears first."""
@@ -79,8 +63,7 @@ def test_load_code_duplicate_addr(
             ),
         ),
     )
-    create_test_files(tmp_path, files)
-    load_markers(tmp_path, lines_db, binfile, "TEST", db)
+    load_markers(files, lines_db, binfile, "TEST", db)
 
     # Should use the name from the first file (alphabetical, by path)
     entity = db.get_by_orig(0x1001DDE0)
@@ -89,7 +72,7 @@ def test_load_code_duplicate_addr(
 
 
 def test_load_code_cpp_symbol_function(
-    tmp_path: Path, db: EntityDb, lines_db: LinesDb, binfile: PEImage
+    db: EntityDb, lines_db: LinesDb, binfile: PEImage
 ):
     """Function namerefs that begin with '?' are assumed to refer to the entity symbol."""
     files = (
@@ -102,8 +85,7 @@ def test_load_code_cpp_symbol_function(
             ),
         ),
     )
-    create_test_files(tmp_path, files)
-    load_markers(tmp_path, lines_db, binfile, "TEST", db)
+    load_markers(files, lines_db, binfile, "TEST", db)
 
     entity = db.get_by_orig(0x10086240)
     assert entity is not None
@@ -112,9 +94,7 @@ def test_load_code_cpp_symbol_function(
 
 
 @pytest.mark.xfail(reason="Potential future enhancement.")
-def test_load_code_cpp_symbol_global(
-    tmp_path: Path, db: EntityDb, lines_db: LinesDb, binfile: PEImage
-):
+def test_load_code_cpp_symbol_global(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     """Global namerefs that begin with '?' are assumed to refer to the entity symbol."""
     files = (
         TextFile(
@@ -127,8 +107,7 @@ def test_load_code_cpp_symbol_global(
             ),
         ),
     )
-    create_test_files(tmp_path, files)
-    load_markers(tmp_path, lines_db, binfile, "TEST", db)
+    load_markers(files, lines_db, binfile, "TEST", db)
 
     entity = db.get_by_orig(0x100FD624)
     assert entity is not None
@@ -136,9 +115,7 @@ def test_load_code_cpp_symbol_global(
     assert entity.get("name") is None
 
 
-def test_load_code_c_symbol_implicit(
-    tmp_path: Path, db: EntityDb, lines_db: LinesDb, binfile: PEImage
-):
+def test_load_code_c_symbol_implicit(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     """Namerefs that begin with '_' are NOT assumed to be the symbol.
     This would cause problems for (e.g.) STL entities like '_Tree...'"""
     files = (
@@ -152,8 +129,7 @@ def test_load_code_c_symbol_implicit(
             ),
         ),
     )
-    create_test_files(tmp_path, files)
-    load_markers(tmp_path, lines_db, binfile, "TEST", db)
+    load_markers(files, lines_db, binfile, "TEST", db)
 
     entity = db.get_by_orig(0x1008C410)
     assert entity is not None
@@ -161,9 +137,7 @@ def test_load_code_c_symbol_implicit(
     assert entity.get("name") == "_strlwr"
 
 
-def test_load_code_c_symbol_explicit(
-    tmp_path: Path, db: EntityDb, lines_db: LinesDb, binfile: PEImage
-):
+def test_load_code_c_symbol_explicit(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     """If the SYMBOL annotation modifier is used, set the entity symbol instead of the name."""
     files = (
         TextFile(
@@ -176,8 +150,7 @@ def test_load_code_c_symbol_explicit(
             ),
         ),
     )
-    create_test_files(tmp_path, files)
-    load_markers(tmp_path, lines_db, binfile, "TEST", db)
+    load_markers(files, lines_db, binfile, "TEST", db)
 
     entity = db.get_by_orig(0x1008C410)
     assert entity is not None
@@ -186,7 +159,7 @@ def test_load_code_c_symbol_explicit(
 
 
 def test_load_code_function_nameref_variants(
-    tmp_path: Path, db: EntityDb, lines_db: LinesDb, binfile: PEImage
+    db: EntityDb, lines_db: LinesDb, binfile: PEImage
 ):
     """Should set extra properties for STUB and LIBRARY annotations."""
     files = (
@@ -212,8 +185,7 @@ def test_load_code_function_nameref_variants(
             ),
         ),
     )
-    create_test_files(tmp_path, files)
-    load_markers(tmp_path, lines_db, binfile, "TEST", db)
+    load_markers(files, lines_db, binfile, "TEST", db)
 
     # n.b. These fields are always set.
     # We don't need to protect against None by using: entity.get("stub", False)
@@ -259,9 +231,7 @@ def test_load_code_function_nameref_variants(
     assert entity.get("name") == "Pizza::`scalar deleting destructor'"
 
 
-def test_load_code_lineref(
-    tmp_path: Path, db: EntityDb, lines_db: LinesDb, binfile: PEImage
-):
+def test_load_code_lineref(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     """Should create a function entity for a line-based annotation."""
     files = (
         TextFile(
@@ -276,8 +246,7 @@ def test_load_code_lineref(
             ),
         ),
     )
-    create_test_files(tmp_path, files)
-    load_markers(tmp_path, lines_db, binfile, "TEST", db)
+    load_markers(files, lines_db, binfile, "TEST", db)
 
     entity = db.get_by_orig(0x10038220)
     assert entity is not None
@@ -287,9 +256,7 @@ def test_load_code_lineref(
     assert entity.get("type") == EntityType.FUNCTION
 
 
-def test_load_code_match_line(
-    tmp_path: Path, db: EntityDb, lines_db: LinesDb, binfile: PEImage
-):
+def test_load_code_match_line(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     """Should match the function based on its file path and line number."""
     files = (
         TextFile(
@@ -304,7 +271,6 @@ def test_load_code_match_line(
             ),
         ),
     )
-    create_test_files(tmp_path, files)
 
     # Mock reading from PDB to set up the lines database.
     lines_db.add_line(PureWindowsPath("test.cpp"), 3, 0x1234)
@@ -313,8 +279,7 @@ def test_load_code_match_line(
     # TODO: For a successful match, the recomp entity must already exist.
     with db.batch() as batch:
         batch.set_recomp(0x1234)
-
-    load_markers(tmp_path, lines_db, binfile, "TEST", db)
+    load_markers(files, lines_db, binfile, "TEST", db)
 
     entity = db.get_by_orig(0x10038220)
     assert entity is not None
@@ -325,9 +290,7 @@ def test_load_code_match_line(
     assert entity.get("type") == EntityType.FUNCTION
 
 
-def test_load_code_no_match_line(
-    tmp_path: Path, db: EntityDb, lines_db: LinesDb, binfile: PEImage
-):
+def test_load_code_no_match_line(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     """Don't match the function if the line number does not match."""
     files = (
         TextFile(
@@ -342,7 +305,6 @@ def test_load_code_no_match_line(
             ),
         ),
     )
-    create_test_files(tmp_path, files)
 
     # Mock reading from PDB to set up the lines database.
     lines_db.add_line(PureWindowsPath("test.cpp"), 8, 0x1234)
@@ -351,8 +313,7 @@ def test_load_code_no_match_line(
     # TODO: For a successful match, the recomp entity must already exist.
     with db.batch() as batch:
         batch.set_recomp(0x1234)
-
-    load_markers(tmp_path, lines_db, binfile, "TEST", db)
+    load_markers(files, lines_db, binfile, "TEST", db)
 
     entity = db.get_by_orig(0x10038220)
     assert entity is not None
@@ -360,9 +321,7 @@ def test_load_code_no_match_line(
     assert entity.get("type") == EntityType.FUNCTION
 
 
-def test_load_code_string(
-    tmp_path: Path, db: EntityDb, lines_db: LinesDb, binfile: PEImage
-):
+def test_load_code_string(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     """Should create a string entity from a STRING annotation."""
     files = (
         TextFile(
@@ -375,8 +334,7 @@ def test_load_code_string(
             ),
         ),
     )
-    create_test_files(tmp_path, files)
-    load_markers(tmp_path, lines_db, binfile, "TEST", db)
+    load_markers(files, lines_db, binfile, "TEST", db)
 
     entity = db.get_by_orig(0x100F038C)
     assert entity is not None
@@ -385,9 +343,7 @@ def test_load_code_string(
     assert entity.get("name") == '"Pizza"'
 
 
-def test_load_code_string_no_match(
-    tmp_path: Path, db: EntityDb, lines_db: LinesDb, binfile: PEImage
-):
+def test_load_code_string_no_match(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     """Do not add the string entity if the text does not match the bytes at the address."""
     files = (
         TextFile(
@@ -400,16 +356,13 @@ def test_load_code_string_no_match(
             ),
         ),
     )
-    create_test_files(tmp_path, files)
-    load_markers(tmp_path, lines_db, binfile, "TEST", db)
+    load_markers(files, lines_db, binfile, "TEST", db)
 
     entity = db.get_by_orig(0x100F038C)
     assert entity is None
 
 
-def test_load_code_widechar(
-    tmp_path: Path, db: EntityDb, lines_db: LinesDb, binfile: PEImage
-):
+def test_load_code_widechar(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     """Should create a widechar entity from a STRING annotation."""
     files = (
         TextFile(
@@ -422,8 +375,7 @@ def test_load_code_widechar(
             ),
         ),
     )
-    create_test_files(tmp_path, files)
-    load_markers(tmp_path, lines_db, binfile, "TEST", db)
+    load_markers(files, lines_db, binfile, "TEST", db)
 
     entity = db.get_by_orig(0x100DAAA0)
     assert entity is not None
@@ -432,9 +384,7 @@ def test_load_code_widechar(
     assert entity.get("name") == 'L"(null)"'
 
 
-def test_load_code_string_with_nulls(
-    tmp_path: Path, db: EntityDb, lines_db: LinesDb, binfile: PEImage
-):
+def test_load_code_string_with_nulls(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     """Should read string with nulls included.
     Using the unicode string '(null)' from the above example."""
     files = (
@@ -448,8 +398,7 @@ def test_load_code_string_with_nulls(
             ),
         ),
     )
-    create_test_files(tmp_path, files)
-    load_markers(tmp_path, lines_db, binfile, "TEST", db)
+    load_markers(files, lines_db, binfile, "TEST", db)
 
     entity = db.get_by_orig(0x100DAAA0)
     assert entity is not None
@@ -458,9 +407,7 @@ def test_load_code_string_with_nulls(
     assert entity.get("name") == '"(\\x00n\\x00u\\x00l\\x00l\\x00)"'
 
 
-def test_load_code_widechar_invalid(
-    tmp_path: Path, db: EntityDb, lines_db: LinesDb, binfile: PEImage
-):
+def test_load_code_widechar_invalid(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     """Should not create entity if we cannot read a widechar.
     Decoding from this address throws a UnicodeDecodeError."""
     files = (
@@ -474,16 +421,13 @@ def test_load_code_widechar_invalid(
             ),
         ),
     )
-    create_test_files(tmp_path, files)
-    load_markers(tmp_path, lines_db, binfile, "TEST", db)
+    load_markers(files, lines_db, binfile, "TEST", db)
 
     entity = db.get_by_orig(0x100DDA7B)
     assert entity is None
 
 
-def test_load_code_vtable(
-    tmp_path: Path, db: EntityDb, lines_db: LinesDb, binfile: PEImage
-):
+def test_load_code_vtable(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     files = (
         TextFile(
             PurePath("test.h"),
@@ -496,8 +440,7 @@ def test_load_code_vtable(
             ),
         ),
     )
-    create_test_files(tmp_path, files)
-    load_markers(tmp_path, lines_db, binfile, "TEST", db)
+    load_markers(files, lines_db, binfile, "TEST", db)
 
     entity = db.get_by_orig(0x100D7380)
     assert entity is not None
@@ -508,9 +451,7 @@ def test_load_code_vtable(
     assert entity.get("base_class") is None
 
 
-def test_load_code_vtable_vbase(
-    tmp_path: Path, db: EntityDb, lines_db: LinesDb, binfile: PEImage
-):
+def test_load_code_vtable_vbase(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     """Should set base_class for VTABLE entities with virtual inheritance."""
     files = (
         TextFile(
@@ -525,8 +466,7 @@ def test_load_code_vtable_vbase(
             ),
         ),
     )
-    create_test_files(tmp_path, files)
-    load_markers(tmp_path, lines_db, binfile, "TEST", db)
+    load_markers(files, lines_db, binfile, "TEST", db)
 
     entity = db.get_by_orig(0x100D9EC8)
     assert entity is not None
@@ -542,9 +482,7 @@ def test_load_code_vtable_vbase(
     assert entity.get("base_class") == "Pizza"
 
 
-def test_load_code_variable(
-    tmp_path: Path, db: EntityDb, lines_db: LinesDb, binfile: PEImage
-):
+def test_load_code_variable(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     files = (
         TextFile(
             PurePath("test.cpp"),
@@ -556,8 +494,7 @@ def test_load_code_variable(
             ),
         ),
     )
-    create_test_files(tmp_path, files)
-    load_markers(tmp_path, lines_db, binfile, "TEST", db)
+    load_markers(files, lines_db, binfile, "TEST", db)
 
     entity = db.get_by_orig(0x10102048)
     assert entity is not None
@@ -565,9 +502,7 @@ def test_load_code_variable(
     assert entity.get("name") == "g_strACTION"
 
 
-def test_load_code_static_variable(
-    tmp_path: Path, db: EntityDb, lines_db: LinesDb, binfile: PEImage
-):
+def test_load_code_static_variable(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     """Should create a static variable entity if the function is also annotated."""
     files = (
         TextFile(
@@ -584,8 +519,7 @@ def test_load_code_static_variable(
             ),
         ),
     )
-    create_test_files(tmp_path, files)
-    load_markers(tmp_path, lines_db, binfile, "TEST", db)
+    load_markers(files, lines_db, binfile, "TEST", db)
 
     entity = db.get_by_orig(0x10109594)
     assert entity is not None
@@ -597,7 +531,7 @@ def test_load_code_static_variable(
 
 @pytest.mark.xfail(reason="Creates regular global variable instead.")
 def test_load_code_static_variable_no_function(
-    tmp_path: Path, db: EntityDb, lines_db: LinesDb, binfile: PEImage
+    db: EntityDb, lines_db: LinesDb, binfile: PEImage
 ):
     """Will create static variable entity even if function is not annotated."""
     files = (
@@ -614,8 +548,7 @@ def test_load_code_static_variable_no_function(
             ),
         ),
     )
-    create_test_files(tmp_path, files)
-    load_markers(tmp_path, lines_db, binfile, "TEST", db)
+    load_markers(files, lines_db, binfile, "TEST", db)
 
     entity = db.get_by_orig(0x10109594)
     assert entity is not None
@@ -624,9 +557,7 @@ def test_load_code_static_variable_no_function(
     assert entity.get("static_var") is True
 
 
-def test_load_code_line_marker(
-    tmp_path: Path, db: EntityDb, lines_db: LinesDb, binfile: PEImage
-):
+def test_load_code_line_marker(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     """Should create a LINE entity with the local file path and line number."""
     files = (
         TextFile(
@@ -641,11 +572,10 @@ def test_load_code_line_marker(
             ),
         ),
     )
-    create_test_files(tmp_path, files)
-    load_markers(tmp_path, lines_db, binfile, "TEST", db)
+    load_markers(files, lines_db, binfile, "TEST", db)
 
     entity = db.get_by_orig(0x10001038)
     assert entity is not None
     assert entity.get("type") == EntityType.LINE
-    assert entity.get("filename") == str(tmp_path / "test.cpp")
+    assert entity.get("filename") == "test.cpp"
     assert entity.get("line") == 3
