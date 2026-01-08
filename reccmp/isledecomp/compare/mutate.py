@@ -3,6 +3,7 @@ These functions create or update entities using the current information in the d
 """
 
 import logging
+from functools import cache
 from reccmp.isledecomp.cvdump.demangler import (
     get_function_arg_string,
 )
@@ -25,17 +26,32 @@ def match_array_elements(db: EntityDb, types: CvdumpTypesParser):
     seen_recomp = set()
     batch = db.batch()
 
+    @cache
+    def get_type_size(type_key: str) -> int:
+        type_ = types.get(type_key)
+        assert type_.size is not None
+        return type_.size
+
     # Helper function
     def _add_match_in_array(
-        name: str, type_id: str, orig_addr: int, recomp_addr: int, max_orig: int
+        name: str,
+        size: int,
+        orig_addr: int,
+        recomp_addr: int,
+        max_orig: int,
+        is_first: bool,
     ):
-        # pylint: disable=unused-argument
-        # TODO: Previously used scalar_type_pointer(type_id) to set whether this is a pointer
         if recomp_addr in seen_recomp:
             return
 
         seen_recomp.add(recomp_addr)
-        batch.set_recomp(recomp_addr, name=name)
+
+        if is_first:
+            # Don't overwrite the main variable entity.
+            batch.set_recomp(recomp_addr, name=name)
+        else:
+            batch.set_recomp(recomp_addr, name=name, size=size, type=EntityType.OFFSET)
+
         if orig_addr < max_orig:
             batch.match(orig_addr, recomp_addr)
 
@@ -80,29 +96,35 @@ def match_array_elements(db: EntityDb, types: CvdumpTypesParser):
 
         assert data_type.members is not None
 
+        is_first = True
         for array_element in data_type.members:
             orig_element_base_addr = match.orig_addr + array_element.offset
             recomp_element_base_addr = match.recomp_addr + array_element.offset
             if array_element_type.members is None:
                 # If array of scalars
+                assert array_element_type.size is not None
                 _add_match_in_array(
                     f"{match.name}{array_element.name}",
-                    array_element_type.key,
+                    array_element_type.size,
                     orig_element_base_addr,
                     recomp_element_base_addr,
                     upper_bound,
+                    is_first,
                 )
+                is_first = False
 
             else:
                 # Else: multidimensional array or array of structs
                 for member in array_element_type.members:
                     _add_match_in_array(
                         f"{match.name}{array_element.name}.{member.name}",
-                        array_element_type.key,
+                        get_type_size(member.type),
                         orig_element_base_addr + member.offset,
                         recomp_element_base_addr + member.offset,
                         upper_bound,
+                        is_first,
                     )
+                    is_first = False
 
     batch.commit()
 
