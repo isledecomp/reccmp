@@ -47,19 +47,27 @@ def test_match_array(db: EntityDb, types_db: CvdumpTypesParser):
     e = db.get_by_orig(100)
     assert e is not None
     assert e.name == "test[0]"
+    assert e.get("type") == EntityType.DATA
+    assert e.get("size") == 8
 
     e = db.get_by_orig(104)
     assert e is not None
     assert e.name == "test[1]"
+    assert e.get("type") == EntityType.OFFSET
+    assert e.get("size") == 4
     assert e.recomp_addr == 104  # Should create new match
 
     e = db.get_by_recomp(100)
     assert e is not None
     assert e.name == "test[0]"
+    assert e.get("type") == EntityType.DATA
+    assert e.get("size") == 8
 
     e = db.get_by_recomp(104)
     assert e is not None
     assert e.name == "test[1]"
+    assert e.get("type") == EntityType.OFFSET
+    assert e.get("size") == 4
     assert e.orig_addr == 104  # Should create new match
 
 
@@ -78,10 +86,12 @@ def test_match_array_key_unset(db: EntityDb):
     e = db.get_by_orig(100)
     assert e is not None
     assert e.name == "test"
+    assert e.get("type") == EntityType.DATA
 
     e = db.get_by_recomp(100)
     assert e is not None
     assert e.name == "test"
+    assert e.get("type") == EntityType.DATA
 
     # Does not create new entity
     assert db.get_by_orig(104) is None
@@ -108,10 +118,12 @@ def test_match_array_type_is_scalar(db: EntityDb):
     e = db.get_by_orig(100)
     assert e is not None
     assert e.name == "test"
+    assert e.get("type") == EntityType.DATA
 
     e = db.get_by_recomp(100)
     assert e is not None
     assert e.name == "test"
+    assert e.get("type") == EntityType.DATA
 
     # Does not create new entity
     assert db.get_by_orig(104) is None
@@ -147,10 +159,12 @@ def test_match_array_type_is_struct(db: EntityDb, types_db: CvdumpTypesParser):
     e = db.get_by_orig(100)
     assert e is not None
     assert e.name == "test"
+    assert e.get("type") == EntityType.DATA
 
     e = db.get_by_recomp(100)
     assert e is not None
     assert e.name == "test"
+    assert e.get("type") == EntityType.DATA
 
     # Does not create new entity
     assert db.get_by_orig(104) is None
@@ -179,6 +193,7 @@ def test_match_array_type_orig_smaller(db: EntityDb, types_db: CvdumpTypesParser
     e = db.get_by_orig(100)
     assert e is not None
     assert e.name == "test[0]"
+    assert e.get("type") == EntityType.DATA
 
     # But not the second
     e = db.get_by_orig(104)
@@ -189,10 +204,12 @@ def test_match_array_type_orig_smaller(db: EntityDb, types_db: CvdumpTypesParser
     e = db.get_by_recomp(100)
     assert e is not None
     assert e.name == "test[0]"
+    assert e.get("type") == EntityType.DATA
 
     e = db.get_by_recomp(104)
     assert e is not None
     assert e.name == "test[1]"
+    assert e.get("type") == EntityType.OFFSET
     assert e.orig_addr is None  # Should NOT create new match
 
 
@@ -247,6 +264,27 @@ def test_match_array_array_of_structs(db: EntityDb, types_db: CvdumpTypesParser)
         "test[1].world",
     ]
 
+    # Should create offset entities but not alter the parent variable entity.
+    orig_types = [e.get("type") for e in orig_entities if e]
+    orig_sizes = [e.get("size") for e in orig_entities if e]
+    assert orig_types == [
+        EntityType.DATA,
+        EntityType.OFFSET,
+        EntityType.OFFSET,
+        EntityType.OFFSET,
+    ]
+    assert orig_sizes == [16, 4, 4, 4]
+
+    recomp_types = [e.get("type") for e in recomp_entities if e]
+    recomp_sizes = [e.get("size") for e in recomp_entities if e]
+    assert recomp_types == [
+        EntityType.DATA,
+        EntityType.OFFSET,
+        EntityType.OFFSET,
+        EntityType.OFFSET,
+    ]
+    assert recomp_sizes == [16, 4, 4, 4]
+
 
 def test_match_array_array_of_arrays(db: EntityDb, types_db: CvdumpTypesParser):
     """For a multi-dimensional array, create entities for one level."""
@@ -290,6 +328,27 @@ def test_match_array_array_of_arrays(db: EntityDb, types_db: CvdumpTypesParser):
         "test[1].[0]",
         "test[1].[1]",
     ]
+
+    # Should create offset entities but not alter the parent variable entity.
+    orig_types = [e.get("type") for e in orig_entities if e]
+    orig_sizes = [e.get("size") for e in orig_entities if e]
+    assert orig_types == [
+        EntityType.DATA,
+        EntityType.OFFSET,
+        EntityType.OFFSET,
+        EntityType.OFFSET,
+    ]
+    assert orig_sizes == [16, 4, 4, 4]
+
+    recomp_types = [e.get("type") for e in recomp_entities if e]
+    recomp_sizes = [e.get("size") for e in recomp_entities if e]
+    assert recomp_types == [
+        EntityType.DATA,
+        EntityType.OFFSET,
+        EntityType.OFFSET,
+        EntityType.OFFSET,
+    ]
+    assert recomp_sizes == [16, 4, 4, 4]
 
 
 def test_match_array_array_of_structs_limit(db: EntityDb, types_db: CvdumpTypesParser):
@@ -359,3 +418,101 @@ def test_match_array_array_of_structs_limit(db: EntityDb, types_db: CvdumpTypesP
     # Should NOT create the third level entities. (e.g "test[0].hello.y")
     assert not any(db.get_by_orig(addr) for addr in (102, 106, 110, 114))
     assert not any(db.get_by_recomp(addr) for addr in (102, 106, 110, 114))
+
+    # Should create offset entities but not alter the parent variable entity.
+    orig_types = [e.get("type") for e in orig_entities if e]
+    orig_sizes = [e.get("size") for e in orig_entities if e]
+    assert orig_types == [
+        EntityType.DATA,
+        EntityType.OFFSET,
+        EntityType.OFFSET,
+        EntityType.OFFSET,
+    ]
+    assert orig_sizes == [16, 4, 4, 4]
+
+    recomp_types = [e.get("type") for e in recomp_entities if e]
+    recomp_sizes = [e.get("size") for e in recomp_entities if e]
+    assert recomp_types == [
+        EntityType.DATA,
+        EntityType.OFFSET,
+        EntityType.OFFSET,
+        EntityType.OFFSET,
+    ]
+    assert recomp_sizes == [16, 4, 4, 4]
+
+
+def test_match_array_array_of_union_structs(db: EntityDb, types_db: CvdumpTypesParser):
+    """GH issue #289. Demonstrating the following behavior:
+    - We use the name from the first option in the union
+    - We create offset entities for unions, as with a struct or multidimensional array
+    - We will not create entities deeper than the second level (in this case, array -> union)
+    """
+    types_db.keys["0x1000"] = {
+        "type": "LF_ARRAY",
+        "array_type": "0x1001",
+        "size": 8,
+    }
+    types_db.keys["0x1001"] = {
+        "type": "LF_UNION",
+        "field_list_type": "0x1002",
+        "size": 4,
+    }
+    types_db.keys["0x1002"] = {
+        "type": "LF_FIELDLIST",
+        "members": [
+            FieldListItem(offset=0, name="hello", type="0x1003"),
+            FieldListItem(offset=0, name="world", type="0x1003"),
+        ],
+    }
+    # These values will not be accessed because we do not completely flatten the structure.
+    # But they are here to provide a complete example of type data.
+    types_db.keys["0x1003"] = {
+        "type": "LF_STRUCTURE",
+        "field_list_type": "0x1004",
+        "size": 4,
+    }
+    types_db.keys["0x1004"] = {
+        "type": "LF_FIELDLIST",
+        "members": [
+            FieldListItem(offset=0, name="a", type="T_CHAR"),
+            FieldListItem(offset=1, name="b", type="T_CHAR"),
+            FieldListItem(offset=2, name="c", type="T_CHAR"),
+            FieldListItem(offset=3, name="d", type="T_CHAR"),
+        ],
+    }
+
+    with db.batch() as batch:
+        batch.set_recomp(
+            100, name="test", type=EntityType.DATA, data_type="0x1000", size=8
+        )
+        batch.match(100, 100)
+
+    match_array_elements(db, types_db)
+
+    e = db.get_by_orig(100)
+    assert e is not None
+    assert e.name == "test[0].hello"
+    assert e.get("type") == EntityType.DATA
+    assert e.get("size") == 8
+
+    e = db.get_by_orig(104)
+    assert e is not None
+    assert e.name == "test[1].hello"
+    assert e.get("type") == EntityType.OFFSET
+    assert e.get("size") == 4
+
+    e = db.get_by_recomp(100)
+    assert e is not None
+    assert e.name == "test[0].hello"
+    assert e.get("type") == EntityType.DATA
+    assert e.get("size") == 8
+
+    e = db.get_by_recomp(104)
+    assert e is not None
+    assert e.name == "test[1].hello"
+    assert e.get("type") == EntityType.OFFSET
+    assert e.get("size") == 4
+
+    # Should NOT create entities for the union offsets
+    assert not any(db.get_by_orig(addr) for addr in (101, 102, 103, 105, 106, 107))
+    assert not any(db.get_by_recomp(addr) for addr in (101, 102, 103, 105, 106, 107))
