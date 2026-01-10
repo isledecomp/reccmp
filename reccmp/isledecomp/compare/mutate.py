@@ -39,15 +39,15 @@ def match_array_elements(db: EntityDb, types: CvdumpTypesParser):
         orig_addr: int,
         recomp_addr: int,
         max_orig: int,
-        is_first: bool,
+        is_main_variable: bool,
     ):
         if recomp_addr in seen_recomp:
             return
 
         seen_recomp.add(recomp_addr)
 
-        if is_first:
-            # Don't overwrite the main variable entity.
+        if is_main_variable:
+            # Don't replace the type or size of the main variable entity.
             batch.set_recomp(recomp_addr, name=name)
         else:
             batch.set_recomp(recomp_addr, name=name, size=size, type=EntityType.OFFSET)
@@ -96,7 +96,6 @@ def match_array_elements(db: EntityDb, types: CvdumpTypesParser):
 
         assert data_type.members is not None
 
-        is_first = True
         for array_element in data_type.members:
             orig_element_base_addr = match.orig_addr + array_element.offset
             recomp_element_base_addr = match.recomp_addr + array_element.offset
@@ -109,9 +108,8 @@ def match_array_elements(db: EntityDb, types: CvdumpTypesParser):
                     orig_element_base_addr,
                     recomp_element_base_addr,
                     upper_bound,
-                    is_first,
+                    array_element.offset == 0,
                 )
-                is_first = False
 
             else:
                 # Else: multidimensional array or array of structs
@@ -122,9 +120,8 @@ def match_array_elements(db: EntityDb, types: CvdumpTypesParser):
                         orig_element_base_addr + member.offset,
                         recomp_element_base_addr + member.offset,
                         upper_bound,
-                        is_first,
+                        array_element.offset + member.offset == 0,
                     )
-                    is_first = False
 
     batch.commit()
 
