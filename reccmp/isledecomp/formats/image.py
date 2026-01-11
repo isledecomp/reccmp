@@ -39,7 +39,7 @@ class ImageSectionFlags(enum.Flag):
     BSS = enum.auto()
 
 
-@dataclasses.dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True, kw_only=True)
 class ImageSection:
     virtual_range: range
     physical_range: range
