@@ -10,13 +10,13 @@ from enum import IntEnum, IntFlag
 from functools import cached_property
 from pathlib import Path
 import struct
-from typing import Iterator, cast
+from typing import Iterable, Iterator, cast
 
 from .exceptions import (
     InvalidVirtualAddressError,
     SectionNotFoundError,
 )
-from .image import Image, ImageRegion, ImageImport
+from .image import Image, ImageRegion, ImageSection, ImageSectionFlags, ImageImport
 from .mz import ImageDosHeader
 
 # pylint: disable=too-many-lines
@@ -395,26 +395,6 @@ class CodeViewHeaderRSDS:
 
 
 @dataclasses.dataclass(frozen=True)
-class PESection:
-    name: str
-    virtual_size: int
-    virtual_address: int
-    view: memoryview
-
-    @cached_property
-    def size_of_raw_data(self) -> int:
-        return len(self.view)
-
-    @cached_property
-    def extent(self):
-        """Get the highest possible offset of this section"""
-        return max(self.size_of_raw_data, self.virtual_size)
-
-    def contains_vaddr(self, vaddr: int) -> bool:
-        return self.virtual_address <= vaddr < self.virtual_address + self.extent
-
-
-@dataclasses.dataclass(frozen=True)
 class DebugDirectoryEntryHeader:
     characteristics: int  # Reserved, must be zero.
     time_data_stamp: int  # The time and date that the debug data was created.
@@ -453,6 +433,37 @@ class ExportDirectoryTable:
     ordinal_table_rva: int
 
 
+def create_pe_sections(
+    section_headers: Iterable[PEImageSectionHeader],
+    image_base: int,
+    view: memoryview,
+) -> Iterator[ImageSection]:
+    for s in section_headers:
+        virtual_start = image_base + s.virtual_address
+        physical_start = s.pointer_to_raw_data
+
+        flags = ImageSectionFlags(0)
+
+        for pe_flag, our_flag in (
+            (PESectionFlags.IMAGE_SCN_MEM_EXECUTE, ImageSectionFlags.EXECUTE),
+            (PESectionFlags.IMAGE_SCN_MEM_READ, ImageSectionFlags.READ),
+            (PESectionFlags.IMAGE_SCN_MEM_WRITE, ImageSectionFlags.WRITE),
+        ):
+            if s.characteristics & pe_flag:
+                flags |= our_flag
+
+        if s.size_of_raw_data == 0:
+            flags |= ImageSectionFlags.BSS
+
+        yield ImageSection(
+            name=s.name,
+            virtual_range=range(virtual_start, virtual_start + s.virtual_size),
+            physical_range=range(physical_start, physical_start + s.size_of_raw_data),
+            view=view[physical_start : physical_start + s.size_of_raw_data],
+            flags=flags,
+        )
+
+
 # pylint: disable=too-many-public-methods
 @dataclasses.dataclass
 class PEImage(Image):
@@ -460,8 +471,6 @@ class PEImage(Image):
     header: PEImageFileHeader
     optional_header: PEImageOptionalHeader
     section_headers: tuple[PEImageSectionHeader, ...]
-    sections: tuple[PESection, ...]
-    section_map: dict[str, PESection]
 
     @classmethod
     def from_memory(
@@ -477,19 +486,9 @@ class PEImage(Image):
             data, count=header.number_of_sections, offset=offset_sections
         )
         sections = tuple(
-            PESection(
-                name=section_header.name,
-                virtual_address=optional_header.image_base
-                + section_header.virtual_address,
-                virtual_size=section_header.virtual_size,
-                view=view[
-                    section_header.pointer_to_raw_data : section_header.pointer_to_raw_data
-                    + section_header.size_of_raw_data
-                ],
-            )
-            for section_header in section_headers
+            create_pe_sections(section_headers, optional_header.image_base, view)
         )
-        section_map = {section.name: section for section in sections}
+        section_map = {section.name: section for section in sections if section.name}
         image = cls(
             filepath=filepath,
             data=data,
@@ -580,7 +579,7 @@ class PEImage(Image):
 
     def get_sections_in_data_directory(
         self, t: PEDataDirectoryItemType
-    ) -> list[PESection]:
+    ) -> list[ImageSection]:
         result = []
         region = self.get_data_directory_region(t)
         if region:
@@ -802,13 +801,13 @@ class PEImage(Image):
 
                     yield addr, string
 
-    def get_section_by_name(self, name: str) -> PESection:
+    def get_section_by_name(self, name: str) -> ImageSection:
         try:
             return self.section_map[name]
         except KeyError as ex:
             raise SectionNotFoundError from ex
 
-    def get_section_by_index(self, index: int) -> PESection:
+    def get_section_by_index(self, index: int) -> ImageSection:
         """Convert 1-based index into 0-based."""
         try:
             assert index > 0
