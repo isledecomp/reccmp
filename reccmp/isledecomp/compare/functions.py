@@ -3,9 +3,8 @@ from dataclasses import dataclass
 from functools import cache
 import struct
 from itertools import pairwise
-from typing import Callable, Iterator, NamedTuple
+from typing import Callable, Iterator
 from reccmp.isledecomp.compare.lines import LinesDb
-from reccmp.isledecomp.difflib import DiffOpcode
 from reccmp.isledecomp.compare.pinned_sequences import SequenceMatcherWithPins
 from reccmp.isledecomp.compare.asm.fixes import assert_fixup, find_effective_match
 from reccmp.isledecomp.compare.asm.parse import AsmExcerpt, ParseAsm
@@ -14,20 +13,13 @@ from reccmp.isledecomp.compare.asm.replacement import (
     create_name_lookup,
 )
 from reccmp.isledecomp.compare.db import EntityDb, ReccmpMatch
+from reccmp.isledecomp.compare.diff import FunctionCompareResult
 from reccmp.isledecomp.compare.event import ReccmpEvent, ReccmpReportProtocol
 from reccmp.isledecomp.formats.exceptions import (
     InvalidVirtualAddressError,
     InvalidVirtualReadError,
 )
 from reccmp.isledecomp.formats import Image, PEImage
-
-
-class FunctionCompareResult(NamedTuple):
-    codes: list[DiffOpcode]
-    orig_inst: list[tuple[str, str]]
-    recomp_inst: list[tuple[str, str]]
-    is_effective_match: bool
-    match_ratio: float
 
 
 def timestamp_string() -> str:
