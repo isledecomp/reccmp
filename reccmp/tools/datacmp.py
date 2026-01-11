@@ -15,6 +15,7 @@ from reccmp.isledecomp.cvdump.types import (
     CvdumpKeyError,
     CvdumpIntegrityError,
 )
+from reccmp.isledecomp.formats.pe import PEImage
 from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
 from reccmp.project.detect import (
     RecCmpProjectException,
@@ -147,6 +148,9 @@ def do_the_comparison(target: RecCmpTarget) -> Iterable[ComparisonItem]:
     isle_compare = IsleCompare.from_target(target)
     origfile = isle_compare.orig_bin
     recompfile = isle_compare.recomp_bin
+
+    if not isinstance(origfile, PEImage) or not isinstance(recompfile, PEImage):
+        raise ValueError("`datacmp` currently only supports 32-bit PE images")
 
     for var in isle_compare.get_variables():
         assert var.name is not None
