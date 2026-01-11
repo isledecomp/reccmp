@@ -123,7 +123,9 @@ def combined_diff(
     return unified_diff
 
 
-def compare_result_to_udiff(result: FunctionCompareResult, *, grouped: bool = True):
+def compare_result_to_udiff(
+    result: FunctionCompareResult, *, grouped: bool = True
+) -> CombinedDiffOutput:
     if grouped:
         opcode_groups = list(get_grouped_opcodes(result.codes, n=10))
     else:

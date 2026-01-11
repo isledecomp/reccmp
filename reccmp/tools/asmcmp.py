@@ -277,8 +277,17 @@ def main():
         orig_addr = f"0x{match.orig_addr:x}"
         recomp_addr = f"0x{match.recomp_addr:x}"
 
-        grouped_diff = match.match_type != EntityType.VTABLE
-        udiff = compare_result_to_udiff(match.result, grouped=grouped_diff)
+        if match.match_type == EntityType.VTABLE:
+            # Complete diff is always shown for vtables, even if they match.
+            udiff = compare_result_to_udiff(match.result, grouped=False)
+
+        elif match.result.match_ratio != 1.0:
+            # Show grouped diff for effective match.
+            udiff = compare_result_to_udiff(match.result, grouped=True)
+
+        else:
+            # Display nothing for matching functions.
+            udiff = None
 
         report.entities[orig_addr] = ReccmpComparedEntity(
             orig_addr=orig_addr,
