@@ -35,7 +35,7 @@ The paths are relative to the directory that contains `reccmp-project.yml`.
 
 Here's an example of a CSV file using the pipe character as the delimiter.
 
-```
+```csv
 address|name|size
 1008b400|_atol|164
 1008b4b0|_atoi|14
@@ -59,7 +59,7 @@ The `"name"` field is the name for the entity, as you would expect. `"size"` is 
 - `float`
 - `vtable`
 
-These are the same categories used in the [code annotations](docs/annotations.md). `LINE` is not yet supported in CSV.
+These are the same categories used in the [code annotations](./annotations.md). `LINE` is not yet supported in CSV.
 
 ### Finer points
 
@@ -93,6 +93,7 @@ address,name
 ```
 
 If you need to escape the _escape character_, use two backslashes, as in:
+
 ```csv
 address,name
 10004000,te\\st
@@ -102,7 +103,7 @@ address,name
 
 CSV does not support comments, but we allow them. Any line that begins with `//` or `#` will be skipped.
 
-```
+```txt
 address,type
 
 # Months of the year

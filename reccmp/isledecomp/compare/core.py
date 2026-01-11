@@ -2,6 +2,7 @@ import logging
 import difflib
 import struct
 from typing import Iterable, Iterator
+from typing_extensions import Self
 from reccmp.project.detect import RecCmpTarget
 from reccmp.isledecomp.difflib import get_grouped_opcodes
 from reccmp.isledecomp.dir import walk_source_dir
@@ -177,7 +178,7 @@ class Compare:
         match_strings(self._db, self.report)
 
     @classmethod
-    def from_target(cls, target: RecCmpTarget):
+    def from_target(cls, target: RecCmpTarget) -> Self:
         origfile = detect_image(filepath=target.original_path)
         recompfile = detect_image(filepath=target.recompiled_path)
 
