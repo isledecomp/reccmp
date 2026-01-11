@@ -433,11 +433,12 @@ class ExportDirectoryTable:
     ordinal_table_rva: int
 
 
-def create_pe_sections(
+def get_pe_sections(
     section_headers: Iterable[PEImageSectionHeader],
     image_base: int,
     view: memoryview,
 ) -> Iterator[ImageSection]:
+    """Helper that creates ImageSections based on the PE section headers."""
     for s in section_headers:
         virtual_start = image_base + s.virtual_address
         physical_start = s.pointer_to_raw_data
@@ -486,7 +487,7 @@ class PEImage(Image):
             data, count=header.number_of_sections, offset=offset_sections
         )
         sections = tuple(
-            create_pe_sections(section_headers, optional_header.image_base, view)
+            get_pe_sections(section_headers, optional_header.image_base, view)
         )
         section_map = {section.name: section for section in sections if section.name}
         image = cls(
