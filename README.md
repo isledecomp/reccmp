@@ -15,7 +15,7 @@ MxCore* MxObjectFactory::Create(const char* p_name)
 
 This allows you to automatically verify the accuracy of re-compiled functions, virtual tables, variable offsets and more. [Click to see the full syntax](docs/annotations.md).
 
-You can supplement the code annotations with metadata from CSV files. The instructions and syntax are [here](docs/csv.md).
+You can supplement the code annotations with metadata from CSV files. See the [instructions and syntax](docs/csv.md).
 
 At the moment, C++ compiled to 32-bit x86 with old versions of MSVC (like 4.20) is supported. Work on support for newer MSVC versions is in progress - testing and bug reports are greatly appreciated. Other compilers, languages and architectures are not supported at the moment, but feel free to contribute if you wish to do so!
 
@@ -50,6 +50,10 @@ The next steps differ based on what kind of project you have.
 2. You will see a lot of new files. Set up your C++ compiler and compile the project defined by `CMakeLists.txt`, ideally into a sub-directory like `./build`. Advice on building with old MSVC versions can be found at the [LEGO Island Decompilation project](https://github.com/isledecomp/isle).
 3. Look into `reccmp-project.yml` to see what the target is called.
 4. Navigate to the build directory and run `reccmp-reccmp --target <YOURTARGET>`.
+
+### Config files
+
+See the [documentation on the config files](./docs/project_files.md) for more information.
 
 ## Tooling
 
