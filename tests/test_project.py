@@ -78,12 +78,15 @@ def test_project_loading_project_and_user(tmp_path_factory, binfile: PEImage):
         )
     )
 
+    # Assert that relative paths are resolved with respect to the location of the user config
+    relative_original_path = binfile.filepath.relative_to(project_root, walk_up=True)
+
     (project_root / RECCMP_USER_CONFIG).write_text(
         textwrap.dedent(
             f"""\
             targets:
               LEGO1:
-                path: {binfile.filepath}
+                path: {relative_original_path}
             """
         )
     )
@@ -92,7 +95,8 @@ def test_project_loading_project_and_user(tmp_path_factory, binfile: PEImage):
     assert len(project.targets) == 1
     assert project.targets["LEGO1"].sha256 == LEGO1_SHA256
     assert project.targets["LEGO1"].source_root == project_root / "sources"
-    assert project.targets["LEGO1"].original_path == binfile.filepath
+    assert project.targets["LEGO1"].original_path is not None
+    assert project.targets["LEGO1"].original_path.resolve() == binfile.filepath
     assert project.project_config_path == project_root / RECCMP_PROJECT_CONFIG
     assert project.user_config_path == project_root / RECCMP_USER_CONFIG
 
@@ -154,14 +158,15 @@ def test_project_loading_build_and_project(tmp_path_factory):
     project_root = tmp_path_factory.mktemp("project")
     build_path = project_root / "build"
     build_path.mkdir()
-    recompiled_lib = build_path / "LEGO1.dll"
-    recompiled_pdb = build_path / "LEGO1.pdb"
+    # Use relative paths to validate that they are resolved relative to the `build.yaml`
+    recompiled_lib = Path("LEGO1.dll")
+    recompiled_pdb = Path("LEGO1.pdb")
 
     # Create only the build file to start. Project attribute points to a non-existent file.
     (build_path / RECCMP_BUILD_CONFIG).write_text(
         textwrap.dedent(
             f"""\
-            project: {project_root}
+            project: ..
             targets:
               LEGO1:
                 path: {recompiled_lib}
@@ -189,8 +194,8 @@ def test_project_loading_build_and_project(tmp_path_factory):
     assert len(project.targets) == 1
     assert project.targets["LEGO1"].filename == "LEGO1.dll"
     assert project.targets["LEGO1"].source_root == project_root / "sources"
-    assert project.targets["LEGO1"].recompiled_path == recompiled_lib
-    assert project.targets["LEGO1"].recompiled_pdb == recompiled_pdb
+    assert project.targets["LEGO1"].recompiled_path == build_path / recompiled_lib
+    assert project.targets["LEGO1"].recompiled_pdb == build_path / recompiled_pdb
 
     # but we are missing user data.
     assert project.targets["LEGO1"].original_path is None
