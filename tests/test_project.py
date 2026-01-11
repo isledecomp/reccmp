@@ -62,7 +62,7 @@ def test_project_loading_project_only(tmp_path_factory):
     assert project.user_config_path is None
 
 
-def test_project_loading_project_and_user(tmp_path_factory, binfile: PEImage):
+def test_project_loading_project_and_user(tmp_path_factory):
     """Can load project.yml and combine with user.yml in the same directory."""
     project_root = tmp_path_factory.mktemp("project")
     (project_root / RECCMP_PROJECT_CONFIG).write_text(
@@ -78,15 +78,15 @@ def test_project_loading_project_and_user(tmp_path_factory, binfile: PEImage):
         )
     )
 
-    # Assert that relative paths are resolved with respect to the location of the user config
-    relative_original_path = binfile.filepath.relative_to(project_root, walk_up=True)
+    # does not need to exist in this test
+    original_binary_path = Path("./binfiles/LEGO1.DLL")
 
     (project_root / RECCMP_USER_CONFIG).write_text(
         textwrap.dedent(
             f"""\
             targets:
               LEGO1:
-                path: {relative_original_path}
+                path: {original_binary_path}
             """
         )
     )
@@ -96,7 +96,10 @@ def test_project_loading_project_and_user(tmp_path_factory, binfile: PEImage):
     assert project.targets["LEGO1"].sha256 == LEGO1_SHA256
     assert project.targets["LEGO1"].source_root == project_root / "sources"
     assert project.targets["LEGO1"].original_path is not None
-    assert project.targets["LEGO1"].original_path.resolve() == binfile.filepath
+    assert (
+        project.targets["LEGO1"].original_path.resolve()
+        == project_root / original_binary_path
+    )
     assert project.project_config_path == project_root / RECCMP_PROJECT_CONFIG
     assert project.user_config_path == project_root / RECCMP_USER_CONFIG
 
