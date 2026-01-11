@@ -338,7 +338,9 @@ class RecCmpProject:
         # We must have found the project if we are here.
         assert project.project_config_path is not None
         project_directory = project.project_config_path.parent
-        user_data = project.find_user_config(project_directory)
+        # As of this writing, the user config must be located next to the project config
+        user_config_directory = project_directory
+        user_data = project.find_user_config(user_config_directory)
 
         verify_target_names(
             project_keys=set(project_data.targets) if project_data else set(),
@@ -388,7 +390,9 @@ class RecCmpProject:
                 if target_id not in project.targets:
                     continue
 
-                project.targets[target_id].original_path = user_target.path
+                project.targets[target_id].original_path = (
+                    user_config_directory / user_target.path
+                )
 
         # Apply reccmp-build.yml
         if build_data is not None:
@@ -398,11 +402,11 @@ class RecCmpProject:
                 if target_id not in project.targets:
                     continue
 
-                project.targets[target_id].recompiled_path = build_directory.joinpath(
-                    build_target.path
+                project.targets[target_id].recompiled_path = (
+                    build_directory / build_target.path
                 )
-                project.targets[target_id].recompiled_pdb = build_directory.joinpath(
-                    build_target.pdb
+                project.targets[target_id].recompiled_pdb = (
+                    build_directory / build_target.pdb
                 )
 
         return project
