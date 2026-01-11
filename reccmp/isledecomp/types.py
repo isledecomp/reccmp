@@ -19,6 +19,7 @@ class EntityType(IntEnum):
     WIDECHAR = 11
     IMPORT_THUNK = 12
     LABEL = 13
+    OFFSET = 14
 
 
 class ImageId(IntEnum):

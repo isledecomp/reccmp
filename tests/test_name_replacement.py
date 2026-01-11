@@ -69,12 +69,13 @@ def test_name_hierarchy(db):
     assert "Test" not in entity
 
 
-def test_offset_name(db):
+@pytest.mark.parametrize("entity_type", (EntityType.DATA, EntityType.OFFSET))
+def test_offset_name(db: EntityDb, entity_type: EntityType):
     """For some entities (i.e. variables) we will return a name if the search address
     is inside the address range of the entity. This is determined by the size attribute.
     """
     with db.batch() as batch:
-        batch.set_orig(100, name="Hello", type=EntityType.DATA, size=10)
+        batch.set_orig(100, name="Hello", type=entity_type, size=10)
 
     lookup = create_lookup(db)
 
