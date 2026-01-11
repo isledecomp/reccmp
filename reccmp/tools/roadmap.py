@@ -391,6 +391,9 @@ def main() -> int:
     orig_bin = engine.orig_bin
     recomp_bin = engine.recomp_bin
 
+    if not isinstance(orig_bin, PEImage) or not isinstance(recomp_bin, PEImage):
+        raise ValueError("`roadmap` currently only supports 32-bit PE images")
+
     module_map = ModuleMap(target.recompiled_pdb, recomp_bin)
 
     def is_same_section(orig: int, recomp: int) -> bool:
