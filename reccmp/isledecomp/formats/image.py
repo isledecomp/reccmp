@@ -1,8 +1,13 @@
+import enum
 import re
 import dataclasses
 from typing import Iterator
 from pathlib import Path
-from .exceptions import InvalidVirtualReadError, InvalidStringError
+from .exceptions import (
+    InvalidVirtualAddressError,
+    InvalidVirtualReadError,
+    InvalidStringError,
+)
 
 # Matches 0-to-N non-null bytes.
 r_szstring = re.compile(rb"[^\x00]*")
@@ -27,6 +32,42 @@ class ImageRegion:
         return range(self.addr, self.addr + self.size)
 
 
+class ImageSectionFlags(enum.Flag):
+    READ = enum.auto()
+    WRITE = enum.auto()
+    EXECUTE = enum.auto()
+    BSS = enum.auto()
+
+
+@dataclasses.dataclass(frozen=True, kw_only=True)
+class ImageSection:
+    virtual_range: range
+    physical_range: range
+    view: memoryview
+    name: str = ""
+    flags: ImageSectionFlags = ImageSectionFlags(0)
+
+    @property
+    def virtual_address(self) -> int:
+        return self.virtual_range.start
+
+    @property
+    def virtual_size(self) -> int:
+        return len(self.virtual_range)
+
+    @property
+    def size_of_raw_data(self) -> int:
+        return len(self.physical_range)
+
+    @property
+    def extent(self):
+        """Get the highest possible offset of this section"""
+        return max(len(self.virtual_range), len(self.physical_range))
+
+    def contains_vaddr(self, vaddr: int) -> bool:
+        return vaddr in self.virtual_range
+
+
 @dataclasses.dataclass(frozen=True)
 class ImageImport:
     addr: int
@@ -35,11 +76,17 @@ class ImageImport:
     name: str = ""
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(kw_only=True)
 class Image:
     filepath: Path
     view: memoryview = dataclasses.field(repr=False)
     data: bytes = dataclasses.field(repr=False)
+    sections: tuple[ImageSection, ...] = dataclasses.field(
+        repr=False, default_factory=tuple
+    )
+    section_map: dict[str, ImageSection] = dataclasses.field(
+        repr=False, default_factory=dict
+    )
 
     def seek(self, vaddr: int) -> tuple[bytes, int]:
         """Must be implemented for each image.
@@ -57,6 +104,13 @@ class Image:
     @property
     def imagebase(self) -> int:
         raise NotImplementedError
+
+    def is_valid_vaddr(self, vaddr: int) -> bool:
+        try:
+            self.seek(vaddr)
+            return True
+        except InvalidVirtualAddressError:
+            return False
 
     def get_relative_addr(self, addr: int) -> tuple[int, int]:
         raise NotImplementedError
