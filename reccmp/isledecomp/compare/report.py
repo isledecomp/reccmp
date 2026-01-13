@@ -154,7 +154,7 @@ def _create_udiff(entity: ReccmpComparedEntity) -> CombinedDiffOutput | None:
         # Complete diff is always shown for vtables, even if they match.
         return raw_diff_to_udiff(entity.rdiff, grouped=False)
 
-    if entity.accuracy != 1.0:
+    if entity.is_effective_match or entity.accuracy != 1.0:
         # Show grouped diff for effective match.
         return raw_diff_to_udiff(entity.rdiff, grouped=True)
 
