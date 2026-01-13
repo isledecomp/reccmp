@@ -11,7 +11,7 @@ from reccmp.isledecomp.compare import Compare as IsleCompare
 from reccmp.isledecomp.compare.diff import (
     CombinedDiffOutput,
     MatchingOrMismatchingBlock,
-    compare_result_to_udiff,
+    raw_diff_to_udiff,
 )
 from reccmp.isledecomp.cvdump.symbols import SymbolsEntry
 from reccmp.project.detect import (
@@ -345,7 +345,7 @@ def main():
 
     assert match.result is not None
     # Analyze the entire function, including long sections that already match.
-    udiff = compare_result_to_udiff(match.result, grouped=False)
+    udiff = raw_diff_to_udiff(match.result.diff, grouped=False)
 
     function_data = next(
         (y for y in isle_compare.cvdump_analysis.nodes if y.addr == match.recomp_addr),

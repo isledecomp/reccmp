@@ -16,7 +16,7 @@ from reccmp.isledecomp import (
 )
 
 from reccmp.isledecomp.compare import Compare as IsleCompare
-from reccmp.isledecomp.compare.diff import DiffReport, compare_result_to_udiff
+from reccmp.isledecomp.compare.diff import DiffReport, raw_diff_to_udiff
 from reccmp.isledecomp.compare.report import (
     ReccmpStatusReport,
     ReccmpComparedEntity,
@@ -84,7 +84,7 @@ def print_match_verbose(
         return
 
     grouped_diff = match.match_type != EntityType.VTABLE
-    udiff = compare_result_to_udiff(match.result, grouped=grouped_diff)
+    udiff = raw_diff_to_udiff(match.result.diff, grouped=grouped_diff)
 
     if match.effective_ratio == 1.0:
         ok_text = (
@@ -277,26 +277,15 @@ def main():
         orig_addr = f"0x{match.orig_addr:x}"
         recomp_addr = f"0x{match.recomp_addr:x}"
 
-        if match.match_type == EntityType.VTABLE:
-            # Complete diff is always shown for vtables, even if they match.
-            udiff = compare_result_to_udiff(match.result, grouped=False)
-
-        elif match.result.match_ratio != 1.0:
-            # Show grouped diff for effective match.
-            udiff = compare_result_to_udiff(match.result, grouped=True)
-
-        else:
-            # Display nothing for matching functions.
-            udiff = None
-
         report.entities[orig_addr] = ReccmpComparedEntity(
             orig_addr=orig_addr,
             name=match.name,
+            type=match.match_type,
             accuracy=match.effective_ratio,
             recomp_addr=recomp_addr,
             is_effective_match=match.is_effective_match,
             is_stub=match.is_stub,
-            diff=udiff,
+            rdiff=match.result.diff,
         )
 
     # Compare with saved diff report.

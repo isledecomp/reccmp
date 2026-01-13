@@ -13,7 +13,7 @@ from reccmp.isledecomp.compare.asm.replacement import (
     create_name_lookup,
 )
 from reccmp.isledecomp.compare.db import EntityDb, ReccmpMatch
-from reccmp.isledecomp.compare.diff import FunctionCompareResult
+from reccmp.isledecomp.compare.diff import FunctionCompareResult, RawDiffOutput
 from reccmp.isledecomp.compare.event import ReccmpEvent, ReccmpReportProtocol
 from reccmp.isledecomp.formats.exceptions import (
     InvalidVirtualAddressError,
@@ -243,9 +243,11 @@ class FunctionComparator:
         ]
 
         return FunctionCompareResult(
-            codes=diff.get_opcodes(),
-            orig_inst=orig_for_printing,
-            recomp_inst=recomp_for_printing,
+            diff=RawDiffOutput(
+                codes=diff.get_opcodes(),
+                orig_inst=orig_for_printing,
+                recomp_inst=recomp_for_printing,
+            ),
             is_effective_match=is_effective,
             match_ratio=diff.ratio(),
         )

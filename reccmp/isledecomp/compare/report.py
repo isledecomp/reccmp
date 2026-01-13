@@ -3,7 +3,8 @@ from dataclasses import dataclass
 from typing import Literal, Iterable, Iterator
 from pydantic import BaseModel, ValidationError
 from pydantic_core import from_json
-from .diff import CombinedDiffOutput
+from reccmp.isledecomp.types import EntityType
+from .diff import CombinedDiffOutput, RawDiffOutput, raw_diff_to_udiff
 
 
 class ReccmpReportDeserializeError(Exception):
@@ -16,13 +17,19 @@ class ReccmpReportSameSourceError(Exception):
 
 @dataclass
 class ReccmpComparedEntity:
+    # pylint:disable=too-many-instance-attributes
     orig_addr: str
     name: str
     accuracy: float
+    # Version 1 files have no type, so it is optional.
+    type: EntityType | None = None
     recomp_addr: str | None = None
     is_effective_match: bool = False
     is_stub: bool = False
-    diff: CombinedDiffOutput | None = None
+    rdiff: RawDiffOutput | None = None
+
+    # Legacy field for importing version 1 files (aggregate).
+    udiff: CombinedDiffOutput | None = None
 
 
 class ReccmpStatusReport:
@@ -37,8 +44,17 @@ class ReccmpStatusReport:
     # Using orig addr as the key.
     entities: dict[str, ReccmpComparedEntity]
 
-    def __init__(self, filename: str, timestamp: datetime | None = None) -> None:
+    # Only set during deserialize.
+    from_version: int | None
+
+    def __init__(
+        self,
+        filename: str,
+        timestamp: datetime | None = None,
+        from_version: int | None = None,
+    ) -> None:
         self.filename = filename
+        self.from_version = from_version
         if timestamp is not None:
             self.timestamp = timestamp
         else:
@@ -129,22 +145,47 @@ class JSONReportVersion1(BaseModel):
     data: list[JSONEntityVersion1]
 
 
+def _create_udiff(entity: ReccmpComparedEntity) -> CombinedDiffOutput | None:
+    if entity.rdiff is None:
+        # We need data to create the unified diff.
+        return None
+
+    if entity.type == EntityType.VTABLE:
+        # Complete diff is always shown for vtables, even if they match.
+        return raw_diff_to_udiff(entity.rdiff, grouped=False)
+
+    if entity.accuracy != 1.0:
+        # Show grouped diff for effective match.
+        return raw_diff_to_udiff(entity.rdiff, grouped=True)
+
+    # Display nothing for matching functions.
+    return None
+
+
 def _serialize_version_1(
     report: ReccmpStatusReport, diff_included: bool = False
 ) -> JSONReportVersion1:
     """The HTML file needs the diff data, but it is omitted from the JSON report."""
-    entities = [
-        JSONEntityVersion1(
-            address=addr,  # prefer dict key over redundant value in entity
-            name=e.name,
-            matching=e.accuracy,
-            recomp=e.recomp_addr,
-            stub=e.is_stub,
-            effective=e.is_effective_match,
-            diff=e.diff if diff_included else None,
+    entities = []
+
+    for addr, e in report.entities.items():
+        if diff_included:
+            # An aggregate report may already have a deserialized udiff.
+            udiff = e.udiff or _create_udiff(e)
+        else:
+            udiff = None
+
+        entities.append(
+            JSONEntityVersion1(
+                address=addr,  # prefer dict key over redundant value in entity
+                name=e.name,
+                matching=e.accuracy,
+                recomp=e.recomp_addr,
+                stub=e.is_stub,
+                effective=e.is_effective_match,
+                diff=udiff,
+            )
         )
-        for addr, e in report.entities.items()
-    ]
 
     return JSONReportVersion1(
         file=report.filename,
@@ -156,7 +197,9 @@ def _serialize_version_1(
 
 def _deserialize_version_1(obj: JSONReportVersion1) -> ReccmpStatusReport:
     report = ReccmpStatusReport(
-        filename=obj.file, timestamp=datetime.fromtimestamp(obj.timestamp)
+        filename=obj.file,
+        timestamp=datetime.fromtimestamp(obj.timestamp),
+        from_version=1,
     )
 
     for e in obj.data:
@@ -167,7 +210,7 @@ def _deserialize_version_1(obj: JSONReportVersion1) -> ReccmpStatusReport:
             recomp_addr=e.recomp,
             is_stub=e.stub,
             is_effective_match=e.effective,
-            diff=e.diff,
+            udiff=e.diff,
         )
 
     return report

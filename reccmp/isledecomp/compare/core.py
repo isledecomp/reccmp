@@ -5,7 +5,7 @@ from typing import Iterable, Iterator
 from typing_extensions import Self
 from reccmp.project.detect import RecCmpTarget
 from reccmp.isledecomp.dir import walk_source_dir
-from reccmp.isledecomp.compare.diff import FunctionCompareResult
+from reccmp.isledecomp.compare.diff import FunctionCompareResult, RawDiffOutput
 from reccmp.isledecomp.compare.functions import FunctionComparator
 from reccmp.isledecomp.formats import (
     Image,
@@ -293,10 +293,12 @@ class Compare:
         ).get_opcodes()
 
         return FunctionCompareResult(
-            # TODO: type conflict here between `str` and the literal strings.
-            codes=list(opcodes),
-            orig_inst=orig_text,
-            recomp_inst=recomp_text,
+            diff=RawDiffOutput(
+                # TODO: type conflict here between `str` and the literal strings.
+                codes=list(opcodes),
+                orig_inst=orig_text,
+                recomp_inst=recomp_text,
+            ),
             match_ratio=ratio,
         )
 

@@ -10,10 +10,15 @@ CombinedDiffInput = list[tuple[str, str]]
 
 
 @dataclasses.dataclass
-class FunctionCompareResult:
+class RawDiffOutput:
     codes: list[DiffOpcode] = dataclasses.field(default_factory=list)
     orig_inst: CombinedDiffInput = dataclasses.field(default_factory=list)
     recomp_inst: CombinedDiffInput = dataclasses.field(default_factory=list)
+
+
+@dataclasses.dataclass
+class FunctionCompareResult:
+    diff: RawDiffOutput = dataclasses.field(default_factory=RawDiffOutput)
     is_effective_match: bool = False
     match_ratio: float = 0.0
 
@@ -123,16 +128,16 @@ def combined_diff(
     return unified_diff
 
 
-def compare_result_to_udiff(
-    result: FunctionCompareResult, *, grouped: bool = True
+def raw_diff_to_udiff(
+    diff: RawDiffOutput, *, grouped: bool = True
 ) -> CombinedDiffOutput:
     if grouped:
-        opcode_groups = list(get_grouped_opcodes(result.codes, n=10))
+        opcode_groups = list(get_grouped_opcodes(diff.codes, n=10))
     else:
         # One group.
-        opcode_groups = [result.codes]
+        opcode_groups = [diff.codes]
 
-    return combined_diff(opcode_groups, result.orig_inst, result.recomp_inst)
+    return combined_diff(opcode_groups, diff.orig_inst, diff.recomp_inst)
 
 
 @dataclasses.dataclass
