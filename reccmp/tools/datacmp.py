@@ -6,8 +6,10 @@ import logging
 from enum import Enum
 from typing import Iterable, NamedTuple
 from struct import unpack
+from typing_extensions import Self
 import colorama
 import reccmp
+from reccmp.isledecomp.formats import Image
 from reccmp.isledecomp.formats.exceptions import InvalidVirtualReadError
 from reccmp.isledecomp.compare import Compare as IsleCompare
 from reccmp.isledecomp.compare.db import ReccmpMatch
@@ -77,6 +79,26 @@ class CompareResult(Enum):
     WARN = 4
 
 
+class DataBlock(NamedTuple):
+    addr: int
+    data: bytes
+    bss: bool
+
+    @classmethod
+    def read(cls, addr: int, size: int, image: Image) -> Self:
+        data = image.read(addr, size)
+        (phys_data, _) = image.seek(addr)
+        bss = len(phys_data) < size
+
+        return cls(addr, data, bss)
+
+
+class DataOffset(NamedTuple):
+    offset: int
+    name: str
+    pointer: bool
+
+
 class ComparedOffset(NamedTuple):
     offset: int
     # name is None for scalar types
@@ -108,6 +130,8 @@ class ComparisonItem(NamedTuple):
     # we could not retrieve it for some reason. (This is an error.)
     raw_only: bool = False
 
+    bss: tuple[bool, bool] = (False, False)
+
     @property
     def result(self) -> CompareResult:
         if self.error is not None:
@@ -125,6 +149,7 @@ def create_comparison_item(
     compared: list[ComparedOffset] | None = None,
     error: str | None = None,
     raw_only: bool = False,
+    bss: tuple[bool, bool] = (False, False),
 ) -> ComparisonItem:
     """Helper to create the ComparisonItem from the fields in the reccmp database."""
     if compared is None:
@@ -138,7 +163,25 @@ def create_comparison_item(
         compared=compared,
         error=error,
         raw_only=raw_only,
+        bss=bss,
     )
+
+
+def pointer_display(isle_compare: IsleCompare, addr: int, is_orig: bool) -> str:
+    """Helper to streamline pointer textual display."""
+    if addr == 0:
+        return "nullptr"
+
+    ptr_match = (
+        isle_compare.get_by_orig(addr) if is_orig else isle_compare.get_by_recomp(addr)
+    )
+
+    if ptr_match is not None:
+        return f"Pointer to {ptr_match.match_name()}"
+
+    # This variable did not match if we do not have
+    # the pointer target in our DB.
+    return f"Unknown pointer 0x{addr:x}"
 
 
 def do_the_comparison(target: RecCmpTarget) -> Iterable[ComparisonItem]:
@@ -158,15 +201,20 @@ def do_the_comparison(target: RecCmpTarget) -> Iterable[ComparisonItem]:
 
         # Start by assuming we can only compare the raw bytes
         data_size = var.size
-        is_type_aware = type_name is not None
+        raw_only = True
 
-        if is_type_aware:
+        if type_name is not None:
             try:
                 # If we are type-aware, we can get the precise
                 # data size for the variable.
                 data_type = isle_compare.types.get(type_name)
                 assert data_type.size is not None
                 data_size = data_type.size
+
+                # Make sure we can retrieve struct or array members.
+                if isle_compare.types.get_format_string(type_name):
+                    raw_only = False
+
             except (CvdumpKeyError, CvdumpIntegrityError) as ex:
                 yield create_comparison_item(var, error=repr(ex))
                 continue
@@ -174,113 +222,48 @@ def do_the_comparison(target: RecCmpTarget) -> Iterable[ComparisonItem]:
         assert data_size is not None
 
         try:
-            orig_raw = origfile.read(var.orig_addr, data_size)
+            orig_block = DataBlock.read(var.orig_addr, data_size, origfile)
         except InvalidVirtualReadError as ex:
             # Reading from orig can fail if the recomp variable is too large
             yield create_comparison_item(var, error=repr(ex))
             continue
 
         # Reading from recomp should never fail, so if it does, raising an exception is correct
-        recomp_raw = recompfile.read(var.recomp_addr, data_size)
+        recomp_block = DataBlock.read(var.recomp_addr, data_size, recompfile)
 
-        orig_is_null = all(b == 0 for b in orig_raw)
-        recomp_is_null = all(b == 0 for b in recomp_raw)
-
-        # If all bytes are zero on either read, it's possible that the variable
-        # is uninitialized on one or both sides. Special handling for that situation:
-        if orig_is_null or recomp_is_null:
-            # Check the last address of the variable in each file to see if any of it is
-            # in the uninitialized area of the section.
-            orig_in_bss = origfile.addr_is_uninitialized(var.orig_addr + data_size - 1)
-            recomp_in_bss = recompfile.addr_is_uninitialized(
-                var.recomp_addr + data_size - 1
-            )
-
-            if orig_in_bss or recomp_in_bss:
-                # We record a match if both items are null and:
-                # 1. Both values are entirely initialized to zero
-                # 2. All or part of both values are in the uninitialized area
-                match = (
-                    orig_is_null and recomp_is_null and (orig_in_bss == recomp_in_bss)
-                )
-
-                # However... you may not have full control over where the variable sits in the
-                # section, so we will only warn (and not log a diff) if the variable is
-                # initialized in one file but not the other.
-                uninit_force_match = orig_is_null and recomp_is_null
-
-                orig_value = "(uninitialized)" if orig_in_bss else "(initialized)"
-                recomp_value = "(uninitialized)" if recomp_in_bss else "(initialized)"
-                yield create_comparison_item(
-                    var,
-                    compared=[
-                        ComparedOffset(
-                            offset=0,
-                            name=None,
-                            match=match,
-                            values=(orig_value, recomp_value),
-                        )
-                    ],
-                    raw_only=uninit_force_match,
-                )
-                continue
-
-        if not is_type_aware:
+        if raw_only:
             # If there is no specific type information available
             # (i.e. if this is a static or non-public variable)
             # then we can only compare the raw bytes.
-            yield create_comparison_item(
-                var,
-                compared=[
-                    ComparedOffset(
-                        offset=0,
-                        name="(raw)",
-                        match=orig_raw == recomp_raw,
-                        values=(str(orig_raw), str(recomp_raw)),
-                    )
-                ],
-                raw_only=True,
-            )
-            continue
+            compare_items = [
+                DataOffset(offset=i, name=f"[{i}]", pointer=False)
+                for i in range(data_size)
+            ]
+            orig_data = tuple(orig_block.data)
+            recomp_data = tuple(recomp_block.data)
+        else:
+            compare_items = [
+                DataOffset(offset=sc.offset, name=sc.name or "", pointer=sc.is_pointer)
+                for sc in isle_compare.types.get_scalars_gapless(type_name)
+            ]
+            format_str = isle_compare.types.get_format_string(type_name)
 
-        # If we are here, we can do the type-aware comparison.
-        compared = []
-        compare_items = isle_compare.types.get_scalars_gapless(type_name)
-        format_str = isle_compare.types.get_format_string(type_name)
-
-        orig_data = unpack(format_str, orig_raw)
-        recomp_data = unpack(format_str, recomp_raw)
-
-        def pointer_display(addr: int, is_orig: bool) -> str:
-            """Helper to streamline pointer textual display."""
-            if addr == 0:
-                return "nullptr"
-
-            ptr_match = (
-                isle_compare.get_by_orig(addr)
-                if is_orig
-                else isle_compare.get_by_recomp(addr)
-            )
-
-            if ptr_match is not None:
-                return f"Pointer to {ptr_match.match_name()}"
-
-            # This variable did not match if we do not have
-            # the pointer target in our DB.
-            return f"Unknown pointer 0x{addr:x}"
+            orig_data = unpack(format_str, orig_block.data)
+            recomp_data = unpack(format_str, recomp_block.data)
 
         # Could zip here
+        compared = []
         for i, member in enumerate(compare_items):
-            if member.is_pointer:
+            if member.pointer:
                 match = isle_compare.is_pointer_match(orig_data[i], recomp_data[i])
 
-                value_a = pointer_display(orig_data[i], True)
-                value_b = pointer_display(recomp_data[i], False)
+                value_a = pointer_display(isle_compare, orig_data[i], True)
+                value_b = pointer_display(isle_compare, recomp_data[i], False)
 
                 values = (value_a, value_b)
             else:
                 match = orig_data[i] == recomp_data[i]
-                values = (orig_data[i], recomp_data[i])
+                values = (str(orig_data[i]), str(recomp_data[i]))
 
             compared.append(
                 ComparedOffset(
@@ -291,7 +274,12 @@ def do_the_comparison(target: RecCmpTarget) -> Iterable[ComparisonItem]:
                 )
             )
 
-        yield create_comparison_item(var, compared=compared)
+        yield create_comparison_item(
+            var,
+            compared=compared,
+            raw_only=raw_only,
+            bss=(orig_block.bss, recomp_block.bss),
+        )
 
 
 def value_get(value: str | None, default: str):
@@ -343,6 +331,15 @@ def main():
         print(f"{item.name[:80]} ({address_display}) ... {display_match(item.result)} ")
         if item.error is not None:
             print(f"  {item.error}")
+
+        if item.raw_only:
+            print("  Comparing raw data only.")
+
+        if item.bss[0] != item.bss[1]:
+            if item.bss[0]:
+                print("  Recomp should be uninitialized.")
+            else:
+                print("  Recomp should have initial value.")
 
         for c in item.compared:
             if not args.verbose and c.match:
