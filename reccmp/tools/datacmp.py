@@ -338,6 +338,22 @@ def value_get(value: str | None, default: str):
     return value if value is not None else default
 
 
+def colorize_match_result(result: CompareResult, no_color: bool) -> str:
+    """Helper to return color string or not, depending on user preference"""
+    if no_color:
+        return result.name
+
+    match result:
+        case CompareResult.MATCH:
+            color = colorama.Fore.GREEN
+        case CompareResult.ERROR | CompareResult.DIFF:
+            color = colorama.Fore.RED
+        case _:
+            color = colorama.Fore.YELLOW
+
+    return f"{color}{result.name}{colorama.Style.RESET_ALL}"
+
+
 def main():
     args = parse_args()
 
@@ -346,21 +362,6 @@ def main():
     except RecCmpProjectException as e:
         logger.error(e.args[0])
         return 1
-
-    def display_match(result: CompareResult) -> str:
-        """Helper to return color string or not, depending on user preference"""
-        if args.no_color:
-            return result.name
-
-        match result:
-            case CompareResult.MATCH:
-                color = colorama.Fore.GREEN
-            case CompareResult.ERROR | CompareResult.DIFF:
-                color = colorama.Fore.RED
-            case _:
-                color = colorama.Fore.YELLOW
-
-        return f"{color}{result.name}{colorama.Style.RESET_ALL}"
 
     var_count = 0
     problems = 0
@@ -379,7 +380,9 @@ def main():
             else f"0x{item.orig_addr:x}"
         )
 
-        print(f"{item.name[:80]} ({address_display}) ... {display_match(item.result)} ")
+        print(
+            f"{item.name[:80]} ({address_display}) ... {colorize_match_result(item.result, args.no_color)} "
+        )
         if item.error is not None:
             print(f"  {item.error}")
 
