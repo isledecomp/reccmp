@@ -292,18 +292,17 @@ def do_the_comparison(target: RecCmpTarget) -> Iterable[ComparisonItem]:
             orig_data = unpack(format_str, orig_block.data)
             recomp_data = unpack(format_str, recomp_block.data)
 
-        # Could zip here
         compared = []
-        for i, member in enumerate(compare_items):
+        for orig_val, recomp_val, member in zip(orig_data, recomp_data, compare_items):
             if member.pointer:
-                match = isle_compare.is_pointer_match(orig_data[i], recomp_data[i])
+                match = isle_compare.is_pointer_match(orig_val, recomp_val)
 
-                value_a = pointer_display(isle_compare, orig_data[i], True)
-                value_b = pointer_display(isle_compare, recomp_data[i], False)
+                value_a = pointer_display(isle_compare, orig_val, True)
+                value_b = pointer_display(isle_compare, recomp_val, False)
             else:
-                match = orig_data[i] == recomp_data[i]
-                value_a = str(orig_data[i])
-                value_b = str(recomp_data[i])
+                match = orig_val == recomp_val
+                value_a = str(orig_val)
+                value_b = str(recomp_val)
 
             # Invalidate the match if there is a definite conflict between
             # the initialized state in orig and recomp.
@@ -312,10 +311,10 @@ def do_the_comparison(target: RecCmpTarget) -> Iterable[ComparisonItem]:
             ):
                 match = False
 
-            if orig_data[i] == 0 and orig_block.bss == BssState.YES:
+            if orig_block.bss == BssState.YES:
                 value_a = "(uninitialized)"
 
-            if recomp_data[i] == 0 and recomp_block.bss == BssState.YES:
+            if recomp_block.bss == BssState.YES:
                 value_b = "(uninitialized)"
 
             compared.append(
