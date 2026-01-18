@@ -1,5 +1,6 @@
 # (New) Data comparison.
 
+import re
 import os
 import argparse
 import logging
@@ -72,6 +73,20 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
+class BssState(Enum):
+    """Determination of whether this variable is uninitialized.
+    - NO:    At least one byte between the variable's start and the
+             end of the section is non-zero.
+    - MAYBE: The variable is fully initialized to zero. All remaining
+             initialized bytes in the section are zero.
+    - YES:   All or part of the variable is uninitialized.
+    """
+
+    NO = 0
+    MAYBE = 1
+    YES = 2
+
+
 class CompareResult(Enum):
     MATCH = 1
     DIFF = 2
@@ -82,13 +97,29 @@ class CompareResult(Enum):
 class DataBlock(NamedTuple):
     addr: int
     data: bytes
-    bss: bool
+    bss: BssState
 
     @classmethod
     def read(cls, addr: int, size: int, image: Image) -> Self:
         data = image.read(addr, size)
+        # Per the seek() API, phys_data is a memoryview of the remaining
+        # physical bytes in this section.
         (phys_data, _) = image.seek(addr)
-        bss = len(phys_data) < size
+
+        # If we find any non-zero bytes then this variable must be initialized
+        # even if all of the variable's values are zero.
+        init_bytes_remain = re.search(b"[^\x00]", phys_data) is not None
+
+        if init_bytes_remain:
+            bss = BssState.NO
+        elif len(phys_data) < size:
+            # If there are not enough physical bytes to cover
+            # the entire variable, it is definitely uninitialized.
+            bss = BssState.YES
+        else:
+            # Due to section alignment, there may be enough physical
+            # zero bytes to cover this entire variable.
+            bss = BssState.MAYBE
 
         return cls(addr, data, bss)
 
@@ -130,8 +161,6 @@ class ComparisonItem(NamedTuple):
     # we could not retrieve it for some reason. (This is an error.)
     raw_only: bool = False
 
-    bss: tuple[bool, bool] = (False, False)
-
     @property
     def result(self) -> CompareResult:
         if self.error is not None:
@@ -149,7 +178,6 @@ def create_comparison_item(
     compared: list[ComparedOffset] | None = None,
     error: str | None = None,
     raw_only: bool = False,
-    bss: tuple[bool, bool] = (False, False),
 ) -> ComparisonItem:
     """Helper to create the ComparisonItem from the fields in the reccmp database."""
     if compared is None:
@@ -163,7 +191,6 @@ def create_comparison_item(
         compared=compared,
         error=error,
         raw_only=raw_only,
-        bss=bss,
     )
 
 
@@ -266,18 +293,30 @@ def do_the_comparison(target: RecCmpTarget) -> Iterable[ComparisonItem]:
 
                 value_a = pointer_display(isle_compare, orig_data[i], True)
                 value_b = pointer_display(isle_compare, recomp_data[i], False)
-
-                values = (value_a, value_b)
             else:
                 match = orig_data[i] == recomp_data[i]
-                values = (str(orig_data[i]), str(recomp_data[i]))
+                value_a = str(orig_data[i])
+                value_b = str(recomp_data[i])
+
+            # Invalidate the match if there is a definite conflict between
+            # the initialized state in orig and recomp.
+            if (orig_block.bss == BssState.NO and recomp_block.bss == BssState.YES) or (
+                recomp_block.bss == BssState.NO and orig_block.bss == BssState.YES
+            ):
+                match = False
+
+            if orig_data[i] == 0 and orig_block.bss == BssState.YES:
+                value_a = "(uninitialized)"
+
+            if recomp_data[i] == 0 and recomp_block.bss == BssState.YES:
+                value_b = "(uninitialized)"
 
             compared.append(
                 ComparedOffset(
                     offset=member.offset,
                     name=member.name,
                     match=match,
-                    values=values,
+                    values=(value_a, value_b),
                 )
             )
 
@@ -285,7 +324,6 @@ def do_the_comparison(target: RecCmpTarget) -> Iterable[ComparisonItem]:
             var,
             compared=compared,
             raw_only=raw_only,
-            bss=(orig_block.bss, recomp_block.bss),
         )
 
 
@@ -307,16 +345,15 @@ def main():
         if args.no_color:
             return result.name
 
-        match_color = (
-            colorama.Fore.GREEN
-            if result == CompareResult.MATCH
-            else (
-                colorama.Fore.YELLOW
-                if result == CompareResult.WARN
-                else colorama.Fore.RED
-            )
-        )
-        return f"{match_color}{result.name}{colorama.Style.RESET_ALL}"
+        match result:
+            case CompareResult.MATCH:
+                color = colorama.Fore.GREEN
+            case CompareResult.ERROR | CompareResult.DIFF:
+                color = colorama.Fore.RED
+            case _:
+                color = colorama.Fore.YELLOW
+
+        return f"{color}{result.name}{colorama.Style.RESET_ALL}"
 
     var_count = 0
     problems = 0
@@ -341,12 +378,6 @@ def main():
 
         if item.raw_only:
             print("  Comparing raw data only.")
-
-        if item.bss[0] != item.bss[1]:
-            if item.bss[0]:
-                print("  Recomp should be uninitialized.")
-            else:
-                print("  Recomp should have initial value.")
 
         for c in item.compared:
             if not args.verbose and c.match:
