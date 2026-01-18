@@ -241,13 +241,20 @@ def do_the_comparison(target: RecCmpTarget) -> Iterable[ComparisonItem]:
                 # Make sure we can retrieve struct or array members.
                 if isle_compare.types.get_format_string(type_name):
                     raw_only = False
+                else:
+                    logger.info(
+                        "No struct members for type '%s' used by variable '%s' (0x%x). Comparing raw data.",
+                        type_name,
+                        var.name,
+                        var.orig_addr,
+                    )
 
             except (CvdumpKeyError, CvdumpIntegrityError):
-                # TODO: This may occur even when nothing is wrong, so permit a raw comparison here.
+                # This may occur even when nothing is wrong, so permit a raw comparison here.
                 # For example: we do not handle bitfields and this complicates fieldlist parsing
-                # where they are used.
+                # where they are used. (GH #299)
                 logger.error(
-                    "Could not materialize type key '%s' for variable '%s' at 0x%x. Comparing raw data.",
+                    "Could not materialize type '%s' used by variable '%s' (0x%x). Comparing raw data.",
                     type_name,
                     var.name,
                     var.orig_addr,
