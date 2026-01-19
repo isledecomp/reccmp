@@ -385,7 +385,7 @@ def main():
             print(f"  {item.error}")
 
         if item.raw_only:
-            print("  Comparing raw data only.")
+            print("  Unknown or unsupported data type, comparing raw data only.")
 
         for c in item.compared:
             if not args.verbose and c.match:
