@@ -277,8 +277,7 @@ def do_the_comparison(target: RecCmpTarget) -> Iterable[ComparisonItem]:
             # (i.e. if this is a static or non-public variable)
             # then we can only compare the raw bytes.
             compare_items = [
-                DataOffset(offset=i, name=f"[{i}]", pointer=False)
-                for i in range(data_size)
+                DataOffset(offset=i, name="", pointer=False) for i in range(data_size)
             ]
             orig_data = tuple(orig_block.data)
             recomp_data = tuple(recomp_block.data)
