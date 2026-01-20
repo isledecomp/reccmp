@@ -73,8 +73,61 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
+#
+# A note about initialized and uninitialized data:
+#
+# The binary's section header contains the physical and virtual size for each section.
+# The physical size corresponds to physical bytes in the file on disk (i.e. the image).
+# The virtual size is the actual size of the section in memory. If virtual size is greater than physical
+# size, the difference is considered to be uninitialized data. Windows allocates a buffer for the
+# virtual size of the section, copies physical data to the start, and sets the remaining bytes to zero.
+#
+# Reference (PE format):
+#     https://learn.microsoft.com/en-us/windows/win32/debug/pe-format#section-table-section-headers
+#
+# Since the virtual memory for a particular section is made up of both initialized and uninitialized
+# data, we can divide it into these regions:
+#
+# ┌───────────────────────────────────────────────┬─────────────────────────────────┐
+# │ Initialized data                              │ Uninitialized data              │
+# │ (zero and non-zero bytes)                     │ (Set to zero during image load) │
+# └───────────────────────────────────────────────┴─────────────────────────────────┘
+#
+# Keep in mind: physical size can be zero, meaning the section is entirely uninitialized.
+# Physical size can also match or exceed virtual size, meaning the section is fully initialized.
+# (The virtual size sets the memory footprint even if physical size is larger.)
+#
+# Due to the requirement that physical data be aligned to a particular offset, there may be zero bytes
+# in the physical data to pad the end of a section where this would otherwise not be necessary.
+#
+# This means we can subdivide the section further:
+#
+# ┌───────────────────────────┬───────────────────┬─────────────────────────────────┐
+# │ Initialized data          │ Initialized data  │ Uninitialized data              │
+# │ (zero and non-zero bytes) │ (only zero bytes) │ (Set to zero during image load) │
+# └───────────────────────────┴───────────────────┴─────────────────────────────────┘
+#
+# Call these memory regions 1, 2, and 3.
+#
+# A global variable is initialized if its declaration includes an initial value.
+#
+#     Initialized:   int g_hello = 5;
+#   Uninitialized:   int g_hello;
+#
+# While there is no requirement for a variable to be in a particular spot, we have observed that:
+# - Region 1 contains only initialized variables.
+# - Region 3 contains only uninitialized variables.
+#
+# Datacmp will report a diff if a variable resides in region 1 in ORIG and region 3 in RECOMP, or vice versa.
+# The user can correct this by providing an initial value or removing it, depending on what ORIG does.
+# We cannot make this determination if the variable resides in region 2 in either ORIG or RECOMP.
+#
+
+
 class BssState(Enum):
     """Determination of whether this variable is uninitialized.
+    These values correspond to memory regions 1, 2, and 3 in the block comment above.
+    BSS refers to a section of memory that is entirely uninitialized.
     - NO:    At least one byte between the variable's start and the
              end of the section is non-zero.
     - MAYBE: The variable is fully initialized to zero. All remaining
