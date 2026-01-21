@@ -385,10 +385,6 @@ def do_the_comparison(target: RecCmpTarget) -> Iterable[ComparisonItem]:
         )
 
 
-def value_get(value: str | None, default: str):
-    return value if value is not None else default
-
-
 def colorize_match_result(result: CompareResult, no_color: bool) -> str:
     """Helper to return color string or not, depending on user preference"""
     if no_color:
@@ -403,6 +399,38 @@ def colorize_match_result(result: CompareResult, no_color: bool) -> str:
             color = colorama.Fore.YELLOW
 
     return f"{color}{result.name}{colorama.Style.RESET_ALL}"
+
+
+def compared_offset_string(c: ComparedOffset, no_color: bool) -> str:
+    """Display the offset, name, and value diff for each compared item.
+    Scalar variables have only a single item, the value itself."""
+
+    def ansi_wrap(c: str):
+        """Easily remove the ANSI codes in --no-color mode."""
+        return "" if no_color else c
+
+    offset = f"+ 0x{c.offset:02x}"
+    header_chunk = [ansi_wrap(colorama.Fore.LIGHTBLACK_EX), f"{offset:>10}"]
+
+    name_chunk = [
+        ": " if c.name else "  ",
+        ansi_wrap(colorama.Fore.WHITE),
+        f"{c.name if c.name else '':30}",
+    ]
+
+    (value_a, value_b) = c.values
+    values_chunk = [ansi_wrap(colorama.Fore.LIGHTWHITE_EX), value_a]
+    if not c.match:
+        values_chunk.extend([" : ", ansi_wrap(colorama.Fore.LIGHTBLACK_EX), value_b])
+
+    return " ".join(
+        [
+            "".join(header_chunk),
+            "".join(name_chunk),
+            "".join(values_chunk),
+            ansi_wrap(colorama.Style.RESET_ALL),
+        ]
+    )
 
 
 def main():
@@ -444,13 +472,7 @@ def main():
             if not args.verbose and c.match:
                 continue
 
-            (value_a, value_b) = c.values
-            if c.match:
-                print(f"  {c.offset:5} {value_get(c.name, '(value)'):30} {value_a}")
-            else:
-                print(
-                    f"  {c.offset:5} {value_get(c.name, '(value)'):30} {value_a} : {value_b}"
-                )
+            print(compared_offset_string(c, args.no_color))
 
         if args.verbose:
             print()
