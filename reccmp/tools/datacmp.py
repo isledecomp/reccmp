@@ -1,13 +1,16 @@
 # (New) Data comparison.
 
+import re
 import os
 import argparse
 import logging
 from enum import Enum
 from typing import Iterable, NamedTuple
 from struct import unpack
+from typing_extensions import Self
 import colorama
 import reccmp
+from reccmp.isledecomp.formats import Image
 from reccmp.isledecomp.formats.exceptions import InvalidVirtualReadError
 from reccmp.isledecomp.compare import Compare as IsleCompare
 from reccmp.isledecomp.compare.db import ReccmpMatch
@@ -70,11 +73,114 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
+#
+# A note about initialized and uninitialized data:
+#
+# The binary's section header contains the physical and virtual size for each section.
+# The physical size corresponds to physical bytes in the file on disk (i.e. the image).
+# The virtual size is the actual size of the section in memory. If virtual size is greater than physical
+# size, the difference is considered to be uninitialized data. Windows allocates a buffer for the
+# virtual size of the section, copies physical data to the start, and sets the remaining bytes to zero.
+#
+# Reference (PE format):
+#     https://learn.microsoft.com/en-us/windows/win32/debug/pe-format#section-table-section-headers
+#
+# Since the virtual memory for a particular section is made up of both initialized and uninitialized
+# data, we can divide it into these regions:
+#
+# ┌───────────────────────────────────────────────┬─────────────────────────────────┐
+# │ Initialized data                              │ Uninitialized data              │
+# │ (zero and non-zero bytes)                     │ (Set to zero during image load) │
+# └───────────────────────────────────────────────┴─────────────────────────────────┘
+#
+# Keep in mind: physical size can be zero, meaning the section is entirely uninitialized.
+# Physical size can also match or exceed virtual size, meaning the section is fully initialized.
+# (The virtual size sets the memory footprint even if physical size is larger.)
+#
+# Due to the requirement that physical data be aligned to a particular offset, there may be zero bytes
+# in the physical data to pad the end of a section where this would otherwise not be necessary.
+#
+# This means we can subdivide the section further:
+#
+# ┌───────────────────────────┬───────────────────┬─────────────────────────────────┐
+# │ Initialized data          │ Initialized data  │ Uninitialized data              │
+# │ (zero and non-zero bytes) │ (only zero bytes) │ (Set to zero during image load) │
+# └───────────────────────────┴───────────────────┴─────────────────────────────────┘
+#
+# Call these memory regions 1, 2, and 3.
+#
+# A global variable is initialized if its declaration includes an initial value.
+#
+#     Initialized:   int g_hello = 5;
+#   Uninitialized:   int g_hello;
+#
+# While there is no requirement for a variable to be in a particular spot, we have observed that:
+# - Region 1 contains only initialized variables.
+# - Region 3 contains only uninitialized variables.
+#
+# Datacmp will report a diff if a variable resides in region 1 in ORIG and region 3 in RECOMP, or vice versa.
+# The user can correct this by providing an initial value or removing it, depending on what ORIG does.
+# We cannot make this determination if the variable resides in region 2 in either ORIG or RECOMP.
+#
+
+
+class BssState(Enum):
+    """Determination of whether this variable is uninitialized.
+    These values correspond to memory regions 1, 2, and 3 in the block comment above.
+    BSS refers to a section of memory that is entirely uninitialized.
+    - NO:    At least one byte between the variable's start and the
+             end of the section is non-zero.
+    - MAYBE: The variable is fully initialized to zero. All remaining
+             initialized bytes in the section are zero.
+    - YES:   All or part of the variable is uninitialized.
+    """
+
+    NO = 0
+    MAYBE = 1
+    YES = 2
+
+
 class CompareResult(Enum):
     MATCH = 1
     DIFF = 2
     ERROR = 3
     WARN = 4
+
+
+class DataBlock(NamedTuple):
+    addr: int
+    data: bytes
+    bss: BssState
+
+    @classmethod
+    def read(cls, addr: int, size: int, image: Image) -> Self:
+        data = image.read(addr, size)
+        # Per the seek() API, phys_data is a memoryview of the remaining
+        # physical bytes in this section.
+        (phys_data, _) = image.seek(addr)
+
+        # If we find any non-zero bytes then this variable must be initialized
+        # even if all of the variable's values are zero.
+        init_bytes_remain = re.search(b"[^\x00]", phys_data) is not None
+
+        if init_bytes_remain:
+            bss = BssState.NO
+        elif len(phys_data) < size:
+            # If there are not enough physical bytes to cover
+            # the entire variable, it is definitely uninitialized.
+            bss = BssState.YES
+        else:
+            # Due to section alignment, there may be enough physical
+            # zero bytes to cover this entire variable.
+            bss = BssState.MAYBE
+
+        return cls(addr, data, bss)
+
+
+class DataOffset(NamedTuple):
+    offset: int
+    name: str
+    pointer: bool
 
 
 class ComparedOffset(NamedTuple):
@@ -141,6 +247,23 @@ def create_comparison_item(
     )
 
 
+def pointer_display(isle_compare: IsleCompare, addr: int, is_orig: bool) -> str:
+    """Helper to streamline pointer textual display."""
+    if addr == 0:
+        return "nullptr"
+
+    ptr_match = (
+        isle_compare.get_by_orig(addr) if is_orig else isle_compare.get_by_recomp(addr)
+    )
+
+    if ptr_match is not None:
+        return f"Pointer to {ptr_match.match_name()}"
+
+    # This variable did not match if we do not have
+    # the pointer target in our DB.
+    return f"Unknown pointer 0x{addr:x}"
+
+
 def do_the_comparison(target: RecCmpTarget) -> Iterable[ComparisonItem]:
     # pylint: disable=too-many-locals
     """Run through each variable in our compare DB, then do the comparison
@@ -158,144 +281,156 @@ def do_the_comparison(target: RecCmpTarget) -> Iterable[ComparisonItem]:
 
         # Start by assuming we can only compare the raw bytes
         data_size = var.size
-        is_type_aware = type_name is not None
+        raw_only = True
 
-        if is_type_aware:
+        if type_name is not None:
             try:
                 # If we are type-aware, we can get the precise
                 # data size for the variable.
                 data_type = isle_compare.types.get(type_name)
                 assert data_type.size is not None
                 data_size = data_type.size
-            except (CvdumpKeyError, CvdumpIntegrityError) as ex:
-                yield create_comparison_item(var, error=repr(ex))
-                continue
+
+                # Make sure we can retrieve struct or array members.
+                if isle_compare.types.get_format_string(type_name):
+                    raw_only = False
+                else:
+                    logger.info(
+                        "No struct members for type '%s' used by variable '%s' (0x%x). Comparing raw data.",
+                        type_name,
+                        var.name,
+                        var.orig_addr,
+                    )
+
+            except (CvdumpKeyError, CvdumpIntegrityError):
+                # This may occur even when nothing is wrong, so permit a raw comparison here.
+                # For example: we do not handle bitfields and this complicates fieldlist parsing
+                # where they are used. (GH #299)
+                logger.error(
+                    "Could not materialize type '%s' used by variable '%s' (0x%x). Comparing raw data.",
+                    type_name,
+                    var.name,
+                    var.orig_addr,
+                )
 
         assert data_size is not None
 
         try:
-            orig_raw = origfile.read(var.orig_addr, data_size)
+            orig_block = DataBlock.read(var.orig_addr, data_size, origfile)
         except InvalidVirtualReadError as ex:
             # Reading from orig can fail if the recomp variable is too large
             yield create_comparison_item(var, error=repr(ex))
             continue
 
         # Reading from recomp should never fail, so if it does, raising an exception is correct
-        recomp_raw = recompfile.read(var.recomp_addr, data_size)
+        recomp_block = DataBlock.read(var.recomp_addr, data_size, recompfile)
 
-        orig_is_null = all(b == 0 for b in orig_raw)
-        recomp_is_null = all(b == 0 for b in recomp_raw)
-
-        # If all bytes are zero on either read, it's possible that the variable
-        # is uninitialized on one or both sides. Special handling for that situation:
-        if orig_is_null or recomp_is_null:
-            # Check the last address of the variable in each file to see if any of it is
-            # in the uninitialized area of the section.
-            orig_in_bss = origfile.addr_is_uninitialized(var.orig_addr + data_size - 1)
-            recomp_in_bss = recompfile.addr_is_uninitialized(
-                var.recomp_addr + data_size - 1
-            )
-
-            if orig_in_bss or recomp_in_bss:
-                # We record a match if both items are null and:
-                # 1. Both values are entirely initialized to zero
-                # 2. All or part of both values are in the uninitialized area
-                match = (
-                    orig_is_null and recomp_is_null and (orig_in_bss == recomp_in_bss)
-                )
-
-                # However... you may not have full control over where the variable sits in the
-                # section, so we will only warn (and not log a diff) if the variable is
-                # initialized in one file but not the other.
-                uninit_force_match = orig_is_null and recomp_is_null
-
-                orig_value = "(uninitialized)" if orig_in_bss else "(initialized)"
-                recomp_value = "(uninitialized)" if recomp_in_bss else "(initialized)"
-                yield create_comparison_item(
-                    var,
-                    compared=[
-                        ComparedOffset(
-                            offset=0,
-                            name=None,
-                            match=match,
-                            values=(orig_value, recomp_value),
-                        )
-                    ],
-                    raw_only=uninit_force_match,
-                )
-                continue
-
-        if not is_type_aware:
+        if raw_only:
             # If there is no specific type information available
             # (i.e. if this is a static or non-public variable)
             # then we can only compare the raw bytes.
-            yield create_comparison_item(
-                var,
-                compared=[
-                    ComparedOffset(
-                        offset=0,
-                        name="(raw)",
-                        match=orig_raw == recomp_raw,
-                        values=(str(orig_raw), str(recomp_raw)),
-                    )
-                ],
-                raw_only=True,
-            )
-            continue
+            compare_items = [
+                DataOffset(offset=i, name="", pointer=False) for i in range(data_size)
+            ]
+            orig_data = tuple(orig_block.data)
+            recomp_data = tuple(recomp_block.data)
+        else:
+            compare_items = [
+                DataOffset(offset=sc.offset, name=sc.name or "", pointer=sc.is_pointer)
+                for sc in isle_compare.types.get_scalars_gapless(type_name)
+            ]
+            format_str = isle_compare.types.get_format_string(type_name)
 
-        # If we are here, we can do the type-aware comparison.
+            orig_data = unpack(format_str, orig_block.data)
+            recomp_data = unpack(format_str, recomp_block.data)
+
         compared = []
-        compare_items = isle_compare.types.get_scalars_gapless(type_name)
-        format_str = isle_compare.types.get_format_string(type_name)
+        for orig_val, recomp_val, member in zip(orig_data, recomp_data, compare_items):
+            if member.pointer:
+                match = isle_compare.is_pointer_match(orig_val, recomp_val)
 
-        orig_data = unpack(format_str, orig_raw)
-        recomp_data = unpack(format_str, recomp_raw)
-
-        def pointer_display(addr: int, is_orig: bool) -> str:
-            """Helper to streamline pointer textual display."""
-            if addr == 0:
-                return "nullptr"
-
-            ptr_match = (
-                isle_compare.get_by_orig(addr)
-                if is_orig
-                else isle_compare.get_by_recomp(addr)
-            )
-
-            if ptr_match is not None:
-                return f"Pointer to {ptr_match.match_name()}"
-
-            # This variable did not match if we do not have
-            # the pointer target in our DB.
-            return f"Unknown pointer 0x{addr:x}"
-
-        # Could zip here
-        for i, member in enumerate(compare_items):
-            if member.is_pointer:
-                match = isle_compare.is_pointer_match(orig_data[i], recomp_data[i])
-
-                value_a = pointer_display(orig_data[i], True)
-                value_b = pointer_display(recomp_data[i], False)
-
-                values = (value_a, value_b)
+                value_a = pointer_display(isle_compare, orig_val, True)
+                value_b = pointer_display(isle_compare, recomp_val, False)
             else:
-                match = orig_data[i] == recomp_data[i]
-                values = (orig_data[i], recomp_data[i])
+                match = orig_val == recomp_val
+                value_a = str(orig_val)
+                value_b = str(recomp_val)
+
+            # Invalidate the match if there is a definite conflict between
+            # the initialized state in orig and recomp.
+            if (orig_block.bss == BssState.NO and recomp_block.bss == BssState.YES) or (
+                recomp_block.bss == BssState.NO and orig_block.bss == BssState.YES
+            ):
+                match = False
+
+            if orig_block.bss == BssState.YES:
+                value_a = "(uninitialized)"
+
+            if recomp_block.bss == BssState.YES:
+                value_b = "(uninitialized)"
 
             compared.append(
                 ComparedOffset(
                     offset=member.offset,
                     name=member.name,
                     match=match,
-                    values=values,
+                    values=(value_a, value_b),
                 )
             )
 
-        yield create_comparison_item(var, compared=compared)
+        yield create_comparison_item(
+            var,
+            compared=compared,
+            raw_only=raw_only,
+        )
 
 
-def value_get(value: str | None, default: str):
-    return value if value is not None else default
+def colorize_match_result(result: CompareResult, no_color: bool) -> str:
+    """Helper to return color string or not, depending on user preference"""
+    if no_color:
+        return result.name
+
+    match result:
+        case CompareResult.MATCH:
+            color = colorama.Fore.GREEN
+        case CompareResult.ERROR | CompareResult.DIFF:
+            color = colorama.Fore.RED
+        case _:
+            color = colorama.Fore.YELLOW
+
+    return f"{color}{result.name}{colorama.Style.RESET_ALL}"
+
+
+def compared_offset_string(c: ComparedOffset, no_color: bool) -> str:
+    """Display the offset, name, and value diff for each compared item.
+    Scalar variables have only a single item, the value itself."""
+
+    def ansi_wrap(c: str):
+        """Easily remove the ANSI codes in --no-color mode."""
+        return "" if no_color else c
+
+    offset = f"+ 0x{c.offset:02x}"
+    header_chunk = [ansi_wrap(colorama.Fore.LIGHTBLACK_EX), f"{offset:>10}"]
+
+    name_chunk = [
+        ": " if c.name else "  ",
+        ansi_wrap(colorama.Fore.WHITE),
+        f"{c.name if c.name else '':30}",
+    ]
+
+    (value_a, value_b) = c.values
+    values_chunk = [ansi_wrap(colorama.Fore.LIGHTWHITE_EX), value_a]
+    if not c.match:
+        values_chunk.extend([" : ", ansi_wrap(colorama.Fore.LIGHTBLACK_EX), value_b])
+
+    return " ".join(
+        [
+            "".join(header_chunk),
+            "".join(name_chunk),
+            "".join(values_chunk),
+            ansi_wrap(colorama.Style.RESET_ALL),
+        ]
+    )
 
 
 def main():
@@ -306,22 +441,6 @@ def main():
     except RecCmpProjectException as e:
         logger.error(e.args[0])
         return 1
-
-    def display_match(result: CompareResult) -> str:
-        """Helper to return color string or not, depending on user preference"""
-        if args.no_color:
-            return result.name
-
-        match_color = (
-            colorama.Fore.GREEN
-            if result == CompareResult.MATCH
-            else (
-                colorama.Fore.YELLOW
-                if result == CompareResult.WARN
-                else colorama.Fore.RED
-            )
-        )
-        return f"{match_color}{result.name}{colorama.Style.RESET_ALL}"
 
     var_count = 0
     problems = 0
@@ -340,21 +459,20 @@ def main():
             else f"0x{item.orig_addr:x}"
         )
 
-        print(f"{item.name[:80]} ({address_display}) ... {display_match(item.result)} ")
+        print(
+            f"{item.name[:80]} ({address_display}) ... {colorize_match_result(item.result, args.no_color)} "
+        )
         if item.error is not None:
             print(f"  {item.error}")
+
+        if item.raw_only:
+            print("  Unknown or unsupported data type, comparing raw data only.")
 
         for c in item.compared:
             if not args.verbose and c.match:
                 continue
 
-            (value_a, value_b) = c.values
-            if c.match:
-                print(f"  {c.offset:5} {value_get(c.name, '(value)'):30} {value_a}")
-            else:
-                print(
-                    f"  {c.offset:5} {value_get(c.name, '(value)'):30} {value_a} : {value_b}"
-                )
+            print(compared_offset_string(c, args.no_color))
 
         if args.verbose:
             print()
