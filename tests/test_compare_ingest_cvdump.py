@@ -350,6 +350,10 @@ def test_gdata32(binfile: PEImage):
     db = EntityDb()
     parser = CvdumpParser()
     parser.read_section(
+        "PUBLICS",
+        "S_PUB32: [0002:000054F8], Flags: 00000000, ?g_pizzaHitSounds@@3PAW4Script@Act3Script@@A",
+    )
+    parser.read_section(
         "GLOBALS",
         "S_GDATA32: [0002:000054F8], Type:             0x5BB7, g_pizzaHitSounds",
     )
@@ -388,6 +392,10 @@ def test_variable_size_scalar_type(binfile: PEImage):
     db = EntityDb()
     parser = CvdumpParser()
     parser.read_section(
+        "PUBLICS",
+        "S_PUB32: [0003:00012B24], Flags: 00000000, ?g_nextInterruptWavIndex@@3IA",
+    )
+    parser.read_section(
         "GLOBALS",
         "S_GDATA32: [0003:00012B24], Type:      T_UINT4(0075), g_nextInterruptWavIndex",
     )
@@ -406,6 +414,9 @@ def test_variable_size_without_type_info(binfile: PEImage):
     We cannot properly set the size without having information about its type."""
     db = EntityDb()
     parser = CvdumpParser()
+    parser.read_section(
+        "PUBLICS", "S_PUB32: [0003:000115B8], Flags: 00000000, ?g_hdPath@@3PADA"
+    )
     parser.read_section(
         "GLOBALS",
         "S_GDATA32: [0003:000115B8], Type:             0x1424, g_hdPath",
@@ -426,6 +437,10 @@ def test_variable_size_with_type_info(binfile: PEImage):
     """Should cross-reference the type information to set the entity size correctly."""
     db = EntityDb()
     parser = CvdumpParser()
+    parser.read_section(
+        "PUBLICS",
+        "S_PUB32: [0003:000115B8], Flags: 00000000, ?g_hdPath@@3PADA",
+    )
     parser.read_section(
         "GLOBALS",
         "S_GDATA32: [0003:000115B8], Type:             0x1424, g_hdPath",
@@ -600,3 +615,32 @@ def test_floats(binfile: PEImage):
     assert entity.get("type") == EntityType.FLOAT
     assert entity.get("size") == 8
     assert entity.get("name") is None
+
+
+def test_skip_global_without_matching_public(binfile: PEImage):
+    """Do not create an entity for S_GDATA32 leaves from the GLOBALS section that
+    do not have a corresponding leaf in PUBLICS."""
+    db = EntityDb()
+    parser = CvdumpParser()
+    parser.read_section(
+        "PUBLICS",
+        "S_PUB32: [0004:0002F6BC], Flags: 00000000, ?g_infomainScript@@3PAVMxAtomId@@A",
+    )
+    parser.read_section(
+        "GLOBALS",
+        dedent(
+            """\
+        S_GDATA32: [0004:0002F6BC], Type:             0x10D5, g_infomainScript
+        S_GDATA32: [0004:0000C718], Type:             0x10D5, g_infomainScript
+        """
+        ),
+    )
+
+    cvdump_analysis = CvdumpAnalysis(parser)
+    load_cvdump(cvdump_analysis, db, binfile)
+
+    # Should skip the entry at 0004:0000C718
+    assert db.get_by_recomp(0x101DF718) is None
+
+    # Should create an entry at 0004:0002F6BC
+    assert db.get_by_recomp(0x1013A6BC) is not None

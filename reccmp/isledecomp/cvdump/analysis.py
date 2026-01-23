@@ -133,6 +133,14 @@ class CvdumpAnalysis:
         for glo in parser.globals:
             key = NodeKey(glo.section, glo.offset)
             if key not in node_dict:
+                # S_GDATA32 leaves from GLOBALS should have a corresponding leaf
+                # at the same [section:offset] in PUBLICS. If we are here, there is
+                # no PUBLICS entry for this S_GDATA32 leaf, so we should skip it.
+                # It's not entirely clear why this happens but it has been seen
+                # for an extern and an uninitialized variable with the same name.
+                if glo.is_global:
+                    continue
+
                 node_dict[key] = CvdumpNode.from_node_key(key)
 
             node_dict[key].node_type = EntityType.DATA
