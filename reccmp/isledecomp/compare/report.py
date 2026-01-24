@@ -123,6 +123,27 @@ def combine_reports(samples: list[ReccmpStatusReport]) -> ReccmpStatusReport:
     return output
 
 
+def get_udiff_for_entity(entity: ReccmpComparedEntity) -> CombinedDiffOutput | None:
+    if entity.udiff is not None:
+        # An aggregate report may already have a deserialized udiff.
+        return entity.udiff
+
+    if entity.rdiff is None:
+        # We need data to create the unified diff.
+        return None
+
+    if entity.type == EntityType.VTABLE:
+        # Complete diff is always shown for vtables, even if they match.
+        return raw_diff_to_udiff(entity.rdiff, grouped=False)
+
+    if entity.is_effective_match or entity.accuracy != 1.0:
+        # Show grouped diff for effective match.
+        return raw_diff_to_udiff(entity.rdiff, grouped=True)
+
+    # Display nothing for matching functions.
+    return None
+
+
 #### JSON schemas and conversion functions ####
 
 
@@ -145,47 +166,23 @@ class JSONReportVersion1(BaseModel):
     data: list[JSONEntityVersion1]
 
 
-def _create_udiff(entity: ReccmpComparedEntity) -> CombinedDiffOutput | None:
-    if entity.rdiff is None:
-        # We need data to create the unified diff.
-        return None
-
-    if entity.type == EntityType.VTABLE:
-        # Complete diff is always shown for vtables, even if they match.
-        return raw_diff_to_udiff(entity.rdiff, grouped=False)
-
-    if entity.is_effective_match or entity.accuracy != 1.0:
-        # Show grouped diff for effective match.
-        return raw_diff_to_udiff(entity.rdiff, grouped=True)
-
-    # Display nothing for matching functions.
-    return None
-
-
 def _serialize_version_1(
     report: ReccmpStatusReport, diff_included: bool = False
 ) -> JSONReportVersion1:
     """The HTML file needs the diff data, but it is omitted from the JSON report."""
-    entities = []
 
-    for addr, e in report.entities.items():
-        if diff_included:
-            # An aggregate report may already have a deserialized udiff.
-            udiff = e.udiff or _create_udiff(e)
-        else:
-            udiff = None
-
-        entities.append(
-            JSONEntityVersion1(
-                address=addr,  # prefer dict key over redundant value in entity
-                name=e.name,
-                matching=e.accuracy,
-                recomp=e.recomp_addr,
-                stub=e.is_stub,
-                effective=e.is_effective_match,
-                diff=udiff,
-            )
+    entities = [
+        JSONEntityVersion1(
+            address=addr,  # prefer dict key over redundant value in entity
+            name=e.name,
+            matching=e.accuracy,
+            recomp=e.recomp_addr,
+            stub=e.is_stub,
+            effective=e.is_effective_match,
+            diff=get_udiff_for_entity(e) if diff_included else None,
         )
+        for addr, e in report.entities.items()
+    ]
 
     return JSONReportVersion1(
         file=report.filename,
