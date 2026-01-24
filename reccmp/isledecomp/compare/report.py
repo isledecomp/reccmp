@@ -169,8 +169,7 @@ class JSONReportVersion1(BaseModel):
 def _serialize_version_1(
     report: ReccmpStatusReport, diff_included: bool = False
 ) -> JSONReportVersion1:
-    """The HTML file needs the diff data, but it is omitted from the JSON report."""
-
+    """The JSON report can exclude the diff to make deserialization faster."""
     entities = [
         JSONEntityVersion1(
             address=addr,  # prefer dict key over redundant value in entity
