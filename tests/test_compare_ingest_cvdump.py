@@ -453,7 +453,7 @@ def test_variable_size_with_type_info(binfile: PEImage):
                 Element type = T_RCHAR(0070)
                 Index type = T_SHORT(0011)
                 length = 1024
-                Name =
+                Name = 
         """
         ),
     )

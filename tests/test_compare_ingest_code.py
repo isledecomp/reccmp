@@ -175,7 +175,7 @@ def test_load_code_function_nameref_variants(
 
                 // LIBRARY: TEST 0x1008b400
                 // _atol
-
+                
                 // STUB: TEST 0x1008b4b0
                 // _atoi
 

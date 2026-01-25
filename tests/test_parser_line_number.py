@@ -158,7 +158,7 @@ def test_function_indent_lisp(parser: DecompParser):
             """\
         // FUNCTION: TEST 0x1234
         void test()
-        {   hello();
+        {   hello(); 
             world++; }
         """
         )
@@ -177,7 +177,7 @@ def test_function_indent_no_indents(parser: DecompParser):
             // FUNCTION: TEST 0x1234
             void test()
             {
-
+            
             if (1)
             {
                 hello();

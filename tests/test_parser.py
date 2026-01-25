@@ -297,7 +297,7 @@ def test_function_with_spaces(parser):
     parser.read(
         """\
         // FUNCTION: TEST 0x1234
-
+           
         inline void test_function() { };
         """
     )
@@ -311,7 +311,7 @@ def test_function_with_spaces_implicit(parser):
     parser.read(
         """\
         // FUNCTION: TEST 0x1234
-
+           
         // Implicit::Method
         """
     )

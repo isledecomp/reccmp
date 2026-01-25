@@ -355,7 +355,7 @@ def test_type_field_conversion():
             1234|FUNCTION
             1234|FuNcTiOn
             1234|  function
-            1234|function
+            1234|function  
             1234|"  function  "
             """
             )
