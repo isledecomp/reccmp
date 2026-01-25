@@ -4,21 +4,21 @@ import argparse
 import logging
 import colorama
 import reccmp
-from reccmp.isledecomp.compare import Compare as IsleCompare
-from reccmp.isledecomp.utils import print_combined_diff
+from reccmp.compare import Compare
+from reccmp.utils import print_combined_diff
 from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
 from reccmp.project.detect import (
     argparse_add_project_target_args,
     argparse_parse_project_target,
     RecCmpProjectException,
 )
-from reccmp.isledecomp.compare.diff import CombinedDiffOutput, raw_diff_to_udiff
+from reccmp.compare.diff import CombinedDiffOutput, raw_diff_to_udiff
 
 
 logger = logging.getLogger(__name__)
 
 # Ignore all compare-db messages.
-logging.getLogger("isledecomp.compare").addHandler(logging.NullHandler())
+logging.getLogger("compare").addHandler(logging.NullHandler())
 
 colorama.just_fix_windows_console()
 
@@ -67,7 +67,7 @@ def main():
         logger.error(e.args[0])
         return 1
 
-    engine = IsleCompare.from_target(target)
+    engine = Compare.from_target(target)
 
     for tbl_match in engine.compare_vtables():
         vtable_count += 1

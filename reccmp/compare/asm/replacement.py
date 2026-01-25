@@ -1,7 +1,7 @@
 from functools import cache
 from typing import Callable, Protocol
-from reccmp.isledecomp.compare.db import ReccmpEntity
-from reccmp.isledecomp.types import EntityType
+from reccmp.compare.db import ReccmpEntity
+from reccmp.types import EntityType
 
 
 class AddrLookupProtocol(Protocol):

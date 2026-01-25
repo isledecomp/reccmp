@@ -15,7 +15,7 @@ This way, you can easily run your latest `reccmp` changes against your decompila
 
 ## Testing
 
-`isledecomp` comes with a suite of tests based on `pytest`. Most of them can be run out of the box:
+This project comes with a suite of tests based on `pytest`. Most of them can be run out of the box:
 
 ```bash
 pytest .

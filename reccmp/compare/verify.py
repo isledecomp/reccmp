@@ -4,8 +4,8 @@ These functions report problems with the current entities that limit or block fu
 
 import logging
 import struct
-from reccmp.isledecomp.formats.pe import PEImage
-from reccmp.isledecomp.types import EntityType
+from reccmp.formats.pe import PEImage
+from reccmp.types import EntityType
 from .db import EntityDb
 
 

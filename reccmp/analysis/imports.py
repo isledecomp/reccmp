@@ -1,7 +1,7 @@
 import re
 import struct
 from typing import Iterator, NamedTuple
-from reccmp.isledecomp.formats import PEImage
+from reccmp.formats import PEImage
 
 
 # Match 6 byte absolute jump instructions.

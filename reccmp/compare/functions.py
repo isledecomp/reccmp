@@ -4,22 +4,22 @@ from functools import cache
 import struct
 from itertools import pairwise
 from typing import Callable, Iterator
-from reccmp.isledecomp.compare.lines import LinesDb
-from reccmp.isledecomp.compare.pinned_sequences import SequenceMatcherWithPins
-from reccmp.isledecomp.compare.asm.fixes import assert_fixup, find_effective_match
-from reccmp.isledecomp.compare.asm.parse import AsmExcerpt, ParseAsm
-from reccmp.isledecomp.compare.asm.replacement import (
+from reccmp.compare.lines import LinesDb
+from reccmp.compare.pinned_sequences import SequenceMatcherWithPins
+from reccmp.compare.asm.fixes import assert_fixup, find_effective_match
+from reccmp.compare.asm.parse import AsmExcerpt, ParseAsm
+from reccmp.compare.asm.replacement import (
     AddrLookupProtocol,
     create_name_lookup,
 )
-from reccmp.isledecomp.compare.db import EntityDb, ReccmpMatch
-from reccmp.isledecomp.compare.diff import FunctionCompareResult, RawDiffOutput
-from reccmp.isledecomp.compare.event import ReccmpEvent, ReccmpReportProtocol
-from reccmp.isledecomp.formats.exceptions import (
+from reccmp.compare.db import EntityDb, ReccmpMatch
+from reccmp.compare.diff import FunctionCompareResult, RawDiffOutput
+from reccmp.compare.event import ReccmpEvent, ReccmpReportProtocol
+from reccmp.formats.exceptions import (
     InvalidVirtualAddressError,
     InvalidVirtualReadError,
 )
-from reccmp.isledecomp.formats import Image, PEImage
+from reccmp.formats import Image, PEImage
 
 
 def timestamp_string() -> str:

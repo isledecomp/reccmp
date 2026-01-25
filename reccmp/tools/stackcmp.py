@@ -7,13 +7,13 @@ from typing import NamedTuple, Sequence
 
 import colorama
 import reccmp
-from reccmp.isledecomp.compare import Compare as IsleCompare
-from reccmp.isledecomp.compare.diff import (
+from reccmp.compare import Compare
+from reccmp.compare.diff import (
     CombinedDiffOutput,
     MatchingOrMismatchingBlock,
     raw_diff_to_udiff,
 )
-from reccmp.isledecomp.cvdump.symbols import SymbolsEntry
+from reccmp.cvdump.symbols import SymbolsEntry
 from reccmp.project.detect import (
     argparse_add_project_target_args,
     argparse_parse_project_target,
@@ -331,14 +331,14 @@ def main():
         logger.error(e.args[0])
         return 1
 
-    isle_compare = IsleCompare.from_target(target)
+    compare = Compare.from_target(target)
 
     if args.loglevel == logging.DEBUG:
-        isle_compare.debug = True
+        compare.debug = True
 
     print()
 
-    match = isle_compare.compare_address(args.address)
+    match = compare.compare_address(args.address)
     if match is None:
         print(f"Failed to find a match at address 0x{args.address:x}")
         return 1
@@ -348,7 +348,7 @@ def main():
     udiff = raw_diff_to_udiff(match.result.diff, grouped=False)
 
     function_data = next(
-        (y for y in isle_compare.cvdump_analysis.nodes if y.addr == match.recomp_addr),
+        (y for y in compare.cvdump_analysis.nodes if y.addr == match.recomp_addr),
         None,
     )
     assert function_data is not None

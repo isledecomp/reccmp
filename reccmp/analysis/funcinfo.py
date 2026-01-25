@@ -4,7 +4,7 @@ https://www.openrce.org/articles/full_view/21"""
 import re
 import struct
 from typing import Iterator, NamedTuple
-from reccmp.isledecomp.formats import PEImage
+from reccmp.formats import PEImage
 
 
 # Magic strings:

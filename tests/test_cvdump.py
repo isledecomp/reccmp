@@ -1,5 +1,5 @@
 import pytest
-from reccmp.isledecomp.cvdump.types import (
+from reccmp.cvdump.types import (
     scalar_type_size,
     scalar_type_pointer,
     scalar_type_signed,

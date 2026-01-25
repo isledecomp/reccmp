@@ -1,9 +1,9 @@
 from textwrap import dedent
-from reccmp.isledecomp.formats import PEImage
-from reccmp.isledecomp.cvdump import CvdumpAnalysis, CvdumpParser
-from reccmp.isledecomp.compare.db import EntityDb
-from reccmp.isledecomp.compare.ingest import load_cvdump
-from reccmp.isledecomp.types import EntityType
+from reccmp.formats import PEImage
+from reccmp.cvdump import CvdumpAnalysis, CvdumpParser
+from reccmp.compare.db import EntityDb
+from reccmp.compare.ingest import load_cvdump
+from reccmp.types import EntityType
 
 
 # These functions use our sample PE image to "cheat" and not have to mock as much.
