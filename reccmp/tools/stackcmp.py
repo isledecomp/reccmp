@@ -7,12 +7,12 @@ from typing import NamedTuple, Sequence
 
 import colorama
 import reccmp
-from reccmp.decomp.compare import Compare
-from reccmp.decomp.compare.diff import (
+from reccmp.compare import Compare
+from reccmp.compare.diff import (
     CombinedDiffOutput,
     MatchingOrMismatchingBlock,
 )
-from reccmp.decomp.cvdump.symbols import SymbolsEntry
+from reccmp.cvdump.symbols import SymbolsEntry
 from reccmp.project.detect import (
     argparse_add_project_target_args,
     argparse_parse_project_target,

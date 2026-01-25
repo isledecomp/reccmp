@@ -4,15 +4,15 @@ import argparse
 import logging
 import colorama
 import reccmp
-from reccmp.decomp.compare import Compare
-from reccmp.decomp.utils import print_combined_diff
+from reccmp.compare import Compare
+from reccmp.utils import print_combined_diff
 from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
 from reccmp.project.detect import (
     argparse_add_project_target_args,
     argparse_parse_project_target,
     RecCmpProjectException,
 )
-from reccmp.decomp.compare.diff import CombinedDiffOutput
+from reccmp.compare.diff import CombinedDiffOutput
 
 
 logger = logging.getLogger(__name__)

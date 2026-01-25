@@ -1,7 +1,7 @@
 """Reccmp reports: files that contain the comparison result from asmcmp."""
 
 import pytest
-from reccmp.decomp.compare.report import (
+from reccmp.compare.report import (
     ReccmpStatusReport,
     ReccmpComparedEntity,
     combine_reports,

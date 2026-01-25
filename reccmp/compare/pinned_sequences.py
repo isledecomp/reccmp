@@ -2,7 +2,7 @@ from difflib import SequenceMatcher
 from itertools import pairwise
 import itertools
 from typing import Iterable, Iterator, Sequence
-from reccmp.decomp.difflib import DiffOpcode, get_grouped_opcodes
+from reccmp.difflib import DiffOpcode, get_grouped_opcodes
 
 
 class SequenceMatcherWithPins:

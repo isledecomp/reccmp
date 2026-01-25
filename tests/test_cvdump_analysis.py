@@ -1,7 +1,7 @@
-from reccmp.decomp.types import EntityType
-from reccmp.decomp.cvdump.parser import CvdumpParser
-from reccmp.decomp.cvdump.symbols import SymbolsEntry
-from reccmp.decomp.cvdump.analysis import (
+from reccmp.types import EntityType
+from reccmp.cvdump.parser import CvdumpParser
+from reccmp.cvdump.symbols import SymbolsEntry
+from reccmp.cvdump.analysis import (
     CvdumpAnalysis,
     CvdumpNode,
 )

@@ -1,7 +1,7 @@
 """Test find_vtordisp for PE images"""
 
-from reccmp.decomp.formats import PEImage
-from reccmp.decomp.analysis.vtordisp import find_vtordisp, find_displacements
+from reccmp.formats import PEImage
+from reccmp.analysis.vtordisp import find_vtordisp, find_displacements
 
 
 def test_vtor_overlap():

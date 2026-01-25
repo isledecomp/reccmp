@@ -1,12 +1,12 @@
-from reccmp.decomp.types import EntityType
-from reccmp.decomp.compare.db import EntityDb
-from reccmp.decomp.compare.lines import LinesDb
-from reccmp.decomp.compare.event import (
+from reccmp.types import EntityType
+from reccmp.compare.db import EntityDb
+from reccmp.compare.lines import LinesDb
+from reccmp.compare.event import (
     ReccmpEvent,
     ReccmpReportProtocol,
     reccmp_report_nop,
 )
-from reccmp.decomp.compare.queries import get_referencing_entity_matches
+from reccmp.compare.queries import get_referencing_entity_matches
 
 
 class EntityIndex:

@@ -5,8 +5,8 @@ import argparse
 import logging
 from typing import Sequence
 from pathlib import Path
-from reccmp.decomp.utils import diff_json, write_html_report
-from reccmp.decomp.compare.report import (
+from reccmp.utils import diff_json, write_html_report
+from reccmp.compare.report import (
     ReccmpStatusReport,
     combine_reports,
     ReccmpReportDeserializeError,

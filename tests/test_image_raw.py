@@ -1,8 +1,8 @@
 import dataclasses
 from pathlib import Path
 import pytest
-from reccmp.decomp.formats.image import Image
-from reccmp.decomp.formats.exceptions import (
+from reccmp.formats.image import Image
+from reccmp.formats.exceptions import (
     InvalidVirtualAddressError,
     InvalidVirtualReadError,
 )

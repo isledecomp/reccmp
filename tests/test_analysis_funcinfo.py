@@ -1,7 +1,7 @@
 """Test our detection of SEH data for PE images"""
 
-from reccmp.decomp.formats import PEImage
-from reccmp.decomp.analysis.funcinfo import (
+from reccmp.formats import PEImage
+from reccmp.analysis.funcinfo import (
     UnwindMapEntry,
     find_mov_eax_jmp_in_buffer,
     find_eh_handlers,

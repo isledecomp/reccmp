@@ -1,8 +1,8 @@
 import re
 from typing import Sequence
 
-from reccmp.decomp.compare.asm.parse import AsmExcerpt
-from reccmp.decomp.compare.pinned_sequences import DiffOpcode
+from reccmp.compare.asm.parse import AsmExcerpt
+from reccmp.compare.pinned_sequences import DiffOpcode
 
 REG_FIND = re.compile(r"(?: |\[)(e?[a-d]x|e?[s,d]i|[a-d][l,h]|e?[b,s]p)")
 

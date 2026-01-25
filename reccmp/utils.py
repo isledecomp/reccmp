@@ -4,7 +4,7 @@ import logging
 import colorama
 from pystache import Renderer  # type: ignore[import-untyped]
 from reccmp.assets import get_asset_file
-from reccmp.decomp.compare.report import (
+from reccmp.compare.report import (
     ReccmpStatusReport,
     ReccmpComparedEntity,
     serialize_reccmp_report,

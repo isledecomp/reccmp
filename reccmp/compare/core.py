@@ -4,18 +4,18 @@ import struct
 from typing import Iterable, Iterator
 from typing_extensions import Self
 from reccmp.project.detect import RecCmpTarget
-from reccmp.decomp.difflib import get_grouped_opcodes
-from reccmp.decomp.dir import walk_source_dir
-from reccmp.decomp.compare.functions import FunctionComparator
-from reccmp.decomp.formats import (
+from reccmp.difflib import get_grouped_opcodes
+from reccmp.dir import walk_source_dir
+from reccmp.compare.functions import FunctionComparator
+from reccmp.formats import (
     Image,
     PEImage,
     TextFile,
     detect_image,
 )
-from reccmp.decomp.cvdump import Cvdump, CvdumpTypesParser, CvdumpAnalysis
-from reccmp.decomp.types import EntityType, ImageId
-from reccmp.decomp.compare.event import (
+from reccmp.cvdump import Cvdump, CvdumpTypesParser, CvdumpAnalysis
+from reccmp.types import EntityType, ImageId
+from reccmp.compare.event import (
     ReccmpReportProtocol,
     create_logging_wrapper,
 )

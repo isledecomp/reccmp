@@ -3,11 +3,11 @@
 from pathlib import PurePath, PureWindowsPath
 from textwrap import dedent
 import pytest
-from reccmp.decomp.types import EntityType
-from reccmp.decomp.formats import PEImage, TextFile
-from reccmp.decomp.compare.ingest import load_markers
-from reccmp.decomp.compare.db import EntityDb
-from reccmp.decomp.compare.lines import LinesDb
+from reccmp.types import EntityType
+from reccmp.formats import PEImage, TextFile
+from reccmp.compare.ingest import load_markers
+from reccmp.compare.db import EntityDb
+from reccmp.compare.lines import LinesDb
 
 
 @pytest.fixture(name="db")

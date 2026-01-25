@@ -2,7 +2,7 @@
 another system or on a non-Windows host using Wine."""
 
 from pathlib import PurePosixPath, PureWindowsPath
-from reccmp.decomp.dir import convert_foreign_path as resolve
+from reccmp.dir import convert_foreign_path as resolve
 
 
 def test_resolve():

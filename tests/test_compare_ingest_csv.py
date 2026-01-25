@@ -1,10 +1,10 @@
 from textwrap import dedent
 from pathlib import PurePath
 import pytest
-from reccmp.decomp.compare.db import EntityDb
-from reccmp.decomp.compare.ingest import load_csv, load_data_sources
-from reccmp.decomp.types import EntityType
-from reccmp.decomp.formats import TextFile
+from reccmp.compare.db import EntityDb
+from reccmp.compare.ingest import load_csv, load_data_sources
+from reccmp.types import EntityType
+from reccmp.formats import TextFile
 
 
 @pytest.fixture(name="db")

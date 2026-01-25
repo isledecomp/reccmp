@@ -8,22 +8,22 @@ import os
 from pystache import Renderer  # type: ignore[import-untyped]
 import colorama
 import reccmp
-from reccmp.decomp import (
+from reccmp.utils import (
     print_combined_diff,
     diff_json,
     percent_string,
     write_html_report,
 )
 
-from reccmp.decomp.compare import Compare
-from reccmp.decomp.compare.diff import DiffReport
-from reccmp.decomp.compare.report import (
+from reccmp.compare import Compare
+from reccmp.compare.diff import DiffReport
+from reccmp.compare.report import (
     ReccmpStatusReport,
     ReccmpComparedEntity,
     deserialize_reccmp_report,
     serialize_reccmp_report,
 )
-from reccmp.decomp.types import EntityType
+from reccmp.types import EntityType
 from reccmp.assets import get_asset_file
 from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
 from reccmp.project.detect import (

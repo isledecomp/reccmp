@@ -1,5 +1,5 @@
-from reccmp.decomp.compare.asm.instgen import InstructGen, SectionType
-from reccmp.decomp.compare.asm.types import DisasmLiteInst
+from reccmp.compare.asm.instgen import InstructGen, SectionType
+from reccmp.compare.asm.types import DisasmLiteInst
 
 
 def test_ret():

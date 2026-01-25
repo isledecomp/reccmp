@@ -8,7 +8,7 @@ from typing import Iterator
 
 from ghidra.program.flatapi import FlatProgramAPI
 
-from reccmp.decomp.compare.db import ReccmpMatch
+from reccmp.compare.db import ReccmpMatch
 
 from .ghidra_helper import set_ghidra_label
 

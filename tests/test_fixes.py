@@ -1,6 +1,6 @@
 import difflib
 import pytest
-from reccmp.decomp.compare.asm.fixes import find_effective_match
+from reccmp.compare.asm.fixes import find_effective_match
 
 
 def test_fix_cmp_jmp():

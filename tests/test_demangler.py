@@ -1,5 +1,5 @@
 import pytest
-from reccmp.decomp.cvdump.demangler import (
+from reccmp.cvdump.demangler import (
     demangle_string_const,
     demangle_vtable,
     parse_encoded_number,

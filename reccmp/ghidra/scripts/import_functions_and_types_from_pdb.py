@@ -184,11 +184,11 @@ def main():
     logger.info("Importing file: %s", target.original_path)
 
     if not VERBOSE:
-        logging.getLogger("decomp.bin").setLevel(logging.WARNING)
-        logging.getLogger("decomp.compare.core").setLevel(logging.WARNING)
-        logging.getLogger("decomp.compare.db").setLevel(logging.WARNING)
-        logging.getLogger("decomp.compare.lines").setLevel(logging.WARNING)
-        logging.getLogger("decomp.cvdump.symbols").setLevel(logging.WARNING)
+        logging.getLogger("bin").setLevel(logging.WARNING)
+        logging.getLogger("compare.core").setLevel(logging.WARNING)
+        logging.getLogger("compare.db").setLevel(logging.WARNING)
+        logging.getLogger("compare.lines").setLevel(logging.WARNING)
+        logging.getLogger("cvdump.symbols").setLevel(logging.WARNING)
 
     import_target_into_ghidra(target, api)
     logger.info("Done!")
@@ -207,8 +207,8 @@ try:
     reload_module("reccmp.ghidra.importer.importer")
     from reccmp.ghidra.importer.importer import import_target_into_ghidra
 
-    reload_module("reccmp.decomp.compare")
-    reload_module("reccmp.decomp.compare.db")
+    reload_module("reccmp.compare")
+    reload_module("reccmp.compare.db")
     reload_module("reccmp.ghidra.importer.entity_names")
     reload_module("reccmp.ghidra.importer.exceptions")
     reload_module("reccmp.ghidra.importer.pdb_extraction")

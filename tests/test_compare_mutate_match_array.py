@@ -3,12 +3,12 @@ For matched variable array entities, create and match new entities for each arra
 """
 
 import pytest
-from reccmp.decomp.compare.mutate import (
+from reccmp.compare.mutate import (
     match_array_elements,
 )
-from reccmp.decomp.types import EntityType
-from reccmp.decomp.compare.db import EntityDb
-from reccmp.decomp.cvdump.types import CvdumpTypesParser, FieldListItem
+from reccmp.types import EntityType
+from reccmp.compare.db import EntityDb
+from reccmp.cvdump.types import CvdumpTypesParser, FieldListItem
 
 
 @pytest.fixture(name="db")

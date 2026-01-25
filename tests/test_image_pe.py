@@ -4,9 +4,9 @@
 These are some basic smoke tests."""
 
 import pytest
-from reccmp.decomp.formats.image import ImageImport, ImageSectionFlags
-from reccmp.decomp.formats import PEImage
-from reccmp.decomp.formats.exceptions import (
+from reccmp.formats.image import ImageImport, ImageSectionFlags
+from reccmp.formats import PEImage
+from reccmp.formats.exceptions import (
     SectionNotFoundError,
     InvalidVirtualAddressError,
     InvalidVirtualReadError,

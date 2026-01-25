@@ -1,8 +1,8 @@
 """Tests related to the ReccmpEntity ORM object"""
 
 import json
-from reccmp.decomp.types import EntityType
-from reccmp.decomp.compare.db import ReccmpEntity, entity_name_from_string
+from reccmp.types import EntityType
+from reccmp.compare.db import ReccmpEntity, entity_name_from_string
 
 
 def create_entity(

@@ -3,8 +3,8 @@
 import sqlite3
 from unittest.mock import patch
 import pytest
-from reccmp.decomp.compare.db import EntityDb
-from reccmp.decomp.types import EntityType, ImageId
+from reccmp.compare.db import EntityDb
+from reccmp.types import EntityType, ImageId
 
 
 @pytest.fixture(name="db")
@@ -226,12 +226,12 @@ def test_batch_commit_twice(db):
     batch = db.batch()
     batch.set_orig(100, name="Test")
 
-    with patch("reccmp.decomp.compare.db.EntityDb.bulk_orig_insert") as mock:
+    with patch("reccmp.compare.db.EntityDb.bulk_orig_insert") as mock:
         batch.commit()
         batch.commit()
         mock.assert_called_once()
 
-    with patch("reccmp.decomp.compare.db.EntityDb.bulk_orig_insert") as mock:
+    with patch("reccmp.compare.db.EntityDb.bulk_orig_insert") as mock:
         batch.commit()
         mock.assert_not_called()
 

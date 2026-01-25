@@ -1,6 +1,6 @@
 """Test Cvdump parser, reading global variables"""
 
-from reccmp.decomp.cvdump.parser import (
+from reccmp.cvdump.parser import (
     CvdumpParser,
     GdataEntry,
 )

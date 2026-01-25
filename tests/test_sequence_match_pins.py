@@ -1,7 +1,7 @@
 from difflib import SequenceMatcher
 
 import pytest
-from reccmp.decomp.compare.pinned_sequences import SequenceMatcherWithPins
+from reccmp.compare.pinned_sequences import SequenceMatcherWithPins
 
 
 def test_equal_sequences_matching_pin():

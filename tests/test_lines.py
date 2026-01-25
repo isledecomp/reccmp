@@ -2,7 +2,7 @@
 
 from pathlib import PurePosixPath, PureWindowsPath
 import pytest
-from reccmp.decomp.compare.lines import LinesDb
+from reccmp.compare.lines import LinesDb
 
 # For tests that don't require path conversion, parametrize the
 # input local_path so that we test both Windows and Posix paths.

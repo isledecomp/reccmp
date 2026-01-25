@@ -14,12 +14,12 @@ import statistics
 import bisect
 from typing import Iterator, NamedTuple
 import reccmp
-from reccmp.decomp import PEImage
-from reccmp.decomp.compare.db import ReccmpEntity
-from reccmp.decomp.cvdump import Cvdump
-from reccmp.decomp.compare import Compare
-from reccmp.decomp.formats.exceptions import InvalidVirtualAddressError
-from reccmp.decomp.types import EntityType
+from reccmp.formats import PEImage
+from reccmp.compare.db import ReccmpEntity
+from reccmp.cvdump import Cvdump
+from reccmp.compare import Compare
+from reccmp.formats.exceptions import InvalidVirtualAddressError
+from reccmp.types import EntityType
 from reccmp.project.detect import (
     argparse_add_project_target_args,
     argparse_parse_project_target,

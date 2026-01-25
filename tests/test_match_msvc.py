@@ -2,9 +2,9 @@
 
 from unittest.mock import Mock, ANY, patch
 import pytest
-from reccmp.decomp.types import EntityType, ImageId
-from reccmp.decomp.compare.db import EntityDb
-from reccmp.decomp.compare.match_msvc import (
+from reccmp.types import EntityType, ImageId
+from reccmp.compare.db import EntityDb
+from reccmp.compare.match_msvc import (
     match_functions,
     match_static_variables,
     match_strings,
@@ -14,7 +14,7 @@ from reccmp.decomp.compare.match_msvc import (
     match_ref,
     match_imports,
 )
-from reccmp.decomp.compare.event import ReccmpEvent, ReccmpReportProtocol
+from reccmp.compare.event import ReccmpEvent, ReccmpReportProtocol
 
 
 @pytest.fixture(name="db")
@@ -813,7 +813,7 @@ def test_match_ref_maximum_depth(db, report):
 
     # Run one iteration: should not report.
     with patch(
-        "reccmp.decomp.compare.match_msvc.get_referencing_entity_matches",
+        "reccmp.compare.match_msvc.get_referencing_entity_matches",
         return_value=iter([(100, 100)]),
     ) as getter:
         match_ref(db, report)
@@ -822,7 +822,7 @@ def test_match_ref_maximum_depth(db, report):
 
     # Run indefinitely: should report.
     with patch(
-        "reccmp.decomp.compare.match_msvc.get_referencing_entity_matches",
+        "reccmp.compare.match_msvc.get_referencing_entity_matches",
         return_value=[(100, 100)],
     ) as getter:
         match_ref(db, report)

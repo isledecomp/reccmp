@@ -10,15 +10,15 @@ from struct import unpack
 from typing_extensions import Self
 import colorama
 import reccmp
-from reccmp.decomp.formats import Image
-from reccmp.decomp.formats.exceptions import InvalidVirtualReadError
-from reccmp.decomp.compare import Compare
-from reccmp.decomp.compare.db import ReccmpMatch
-from reccmp.decomp.cvdump.types import (
+from reccmp.formats import Image
+from reccmp.formats.exceptions import InvalidVirtualReadError
+from reccmp.compare import Compare
+from reccmp.compare.db import ReccmpMatch
+from reccmp.cvdump.types import (
     CvdumpKeyError,
     CvdumpIntegrityError,
 )
-from reccmp.decomp.formats.pe import PEImage
+from reccmp.formats.pe import PEImage
 from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
 from reccmp.project.detect import (
     RecCmpProjectException,
@@ -34,7 +34,7 @@ colorama.just_fix_windows_console()
 
 
 # Ignore all compare-db messages.
-logging.getLogger("decomp.compare").addHandler(logging.NullHandler())
+logging.getLogger("compare").addHandler(logging.NullHandler())
 
 
 def parse_args() -> argparse.Namespace:

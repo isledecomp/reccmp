@@ -1,7 +1,7 @@
 """Test find_float_const for PE images"""
 
-from reccmp.decomp.formats import PEImage
-from reccmp.decomp.analysis.float_const import (
+from reccmp.formats import PEImage
+from reccmp.analysis.float_const import (
     find_float_instructions_in_buffer,
     find_float_consts,
 )

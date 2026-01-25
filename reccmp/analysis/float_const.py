@@ -13,7 +13,7 @@ Then filter on pointers into read-only sections.
 import re
 import struct
 from typing import Iterator, NamedTuple
-from reccmp.decomp.formats import PEImage
+from reccmp.formats import PEImage
 
 SINGLE_PRECISION_OPCODES = frozenset(
     [

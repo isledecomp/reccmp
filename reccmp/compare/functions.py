@@ -4,22 +4,22 @@ from functools import cache
 import struct
 from itertools import pairwise
 from typing import Callable, Iterator, NamedTuple
-from reccmp.decomp.compare.lines import LinesDb
-from reccmp.decomp.difflib import DiffOpcode
-from reccmp.decomp.compare.pinned_sequences import SequenceMatcherWithPins
-from reccmp.decomp.compare.asm.fixes import assert_fixup, find_effective_match
-from reccmp.decomp.compare.asm.parse import AsmExcerpt, ParseAsm
-from reccmp.decomp.compare.asm.replacement import (
+from reccmp.compare.lines import LinesDb
+from reccmp.difflib import DiffOpcode
+from reccmp.compare.pinned_sequences import SequenceMatcherWithPins
+from reccmp.compare.asm.fixes import assert_fixup, find_effective_match
+from reccmp.compare.asm.parse import AsmExcerpt, ParseAsm
+from reccmp.compare.asm.replacement import (
     AddrLookupProtocol,
     create_name_lookup,
 )
-from reccmp.decomp.compare.db import EntityDb, ReccmpMatch
-from reccmp.decomp.compare.event import ReccmpEvent, ReccmpReportProtocol
-from reccmp.decomp.formats.exceptions import (
+from reccmp.compare.db import EntityDb, ReccmpMatch
+from reccmp.compare.event import ReccmpEvent, ReccmpReportProtocol
+from reccmp.formats.exceptions import (
     InvalidVirtualAddressError,
     InvalidVirtualReadError,
 )
-from reccmp.decomp.formats import Image, PEImage
+from reccmp.formats import Image, PEImage
 
 
 class FunctionCompareResult(NamedTuple):

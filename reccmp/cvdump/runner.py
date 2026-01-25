@@ -5,7 +5,7 @@ from enum import Enum
 from typing import Iterable, Iterator
 import subprocess
 from reccmp.bin import lib_path_join
-from reccmp.decomp.dir import winepath_unix_to_win
+from reccmp.dir import winepath_unix_to_win
 from .parser import CvdumpParser
 
 

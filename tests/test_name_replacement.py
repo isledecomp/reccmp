@@ -1,7 +1,7 @@
 import pytest
-from reccmp.decomp.types import EntityType
-from reccmp.decomp.compare.db import EntityDb
-from reccmp.decomp.compare.asm.replacement import (
+from reccmp.types import EntityType
+from reccmp.compare.db import EntityDb
+from reccmp.compare.asm.replacement import (
     create_name_lookup,
     NameReplacementProtocol,
 )
