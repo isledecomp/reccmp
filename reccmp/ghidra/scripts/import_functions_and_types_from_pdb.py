@@ -170,8 +170,8 @@ def reload_module(module: str):
     and are not reloaded when relaunching the script. Therefore, in order to facilitate development
     we force reload all our own modules at startup. See also https://github.com/mandiant/Ghidrathon/issues/103.
 
-    Note that as of 2024-05-30, this remedy does not work perfectly (yet): Some changes in decomp are
-    still not detected correctly and require a Ghidra restart to be applied.
+    Note that as of 2024-05-30, this remedy does not work perfectly (yet): Some changes are still not detected
+    correctly and require a Ghidra restart to be applied.
     """
     importlib.reload(importlib.import_module(module))
 

@@ -18,7 +18,7 @@ from reccmp.compare.diff import CombinedDiffOutput
 logger = logging.getLogger(__name__)
 
 # Ignore all compare-db messages.
-logging.getLogger("decomp.compare").addHandler(logging.NullHandler())
+logging.getLogger("compare").addHandler(logging.NullHandler())
 
 colorama.just_fix_windows_console()
 
