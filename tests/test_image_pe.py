@@ -4,9 +4,9 @@
 These are some basic smoke tests."""
 
 import pytest
-from reccmp.isledecomp.formats.image import ImageImport
-from reccmp.isledecomp.formats import PEImage
-from reccmp.isledecomp.formats.exceptions import (
+from reccmp.formats.image import ImageImport, ImageSectionFlags
+from reccmp.formats import PEImage
+from reccmp.formats.exceptions import (
     SectionNotFoundError,
     InvalidVirtualAddressError,
     InvalidVirtualReadError,
@@ -221,3 +221,14 @@ def test_addr_conversion_relative(
 ):
     """Testing conversion from absolute address to seg:offset."""
     assert binfile.get_relative_addr(absolute) == relative
+
+
+def test_section_flags(binfile: PEImage):
+    code = [s.name for s in binfile.sections if s.flags & ImageSectionFlags.EXECUTE]
+    assert code == [".text"]
+
+    readable = [s.name for s in binfile.sections if s.flags & ImageSectionFlags.READ]
+    assert readable == [".text", ".rdata", ".data", ".idata", ".rsrc", ".reloc"]
+
+    writable = [s.name for s in binfile.sections if s.flags & ImageSectionFlags.WRITE]
+    assert writable == [".data", ".idata"]

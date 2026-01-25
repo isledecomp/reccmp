@@ -1,7 +1,7 @@
 # nyuk nyuk nyuk
 import pytest
-from reccmp.isledecomp.parser.parser import CurlyManager
-from reccmp.isledecomp.parser.util import sanitize_code_line
+from reccmp.parser.parser import CurlyManager
+from reccmp.parser.util import sanitize_code_line
 
 
 @pytest.fixture(name="curly")

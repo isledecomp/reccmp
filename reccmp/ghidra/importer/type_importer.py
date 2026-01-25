@@ -22,7 +22,7 @@ from ghidra.program.model.data import (
 )
 from ghidra.util.task import ConsoleTaskMonitor
 
-from reccmp.isledecomp.cvdump.types import (
+from reccmp.cvdump.types import (
     CvdumpParsedType,
     FieldListItem,
     VirtualBasePointer,

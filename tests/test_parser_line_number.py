@@ -2,7 +2,7 @@
 
 from textwrap import dedent  # Indenting is important here.
 import pytest
-from reccmp.isledecomp.parser.parser import DecompParser
+from reccmp.parser.parser import DecompParser
 
 
 @pytest.fixture(name="parser")

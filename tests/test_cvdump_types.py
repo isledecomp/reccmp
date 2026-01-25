@@ -2,7 +2,7 @@
 and type dependency tree walker."""
 
 import pytest
-from reccmp.isledecomp.cvdump.types import (
+from reccmp.cvdump.types import (
     CvdumpTypesParser,
     CvdumpKeyError,
     CvdumpIntegrityError,

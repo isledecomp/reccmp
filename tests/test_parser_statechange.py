@@ -1,9 +1,9 @@
 import pytest
-from reccmp.isledecomp.parser.parser import (
+from reccmp.parser.parser import (
     ReaderState as _rs,
     DecompParser,
 )
-from reccmp.isledecomp.parser.error import ParserError as _pe
+from reccmp.parser.error import ParserError as _pe
 
 # fmt: off
 state_change_marker_cases = [
