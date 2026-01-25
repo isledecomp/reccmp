@@ -6,8 +6,8 @@ import logging
 from pathlib import Path
 
 import reccmp
-from reccmp.isledecomp.formats import detect_image, PEImage
-from reccmp.isledecomp.utils import print_diff
+from reccmp.decomp.formats import detect_image, PEImage
+from reccmp.decomp.utils import print_diff
 from reccmp.project.detect import (
     RecCmpProjectException,
     argparse_add_project_target_args,

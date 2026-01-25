@@ -23,7 +23,7 @@ from reccmp.project.error import (
     IncompleteReccmpTargetError,
     UnknownRecCmpTargetException,
 )
-from reccmp.isledecomp.formats import PEImage
+from reccmp.decomp.formats import PEImage
 
 
 LEGO1_SHA256 = "14645225bbe81212e9bc1919cd8a692b81b8622abb6561280d99b0fc4151ce17"

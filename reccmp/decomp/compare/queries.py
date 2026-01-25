@@ -1,5 +1,5 @@
 from typing import Iterator, NamedTuple
-from reccmp.isledecomp.types import EntityType, ImageId
+from reccmp.decomp.types import EntityType, ImageId
 from .db import EntityDb
 
 

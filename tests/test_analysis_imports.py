@@ -1,8 +1,8 @@
 """Test find_import_thunks for PE images"""
 
 import pytest
-from reccmp.isledecomp.formats import PEImage
-from reccmp.isledecomp.analysis.imports import (
+from reccmp.decomp.formats import PEImage
+from reccmp.decomp.analysis.imports import (
     find_absolute_jumps_in_bytes,
     find_import_thunks,
 )

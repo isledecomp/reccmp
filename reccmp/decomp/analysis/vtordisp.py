@@ -3,7 +3,7 @@
 import re
 import struct
 from typing import Iterator, NamedTuple
-from reccmp.isledecomp.formats.pe import PEImage
+from reccmp.decomp.formats.pe import PEImage
 
 # Each vtordisp function begins with `sub ecx, <byte>`
 VTOR_START_RE = re.compile(rb"\x2b\x49")

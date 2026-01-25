@@ -1,12 +1,12 @@
 import pytest
-from reccmp.isledecomp.parser.parser import MarkerDict
-from reccmp.isledecomp.parser.marker import (
+from reccmp.decomp.parser.parser import MarkerDict
+from reccmp.decomp.parser.marker import (
     DecompMarker,
     MarkerType,
     match_marker,
     is_marker_exact,
 )
-from reccmp.isledecomp.parser.util import (
+from reccmp.decomp.parser.util import (
     is_blank_or_comment,
     get_class_name,
     get_variable_name,

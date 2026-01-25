@@ -1,7 +1,7 @@
 from pathlib import PurePath
 import pytest
-from reccmp.isledecomp.parser import DecompLinter
-from reccmp.isledecomp.parser.error import ParserError
+from reccmp.decomp.parser import DecompLinter
+from reccmp.decomp.parser.error import ParserError
 
 
 @pytest.fixture(name="linter")

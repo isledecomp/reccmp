@@ -1,15 +1,15 @@
 from unittest.mock import Mock, patch
 import pytest
-from reccmp.isledecomp.compare.db import EntityDb
-from reccmp.isledecomp.formats.image import ImageImport, ImageRegion
-from reccmp.isledecomp.formats import PEImage
-from reccmp.isledecomp.types import EntityType, ImageId
-from reccmp.isledecomp.formats.exceptions import (
+from reccmp.decomp.compare.db import EntityDb
+from reccmp.decomp.formats.image import ImageImport, ImageRegion
+from reccmp.decomp.formats import PEImage
+from reccmp.decomp.types import EntityType, ImageId
+from reccmp.decomp.formats.exceptions import (
     InvalidVirtualAddressError,
     InvalidVirtualReadError,
     InvalidStringError,
 )
-from reccmp.isledecomp.compare.analyze import (
+from reccmp.decomp.compare.analyze import (
     create_analysis_floats,
     create_analysis_strings,
     create_thunks,
@@ -137,7 +137,7 @@ def test_create_analysis_floats(db: EntityDb):
     binfile = Mock(spec=[])
 
     with patch(
-        "reccmp.isledecomp.compare.analyze.find_float_consts",
+        "reccmp.decomp.compare.analyze.find_float_consts",
         return_value=[(100, 4, 0.5)],
     ):
         create_analysis_floats(db, ImageId.ORIG, binfile)
@@ -157,7 +157,7 @@ def test_create_analysis_floats_do_not_replace(db: EntityDb):
     binfile = Mock(spec=[])
 
     with patch(
-        "reccmp.isledecomp.compare.analyze.find_float_consts",
+        "reccmp.decomp.compare.analyze.find_float_consts",
         return_value=[(100, 4, 0.5)],
     ):
         create_analysis_floats(db, ImageId.ORIG, binfile)
@@ -353,11 +353,11 @@ def test_create_import_thunks_pe_only(db: EntityDb):
     """At the moment, we have seen import thunks on PE images only.
     create_import_thunks should be a no-op if the image is not PE."""
     pe_image = Mock(spec=PEImage)
-    with patch("reccmp.isledecomp.compare.analyze.find_import_thunks") as find_fn:
+    with patch("reccmp.decomp.compare.analyze.find_import_thunks") as find_fn:
         create_import_thunks(db, ImageId.ORIG, pe_image)
         find_fn.assert_called()
 
     image = Mock()
-    with patch("reccmp.isledecomp.compare.analyze.find_import_thunks") as find_fn:
+    with patch("reccmp.decomp.compare.analyze.find_import_thunks") as find_fn:
         create_import_thunks(db, ImageId.ORIG, image)
         find_fn.assert_not_called()

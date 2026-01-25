@@ -1,7 +1,7 @@
 from textwrap import dedent
 import pytest
-from reccmp.isledecomp.types import EntityType
-from reccmp.isledecomp.compare.csv import (
+from reccmp.decomp.types import EntityType
+from reccmp.decomp.compare.csv import (
     csv_parse,
     CsvNoAddressError,
     CsvDuplicateColumnError,
@@ -355,7 +355,7 @@ def test_type_field_conversion():
             1234|FUNCTION
             1234|FuNcTiOn
             1234|  function
-            1234|function  
+            1234|function
             1234|"  function  "
             """
             )

@@ -8,7 +8,7 @@ import csv
 from csv import Error as PythonCsvError
 from typing import Iterable, Iterator
 from typing_extensions import NotRequired, TypedDict
-from reccmp.isledecomp.types import EntityType
+from reccmp.decomp.types import EntityType
 
 
 # Fatal errors:

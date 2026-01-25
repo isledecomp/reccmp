@@ -1,11 +1,11 @@
 from unittest.mock import Mock
 import pytest
-from reccmp.isledecomp.compare.analyze import (
+from reccmp.decomp.compare.analyze import (
     complete_partial_floats,
 )
-from reccmp.isledecomp.types import EntityType, ImageId
-from reccmp.isledecomp.compare.db import EntityDb
-from reccmp.isledecomp.formats import PEImage
+from reccmp.decomp.types import EntityType, ImageId
+from reccmp.decomp.compare.db import EntityDb
+from reccmp.decomp.formats import PEImage
 
 
 @pytest.fixture(name="db")

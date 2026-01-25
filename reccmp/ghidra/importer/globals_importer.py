@@ -8,8 +8,8 @@ import logging
 from ghidra.program.flatapi import FlatProgramAPI
 from ghidra.program.model.mem import MemBuffer
 
-from reccmp.isledecomp.compare.core import Compare
-from reccmp.isledecomp.compare.db import ReccmpMatch
+from reccmp.decomp.compare.core import Compare
+from reccmp.decomp.compare.db import ReccmpMatch
 
 from .exceptions import ReccmpGhidraException
 from .type_importer import PdbTypeImporter

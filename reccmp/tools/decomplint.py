@@ -6,12 +6,12 @@ from pathlib import Path, PurePath
 from typing import Iterable
 import colorama
 import reccmp
-from reccmp.isledecomp.dir import walk_source_dir
-from reccmp.isledecomp.parser import DecompLinter
-from reccmp.isledecomp.parser.error import ParserAlert
+from reccmp.decomp.dir import walk_source_dir
+from reccmp.decomp.parser import DecompLinter
+from reccmp.decomp.parser.error import ParserAlert
 from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
 from reccmp.project.detect import RecCmpProject
-from reccmp.isledecomp.formats import TextFile
+from reccmp.decomp.formats import TextFile
 
 logger = logging.getLogger(__name__)
 

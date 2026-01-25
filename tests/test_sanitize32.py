@@ -2,8 +2,8 @@
 
 from unittest.mock import Mock, patch
 import pytest
-from reccmp.isledecomp.compare.asm.parse import DisasmLiteInst, ParseAsm
-from reccmp.isledecomp.compare.asm.replacement import (
+from reccmp.decomp.compare.asm.parse import DisasmLiteInst, ParseAsm
+from reccmp.decomp.compare.asm.replacement import (
     AddrTestProtocol,
     NameReplacementProtocol,
 )
@@ -208,7 +208,7 @@ def test_skip_small_instructions(code: bytes):
     For 32-bit PE binaries, the starting virtual address is either 0x10000000
     or 0x4000000, so the instruction must be at least 5 bytes.
     (1 for the opcode, 4 for the operand)"""
-    with patch("reccmp.isledecomp.compare.asm.parse.ParseAsm.sanitize") as mock:
+    with patch("reccmp.decomp.compare.asm.parse.ParseAsm.sanitize") as mock:
         p = ParseAsm()
         p.parse_asm(code, 0)
         mock.assert_not_called()
@@ -218,7 +218,7 @@ def test_skip_small_instructions(code: bytes):
 def test_should_skip_regardless_of_register():
     """Known limitation of the above optimization: using a different register
     changes the size of the instruction. Ideally we are consistent."""
-    with patch("reccmp.isledecomp.compare.asm.parse.ParseAsm.sanitize") as mock:
+    with patch("reccmp.decomp.compare.asm.parse.ParseAsm.sanitize") as mock:
         p = ParseAsm()
         p.parse_asm(b"\x66\x3d\x00\x01", 0)  # cmp ax, 0x100
         p.parse_asm(b"\x66\x81\xf9\x00\x01", 0)  # cmp cx, 0x100

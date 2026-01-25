@@ -1,9 +1,9 @@
 from textwrap import dedent
-from reccmp.isledecomp.formats import PEImage
-from reccmp.isledecomp.cvdump import CvdumpAnalysis, CvdumpParser
-from reccmp.isledecomp.compare.db import EntityDb
-from reccmp.isledecomp.compare.ingest import load_cvdump
-from reccmp.isledecomp.types import EntityType
+from reccmp.decomp.formats import PEImage
+from reccmp.decomp.cvdump import CvdumpAnalysis, CvdumpParser
+from reccmp.decomp.compare.db import EntityDb
+from reccmp.decomp.compare.ingest import load_cvdump
+from reccmp.decomp.types import EntityType
 
 
 # These functions use our sample PE image to "cheat" and not have to mock as much.
@@ -453,7 +453,7 @@ def test_variable_size_with_type_info(binfile: PEImage):
                 Element type = T_RCHAR(0070)
                 Index type = T_SHORT(0011)
                 length = 1024
-                Name = 
+                Name =
         """
         ),
     )

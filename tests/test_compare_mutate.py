@@ -1,9 +1,9 @@
 import pytest
-from reccmp.isledecomp.compare.mutate import (
+from reccmp.decomp.compare.mutate import (
     name_thunks,
 )
-from reccmp.isledecomp.types import EntityType, ImageId
-from reccmp.isledecomp.compare.db import EntityDb
+from reccmp.decomp.types import EntityType, ImageId
+from reccmp.decomp.compare.db import EntityDb
 
 
 @pytest.fixture(name="db")

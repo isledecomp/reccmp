@@ -1,10 +1,10 @@
 from textwrap import dedent
 import pytest
-from reccmp.isledecomp.parser.parser import (
+from reccmp.decomp.parser.parser import (
     ReaderState,
     DecompParser,
 )
-from reccmp.isledecomp.parser.error import ParserError
+from reccmp.decomp.parser.error import ParserError
 
 
 @pytest.fixture(name="parser")
@@ -297,7 +297,7 @@ def test_function_with_spaces(parser):
     parser.read(
         """\
         // FUNCTION: TEST 0x1234
-           
+
         inline void test_function() { };
         """
     )
@@ -311,7 +311,7 @@ def test_function_with_spaces_implicit(parser):
     parser.read(
         """\
         // FUNCTION: TEST 0x1234
-           
+
         // Implicit::Method
         """
     )

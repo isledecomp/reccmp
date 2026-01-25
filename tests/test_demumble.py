@@ -2,7 +2,7 @@
 This is here to spot changes for the functions that depend on this output."""
 
 import pytest
-from reccmp.isledecomp.cvdump.demangler import msvc_demangle
+from reccmp.decomp.cvdump.demangler import msvc_demangle
 
 # pylint:disable=line-too-long
 MSVC_DEMANGLE_SAMPLES = (

@@ -2,11 +2,11 @@ from dataclasses import dataclass
 import re
 import logging
 
-from reccmp.isledecomp.formats.exceptions import InvalidVirtualAddressError
-from reccmp.isledecomp.cvdump.symbols import SymbolsEntry
-from reccmp.isledecomp.compare import Compare
-from reccmp.isledecomp.compare.db import ReccmpMatch
-from reccmp.isledecomp.cvdump.types import CvdumpParsedType
+from reccmp.decomp.formats.exceptions import InvalidVirtualAddressError
+from reccmp.decomp.cvdump.symbols import SymbolsEntry
+from reccmp.decomp.compare import Compare
+from reccmp.decomp.compare.db import ReccmpMatch
+from reccmp.decomp.cvdump.types import CvdumpParsedType
 
 logger = logging.getLogger(__file__)
 

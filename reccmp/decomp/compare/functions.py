@@ -4,22 +4,22 @@ from functools import cache
 import struct
 from itertools import pairwise
 from typing import Callable, Iterator, NamedTuple
-from reccmp.isledecomp.compare.lines import LinesDb
-from reccmp.isledecomp.difflib import DiffOpcode
-from reccmp.isledecomp.compare.pinned_sequences import SequenceMatcherWithPins
-from reccmp.isledecomp.compare.asm.fixes import assert_fixup, find_effective_match
-from reccmp.isledecomp.compare.asm.parse import AsmExcerpt, ParseAsm
-from reccmp.isledecomp.compare.asm.replacement import (
+from reccmp.decomp.compare.lines import LinesDb
+from reccmp.decomp.difflib import DiffOpcode
+from reccmp.decomp.compare.pinned_sequences import SequenceMatcherWithPins
+from reccmp.decomp.compare.asm.fixes import assert_fixup, find_effective_match
+from reccmp.decomp.compare.asm.parse import AsmExcerpt, ParseAsm
+from reccmp.decomp.compare.asm.replacement import (
     AddrLookupProtocol,
     create_name_lookup,
 )
-from reccmp.isledecomp.compare.db import EntityDb, ReccmpMatch
-from reccmp.isledecomp.compare.event import ReccmpEvent, ReccmpReportProtocol
-from reccmp.isledecomp.formats.exceptions import (
+from reccmp.decomp.compare.db import EntityDb, ReccmpMatch
+from reccmp.decomp.compare.event import ReccmpEvent, ReccmpReportProtocol
+from reccmp.decomp.formats.exceptions import (
     InvalidVirtualAddressError,
     InvalidVirtualReadError,
 )
-from reccmp.isledecomp.formats import Image, PEImage
+from reccmp.decomp.formats import Image, PEImage
 
 
 class FunctionCompareResult(NamedTuple):

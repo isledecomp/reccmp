@@ -14,12 +14,12 @@ import statistics
 import bisect
 from typing import Iterator, NamedTuple
 import reccmp
-from reccmp.isledecomp import PEImage
-from reccmp.isledecomp.compare.db import ReccmpEntity
-from reccmp.isledecomp.cvdump import Cvdump
-from reccmp.isledecomp.compare import Compare as IsleCompare
-from reccmp.isledecomp.formats.exceptions import InvalidVirtualAddressError
-from reccmp.isledecomp.types import EntityType
+from reccmp.decomp import PEImage
+from reccmp.decomp.compare.db import ReccmpEntity
+from reccmp.decomp.cvdump import Cvdump
+from reccmp.decomp.compare import Compare
+from reccmp.decomp.formats.exceptions import InvalidVirtualAddressError
+from reccmp.decomp.types import EntityType
 from reccmp.project.detect import (
     argparse_add_project_target_args,
     argparse_parse_project_target,
@@ -387,7 +387,7 @@ def main() -> int:
         logger.error(e.args[0])
         return 1
 
-    engine = IsleCompare.from_target(target)
+    engine = Compare.from_target(target)
     orig_bin = engine.orig_bin
     recomp_bin = engine.recomp_bin
 

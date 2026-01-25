@@ -4,11 +4,11 @@ These functions create or update entities using the current information in the d
 
 import logging
 from functools import cache
-from reccmp.isledecomp.cvdump.demangler import (
+from reccmp.decomp.cvdump.demangler import (
     get_function_arg_string,
 )
-from reccmp.isledecomp.cvdump import CvdumpTypesParser
-from reccmp.isledecomp.types import EntityType
+from reccmp.decomp.cvdump import CvdumpTypesParser
+from reccmp.decomp.types import EntityType
 from .db import EntityDb
 from .queries import get_overloaded_functions, get_named_thunks
 

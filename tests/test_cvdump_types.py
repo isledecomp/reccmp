@@ -2,7 +2,7 @@
 and type dependency tree walker."""
 
 import pytest
-from reccmp.isledecomp.cvdump.types import (
+from reccmp.decomp.cvdump.types import (
     CvdumpTypesParser,
     CvdumpKeyError,
     CvdumpIntegrityError,
@@ -932,7 +932,7 @@ def test_this_adjust_hex(empty_parser: CvdumpTypesParser):
     empty_parser.read_all(
         """\
 0x657a : Length = 26, Leaf = 0x1009 LF_MFUNCTION
-    Return type = T_VOID(0003), Class type = 0x15ED, This type = 0x15EE, 
+    Return type = T_VOID(0003), Class type = 0x15ED, This type = 0x15EE,
     Call type = ThisCall, Func attr = none
     Parms = 3, Arg list type = 0x6579, This adjust = 24"""
     )

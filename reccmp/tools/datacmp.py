@@ -10,15 +10,15 @@ from struct import unpack
 from typing_extensions import Self
 import colorama
 import reccmp
-from reccmp.isledecomp.formats import Image
-from reccmp.isledecomp.formats.exceptions import InvalidVirtualReadError
-from reccmp.isledecomp.compare import Compare as IsleCompare
-from reccmp.isledecomp.compare.db import ReccmpMatch
-from reccmp.isledecomp.cvdump.types import (
+from reccmp.decomp.formats import Image
+from reccmp.decomp.formats.exceptions import InvalidVirtualReadError
+from reccmp.decomp.compare import Compare
+from reccmp.decomp.compare.db import ReccmpMatch
+from reccmp.decomp.cvdump.types import (
     CvdumpKeyError,
     CvdumpIntegrityError,
 )
-from reccmp.isledecomp.formats.pe import PEImage
+from reccmp.decomp.formats.pe import PEImage
 from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
 from reccmp.project.detect import (
     RecCmpProjectException,
@@ -34,7 +34,7 @@ colorama.just_fix_windows_console()
 
 
 # Ignore all compare-db messages.
-logging.getLogger("isledecomp.compare").addHandler(logging.NullHandler())
+logging.getLogger("decomp.compare").addHandler(logging.NullHandler())
 
 
 def parse_args() -> argparse.Namespace:
@@ -247,14 +247,12 @@ def create_comparison_item(
     )
 
 
-def pointer_display(isle_compare: IsleCompare, addr: int, is_orig: bool) -> str:
+def pointer_display(compare: Compare, addr: int, is_orig: bool) -> str:
     """Helper to streamline pointer textual display."""
     if addr == 0:
         return "nullptr"
 
-    ptr_match = (
-        isle_compare.get_by_orig(addr) if is_orig else isle_compare.get_by_recomp(addr)
-    )
+    ptr_match = compare.get_by_orig(addr) if is_orig else compare.get_by_recomp(addr)
 
     if ptr_match is not None:
         return f"Pointer to {ptr_match.match_name()}"
@@ -268,14 +266,14 @@ def do_the_comparison(target: RecCmpTarget) -> Iterable[ComparisonItem]:
     # pylint: disable=too-many-locals
     """Run through each variable in our compare DB, then do the comparison
     according to the variable's type. Emit the result."""
-    isle_compare = IsleCompare.from_target(target)
-    origfile = isle_compare.orig_bin
-    recompfile = isle_compare.recomp_bin
+    compare = Compare.from_target(target)
+    origfile = compare.orig_bin
+    recompfile = compare.recomp_bin
 
     if not isinstance(origfile, PEImage) or not isinstance(recompfile, PEImage):
         raise ValueError("`datacmp` currently only supports 32-bit PE images")
 
-    for var in isle_compare.get_variables():
+    for var in compare.get_variables():
         assert var.name is not None
         type_name = var.get("data_type")
 
@@ -287,12 +285,12 @@ def do_the_comparison(target: RecCmpTarget) -> Iterable[ComparisonItem]:
             try:
                 # If we are type-aware, we can get the precise
                 # data size for the variable.
-                data_type = isle_compare.types.get(type_name)
+                data_type = compare.types.get(type_name)
                 assert data_type.size is not None
                 data_size = data_type.size
 
                 # Make sure we can retrieve struct or array members.
-                if isle_compare.types.get_format_string(type_name):
+                if compare.types.get_format_string(type_name):
                     raw_only = False
                 else:
                     logger.info(
@@ -337,9 +335,9 @@ def do_the_comparison(target: RecCmpTarget) -> Iterable[ComparisonItem]:
         else:
             compare_items = [
                 DataOffset(offset=sc.offset, name=sc.name or "", pointer=sc.is_pointer)
-                for sc in isle_compare.types.get_scalars_gapless(type_name)
+                for sc in compare.types.get_scalars_gapless(type_name)
             ]
-            format_str = isle_compare.types.get_format_string(type_name)
+            format_str = compare.types.get_format_string(type_name)
 
             orig_data = unpack(format_str, orig_block.data)
             recomp_data = unpack(format_str, recomp_block.data)
@@ -347,10 +345,10 @@ def do_the_comparison(target: RecCmpTarget) -> Iterable[ComparisonItem]:
         compared = []
         for orig_val, recomp_val, member in zip(orig_data, recomp_data, compare_items):
             if member.pointer:
-                match = isle_compare.is_pointer_match(orig_val, recomp_val)
+                match = compare.is_pointer_match(orig_val, recomp_val)
 
-                value_a = pointer_display(isle_compare, orig_val, True)
-                value_b = pointer_display(isle_compare, recomp_val, False)
+                value_a = pointer_display(compare, orig_val, True)
+                value_b = pointer_display(compare, recomp_val, False)
             else:
                 match = orig_val == recomp_val
                 value_a = str(orig_val)

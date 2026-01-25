@@ -3,11 +3,11 @@
 from pathlib import PurePath, PureWindowsPath
 from textwrap import dedent
 import pytest
-from reccmp.isledecomp.types import EntityType
-from reccmp.isledecomp.formats import PEImage, TextFile
-from reccmp.isledecomp.compare.ingest import load_markers
-from reccmp.isledecomp.compare.db import EntityDb
-from reccmp.isledecomp.compare.lines import LinesDb
+from reccmp.decomp.types import EntityType
+from reccmp.decomp.formats import PEImage, TextFile
+from reccmp.decomp.compare.ingest import load_markers
+from reccmp.decomp.compare.db import EntityDb
+from reccmp.decomp.compare.lines import LinesDb
 
 
 @pytest.fixture(name="db")
@@ -175,7 +175,7 @@ def test_load_code_function_nameref_variants(
 
                 // LIBRARY: TEST 0x1008b400
                 // _atol
-                
+
                 // STUB: TEST 0x1008b4b0
                 // _atoi
 

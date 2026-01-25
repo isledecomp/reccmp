@@ -1,6 +1,6 @@
 """Test Cvdump SYMBOLS parser, reading function stack/params"""
 
-from reccmp.isledecomp.cvdump.symbols import CvdumpSymbolsParser
+from reccmp.decomp.cvdump.symbols import CvdumpSymbolsParser
 
 PROC_WITH_BLOC = """
 (000638) S_GPROC32: [0001:000C6135], Cb: 00000361, Type:             0x10ED, RegistrationBook::ReadyWorld
