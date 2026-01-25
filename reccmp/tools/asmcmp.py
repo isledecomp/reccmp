@@ -15,7 +15,7 @@ from reccmp.utils import (
     write_html_report,
 )
 
-from reccmp.compare import Compare as IsleCompare
+from reccmp.compare import Compare
 from reccmp.compare.diff import DiffReport, raw_diff_to_udiff
 from reccmp.compare.report import (
     ReccmpStatusReport,
