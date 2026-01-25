@@ -4,14 +4,14 @@ These functions update the entity database based on analysis of the binary files
 
 import logging
 import struct
-from reccmp.isledecomp.formats import Image, PEImage
-from reccmp.isledecomp.formats.exceptions import (
+from reccmp.formats import Image, PEImage
+from reccmp.formats.exceptions import (
     InvalidVirtualAddressError,
     InvalidVirtualReadError,
     InvalidStringError,
 )
-from reccmp.isledecomp.types import EntityType, ImageId
-from reccmp.isledecomp.analysis import (
+from reccmp.types import EntityType, ImageId
+from reccmp.analysis import (
     find_float_consts,
     find_import_thunks,
     find_vtordisp,

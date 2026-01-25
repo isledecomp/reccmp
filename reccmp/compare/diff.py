@@ -2,8 +2,8 @@ from dataclasses import dataclass
 from typing import Iterable, Sequence
 from typing_extensions import NotRequired, TypedDict
 
-from reccmp.isledecomp.compare.pinned_sequences import DiffOpcode
-from reccmp.isledecomp.types import EntityType
+from reccmp.compare.pinned_sequences import DiffOpcode
+from reccmp.types import EntityType
 
 CombinedDiffInput = list[tuple[str, str]]
 
