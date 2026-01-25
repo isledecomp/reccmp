@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Literal, Iterable, Iterator
 from pydantic import BaseModel, ValidationError
 from pydantic_core import from_json
-from reccmp.isledecomp.types import EntityType
+from reccmp.types import EntityType
 from .diff import CombinedDiffOutput, RawDiffOutput, raw_diff_to_udiff
 
 
