@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from pathlib import PureWindowsPath
-from reccmp.isledecomp.types import EntityType
+from reccmp.types import EntityType
 from .demangler import demangle_vtable
 from .parser import CvdumpParser, LineValue, NodeKey
 from .symbols import SymbolsEntry

@@ -7,7 +7,7 @@ import logging
 import json
 from functools import cached_property
 from typing import Any, Iterable, Iterator
-from reccmp.isledecomp.types import EntityType, ImageId
+from reccmp.types import EntityType, ImageId
 
 _SETUP_SQL = """
     CREATE TABLE names (

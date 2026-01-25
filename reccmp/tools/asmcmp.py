@@ -8,22 +8,22 @@ import os
 from pystache import Renderer  # type: ignore[import-untyped]
 import colorama
 import reccmp
-from reccmp.isledecomp import (
+from reccmp.utils import (
     print_combined_diff,
     diff_json,
     percent_string,
     write_html_report,
 )
 
-from reccmp.isledecomp.compare import Compare as IsleCompare
-from reccmp.isledecomp.compare.diff import DiffReport
-from reccmp.isledecomp.compare.report import (
+from reccmp.compare import Compare
+from reccmp.compare.diff import DiffReport
+from reccmp.compare.report import (
     ReccmpStatusReport,
     ReccmpComparedEntity,
     deserialize_reccmp_report,
     serialize_reccmp_report,
 )
-from reccmp.isledecomp.types import EntityType
+from reccmp.types import EntityType
 from reccmp.assets import get_asset_file
 from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
 from reccmp.project.detect import (
@@ -212,17 +212,17 @@ def main():
 
     logging.basicConfig(level=args.loglevel, format="[%(levelname)s] %(message)s")
 
-    isle_compare = IsleCompare.from_target(target)
+    compare = Compare.from_target(target)
 
     if args.loglevel == logging.DEBUG:
-        isle_compare.debug = True
+        compare.debug = True
 
     print()
 
     ### Compare one or none.
 
     if args.verbose is not None:
-        match = isle_compare.compare_address(args.verbose)
+        match = compare.compare_address(args.verbose)
         if match is None:
             logger.error("Failed to find a match at address 0x%x", args.verbose)
             return 1
@@ -244,7 +244,7 @@ def main():
 
     report = ReccmpStatusReport(filename=target.original_path.name.lower())
 
-    for match in isle_compare.compare_all():
+    for match in compare.compare_all():
         # if we are ignoring this function, skip to next one and don't add it to the entities list
         if (
             match.match_type == EntityType.FUNCTION

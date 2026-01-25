@@ -1,7 +1,7 @@
 from textwrap import dedent
 import pytest
-from reccmp.isledecomp.types import EntityType
-from reccmp.isledecomp.compare.csv import (
+from reccmp.types import EntityType
+from reccmp.compare.csv import (
     csv_parse,
     CsvNoAddressError,
     CsvDuplicateColumnError,

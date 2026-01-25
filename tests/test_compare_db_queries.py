@@ -1,14 +1,14 @@
 """Testing results of complex queries on the entity database"""
 
 import pytest
-from reccmp.isledecomp.compare.db import EntityDb
-from reccmp.isledecomp.compare.queries import (
+from reccmp.compare.db import EntityDb
+from reccmp.compare.queries import (
     get_overloaded_functions,
     get_referencing_entity_matches,
     get_floats_without_data,
     get_strings_without_data,
 )
-from reccmp.isledecomp.types import EntityType, ImageId
+from reccmp.types import EntityType, ImageId
 
 
 @pytest.fixture(name="db")
