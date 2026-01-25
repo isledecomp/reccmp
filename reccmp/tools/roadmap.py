@@ -397,8 +397,10 @@ def main() -> int:
     module_map = ModuleMap(target.recompiled_pdb, recomp_bin)
 
     def is_same_section(orig: int, recomp: int) -> bool:
-        """Compare the section name instead of the index.
-        LEGO1.dll adds extra sections for some reason. (Smacker library?)"""
+        """
+        It is better to compare the sections by name since orig and recomp might not have the same number of sections.
+        We have encountered this e.g. for LEGO1.
+        """
 
         try:
             orig_name = orig_bin.sections[orig - 1].name
