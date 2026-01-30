@@ -550,6 +550,12 @@ def test_lf_pointer(parser: CvdumpTypesParser):
     assert parser.get_scalars("0x3fab") == [(0, None, "T_32PVOID")]
 
 
+def test_lf_pointer_type(parser: CvdumpTypesParser):
+    """Save pointer type from leaf."""
+    leaf = parser.keys["0x3fab"]
+    assert leaf["pointer_type"] == "Pointer"
+
+
 def test_key_not_exist(parser: CvdumpTypesParser):
     """Accessing a non-existent type id should raise our exception"""
     with pytest.raises(CvdumpKeyError):
@@ -607,6 +613,30 @@ def test_lf_modifier(parser: CvdumpTypesParser):
     mxrect = parser.get_scalars("0x1214")
     # Modifies MxRect32 via forward ref
     assert mxrect == parser.get_scalars("0x11f2")
+
+
+def test_lf_modifier_modified_how(parser: CvdumpTypesParser):
+    """Store the modification type (e.g. const, volatile) from the leaf."""
+    leaf = parser.keys["0x1028"]
+    assert leaf["modification"] == "const"
+
+
+CONST_VOLATILE_MODIFIED_EXAMPLE = """
+0x40a5 : Length = 10, Leaf = 0x1001 LF_MODIFIER
+    const, volatile, modifies type 0x1011
+
+0x40a6 : Length = 10, Leaf = 0x1002 LF_POINTER
+    Pointer (NEAR32), Size: 0
+    Element type : 0x40A5
+"""
+
+
+def test_lf_modifier_const_and_volatile(empty_parser: CvdumpTypesParser):
+    """Store the complete modifier text from the leaf."""
+    empty_parser.read_all(CONST_VOLATILE_MODIFIED_EXAMPLE)
+    leaf = empty_parser.keys["0x40a5"]
+    assert "const" in leaf["modification"]
+    assert "volatile" in leaf["modification"]
 
 
 def test_union_members(parser: CvdumpTypesParser):
@@ -882,6 +912,7 @@ def test_enum_with_containing_class_and_type_of_pointed_to(
         "element_type": "0x2FD1",
         "type": "LF_POINTER",
         "containing_class": "0x1165",
+        "pointer_type": "Pointer to member function",
     }
 
 
@@ -901,6 +932,7 @@ def test_pointer_without_containing_class(
         "containing_class": None,
         "element_type": "0x2505",
         "type": "LF_POINTER",
+        "pointer_type": "Pointer",
     }
 
 
