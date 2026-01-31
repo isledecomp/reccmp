@@ -195,6 +195,7 @@ class CvdumpParsedType(TypedDict):
 
     # LF_MODIFIER
     modifies: NotRequired[CvdumpTypeKey]
+    modification: NotRequired[str]
 
     # LF_FIELDLIST
     super: NotRequired[dict[CvdumpTypeKey, int]]
@@ -209,6 +210,7 @@ class CvdumpParsedType(TypedDict):
     # LF_POINTER
     element_type: NotRequired[CvdumpTypeKey]
     containing_class: NotRequired[CvdumpTypeKey]
+    pointer_type: NotRequired[str]
 
     # LF_PROCEDURE / LF_MFUNCTION
     return_type: NotRequired[CvdumpTypeKey]
@@ -265,7 +267,9 @@ class CvdumpTypesParser:
     )
 
     # LF_MODIFIER, type being modified
-    MODIFIES_RE = re.compile(r"\s+modifies type (?P<type>[^\n,]*)")
+    MODIFIES_RE = re.compile(
+        r"\n\s+(?P<modification>.+?), modifies type (?P<type>[^\n,]*)"
+    )
 
     # LF_ARGLIST number of entries
     LF_ARGLIST_ARGCOUNT = re.compile(r".*argument count = (?P<argcount>\d+)")
@@ -554,6 +558,7 @@ class CvdumpTypesParser:
             "type": leaf_type,
             "is_forward_ref": True,
             "modifies": normalize_type_id(match.group("type")),
+            "modification": match.group("modification"),
         }
 
     def read_array(self, leaf: str, leaf_type: str) -> CvdumpParsedType:
@@ -705,6 +710,7 @@ class CvdumpTypesParser:
         return {
             "type": leaf_type,
             "element_type": match.group("element_type"),
+            "pointer_type": match.group("type"),
             # `containing_class` is set to `None` if not present
             "containing_class": match.group("containing_class"),
         }
