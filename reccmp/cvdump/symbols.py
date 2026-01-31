@@ -3,6 +3,7 @@ import logging
 import re
 from re import Match
 from typing import NamedTuple
+from reccmp.cvdump.types import CvdumpTypeKey, normalize_type_id
 
 
 logger = logging.getLogger(__name__)
@@ -12,7 +13,7 @@ class StackOrRegisterSymbol(NamedTuple):
     symbol_type: str
     location: str
     """Should always be set/converted to lowercase."""
-    data_type: str
+    data_type: CvdumpTypeKey
     name: str
 
 
@@ -21,7 +22,7 @@ class LdataEntry(NamedTuple):
 
     section: int
     offset: int
-    type: str
+    type: CvdumpTypeKey
     name: str
 
 
@@ -33,7 +34,7 @@ class SymbolsEntry:
     section: int
     offset: int
     size: int
-    func_type: str
+    func_type: CvdumpTypeKey
     name: str
     stack_symbols: list[StackOrRegisterSymbol] = field(default_factory=list)
     static_variables: list[LdataEntry] = field(default_factory=list)
@@ -165,7 +166,7 @@ class CvdumpSymbolsParser:
                 section=int(match.group("section"), 16),
                 offset=int(match.group("offset"), 16),
                 size=int(match.group("size"), 16),
-                func_type=match.group("func_type"),
+                func_type=normalize_type_id(match.group("func_type")),
                 name=match.group("name"),
             )
             self.symbols.append(self.current_function)
@@ -182,7 +183,7 @@ class CvdumpSymbolsParser:
             new_symbol = StackOrRegisterSymbol(
                 symbol_type=symbol_type,
                 location=match.group("location").lower(),
-                data_type=match.group("data_type"),
+                data_type=normalize_type_id(match.group("data_type")),
                 name=match.group("name"),
             )
             self.current_function.stack_symbols.append(new_symbol)
@@ -201,7 +202,7 @@ class CvdumpSymbolsParser:
                 new_var = LdataEntry(
                     section=int(match.group("section"), 16),
                     offset=int(match.group("offset"), 16),
-                    type=match.group("type"),
+                    type=normalize_type_id(match.group("type")),
                     name=match.group("name"),
                 )
 

@@ -111,6 +111,7 @@ def load_cvdump(cvdump_analysis: CvdumpAnalysis, db: EntityDb, recomp_bin: PEIma
 
                 # Set the cvdump type key so it can be referenced later.
                 if sym.node_type == EntityType.DATA and sym.data_type is not None:
+                    assert isinstance(sym.data_type.key, int)
                     batch.set_recomp(addr, data_type=sym.data_type.key)
 
 

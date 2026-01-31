@@ -24,6 +24,7 @@ from ghidra.util.task import ConsoleTaskMonitor
 
 from reccmp.cvdump.types import (
     CvdumpParsedType,
+    CvdumpTypeKey,
     FieldListItem,
     VirtualBasePointer,
 )
@@ -80,7 +81,7 @@ class PdbTypeImporter:
         return self.extraction.compare.types
 
     def import_pdb_type_into_ghidra(
-        self, type_index: str, slim_for_vbase: bool = False
+        self, type_index: CvdumpTypeKey, slim_for_vbase: bool = False
     ) -> DataType:
         """
         Recursively imports a type from the PDB into Ghidra.
@@ -93,24 +94,21 @@ class PdbTypeImporter:
             that fits inside C.
             This value should always be `False` when the referenced type is not (a pointer to) a class.
         """
-        type_index_lower = type_index.lower()
-        if type_index_lower.startswith("t_"):
-            return self._import_scalar_type(type_index_lower)
+        if type_index < 0x1000:
+            return self._import_scalar_type(type_index)
 
         try:
-            type_pdb = self.extraction.compare.types.keys[type_index_lower]
+            type_pdb = self.extraction.compare.types.keys[type_index]
         except KeyError as e:
             raise TypeNotFoundError(
-                f"Failed to find referenced type '{type_index_lower}'"
+                f"Failed to find referenced type '{type_index:#x}'"
             ) from e
 
         type_category = type_pdb["type"]
 
         # follow forward reference (class, struct, union)
         if type_pdb.get("is_forward_ref", False):
-            return self._import_forward_ref_type(
-                type_index_lower, type_pdb, slim_for_vbase
-            )
+            return self._import_forward_ref_type(type_index, type_pdb, slim_for_vbase)
 
         if type_category == "LF_POINTER":
             return get_or_add_pointer_type(
@@ -149,16 +147,22 @@ class PdbTypeImporter:
             return f"{self._scalar_type_to_cpp(scalar_type[3:])} *"
         return self._scalar_type_map.get(scalar_type, scalar_type)
 
-    def _import_scalar_type(self, type_index_lower: str) -> DataType:
-        if (match := self.extraction.scalar_type_regex.match(type_index_lower)) is None:
-            raise TypeNotFoundError(f"Type has unexpected format: {type_index_lower}")
+    def _import_scalar_type(self, type_index_lower: CvdumpTypeKey) -> DataType:
+        if type_index_lower >= 0x1000:
+            raise TypeNotFoundError(
+                f"Type has unexpected format: {type_index_lower:#x}"
+            )
 
-        scalar_cpp_type = self._scalar_type_to_cpp(match.group("typename"))
+        assert (
+            False
+        ), "TODO: Disabled for the moment. Need to convert integer type key back into string representation for Ghidra."
+
+        scalar_cpp_type = self._scalar_type_to_cpp(hex(type_index_lower))
         return get_scalar_ghidra_type(self.api, scalar_cpp_type)
 
     def _import_forward_ref_type(
         self,
-        type_index,
+        type_index: CvdumpTypeKey,
         type_pdb: CvdumpParsedType,
         slim_for_vbase: bool = False,
     ) -> DataType:
@@ -233,8 +237,8 @@ class PdbTypeImporter:
         type_in_pdb: CvdumpParsedType,
         slim_for_vbase: bool = False,
     ) -> DataType:
-        field_list_type: str = type_in_pdb["field_list_type"]
-        field_list = self.types.keys[field_list_type.lower()]
+        field_list_type = type_in_pdb["field_list_type"]
+        field_list = self.types.keys[field_list_type]
 
         class_size: int = type_in_pdb["size"]
         raw_name: str = type_in_pdb["name"]
@@ -327,7 +331,7 @@ class PdbTypeImporter:
     def _get_components_from_base_classes(
         self, field_list: CvdumpParsedType
     ) -> Iterator[GhidraFieldListItem]:
-        non_virtual_base_classes: dict[str, int] = field_list.get("super", {})
+        non_virtual_base_classes: dict[CvdumpTypeKey, int] = field_list.get("super", {})
 
         for super_type, offset in non_virtual_base_classes.items():
             # If we have virtual inheritance _and_ a non-virtual base class here, we play safe and import slim version.

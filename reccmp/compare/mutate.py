@@ -8,6 +8,7 @@ from reccmp.cvdump.demangler import (
     get_function_arg_string,
 )
 from reccmp.cvdump import CvdumpTypesParser
+from reccmp.cvdump.types import CvdumpTypeKey
 from reccmp.types import EntityType
 from .db import EntityDb
 from .queries import get_overloaded_functions, get_named_thunks
@@ -27,7 +28,7 @@ def match_array_elements(db: EntityDb, types: CvdumpTypesParser):
     batch = db.batch()
 
     @cache
-    def get_type_size(type_key: str) -> int:
+    def get_type_size(type_key: CvdumpTypeKey) -> int:
         type_ = types.get(type_key)
         assert type_.size is not None
         return type_.size
@@ -57,15 +58,16 @@ def match_array_elements(db: EntityDb, types: CvdumpTypesParser):
 
     for match in db.get_matches_by_type(EntityType.DATA):
         # TODO: The type information we need is in multiple places. (See #106)
-        type_key = match.get("data_type")
-        if type_key is None:
+        type_key_raw = match.get("data_type")
+        if type_key_raw is None:
             continue
 
-        if not type_key.startswith("0x"):
+        type_key = CvdumpTypeKey(type_key_raw)
+        if type_key < 0x1000:
             # scalar type, so clearly not an array
             continue
 
-        type_dict = types.keys.get(type_key.lower())
+        type_dict = types.keys.get(type_key)
         if type_dict is None:
             continue
 
@@ -76,7 +78,7 @@ def match_array_elements(db: EntityDb, types: CvdumpTypesParser):
         if array_type_key is None:
             continue
 
-        data_type = types.get(type_key.lower())
+        data_type = types.get(type_key)
 
         # Check whether another orig variable appears before the end of the array in recomp.
         # If this happens we can still add all the recomp offsets, but do not attach the orig address

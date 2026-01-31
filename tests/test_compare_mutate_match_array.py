@@ -8,7 +8,7 @@ from reccmp.compare.mutate import (
 )
 from reccmp.types import EntityType
 from reccmp.compare.db import EntityDb
-from reccmp.cvdump.types import CvdumpTypesParser, FieldListItem
+from reccmp.cvdump.types import CvdumpTypesParser, FieldListItem, CVInfoTypeEnum
 
 
 @pytest.fixture(name="db")
@@ -28,9 +28,9 @@ def test_match_array_with_nothing():
 
 def test_match_array(db: EntityDb, types_db: CvdumpTypesParser):
     """Should rename the entity for the array and create a new entity for the second member."""
-    types_db.keys["0x1000"] = {
+    types_db.keys[0x1000] = {
         "type": "LF_ARRAY",
-        "array_type": "T_REAL32",
+        "array_type": CVInfoTypeEnum.T_REAL32,
         "size": 8,
     }
 
@@ -38,7 +38,7 @@ def test_match_array(db: EntityDb, types_db: CvdumpTypesParser):
         # NOTE: It does not work if entity size is not set.
         # We should be able to set it because how else would we have the type key?
         batch.set_recomp(
-            100, name="test", type=EntityType.DATA, data_type="0x1000", size=8
+            100, name="test", type=EntityType.DATA, data_type=0x1000, size=8
         )
         batch.match(100, 100)
 
@@ -75,7 +75,7 @@ def test_match_array_key_unset(db: EntityDb):
     """Should have no effect if the data_type key is not in the types database."""
     with db.batch() as batch:
         batch.set_recomp(
-            100, name="test", type=EntityType.DATA, data_type="0x1000", size=8
+            100, name="test", type=EntityType.DATA, data_type=0x1000, size=8
         )
         batch.match(100, 100)
 
@@ -106,7 +106,7 @@ def test_match_array_type_is_scalar(db: EntityDb):
             100,
             name="test",
             type=EntityType.DATA,
-            data_type="T_REAL32(0040)",
+            data_type=CVInfoTypeEnum.T_REAL32,
             size=8,
         )
         batch.match(100, 100)
@@ -133,22 +133,22 @@ def test_match_array_type_is_scalar(db: EntityDb):
 def test_match_array_type_is_struct(db: EntityDb, types_db: CvdumpTypesParser):
     """Should have no effect if the data_type key is not an array.
     We do not currently populate entities for struct members."""
-    types_db.keys["0x1000"] = {
+    types_db.keys[0x1000] = {
         "type": "LF_STRUCTURE",
-        "field_list_type": "0x1001",
+        "field_list_type": 0x1001,
         "size": 8,
     }
-    types_db.keys["0x1001"] = {
+    types_db.keys[0x1001] = {
         "type": "LF_FIELDLIST",
         "members": [
-            FieldListItem(offset=0, name="hello", type="T_REAL32"),
-            FieldListItem(offset=4, name="world", type="T_REAL32"),
+            FieldListItem(offset=0, name="hello", type=CVInfoTypeEnum.T_REAL32),
+            FieldListItem(offset=4, name="world", type=CVInfoTypeEnum.T_REAL32),
         ],
     }
 
     with db.batch() as batch:
         batch.set_recomp(
-            100, name="test", type=EntityType.DATA, data_type="0x1000", size=8
+            100, name="test", type=EntityType.DATA, data_type=0x1000, size=8
         )
         batch.match(100, 100)
 
@@ -174,15 +174,15 @@ def test_match_array_type_is_struct(db: EntityDb, types_db: CvdumpTypesParser):
 def test_match_array_type_orig_smaller(db: EntityDb, types_db: CvdumpTypesParser):
     """Should not create entities on the orig side if the array is known to be smaller.
     (i.e. if another DATA entity is in the way.)"""
-    types_db.keys["0x1000"] = {
+    types_db.keys[0x1000] = {
         "type": "LF_ARRAY",
-        "array_type": "T_REAL32",
+        "array_type": CVInfoTypeEnum.T_REAL32,
         "size": 8,
     }
 
     with db.batch() as batch:
         batch.set_recomp(
-            100, name="test", type=EntityType.DATA, data_type="0x1000", size=8
+            100, name="test", type=EntityType.DATA, data_type=0x1000, size=8
         )
         batch.set_orig(104, name="blocker", type=EntityType.DATA)
         batch.match(100, 100)
@@ -215,27 +215,27 @@ def test_match_array_type_orig_smaller(db: EntityDb, types_db: CvdumpTypesParser
 
 def test_match_array_array_of_structs(db: EntityDb, types_db: CvdumpTypesParser):
     """If the type is an array of structs, create entities for one level of struct members."""
-    types_db.keys["0x1000"] = {
+    types_db.keys[0x1000] = {
         "type": "LF_ARRAY",
-        "array_type": "0x1001",
+        "array_type": 0x1001,
         "size": 16,
     }
-    types_db.keys["0x1001"] = {
+    types_db.keys[0x1001] = {
         "type": "LF_STRUCTURE",
-        "field_list_type": "0x1002",
+        "field_list_type": 0x1002,
         "size": 8,
     }
-    types_db.keys["0x1002"] = {
+    types_db.keys[0x1002] = {
         "type": "LF_FIELDLIST",
         "members": [
-            FieldListItem(offset=0, name="hello", type="T_REAL32"),
-            FieldListItem(offset=4, name="world", type="T_REAL32"),
+            FieldListItem(offset=0, name="hello", type=CVInfoTypeEnum.T_REAL32),
+            FieldListItem(offset=4, name="world", type=CVInfoTypeEnum.T_REAL32),
         ],
     }
 
     with db.batch() as batch:
         batch.set_recomp(
-            100, name="test", type=EntityType.DATA, data_type="0x1000", size=16
+            100, name="test", type=EntityType.DATA, data_type=0x1000, size=16
         )
         batch.match(100, 100)
 
@@ -288,20 +288,20 @@ def test_match_array_array_of_structs(db: EntityDb, types_db: CvdumpTypesParser)
 
 def test_match_array_array_of_arrays(db: EntityDb, types_db: CvdumpTypesParser):
     """For a multi-dimensional array, create entities for one level."""
-    types_db.keys["0x1000"] = {
+    types_db.keys[0x1000] = {
         "type": "LF_ARRAY",
-        "array_type": "0x1001",
+        "array_type": 0x1001,
         "size": 16,
     }
-    types_db.keys["0x1001"] = {
+    types_db.keys[0x1001] = {
         "type": "LF_ARRAY",
-        "array_type": "T_REAL32",
+        "array_type": CVInfoTypeEnum.T_REAL32,
         "size": 8,
     }
 
     with db.batch() as batch:
         batch.set_recomp(
-            100, name="test", type=EntityType.DATA, data_type="0x1000", size=16
+            100, name="test", type=EntityType.DATA, data_type=0x1000, size=16
         )
         batch.match(100, 100)
 
@@ -353,39 +353,39 @@ def test_match_array_array_of_arrays(db: EntityDb, types_db: CvdumpTypesParser):
 
 def test_match_array_array_of_structs_limit(db: EntityDb, types_db: CvdumpTypesParser):
     """Does not create entities for offsets more than one level beyond the main entity."""
-    types_db.keys["0x1000"] = {
+    types_db.keys[0x1000] = {
         "type": "LF_ARRAY",
-        "array_type": "0x1001",
+        "array_type": 0x1001,
         "size": 16,
     }
-    types_db.keys["0x1001"] = {
+    types_db.keys[0x1001] = {
         "type": "LF_STRUCTURE",
-        "field_list_type": "0x1002",
+        "field_list_type": 0x1002,
         "size": 8,
     }
-    types_db.keys["0x1002"] = {
+    types_db.keys[0x1002] = {
         "type": "LF_FIELDLIST",
         "members": [
-            FieldListItem(offset=0, name="hello", type="0x1003"),
-            FieldListItem(offset=4, name="world", type="0x1003"),
+            FieldListItem(offset=0, name="hello", type=0x1003),
+            FieldListItem(offset=4, name="world", type=0x1003),
         ],
     }
-    types_db.keys["0x1003"] = {
+    types_db.keys[0x1003] = {
         "type": "LF_STRUCTURE",
-        "field_list_type": "0x1004",
+        "field_list_type": 0x1004,
         "size": 4,
     }
-    types_db.keys["0x1004"] = {
+    types_db.keys[0x1004] = {
         "type": "LF_FIELDLIST",
         "members": [
-            FieldListItem(offset=0, name="x", type="T_SHORT"),
-            FieldListItem(offset=2, name="y", type="T_SHORT"),
+            FieldListItem(offset=0, name="x", type=CVInfoTypeEnum.T_SHORT),
+            FieldListItem(offset=2, name="y", type=CVInfoTypeEnum.T_SHORT),
         ],
     }
 
     with db.batch() as batch:
         batch.set_recomp(
-            100, name="test", type=EntityType.DATA, data_type="0x1000", size=16
+            100, name="test", type=EntityType.DATA, data_type=0x1000, size=16
         )
         batch.match(100, 100)
 
@@ -447,43 +447,43 @@ def test_match_array_array_of_union_structs(db: EntityDb, types_db: CvdumpTypesP
     - We create offset entities for unions, as with a struct or multidimensional array
     - We will not create entities deeper than the second level (in this case, array -> union)
     """
-    types_db.keys["0x1000"] = {
+    types_db.keys[0x1000] = {
         "type": "LF_ARRAY",
-        "array_type": "0x1001",
+        "array_type": 0x1001,
         "size": 8,
     }
-    types_db.keys["0x1001"] = {
+    types_db.keys[0x1001] = {
         "type": "LF_UNION",
-        "field_list_type": "0x1002",
+        "field_list_type": 0x1002,
         "size": 4,
     }
-    types_db.keys["0x1002"] = {
+    types_db.keys[0x1002] = {
         "type": "LF_FIELDLIST",
         "members": [
-            FieldListItem(offset=0, name="hello", type="0x1003"),
-            FieldListItem(offset=0, name="world", type="0x1003"),
+            FieldListItem(offset=0, name="hello", type=0x1003),
+            FieldListItem(offset=0, name="world", type=0x1003),
         ],
     }
     # These values will not be accessed because we do not completely flatten the structure.
     # But they are here to provide a complete example of type data.
-    types_db.keys["0x1003"] = {
+    types_db.keys[0x1003] = {
         "type": "LF_STRUCTURE",
-        "field_list_type": "0x1004",
+        "field_list_type": 0x1004,
         "size": 4,
     }
-    types_db.keys["0x1004"] = {
+    types_db.keys[0x1004] = {
         "type": "LF_FIELDLIST",
         "members": [
-            FieldListItem(offset=0, name="a", type="T_CHAR"),
-            FieldListItem(offset=1, name="b", type="T_CHAR"),
-            FieldListItem(offset=2, name="c", type="T_CHAR"),
-            FieldListItem(offset=3, name="d", type="T_CHAR"),
+            FieldListItem(offset=0, name="a", type=CVInfoTypeEnum.T_CHAR),
+            FieldListItem(offset=1, name="b", type=CVInfoTypeEnum.T_CHAR),
+            FieldListItem(offset=2, name="c", type=CVInfoTypeEnum.T_CHAR),
+            FieldListItem(offset=3, name="d", type=CVInfoTypeEnum.T_CHAR),
         ],
     }
 
     with db.batch() as batch:
         batch.set_recomp(
-            100, name="test", type=EntityType.DATA, data_type="0x1000", size=8
+            100, name="test", type=EntityType.DATA, data_type=0x1000, size=8
         )
         batch.match(100, 100)
 
