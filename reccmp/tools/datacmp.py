@@ -294,7 +294,7 @@ def do_the_comparison(target: RecCmpTarget) -> Iterable[ComparisonItem]:
                     raw_only = False
                 else:
                     logger.info(
-                        "No struct members for type '%s' used by variable '%s' (0x%x). Comparing raw data.",
+                        "No struct members for type '0x%x' used by variable '%s' (0x%x). Comparing raw data.",
                         type_name,
                         var.name,
                         var.orig_addr,
@@ -305,7 +305,7 @@ def do_the_comparison(target: RecCmpTarget) -> Iterable[ComparisonItem]:
                 # For example: we do not handle bitfields and this complicates fieldlist parsing
                 # where they are used. (GH #299)
                 logger.error(
-                    "Could not materialize type '%s' used by variable '%s' (0x%x). Comparing raw data.",
+                    "Could not materialize type '0x%x' used by variable '%s' (0x%x). Comparing raw data.",
                     type_name,
                     var.name,
                     var.orig_addr,
