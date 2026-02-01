@@ -1,39 +1,13 @@
-import dataclasses
-from pathlib import Path
+"""Testing the RawImage class where the bare minimum API is implemented.
+This allows for testing the other methods like read() or read_string()
+with specific data or BSS region."""
+
 import pytest
-from reccmp.formats.image import Image
 from reccmp.formats.exceptions import (
     InvalidVirtualAddressError,
     InvalidVirtualReadError,
 )
-
-
-# pylint: disable=abstract-method
-@dataclasses.dataclass
-class RawImage(Image):
-    """For testing functions implemented in the base Image class."""
-
-    # Total size of the image.
-    # If it is more than the size of physical data, the remainder is uninitialized (all null).
-    size: int
-
-    @classmethod
-    def from_memory(cls, data: bytes, size: int = 0) -> "RawImage":
-        if size is None:
-            maxsize = len(data)
-        else:
-            maxsize = max(size, len(data))
-
-        view = memoryview(data).toreadonly()
-
-        image = cls(data=data, view=view, filepath=Path(""), size=maxsize)
-        return image
-
-    def seek(self, vaddr: int) -> tuple[bytes, int]:
-        if 0 <= vaddr < self.size:
-            return (self.data[vaddr:], self.size - vaddr)
-
-        raise InvalidVirtualAddressError
+from .raw_image import RawImage
 
 
 def test_raw_size_parameter():

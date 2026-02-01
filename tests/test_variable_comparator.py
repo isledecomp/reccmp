@@ -1,43 +1,12 @@
-import dataclasses
-from pathlib import Path
 import pytest
 from reccmp.compare.variables import VariableComparator, CompareResult
-from reccmp.formats import Image
-from reccmp.formats.exceptions import InvalidVirtualAddressError
 from reccmp.cvdump.types import (
     CvdumpTypeKey,
     CvdumpTypesParser,
 )
 from reccmp.compare.db import EntityDb, ReccmpMatch
 from reccmp.types import EntityType
-
-
-# pylint: disable=abstract-method
-@dataclasses.dataclass
-class RawImage(Image):
-    """For testing functions implemented in the base Image class."""
-
-    # Total size of the image.
-    # If it is more than the size of physical data, the remainder is uninitialized (all null).
-    size: int
-
-    @classmethod
-    def from_memory(cls, data: bytes = b"", *, size: int = 0) -> "RawImage":
-        if size is None:
-            maxsize = len(data)
-        else:
-            maxsize = max(size, len(data))
-
-        view = memoryview(data).toreadonly()
-
-        image = cls(data=data, view=view, filepath=Path(""), size=maxsize)
-        return image
-
-    def seek(self, vaddr: int) -> tuple[bytes, int]:
-        if 0 <= vaddr < self.size:
-            return (self.data[vaddr:], self.size - vaddr)
-
-        raise InvalidVirtualAddressError
+from .raw_image import RawImage
 
 
 def get_match(db: EntityDb, orig_addr: int) -> ReccmpMatch:
