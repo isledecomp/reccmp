@@ -210,7 +210,7 @@ class InstructGen:
                     if inst.mnemonic in JUMP_MNEMONICS:
                         self._handle_jump(inst)
                         # Todo: log calls too (unwind section)
-                    elif inst.mnemonic == "mov":
+                    elif inst.mnemonic in ("mov", "movzx"):
                         # Todo: maintain pairing of data/jump tables
                         if (match := displacement_regex.match(inst.op_str)) is not None:
                             value = int(match.group(1), 16)
