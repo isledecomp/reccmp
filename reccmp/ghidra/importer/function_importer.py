@@ -135,7 +135,7 @@ class FullPdbFunctionImporter(PdbFunctionImporter):
             self.signature.return_type
         )
 
-        if "T_NOTYPE(0000)" in self.signature.arglist:
+        if 0 in self.signature.arglist:
             # Variadric functions have a T_NOTYPE as their last argument
             raise TypeNotImplementedError(
                 f"Function '{self.get_full_name()}' is probably variadric, which is not implemented yet."
@@ -347,7 +347,7 @@ class FullPdbFunctionImporter(PdbFunctionImporter):
                 f"Could not find a matching symbol at offset {param.getStackOffset()} in {self.get_full_name()}"
             )
 
-        if match.data_type == "T_NOTYPE(0000)":
+        if match.data_type == 0:
             logger.warning("Skipping stack parameter of type NOTYPE")
             return
 

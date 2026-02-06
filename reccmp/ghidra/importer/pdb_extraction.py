@@ -69,7 +69,7 @@ class PdbFunctionExtractor:
 
     def get_func_signature(self, fn: SymbolsEntry) -> FunctionSignature | None:
         function_type_str = fn.func_type
-        if function_type_str == "T_NOTYPE(0000)":
+        if function_type_str == 0:
             logger.debug("Treating NOTYPE function as thunk: %s", fn.name)
             return None
 
