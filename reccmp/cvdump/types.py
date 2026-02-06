@@ -31,6 +31,10 @@ class CVInfoTypeEnum(IntEnum):
 CvdumpTypeKey = int
 
 
+def cvdump_type_is_scalar(key: CvdumpTypeKey) -> bool:
+    return key < 0x1000
+
+
 class CvdumpTypeError(Exception):
     pass
 
@@ -413,7 +417,7 @@ class CvdumpTypesParser:
 
         # Scalar type. Handled here because it makes the recursive steps
         # much simpler.
-        if type_key < 0x1000:
+        if cvdump_type_is_scalar(type_key):
             size = scalar_type_size(type_key)
             return TypeInfo(
                 key=type_key,
@@ -433,7 +437,7 @@ class CvdumpTypesParser:
             return self.get(underlying_type)
 
         if obj.get("type") == "LF_POINTER":
-            return self.get(CvdumpTypeKey(0x0403))  # "T_32PVOID"
+            return self.get(CVInfoTypeEnum.T_32PVOID)
 
         if obj.get("is_forward_ref", False):
             # Get the forward reference to follow.
@@ -517,7 +521,7 @@ class CvdumpTypesParser:
                     ScalarType(
                         offset=this_extent + i,
                         name="(padding)",
-                        type=CvdumpTypeKey(0x20),  # "T_UCHAR"
+                        type=CVInfoTypeEnum.T_UCHAR,
                     ),
                 )
 
@@ -610,9 +614,8 @@ class CvdumpTypesParser:
         # If this class has a vtable, create a mock member at offset 0
         if self.VTABLE_RE.search(leaf) is not None:
             # For our purposes, any pointer type will do
-            # "T_32PVOID"
             members.append(
-                FieldListItem(offset=0, type=CvdumpTypeKey(0x0403), name="vftable")
+                FieldListItem(offset=0, type=CVInfoTypeEnum.T_32PVOID, name="vftable")
             )
 
         # Superclass is set here in the fieldlist rather than in LF_CLASS
