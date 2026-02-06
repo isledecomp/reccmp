@@ -358,6 +358,10 @@ NESTED,     enum name = JukeBox::JukeBoxScript, UDT(0x00003cc2)
 """
 
 
+def simplify_scalars(scalars) -> list[tuple[int, str | None, int]]:
+    return [(s.offset, s.name, s.type) for s in scalars]
+
+
 @pytest.fixture(name="parser")
 def types_parser_fixture():
     parser = CvdumpTypesParser()
@@ -402,17 +406,17 @@ def test_members(parser: CvdumpTypesParser):
     """Return the list of items to compare for a given complex type.
     If the class has a superclass, add those members too."""
     # MxCore field list
-    mxcore_members = parser.get_scalars(0x405F)
+    mxcore_members = simplify_scalars(parser.get_scalars(0x405F))
     assert mxcore_members == [
         (0, "vftable", CVInfoTypeEnum.T_32PVOID),
         (4, "m_id", CVInfoTypeEnum.T_UINT4),
     ]
 
     # MxCore class id. Should be the same members
-    assert mxcore_members == parser.get_scalars(0x4060)
+    assert mxcore_members == simplify_scalars(parser.get_scalars(0x4060))
 
     # MxString field list. Should add inherited members from MxCore
-    assert parser.get_scalars(0x4DB5) == [
+    assert simplify_scalars(parser.get_scalars(0x4DB5)) == [
         (0, "vftable", CVInfoTypeEnum.T_32PVOID),
         (4, "m_id", CVInfoTypeEnum.T_UINT4),
         (8, "m_data", CVInfoTypeEnum.T_32PRCHAR),
@@ -454,7 +458,7 @@ def test_virtual_base_classes(parser: CvdumpTypesParser):
 def test_members_recursive(parser: CvdumpTypesParser):
     """Make sure that we unwrap the dependency tree correctly."""
     # MxVariable field list
-    assert parser.get_scalars(0x22D4) == [
+    assert simplify_scalars(parser.get_scalars(0x22D4)) == [
         (0, "vftable", CVInfoTypeEnum.T_32PVOID),
         (4, "m_key.vftable", CVInfoTypeEnum.T_32PVOID),
         (8, "m_key.m_id", CVInfoTypeEnum.T_UINT4),
@@ -470,13 +474,13 @@ def test_members_recursive(parser: CvdumpTypesParser):
 def test_struct(parser: CvdumpTypesParser):
     """Basic test for converting type into struct.unpack format string."""
     # MxCore: vftable and uint32. The vftable pointer is read as uint32.
-    assert parser.get_format_string(0x4060) == "<LL"
+    assert parser.get_format_string(0x4060) == "<II"
 
     # _D3DVECTOR, three floats. Union types should already be removed.
     assert parser.get_format_string(0x10E1) == "<fff"
 
     # MxRect32, four signed ints.
-    assert parser.get_format_string(0x1214) == "<llll"
+    assert parser.get_format_string(0x1214) == "<iiii"
 
 
 def test_struct_padding(parser: CvdumpTypesParser):
@@ -497,17 +501,17 @@ def test_struct_format_string(parser: CvdumpTypesParser):
     """Generate the struct.unpack format string using the
     list of scalars with padding filled in."""
     # MxString, padded to 16 bytes.
-    assert parser.get_format_string(0x4DB6) == "<LLLHBB"
+    assert parser.get_format_string(0x4DB6) == "<IIIHBB"
 
     # MxVariable, with two MxString members.
-    assert parser.get_format_string(0x22D5) == "<LLLLHBBLLLHBB"
+    assert parser.get_format_string(0x22D5) == "<IIIIHBBIIIHBB"
 
 
 def test_array(parser: CvdumpTypesParser):
     """LF_ARRAY members are created dynamically based on the
     total array size and the size of one element."""
     # unsigned char[8]
-    assert parser.get_scalars(0x10E4) == [
+    assert simplify_scalars(parser.get_scalars(0x10E4)) == [
         (0, "[0]", CVInfoTypeEnum.T_UCHAR),
         (1, "[1]", CVInfoTypeEnum.T_UCHAR),
         (2, "[2]", CVInfoTypeEnum.T_UCHAR),
@@ -519,7 +523,7 @@ def test_array(parser: CvdumpTypesParser):
     ]
 
     # float[4]
-    assert parser.get_scalars(0x103B) == [
+    assert simplify_scalars(parser.get_scalars(0x103B)) == [
         (0, "[0]", CVInfoTypeEnum.T_REAL32),
         (4, "[1]", CVInfoTypeEnum.T_REAL32),
         (8, "[2]", CVInfoTypeEnum.T_REAL32),
@@ -530,7 +534,7 @@ def test_array(parser: CvdumpTypesParser):
 def test_2d_array(parser: CvdumpTypesParser):
     """Make sure 2d array elements are named as we expect."""
     # float[4][4]
-    float_array = parser.get_scalars(0x103C)
+    float_array = simplify_scalars(parser.get_scalars(0x103C))
     assert len(float_array) == 16
     assert float_array[0] == (0, "[0][0]", CVInfoTypeEnum.T_REAL32)
     assert float_array[1] == (4, "[0][1]", CVInfoTypeEnum.T_REAL32)
@@ -541,7 +545,9 @@ def test_2d_array(parser: CvdumpTypesParser):
 def test_enum(parser: CvdumpTypesParser):
     """LF_ENUM should equal 4-byte int"""
     assert parser.get(0x3CC2).size == 4
-    assert parser.get_scalars(0x3CC2) == [(0, None, CVInfoTypeEnum.T_INT4)]
+    assert simplify_scalars(parser.get_scalars(0x3CC2)) == [
+        (0, None, CVInfoTypeEnum.T_INT4)
+    ]
 
     # Now look at an array of enum, 24 bytes
     enum_array = parser.get_scalars(0x4262)
@@ -554,7 +560,9 @@ def test_lf_pointer(parser: CvdumpTypesParser):
     assert parser.get(0x3FAB).size == 4
     # assert parser.get(0x3fab).is_pointer is True  # TODO: ?
 
-    assert parser.get_scalars(0x3FAB) == [(0, None, CVInfoTypeEnum.T_32PVOID)]
+    assert simplify_scalars(parser.get_scalars(0x3FAB)) == [
+        (0, None, CVInfoTypeEnum.T_32PVOID)
+    ]
 
 
 def test_lf_pointer_type(parser: CvdumpTypesParser):
@@ -615,7 +623,9 @@ def test_lf_modifier(parser: CvdumpTypesParser):
     """Is this an alias for another type?"""
     # Modifies float
     assert parser.get(0x1028).size == 4
-    assert parser.get_scalars(0x1028) == [(0, None, CVInfoTypeEnum.T_REAL32)]
+    assert simplify_scalars(parser.get_scalars(0x1028)) == [
+        (0, None, CVInfoTypeEnum.T_REAL32)
+    ]
 
     mxrect = parser.get_scalars(0x1214)
     # Modifies MxRect32 via forward ref

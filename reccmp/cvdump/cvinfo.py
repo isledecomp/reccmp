@@ -455,3 +455,7 @@ _UNKNOWN_TYPE_ATTRS = ("???", "", 0, False, None, True)
 
 def cvinfo_type_name(key: int) -> str:
     return _TYPE_ENUM_E.get(key, CvInfoType(key, *_UNKNOWN_TYPE_ATTRS)).name
+
+
+def get_cvinfo(key: int) -> CvInfoType:
+    return _TYPE_ENUM_E[key]

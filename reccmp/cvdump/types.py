@@ -4,6 +4,7 @@ import logging
 from enum import IntEnum
 from typing import NamedTuple
 from typing_extensions import NotRequired, TypedDict
+from .cvinfo import get_cvinfo
 
 
 logger = logging.getLogger(__name__)
@@ -77,18 +78,9 @@ class ScalarType(NamedTuple):
     offset: int
     name: str | None
     type: CvdumpTypeKey
-
-    @property
-    def size(self) -> int:
-        return scalar_type_size(self.type)
-
-    @property
-    def format_char(self) -> str:
-        return scalar_type_format_char(self.type)
-
-    @property
-    def is_pointer(self) -> bool:
-        return scalar_type_pointer(self.type)
+    size: int
+    format_char: str
+    is_pointer: bool
 
 
 class TypeInfo(NamedTuple):
@@ -153,27 +145,6 @@ def scalar_type_signed(key: CvdumpTypeKey) -> bool:
 
     # According to cvinfo.h, T_WCHAR is unsigned
     # return not type_name.startswith("T_U") and not type_name.startswith("T_W")
-
-
-def scalar_type_format_char(key: CvdumpTypeKey) -> str:
-    if scalar_type_pointer(key):
-        return "L"
-
-    # "Really a char"
-    if key == 0x70:
-        return "c"
-
-    cv_type = (key & 0xF0) >> 4
-
-    # floats
-    if cv_type == 4:
-        # hack
-        return "d" if (key & 1) != 0 else "f"
-
-    size = scalar_type_size(key)
-    char = ({1: "b", 2: "h", 4: "l", 8: "q"}).get(size, "l")
-
-    return char if scalar_type_signed(key) else char.upper()
 
 
 def member_list_to_struct_string(members: list[ScalarType]) -> str:
@@ -418,7 +389,9 @@ class CvdumpTypesParser:
         # Scalar type. Handled here because it makes the recursive steps
         # much simpler.
         if cvdump_type_is_scalar(type_key):
-            size = scalar_type_size(type_key)
+            cvinfo = get_cvinfo(type_key)
+            # TODO: Previous default. Problem was LF_ENUM with T_NOTYPE as underlying type.
+            size = cvinfo.size if cvinfo.size != 0 else 4
             return TypeInfo(
                 key=type_key,
                 size=size,
@@ -474,7 +447,17 @@ class CvdumpTypesParser:
         obj = self.get(type_key)
         if obj.is_scalar():
             # Use obj.key here for alias types like LF_POINTER
-            return [ScalarType(offset=0, type=obj.key, name=None)]
+            cvinfo = get_cvinfo(obj.key)
+            return [
+                ScalarType(
+                    offset=0,
+                    type=cvinfo.key,
+                    name=None,
+                    size=cvinfo.size,
+                    format_char=cvinfo.fmt,
+                    is_pointer=cvinfo is not None,
+                )
+            ]
 
         # mypy?
         assert obj.members is not None
@@ -488,6 +471,9 @@ class CvdumpTypesParser:
                 offset=m.offset + cm.offset,
                 type=cm.type,
                 name=join_member_names(m.name, cm.name),
+                size=cm.size,
+                format_char=cm.format_char,
+                is_pointer=cm.is_pointer,
             )
             for m in unique_members
             for cm in self.get_scalars(m.type)
@@ -511,7 +497,7 @@ class CvdumpTypesParser:
         # Walk the scalar list in reverse; we assume a gap could not
         # come at the start of the struct.
         for scalar in scalars[::-1]:
-            this_extent = scalar.offset + scalar_type_size(scalar.type)
+            this_extent = scalar.offset + scalar.size
             size_diff = last_extent - this_extent
             # We need to add the gap fillers in reverse here
             for i in range(size_diff - 1, -1, -1):
@@ -522,6 +508,9 @@ class CvdumpTypesParser:
                         offset=this_extent + i,
                         name="(padding)",
                         type=CVInfoTypeEnum.T_UCHAR,
+                        size=1,
+                        format_char="B",
+                        is_pointer=False,
                     ),
                 )
 
