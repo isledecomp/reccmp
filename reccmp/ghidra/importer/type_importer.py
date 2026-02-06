@@ -28,6 +28,7 @@ from reccmp.cvdump.types import (
     FieldListItem,
     VirtualBasePointer,
 )
+from reccmp.cvdump.cvinfo import cvinfo_type_name
 
 from .entity_names import NamespacePath, SanitizedEntityName, sanitize_name
 from .exceptions import (
@@ -147,17 +148,14 @@ class PdbTypeImporter:
             return f"{self._scalar_type_to_cpp(scalar_type[3:])} *"
         return self._scalar_type_map.get(scalar_type, scalar_type)
 
-    def _import_scalar_type(self, type_index_lower: CvdumpTypeKey) -> DataType:
-        if type_index_lower >= 0x1000:
-            raise TypeNotFoundError(
-                f"Type has unexpected format: {type_index_lower:#x}"
-            )
+    def _import_scalar_type(self, type_key: CvdumpTypeKey) -> DataType:
+        if type_key >= 0x1000:
+            raise TypeNotFoundError(f"Type has unexpected format: {type_key:#x}")
 
-        assert (
-            False
-        ), "TODO: Disabled for the moment. Need to convert integer type key back into string representation for Ghidra."
-
-        scalar_cpp_type = self._scalar_type_to_cpp(hex(type_index_lower))
+        # Remove "T_" prefix and convert to lower-case
+        # to match previous processing.
+        type_name = cvinfo_type_name(type_key)[2:].lower()
+        scalar_cpp_type = self._scalar_type_to_cpp(type_name)
         return get_scalar_ghidra_type(self.api, scalar_cpp_type)
 
     def _import_forward_ref_type(
