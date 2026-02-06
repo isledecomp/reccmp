@@ -3,9 +3,8 @@ from dataclasses import dataclass
 from functools import cache
 import struct
 from itertools import pairwise
-from typing import Callable, Iterator, NamedTuple
+from typing import Callable, Iterator
 from reccmp.compare.lines import LinesDb
-from reccmp.difflib import DiffOpcode
 from reccmp.compare.pinned_sequences import SequenceMatcherWithPins
 from reccmp.compare.asm.fixes import assert_fixup, find_effective_match
 from reccmp.compare.asm.parse import AsmExcerpt, ParseAsm
@@ -14,20 +13,13 @@ from reccmp.compare.asm.replacement import (
     create_name_lookup,
 )
 from reccmp.compare.db import EntityDb, ReccmpMatch
+from reccmp.compare.diff import FunctionCompareResult, RawDiffOutput
 from reccmp.compare.event import ReccmpEvent, ReccmpReportProtocol
 from reccmp.formats.exceptions import (
     InvalidVirtualAddressError,
     InvalidVirtualReadError,
 )
 from reccmp.formats import Image, PEImage
-
-
-class FunctionCompareResult(NamedTuple):
-    codes: list[DiffOpcode]
-    orig_inst: list[tuple[str, str]]
-    recomp_inst: list[tuple[str, str]]
-    is_effective_match: bool
-    match_ratio: float
 
 
 def timestamp_string() -> str:
@@ -251,9 +243,11 @@ class FunctionComparator:
         ]
 
         return FunctionCompareResult(
-            codes=diff.get_opcodes(),
-            orig_inst=orig_for_printing,
-            recomp_inst=recomp_for_printing,
+            diff=RawDiffOutput(
+                codes=diff.get_opcodes(),
+                orig_inst=orig_for_printing,
+                recomp_inst=recomp_for_printing,
+            ),
             is_effective_match=is_effective,
             match_ratio=diff.ratio(),
         )
