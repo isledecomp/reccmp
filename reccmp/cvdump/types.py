@@ -110,44 +110,6 @@ def normalize_type_id(key: str) -> CvdumpTypeKey:
     # return key.partition("(")[0]
 
 
-def scalar_type_pointer(key: CvdumpTypeKey) -> bool:
-    cv_mode = (key & 0x700) >> 8
-    return cv_mode != 0
-
-
-def scalar_type_size(key: CvdumpTypeKey) -> int:
-    if scalar_type_pointer(key):
-        return 4
-
-    cv_type = (key & 0xF0) >> 4
-    # if signed, unsigned, boolean
-    if cv_type in (1, 2, 3):
-        return 2 ** (key & 0x0F)
-
-    # floats
-    if cv_type == 4:
-        # hack
-        return 8 if (key & 1) != 0 else 4
-
-    # "integral"
-    if cv_type == 7:
-        return {0: 1, 1: 2, 2: 2, 3: 2}.get(key & 0xF, 4)
-
-    return 4
-
-
-def scalar_type_signed(key: CvdumpTypeKey) -> bool:
-    if scalar_type_pointer(key):
-        return False
-
-    cv_type = (key & 0xF0) >> 4
-
-    return cv_type == 1 or key in (0x68, 0x72, 0x74, 0x76, 0x78, 0x70)
-
-    # According to cvinfo.h, T_WCHAR is unsigned
-    # return not type_name.startswith("T_U") and not type_name.startswith("T_W")
-
-
 def member_list_to_struct_string(members: list[ScalarType]) -> str:
     """Create a string for use with struct.unpack"""
 

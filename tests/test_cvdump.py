@@ -2,6 +2,8 @@ import pytest
 from reccmp.cvdump.types import (
     CvdumpTypeKey,
     normalize_type_id,
+)
+from reccmp.cvdump.cvinfo import (
     scalar_type_size,
     scalar_type_pointer,
     scalar_type_signed,
