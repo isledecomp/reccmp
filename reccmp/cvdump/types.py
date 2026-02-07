@@ -454,7 +454,7 @@ class CvdumpTypesParser:
         return member_list_to_struct_string(members)
 
     def read_all(self, section: str):
-        r_leafsplit = re.compile(r"\n(?=0x\w{4} : )")
+        r_leafsplit = re.compile(r"\n(?=0x\w{4,8} : )")
         for leaf in r_leafsplit.split(section):
             if (match := self.INDEX_RE.match(leaf)) is None:
                 continue

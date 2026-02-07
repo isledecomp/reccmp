@@ -1014,3 +1014,36 @@ def test_this_adjust_hex(empty_parser: CvdumpTypesParser):
     )
 
     assert empty_parser.keys[TK(0x657A)]["this_adjust"] == TK(0x24)
+
+
+BIG_TYPE_KEY_SAMPLE = """
+0x1023 : Length = 70, Leaf = 0x1505 LF_STRUCTURE
+    # members = 0,  field list type 0x0000, FORWARD REF, 
+    Derivation list type 0x0000, VT shape type 0x0000
+    Size = 0, class name = threadlocaleinfostruct, unique name = Uthreadlocaleinfostruct@@, UDT(0x00011738)
+
+0x00011736 : Length = 14, Leaf = 0x1503 LF_ARRAY
+    Element type = 0x00011735
+    Index type = T_ULONG(0022)
+    length = 96
+    Name = 
+
+0x00011737 : Length = 418, Leaf = 0x1203 LF_FIELDLIST
+    list[0] = LF_MEMBER, public, type = 0x00011736, offset = 72
+        member name = 'lc_category'
+
+0x00011738 : Length = 70, Leaf = 0x1505 LF_STRUCTURE
+    # members = 18,  field list type 0x11737, 
+    Derivation list type 0x0000, VT shape type 0x0000
+    Size = 216, class name = threadlocaleinfostruct, unique name = Uthreadlocaleinfostruct@@, UDT(0x00011738)
+"""
+
+
+def test_type_keys_over_ffff(empty_parser: CvdumpTypesParser):
+    """Make sure we can read type keys larger than 0xffff.
+    This checks various leaves where it could appear."""
+    empty_parser.read_all(BIG_TYPE_KEY_SAMPLE)
+    assert empty_parser.keys[TK(0x1023)]["udt"] == TK(0x11738)
+    assert empty_parser.keys[TK(0x11736)]["array_type"] == TK(0x11735)
+    assert empty_parser.keys[TK(0x11737)]["members"][0].type == TK(0x11736)
+    assert empty_parser.keys[TK(0x11738)]["field_list_type"] == TK(0x11737)
