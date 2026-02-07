@@ -12,6 +12,7 @@ def test_fix_cmp_jmp():
 
     assert is_effective is True
 
+
 def test_fix_test_jmp():
     orig_asm = ["mov eax, 1", "mov ebx, 2", "test eax, ebx", "jg 0x1"]
     recomp_asm = ["mov eax, 1", "mov ebx, 2", "test ebx, eax", "jl 0x1"]
@@ -20,6 +21,7 @@ def test_fix_test_jmp():
     is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
     assert is_effective is True
+
 
 def test_fix_mov_cmp_jmp_mem_with_different_operands():
     """This should not be fixed up, since the operands are different"""
@@ -95,6 +97,7 @@ def test_fix_mov_cmp_jmp_mem_valid():
     is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
     assert is_effective is True
+
 
 def test_fix_mov_test_jmp_mem_valid():
 
