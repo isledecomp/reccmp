@@ -455,7 +455,7 @@ class CvdumpTypesParser:
                     name=None,
                     size=cvinfo.size,
                     format_char=cvinfo.fmt,
-                    is_pointer=cvinfo is not None,
+                    is_pointer=cvinfo.pointer is not None,
                 )
             ]
 
