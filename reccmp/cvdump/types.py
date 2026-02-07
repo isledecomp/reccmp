@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class CVInfoTypeEnum(IntEnum):
+    T_NOTYPE = 0x0000
     T_32PRCHAR = 0x0470
     T_32PVOID = 0x0403
     T_CHAR = 0x0010
@@ -331,6 +332,7 @@ class CvdumpTypesParser:
 
     def __init__(self) -> None:
         self.keys: dict[CvdumpTypeKey, CvdumpParsedType] = {}
+        self.weird_types: set[int] = set()
 
     def _get_field_list(self, type_obj: CvdumpParsedType) -> list[FieldListItem]:
         """Return the field list for the given LF_CLASS/LF_STRUCTURE reference"""
@@ -390,11 +392,15 @@ class CvdumpTypesParser:
         # much simpler.
         if cvdump_type_is_scalar(type_key):
             cvinfo = get_cvinfo(type_key)
-            # TODO: Previous default. Problem was LF_ENUM with T_NOTYPE as underlying type.
-            size = cvinfo.size if cvinfo.size != 0 else 4
+            if cvinfo.weird and cvinfo.key not in self.weird_types:
+                self.weird_types.add(cvinfo.key)
+                logger.info(
+                    "Unusual type %s may not be handled correctly.", cvinfo.name
+                )
+
             return TypeInfo(
                 key=type_key,
-                size=size,
+                size=cvinfo.size,
             )
 
         # Go to our dictionary to find it.
@@ -407,6 +413,10 @@ class CvdumpTypesParser:
             underlying_type = obj.get("underlying_type")
             if underlying_type is None:
                 raise CvdumpKeyError(f"Missing 'underlying_type' in {obj}")
+
+            if underlying_type == CVInfoTypeEnum.T_NOTYPE:
+                return self.get(CVInfoTypeEnum.T_INT4)
+
             return self.get(underlying_type)
 
         if obj.get("type") == "LF_POINTER":
