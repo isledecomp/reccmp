@@ -5,7 +5,7 @@ from reccmp.formats.exceptions import InvalidVirtualAddressError
 from reccmp.cvdump.symbols import SymbolsEntry
 from reccmp.compare import Compare
 from reccmp.compare.db import ReccmpMatch
-from reccmp.cvdump.types import CvdumpParsedType, CvdumpTypeKey
+from reccmp.cvdump.types import CvdumpParsedType, CvdumpTypeKey, CVInfoTypeEnum
 
 logger = logging.getLogger(__file__)
 
@@ -69,7 +69,7 @@ class PdbFunctionExtractor:
 
     def get_func_signature(self, fn: SymbolsEntry) -> FunctionSignature | None:
         function_type_str = fn.func_type
-        if function_type_str == 0:
+        if function_type_str == CVInfoTypeEnum.T_NOTYPE:
             logger.debug("Treating NOTYPE function as thunk: %s", fn.name)
             return None
 

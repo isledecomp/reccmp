@@ -17,6 +17,7 @@ from ghidra.program.model.data import (
     Pointer,
     ComponentOffsetSettingsDefinition,
 )
+from reccmp.cvdump.types import CVInfoTypeEnum
 
 from .pdb_extraction import (
     PdbFunction,
@@ -135,7 +136,7 @@ class FullPdbFunctionImporter(PdbFunctionImporter):
             self.signature.return_type
         )
 
-        if 0 in self.signature.arglist:
+        if CVInfoTypeEnum.T_NOTYPE in self.signature.arglist:
             # Variadric functions have a T_NOTYPE as their last argument
             raise TypeNotImplementedError(
                 f"Function '{self.get_full_name()}' is probably variadric, which is not implemented yet."
@@ -347,7 +348,7 @@ class FullPdbFunctionImporter(PdbFunctionImporter):
                 f"Could not find a matching symbol at offset {param.getStackOffset()} in {self.get_full_name()}"
             )
 
-        if match.data_type == 0:
+        if match.data_type == CVInfoTypeEnum.T_NOTYPE:
             logger.warning("Skipping stack parameter of type NOTYPE")
             return
 
