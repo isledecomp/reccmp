@@ -3,7 +3,7 @@ import logging
 import re
 from re import Match
 from typing import NamedTuple
-from reccmp.cvdump.types import CvdumpTypeKey, normalize_type_id
+from reccmp.cvdump.types import CvdumpTypeKey
 
 
 logger = logging.getLogger(__name__)
@@ -166,7 +166,7 @@ class CvdumpSymbolsParser:
                 section=int(match.group("section"), 16),
                 offset=int(match.group("offset"), 16),
                 size=int(match.group("size"), 16),
-                func_type=normalize_type_id(match.group("func_type")),
+                func_type=CvdumpTypeKey.from_str(match.group("func_type")),
                 name=match.group("name"),
             )
             self.symbols.append(self.current_function)
@@ -183,7 +183,7 @@ class CvdumpSymbolsParser:
             new_symbol = StackOrRegisterSymbol(
                 symbol_type=symbol_type,
                 location=match.group("location").lower(),
-                data_type=normalize_type_id(match.group("data_type")),
+                data_type=CvdumpTypeKey.from_str(match.group("data_type")),
                 name=match.group("name"),
             )
             self.current_function.stack_symbols.append(new_symbol)
@@ -202,7 +202,7 @@ class CvdumpSymbolsParser:
                 new_var = LdataEntry(
                     section=int(match.group("section"), 16),
                     offset=int(match.group("offset"), 16),
-                    type=normalize_type_id(match.group("type")),
+                    type=CvdumpTypeKey.from_str(match.group("type")),
                     name=match.group("name"),
                 )
 

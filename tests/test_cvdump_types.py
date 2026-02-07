@@ -781,6 +781,10 @@ def test_arglist_unknown_type(empty_parser: CvdumpTypesParser):
     t = empty_parser.keys[TK(0x11F3)]
     assert len(t["args"]) == t["argcount"]
 
+    # Make sure we correctly identify the type key.
+    assert t["args"][4] == TK(0x47C)
+    assert t["args"][5] == TK(0x47C)
+
 
 FUNC_ATTR_EXAMPLES = """
 0x1216 : Length = 26, Leaf = 0x1009 LF_MFUNCTION

@@ -7,7 +7,6 @@ from .cvinfo import (
     CvdumpTypeKey,
     CVInfoTypeEnum,
     get_cvinfo,
-    normalize_type_id,
 )
 
 
@@ -461,7 +460,7 @@ class CvdumpTypesParser:
                 continue
 
             (leaf_id_str, leaf_type) = match.groups()
-            leaf_id = normalize_type_id(leaf_id_str)
+            leaf_id = CvdumpTypeKey.from_str(leaf_id_str)
             if leaf_type not in self.MODES_OF_INTEREST:
                 continue
 
@@ -513,7 +512,7 @@ class CvdumpTypesParser:
         return {
             "type": leaf_type,
             "is_forward_ref": True,
-            "modifies": normalize_type_id(match.group("type")),
+            "modifies": CvdumpTypeKey.from_str(match.group("type")),
             "modification": match.group("modification"),
         }
 
@@ -523,7 +522,7 @@ class CvdumpTypesParser:
 
         return {
             "type": leaf_type,
-            "array_type": normalize_type_id(match.group("type")),
+            "array_type": CvdumpTypeKey.from_str(match.group("type")),
             "size": int(match.group("length")),
         }
 
@@ -541,7 +540,7 @@ class CvdumpTypesParser:
         # Superclass is set here in the fieldlist rather than in LF_CLASS
         for match in self.SUPERCLASS_RE.finditer(leaf):
             superclass_list: dict[CvdumpTypeKey, int] = obj.setdefault("super", {})
-            superclass_list[normalize_type_id(match.group("type"))] = int(
+            superclass_list[CvdumpTypeKey.from_str(match.group("type"))] = int(
                 match.group("offset")
             )
 
@@ -560,7 +559,7 @@ class CvdumpTypesParser:
 
             virtual_base_pointer.bases.append(
                 VirtualBaseClass(
-                    type=normalize_type_id(match.group("type")),
+                    type=CvdumpTypeKey.from_str(match.group("type")),
                     index=-1,  # default to -1 until we parse the correct value
                     direct=match.group("indirect") != "I",
                 )
@@ -588,7 +587,7 @@ class CvdumpTypesParser:
         members += [
             FieldListItem(
                 offset=int(offset),
-                type=normalize_type_id(type_),
+                type=CvdumpTypeKey.from_str(type_),
                 name=name,
             )
             for (_, type_, offset, name) in self.LIST_RE.findall(leaf)
@@ -616,7 +615,7 @@ class CvdumpTypesParser:
             # These cases get reported as UDT mismatch.
             obj["is_forward_ref"] = True
         else:
-            field_list_type = normalize_type_id(match.group("field_type"))
+            field_list_type = CvdumpTypeKey.from_str(match.group("field_type"))
             obj["field_list_type"] = field_list_type
 
         match = self.CLASS_NAME_RE.search(leaf)
@@ -627,7 +626,7 @@ class CvdumpTypesParser:
         obj["name"] = match.group("name")
         udt = match.group("udt")
         if udt is not None:
-            obj["udt"] = normalize_type_id(udt)
+            obj["udt"] = CvdumpTypeKey.from_str(udt)
 
         obj["size"] = int(match.group("size"))
 
@@ -639,7 +638,7 @@ class CvdumpTypesParser:
         argcount = int(match.group("argcount"))
 
         arglist = [
-            normalize_type_id(arg_type)
+            CvdumpTypeKey.from_str(arg_type)
             for (_, arg_type) in self.LF_ARGLIST_ENTRY.findall(leaf)
         ]
         assert len(arglist) == argcount
@@ -670,13 +669,15 @@ class CvdumpTypesParser:
 
         obj: CvdumpParsedType = {
             "type": leaf_type,
-            "element_type": normalize_type_id(match.group("element_type")),
+            "element_type": CvdumpTypeKey.from_str(match.group("element_type")),
             "pointer_type": match.group("type"),
         }
 
         # `containing_class` is unset if not present
         if match.group("containing_class") is not None:
-            obj["containing_class"] = normalize_type_id(match.group("containing_class"))
+            obj["containing_class"] = CvdumpTypeKey.from_str(
+                match.group("containing_class")
+            )
 
         return obj
 
@@ -685,13 +686,13 @@ class CvdumpTypesParser:
         assert match is not None
         return {
             "type": leaf_type,
-            "return_type": normalize_type_id(match.group("return_type")),
-            "class_type": normalize_type_id(match.group("class_type")),
-            "this_type": normalize_type_id(match.group("this_type")),
+            "return_type": CvdumpTypeKey.from_str(match.group("return_type")),
+            "class_type": CvdumpTypeKey.from_str(match.group("class_type")),
+            "this_type": CvdumpTypeKey.from_str(match.group("this_type")),
             "call_type": match.group("call_type"),
             "func_attr": match.group("func_attr"),
             "num_params": int(match.group("num_params")),
-            "arg_list_type": normalize_type_id(match.group("arg_list_type")),
+            "arg_list_type": CvdumpTypeKey.from_str(match.group("arg_list_type")),
             "this_adjust": int(match.group("this_adjust"), 16),
         }
 
@@ -700,11 +701,11 @@ class CvdumpTypesParser:
         assert match is not None
         return {
             "type": leaf_type,
-            "return_type": normalize_type_id(match.group("return_type")),
+            "return_type": CvdumpTypeKey.from_str(match.group("return_type")),
             "call_type": match.group("call_type"),
             "func_attr": match.group("func_attr"),
             "num_params": int(match.group("num_params")),
-            "arg_list_type": normalize_type_id(match.group("arg_list_type")),
+            "arg_list_type": CvdumpTypeKey.from_str(match.group("arg_list_type")),
         }
 
     def read_enum(self, leaf: str, leaf_type: str) -> CvdumpParsedType:
@@ -744,11 +745,13 @@ class CvdumpTypesParser:
         if attribute.startswith("UDT"):
             match = self.LF_ENUM_UDT.match(attribute)
             assert match is not None
-            return {"udt": normalize_type_id(match.group("udt"))}
+            return {"udt": CvdumpTypeKey.from_str(match.group("udt"))}
         if (match := self.LF_ENUM_TYPES.match(attribute)) is not None:
             return {
-                "underlying_type": normalize_type_id(match.group("underlying_type")),
-                "field_list_type": normalize_type_id(match.group("field_type")),
+                "underlying_type": CvdumpTypeKey.from_str(
+                    match.group("underlying_type")
+                ),
+                "field_list_type": CvdumpTypeKey.from_str(match.group("field_type")),
             }
 
         logger.error("Unknown attribute in enum: %s", attribute)
@@ -763,12 +766,12 @@ class CvdumpTypesParser:
         if match.group("field_type") == "0x0000":
             obj["is_forward_ref"] = True
         else:
-            field_list_type = normalize_type_id(match.group("field_type"))
+            field_list_type = CvdumpTypeKey.from_str(match.group("field_type"))
             obj["field_list_type"] = field_list_type
 
         udt = match.group("udt")
         if udt is not None:
-            obj["udt"] = normalize_type_id(udt)
+            obj["udt"] = CvdumpTypeKey.from_str(udt)
 
         obj["size"] = int(match.group("size"))
 

@@ -12,20 +12,13 @@ class CvdumpTypeKey(int):
     def is_scalar(self) -> bool:
         return self < 0x1000
 
+    @classmethod
+    def from_str(cls, key: str) -> "CvdumpTypeKey":
+        if key[0] == "0":
+            return cls(int(key, 16))
 
-def normalize_type_id(key: str) -> CvdumpTypeKey:
-    """Helper for TYPES parsing to ensure a consistent format.
-    If key begins with "T_" it is a built-in type.
-    Else it is a hex string. We prefer lower case letters and
-    no leading zeroes. (UDT identifier pads to 8 characters.)"""
-    if key[0] == "0":
-        return CvdumpTypeKey(int(key, 16))
-        # return f"0x{key[-4:].lower()}"
-
-    # Should cover both "T_" and "???" cases.
-    return CvdumpTypeKey(int(key[-5:-1], 16))
-    # Remove numeric value for "T_" type. We don't use this.
-    # return key.partition("(")[0]
+        # Should cover both "T_" and "???" cases.
+        return cls(int(key[-5:-1], 16))
 
 
 class CvInfoType(NamedTuple):

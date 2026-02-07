@@ -12,7 +12,6 @@ from .types import (
     CvdumpTypesParser,
     TypeInfo,
 )
-from .cvinfo import normalize_type_id
 
 
 @dataclass
@@ -156,7 +155,7 @@ class CvdumpAnalysis:
                 # Check our types database for type information.
                 # If we did not parse the TYPES section, we can only
                 # get information for built-in "T_" types.
-                g_info = parser.types.get(normalize_type_id(glo.type))
+                g_info = parser.types.get(glo.type)
                 node_dict[key].confirmed_size = g_info.size
                 node_dict[key].data_type = g_info
                 # Previously we set the symbol type to POINTER here if
