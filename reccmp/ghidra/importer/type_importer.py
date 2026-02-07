@@ -25,7 +25,6 @@ from ghidra.util.task import ConsoleTaskMonitor
 from reccmp.cvdump.types import (
     CvdumpParsedType,
     CvdumpTypeKey,
-    cvdump_type_is_scalar,
     FieldListItem,
     VirtualBasePointer,
 )
@@ -96,7 +95,7 @@ class PdbTypeImporter:
             that fits inside C.
             This value should always be `False` when the referenced type is not (a pointer to) a class.
         """
-        if type_index < 0x1000:
+        if type_index.is_scalar():
             return self._import_scalar_type(type_index)
 
         try:
@@ -150,7 +149,7 @@ class PdbTypeImporter:
         return self._scalar_type_map.get(scalar_type, scalar_type)
 
     def _import_scalar_type(self, type_key: CvdumpTypeKey) -> DataType:
-        if not cvdump_type_is_scalar(type_key):
+        if not type_key.is_scalar():
             raise TypeNotFoundError(f"Type has unexpected format: {type_key:#x}")
 
         # Remove "T_" prefix and convert to lower-case

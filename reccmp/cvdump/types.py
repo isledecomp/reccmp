@@ -4,7 +4,6 @@ import logging
 from typing import NamedTuple
 from typing_extensions import NotRequired, TypedDict
 from .cvinfo import (
-    cvdump_type_is_scalar,
     CvdumpTypeKey,
     CVInfoTypeEnum,
     get_cvinfo,
@@ -315,7 +314,7 @@ class CvdumpTypesParser:
 
         # Scalar type. Handled here because it makes the recursive steps
         # much simpler.
-        if cvdump_type_is_scalar(type_key):
+        if type_key.is_scalar():
             cvinfo = get_cvinfo(type_key)
             if cvinfo.weird and cvinfo.key not in self.weird_types:
                 self.weird_types.add(cvinfo.key)

@@ -9,11 +9,8 @@ from typing import NamedTuple
 
 
 class CvdumpTypeKey(int):
-    pass
-
-
-def cvdump_type_is_scalar(key: CvdumpTypeKey) -> bool:
-    return key < 0x1000
+    def is_scalar(self) -> bool:
+        return self < 0x1000
 
 
 def normalize_type_id(key: str) -> CvdumpTypeKey:

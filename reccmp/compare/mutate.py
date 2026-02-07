@@ -63,7 +63,7 @@ def match_array_elements(db: EntityDb, types: CvdumpTypesParser):
             continue
 
         type_key = CvdumpTypeKey(type_key_raw)
-        if type_key < 0x1000:
+        if type_key.is_scalar():
             # scalar type, so clearly not an array
             continue
 
