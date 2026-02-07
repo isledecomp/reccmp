@@ -1,40 +1,18 @@
 from dataclasses import dataclass
 import re
 import logging
-from enum import IntEnum
 from typing import NamedTuple
 from typing_extensions import NotRequired, TypedDict
-from .cvinfo import get_cvinfo
+from .cvinfo import (
+    cvdump_type_is_scalar,
+    CvdumpTypeKey,
+    CVInfoTypeEnum,
+    get_cvinfo,
+    normalize_type_id,
+)
 
 
 logger = logging.getLogger(__name__)
-
-
-class CVInfoTypeEnum(IntEnum):
-    T_NOTYPE = 0x0000
-    T_32PRCHAR = 0x0470
-    T_32PVOID = 0x0403
-    T_CHAR = 0x0010
-    T_INT4 = 0x0074
-    T_LONG = 0x0012
-    T_REAL32 = 0x0040
-    T_UCHAR = 0x0020
-    T_UINT4 = 0x0075
-    T_USHORT = 0x0021
-    T_SHORT = 0x0011
-
-
-# TODO: For now, this is here just to document where we
-# expect a T_* (scalar) or 0x____ (complex) type key.
-# Not all occurrences are normalized with normalize_type_id().
-# The unit tests show where some hex digits are capitalized.
-# We would need to use typing.NewType for actual type-checking.
-# CvdumpTypeKey = NewType("CvdumpTypeKey", int)
-CvdumpTypeKey = int
-
-
-def cvdump_type_is_scalar(key: CvdumpTypeKey) -> bool:
-    return key < 0x1000
 
 
 class CvdumpTypeError(Exception):
@@ -93,21 +71,6 @@ class TypeInfo(NamedTuple):
     def is_scalar(self) -> bool:
         # TODO: distinction between a class with zero members and no vtable?
         return self.members is None
-
-
-def normalize_type_id(key: str) -> CvdumpTypeKey:
-    """Helper for TYPES parsing to ensure a consistent format.
-    If key begins with "T_" it is a built-in type.
-    Else it is a hex string. We prefer lower case letters and
-    no leading zeroes. (UDT identifier pads to 8 characters.)"""
-    if key[0] == "0":
-        return CvdumpTypeKey(int(key, 16))
-        # return f"0x{key[-4:].lower()}"
-
-    # Should cover both "T_" and "???" cases.
-    return CvdumpTypeKey(int(key[-5:-1], 16))
-    # Remove numeric value for "T_" type. We don't use this.
-    # return key.partition("(")[0]
 
 
 def member_list_to_struct_string(members: list[ScalarType]) -> str:

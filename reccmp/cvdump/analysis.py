@@ -11,8 +11,8 @@ from .types import (
     CvdumpIntegrityError,
     CvdumpTypesParser,
     TypeInfo,
-    normalize_type_id,
 )
+from .cvinfo import normalize_type_id
 
 
 @dataclass

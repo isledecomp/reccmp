@@ -3,12 +3,50 @@ https://github.com/microsoft/microsoft-pdb/blob/master/include/cvinfo.h
 See `LICENSE.cvdump.txt` for details.
 """
 
+from enum import IntEnum
 from types import MappingProxyType
 from typing import NamedTuple
 
 
+class CVInfoTypeEnum(IntEnum):
+    T_NOTYPE = 0x0000
+    T_32PRCHAR = 0x0470
+    T_32PVOID = 0x0403
+    T_CHAR = 0x0010
+    T_INT4 = 0x0074
+    T_LONG = 0x0012
+    T_REAL32 = 0x0040
+    T_UCHAR = 0x0020
+    T_UINT4 = 0x0075
+    T_USHORT = 0x0021
+    T_SHORT = 0x0011
+
+
+# CvdumpTypeKey = NewType("CvdumpTypeKey", int)
+CvdumpTypeKey = int
+
+
+def cvdump_type_is_scalar(key: CvdumpTypeKey) -> bool:
+    return key < 0x1000
+
+
+def normalize_type_id(key: str) -> CvdumpTypeKey:
+    """Helper for TYPES parsing to ensure a consistent format.
+    If key begins with "T_" it is a built-in type.
+    Else it is a hex string. We prefer lower case letters and
+    no leading zeroes. (UDT identifier pads to 8 characters.)"""
+    if key[0] == "0":
+        return CvdumpTypeKey(int(key, 16))
+        # return f"0x{key[-4:].lower()}"
+
+    # Should cover both "T_" and "???" cases.
+    return CvdumpTypeKey(int(key[-5:-1], 16))
+    # Remove numeric value for "T_" type. We don't use this.
+    # return key.partition("(")[0]
+
+
 class CvInfoType(NamedTuple):
-    key: int
+    key: CvdumpTypeKey
     """The integer type key."""
     name: str
     """The name of this type as given in cvinfo.h."""
@@ -16,7 +54,7 @@ class CvInfoType(NamedTuple):
     """The struct.unpack format char(s) for this type."""
     size: int
     """The type's footprint in bytes."""
-    pointer: int | None
+    pointer: CvdumpTypeKey | None
     """If set, this type is a pointer to another CVinfo type."""
     weird: bool
     """If we encounter this type, log a message about it for potential debugging."""
@@ -455,23 +493,23 @@ _TYPE_ENUM_E = MappingProxyType({cv.key: cv for cv in _CVINFO_TYPES})
 _UNKNOWN_TYPE_ATTRS = ("???", "", 0, None, True)
 
 
-def cvinfo_type_name(key: int) -> str:
+def cvinfo_type_name(key: CvdumpTypeKey) -> str:
     return _TYPE_ENUM_E.get(key, CvInfoType(key, *_UNKNOWN_TYPE_ATTRS)).name
 
 
-def get_cvinfo(key: int) -> CvInfoType:
+def get_cvinfo(key: CvdumpTypeKey) -> CvInfoType:
     return _TYPE_ENUM_E[key]
 
 
-def scalar_type_pointer(key: int) -> bool:
+def scalar_type_pointer(key: CvdumpTypeKey) -> bool:
     return get_cvinfo(key).pointer is not None
 
 
-def scalar_type_size(key: int) -> int:
+def scalar_type_size(key: CvdumpTypeKey) -> int:
     return get_cvinfo(key).size
 
 
-def scalar_type_signed(key: int) -> bool:
+def scalar_type_signed(key: CvdumpTypeKey) -> bool:
     return key in (
         0x0010,
         0x0068,

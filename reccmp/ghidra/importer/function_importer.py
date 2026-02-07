@@ -17,7 +17,7 @@ from ghidra.program.model.data import (
     Pointer,
     ComponentOffsetSettingsDefinition,
 )
-from reccmp.cvdump.types import CVInfoTypeEnum
+from reccmp.cvdump.cvinfo import CVInfoTypeEnum
 
 from .pdb_extraction import (
     PdbFunction,
