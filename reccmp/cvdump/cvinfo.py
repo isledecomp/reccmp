@@ -3,23 +3,9 @@ https://github.com/microsoft/microsoft-pdb/blob/master/include/cvinfo.h
 See `LICENSE.cvdump.txt` for details.
 """
 
-from enum import IntEnum
-from types import MappingProxyType
+from enum import Enum
+from types import MappingProxyType, new_class
 from typing import NamedTuple
-
-
-class CVInfoTypeEnum(IntEnum):
-    T_NOTYPE = 0x0000
-    T_32PRCHAR = 0x0470
-    T_32PVOID = 0x0403
-    T_CHAR = 0x0010
-    T_INT4 = 0x0074
-    T_LONG = 0x0012
-    T_REAL32 = 0x0040
-    T_UCHAR = 0x0020
-    T_UINT4 = 0x0075
-    T_USHORT = 0x0021
-    T_SHORT = 0x0011
 
 
 # CvdumpTypeKey = NewType("CvdumpTypeKey", int)
@@ -484,6 +470,12 @@ _CVINFO_TYPES = (
     CvInfoType(key=0x06f0,  name="T_64NCVPTR",     fmt="",     size=0,   pointer=None,    weird=True ), # CV Internal type for created near 64-bit pointers
 )
 # fmt: on
+
+
+_CVInfoTypeEnum = new_class("_CVInfoTypeEnum", bases=(CvdumpTypeKey, Enum))
+CVInfoTypeEnum = _CVInfoTypeEnum(
+    "CVInfoTypeEnum", {cv.name: cv.key for cv in _CVINFO_TYPES}
+)
 
 
 _TYPE_ENUM_E = MappingProxyType({cv.key: cv for cv in _CVINFO_TYPES})
