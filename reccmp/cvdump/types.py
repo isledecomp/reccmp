@@ -408,17 +408,6 @@ class CvdumpTypesParser:
         if obj is None:
             raise CvdumpKeyError(type_key)
 
-        # These type references are just a wrapper around a scalar
-        if obj.get("type") == "LF_ENUM":
-            underlying_type = obj.get("underlying_type")
-            if underlying_type is None:
-                raise CvdumpKeyError(f"Missing 'underlying_type' in {obj}")
-
-            if underlying_type == CVInfoTypeEnum.T_NOTYPE:
-                return self.get(CVInfoTypeEnum.T_INT4)
-
-            return self.get(underlying_type)
-
         if obj.get("type") == "LF_POINTER":
             return self.get(CVInfoTypeEnum.T_32PVOID)
 
@@ -431,6 +420,14 @@ class CvdumpTypesParser:
                 raise CvdumpIntegrityError(f"Null forward ref for type {type_key}")
 
             return self.get(forward_ref)
+
+        # These type references are just a wrapper around a scalar
+        if obj.get("type") == "LF_ENUM":
+            underlying_type = obj.get("underlying_type")
+            if underlying_type is None:
+                raise CvdumpKeyError(f"Missing 'underlying_type' in {obj}")
+
+            return self.get(underlying_type)
 
         # Else it is not a forward reference, so build out the object here.
         if obj.get("type") == "LF_ARRAY":

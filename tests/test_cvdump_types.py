@@ -1,6 +1,8 @@
 """Specifically testing the Cvdump TYPES parser
 and type dependency tree walker."""
 
+# pylint:disable=too-many-lines
+
 import pytest
 from reccmp.cvdump.types import (
     CVInfoTypeEnum,
@@ -909,6 +911,27 @@ def test_enum_with_local_flag(empty_parser: CvdumpTypesParser):
         "type": "LF_ENUM",
         "underlying_type": CVInfoTypeEnum.T_INT4,
     }
+
+
+ENUM_FORWARD_REF = """
+0x10b6 : Length = 38, Leaf = 0x1507 LF_ENUM
+    # members = 69,  type = T_CHAR(0010) field list type 0x10b5
+    enum name = JukeboxScript::Script, UDT(0x000010b6)
+
+0x11a6 : Length = 38, Leaf = 0x1507 LF_ENUM
+    # members = 0,  type = T_NOTYPE(0000) field list type 0x0000
+FORWARD REF,    enum name = JukeboxScript::Script, UDT(0x000010b6)
+"""
+
+
+def test_enum_forward_ref(empty_parser: CvdumpTypesParser):
+    """Make sure that we resolve forward refs for LF_ENUM."""
+    empty_parser.read_all(ENUM_FORWARD_REF)
+
+    # Using non-standard T_CHAR(0010) base type to demonstrate the problem.
+    # The main concern is to not use T_NOTYPE as the basis of the enum.
+    # Previously we assumed all but a few specific types had size 4.
+    assert empty_parser.get(0x11A6).size == 1
 
 
 MSVC700_POINTER_CONTAINING_CLASS_TYPE_OF_POINTED_TO = """
