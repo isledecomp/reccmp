@@ -24,11 +24,10 @@ from ghidra.util.task import ConsoleTaskMonitor
 
 from reccmp.cvdump.types import (
     CvdumpParsedType,
-    CvdumpTypeKey,
     FieldListItem,
     VirtualBasePointer,
 )
-from reccmp.cvdump.cvinfo import cvinfo_type_name
+from reccmp.cvdump.cvinfo import CvdumpTypeKey
 
 from .entity_names import NamespacePath, SanitizedEntityName, sanitize_name
 from .exceptions import (
@@ -47,6 +46,7 @@ from .ghidra_helper import (
     get_scalar_ghidra_type,
 )
 from .pdb_extraction import PdbFunctionExtractor
+from .type_conversion import scalar_type_to_cpp
 
 logger = logging.getLogger(__name__)
 
@@ -135,28 +135,11 @@ class PdbTypeImporter:
         else:
             raise TypeNotImplementedError(type_pdb)
 
-    _scalar_type_map = {
-        "rchar": "char",
-        "int4": "int",
-        "uint4": "uint",
-        "real32": "float",
-        "real64": "double",
-    }
-
-    def _scalar_type_to_cpp(self, scalar_type: str) -> str:
-        if scalar_type.startswith("32p"):
-            return f"{self._scalar_type_to_cpp(scalar_type[3:])} *"
-        return self._scalar_type_map.get(scalar_type, scalar_type)
-
     def _import_scalar_type(self, type_key: CvdumpTypeKey) -> DataType:
         if not type_key.is_scalar():
             raise TypeNotFoundError(f"Type has unexpected format: {type_key:#x}")
 
-        # Remove "T_" prefix and convert to lower-case
-        # to match previous processing.
-        type_name = cvinfo_type_name(type_key)[2:].lower()
-        scalar_cpp_type = self._scalar_type_to_cpp(type_name)
-        return get_scalar_ghidra_type(self.api, scalar_cpp_type)
+        return get_scalar_ghidra_type(self.api, scalar_type_to_cpp(type_key))
 
     def _import_forward_ref_type(
         self,
