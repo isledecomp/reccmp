@@ -196,12 +196,12 @@ _CVINFO_TYPES = (
 #      32 bit long types
 
     CvInfoType(key=CvdumpTypeKey(0x0012),  name="T_LONG",         fmt="l",    size=4,   pointer=None,                   weird=False), # 32 bit signed
-    CvInfoType(key=CvdumpTypeKey(0x0112),  name="T_PLONG",        fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0112),  weird=True ), # 16 bit pointer to 32 bit signed
-    CvInfoType(key=CvdumpTypeKey(0x0212),  name="T_PFLONG",       fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0112),  weird=True ), # 16:16 far pointer to 32 bit signed
-    CvInfoType(key=CvdumpTypeKey(0x0312),  name="T_PHLONG",       fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0112),  weird=True ), # 16:16 huge pointer to 32 bit signed
-    CvInfoType(key=CvdumpTypeKey(0x0412),  name="T_32PLONG",      fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0112),  weird=False), # 32 bit pointer to 32 bit signed
-    CvInfoType(key=CvdumpTypeKey(0x0512),  name="T_32PFLONG",     fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0112),  weird=True ), # 16:32 pointer to 32 bit signed
-    CvInfoType(key=CvdumpTypeKey(0x0612),  name="T_64PLONG",      fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0112),  weird=True ), # 64 bit pointer to 32 bit signed
+    CvInfoType(key=CvdumpTypeKey(0x0112),  name="T_PLONG",        fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0012),  weird=True ), # 16 bit pointer to 32 bit signed
+    CvInfoType(key=CvdumpTypeKey(0x0212),  name="T_PFLONG",       fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0012),  weird=True ), # 16:16 far pointer to 32 bit signed
+    CvInfoType(key=CvdumpTypeKey(0x0312),  name="T_PHLONG",       fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0012),  weird=True ), # 16:16 huge pointer to 32 bit signed
+    CvInfoType(key=CvdumpTypeKey(0x0412),  name="T_32PLONG",      fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0012),  weird=False), # 32 bit pointer to 32 bit signed
+    CvInfoType(key=CvdumpTypeKey(0x0512),  name="T_32PFLONG",     fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0012),  weird=True ), # 16:32 pointer to 32 bit signed
+    CvInfoType(key=CvdumpTypeKey(0x0612),  name="T_64PLONG",      fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0012),  weird=True ), # 64 bit pointer to 32 bit signed
 
     CvInfoType(key=CvdumpTypeKey(0x0022),  name="T_ULONG",        fmt="L",    size=4,   pointer=None,                   weird=False), # 32 bit unsigned
     CvInfoType(key=CvdumpTypeKey(0x0122),  name="T_PULONG",       fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0022),  weird=True ), # 16 bit pointer to 32 bit unsigned
