@@ -124,6 +124,18 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x057b),  name="T_32PFCHAR32",   fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x007b),  weird=True ), # 16:32 pointer to a 32-bit unicode char
     CvInfoType(key=CvdumpTypeKey(0x067b),  name="T_64PCHAR32",    fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x007b),  weird=True ), # 64 bit pointer to a 32-bit unicode char
 
+
+#      8-bit unicode char
+
+    CvInfoType(key=CvdumpTypeKey(0x007c),  name="T_CHAR8",        fmt="B",    size=1,   pointer=None,                   weird=True ), # 32-bit unicode char
+    CvInfoType(key=CvdumpTypeKey(0x017c),  name="T_PCHAR8",       fmt="H",    size=2,   pointer=CvdumpTypeKey(0x007c),  weird=True ), # 16 bit pointer to a 32-bit unicode char
+    CvInfoType(key=CvdumpTypeKey(0x027c),  name="T_PFCHAR8",      fmt="I",    size=4,   pointer=CvdumpTypeKey(0x007c),  weird=True ), # 16:16 far pointer to a 32-bit unicode char
+    CvInfoType(key=CvdumpTypeKey(0x037c),  name="T_PHCHAR8",      fmt="I",    size=4,   pointer=CvdumpTypeKey(0x007c),  weird=True ), # 16:16 huge pointer to a 32-bit unicode char
+    CvInfoType(key=CvdumpTypeKey(0x047c),  name="T_32PCHAR8",     fmt="I",    size=4,   pointer=CvdumpTypeKey(0x007c),  weird=True ), # 32 bit pointer to a 32-bit unicode char
+    CvInfoType(key=CvdumpTypeKey(0x057c),  name="T_32PFCHAR8",    fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x007c),  weird=True ), # 16:32 pointer to a 32-bit unicode char
+    CvInfoType(key=CvdumpTypeKey(0x067c),  name="T_64PCHAR8",     fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x007c),  weird=True ), # 64 bit pointer to a 32-bit unicode char
+
+
 #      8 bit int types
 
     CvInfoType(key=CvdumpTypeKey(0x0068),  name="T_INT1",         fmt="b",    size=1,   pointer=None,                   weird=True ), # 8 bit signed int
@@ -471,16 +483,15 @@ CVInfoTypeEnum = _CVInfoTypeEnum(
 _TYPE_ENUM_E = MappingProxyType({cv.key: cv for cv in _CVINFO_TYPES})
 
 
-# Just add the key at the front to get a CvInfoType tuple.
-_UNKNOWN_TYPE_ATTRS = ("???", "", 0, None, True)
+def get_cvinfo(key: CvdumpTypeKey) -> CvInfoType:
+    assert key.is_scalar()
+    return _TYPE_ENUM_E.get(
+        key, CvInfoType(key=key, name="???", fmt="", size=0, pointer=None, weird=True)
+    )
 
 
 def cvinfo_type_name(key: CvdumpTypeKey) -> str:
-    return _TYPE_ENUM_E.get(key, CvInfoType(key, *_UNKNOWN_TYPE_ATTRS)).name
-
-
-def get_cvinfo(key: CvdumpTypeKey) -> CvInfoType:
-    return _TYPE_ENUM_E[key]
+    return get_cvinfo(key).name
 
 
 def scalar_type_pointer(key: CvdumpTypeKey) -> bool:

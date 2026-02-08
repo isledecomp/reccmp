@@ -318,7 +318,9 @@ class CvdumpTypesParser:
             if cvinfo.weird and cvinfo.key not in self.weird_types:
                 self.weird_types.add(cvinfo.key)
                 logger.info(
-                    "Unusual type %s may not be handled correctly.", cvinfo.name
+                    "Unusual type 0x%04x '%s' may not be handled correctly.",
+                    cvinfo.key,
+                    cvinfo.name,
                 )
 
             return TypeInfo(
