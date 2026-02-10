@@ -6,7 +6,7 @@ from typing_extensions import NotRequired, TypedDict
 from .cvinfo import (
     CvdumpTypeKey,
     CVInfoTypeEnum,
-    get_cvinfo,
+    CvdumpTypeMap,
 )
 
 
@@ -314,7 +314,7 @@ class CvdumpTypesParser:
         # Scalar type. Handled here because it makes the recursive steps
         # much simpler.
         if type_key.is_scalar():
-            cvinfo = get_cvinfo(type_key)
+            cvinfo = CvdumpTypeMap[type_key]
             if cvinfo.weird and cvinfo.key not in self.weird_types:
                 self.weird_types.add(cvinfo.key)
                 logger.info(
@@ -379,7 +379,7 @@ class CvdumpTypesParser:
         obj = self.get(type_key)
         if obj.is_scalar():
             # Use obj.key here for alias types like LF_POINTER
-            cvinfo = get_cvinfo(obj.key)
+            cvinfo = CvdumpTypeMap[obj.key]
             return [
                 ScalarType(
                     offset=0,

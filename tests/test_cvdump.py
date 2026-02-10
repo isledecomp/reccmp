@@ -2,8 +2,7 @@ import pytest
 from reccmp.cvdump.cvinfo import (
     CVInfoTypeEnum,
     CvdumpTypeKey,
-    scalar_type_size,
-    scalar_type_pointer,
+    CvdumpTypeMap,
     scalar_type_signed,
 )
 
@@ -49,7 +48,7 @@ SCALARS_WITH_NORMALIZED_ID = (
 
 @pytest.mark.parametrize("type_key, size, _, __", SCALARS_WITH_NORMALIZED_ID)
 def test_scalar_size(type_key: CvdumpTypeKey, size: int, _, __):
-    assert scalar_type_size(type_key) == size
+    assert CvdumpTypeMap[type_key].size == size
 
 
 @pytest.mark.parametrize("type_key, _, is_signed, __", SCALARS_WITH_NORMALIZED_ID)
@@ -59,4 +58,22 @@ def test_scalar_signed(type_key: CvdumpTypeKey, _, is_signed: bool, __):
 
 @pytest.mark.parametrize("type_key, _, __, is_pointer", SCALARS_WITH_NORMALIZED_ID)
 def test_scalar_pointer(type_key: CvdumpTypeKey, _, __, is_pointer: bool):
-    assert scalar_type_pointer(type_key) == is_pointer
+    assert (CvdumpTypeMap[type_key].pointer is not None) == is_pointer
+
+
+def test_verify_cvinfo_enum():
+    """Assert that CVInfoTypeEnum and CvdumpTypeMap have exactly the same items."""
+
+    # Check each enum member against the type map.
+    for e in CVInfoTypeEnum:
+        # Make sure the enum members are functionally equivalent to both these dependent types.
+        assert isinstance(e, CvdumpTypeKey)
+        assert isinstance(e, int)
+        # Make sure the enum's const name is the same as the type's name in the map.
+        # e.g. The value of CVInfoTypeEnum.T_INT4 resolves to the type key for T_INT4.
+        assert CvdumpTypeMap[e].name == e.name
+
+    # Check each entry in the map against the enum.
+    for type_key, cvtype in CvdumpTypeMap.items():
+        # Use the type's name to get the CvdumpTypeKey from the enum.
+        assert CVInfoTypeEnum[cvtype.name] == type_key

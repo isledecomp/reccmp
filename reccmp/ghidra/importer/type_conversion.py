@@ -1,6 +1,6 @@
 """Converting scalar types (CvdumpTypeKey) into the corresponding type name in Ghidra."""
 
-from reccmp.cvdump.cvinfo import get_cvinfo, CvdumpTypeKey
+from reccmp.cvdump.cvinfo import CvdumpTypeMap, CvdumpTypeKey
 
 
 _scalar_type_map = {
@@ -14,7 +14,7 @@ _scalar_type_map = {
 
 def scalar_type_to_cpp(type_key: CvdumpTypeKey) -> str:
     """Return the Ghidra name for the given scalar type."""
-    cvtype = get_cvinfo(type_key)
+    cvtype = CvdumpTypeMap[type_key]
 
     if cvtype.name.startswith("T_32P"):
         assert cvtype.pointer is not None
