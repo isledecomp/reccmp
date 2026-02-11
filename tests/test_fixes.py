@@ -374,3 +374,25 @@ def test_this_should_not_be_marked_as_effective():
     is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
     assert is_effective is False
+
+
+@pytest.mark.xfail(reason="Limitation of fix_mov_cmp_jmp")
+def test_fix_mov_cmp_jmp_unsafe_intermediate_reuse():
+    # These are NOT equivalent since eax is used after the jmp
+    orig_asm = [
+        "mov eax, dword ptr [ebp - 8]",
+        "cmp eax, dword ptr [ebp - 4]",
+        "jl 0x2",
+        "mov dword ptr [ebp - 0xc], eax",
+    ]
+    recomp_asm = [
+        "mov eax, dword ptr [ebp - 4]",
+        "cmp eax, dword ptr [ebp - 8]",
+        "jg 0x2",
+        "mov dword ptr [ebp - 0xc], eax",
+    ]
+
+    diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
+    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+
+    assert is_effective is False
