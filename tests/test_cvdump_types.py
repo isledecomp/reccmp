@@ -1047,3 +1047,28 @@ def test_type_keys_over_ffff(empty_parser: CvdumpTypesParser):
     assert empty_parser.keys[TK(0x11736)]["array_type"] == TK(0x11735)
     assert empty_parser.keys[TK(0x11737)]["members"][0].type == TK(0x11736)
     assert empty_parser.keys[TK(0x11738)]["field_list_type"] == TK(0x11737)
+
+
+ARRAY_WITH_UNKNOWN_ELEMENT = """
+0x1000 : Length = 14, Leaf = 0x1503 LF_ARRAY
+    Element type = ???(0555)
+    Index type = T_SHORT(0011)
+    length = 64
+    Name =
+"""
+
+
+def test_unknown_primitive_type(empty_parser: CvdumpTypesParser):
+    """Make sure we raise an exception if an unknown primitive type is used.
+    Our list of primitive types should be comprehensive and the caller has
+    the option to catch the exception and continue on."""
+    with pytest.raises(CvdumpKeyError):
+        empty_parser.get(TK(0x555))
+
+    with pytest.raises(CvdumpKeyError):
+        empty_parser.get_scalars(TK(0x555))
+
+    # Invalid type accessed indirectly via another type
+    empty_parser.read_all(ARRAY_WITH_UNKNOWN_ELEMENT)
+    with pytest.raises(CvdumpKeyError):
+        empty_parser.get_scalars(TK(0x1000))

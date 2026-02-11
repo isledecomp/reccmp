@@ -4,6 +4,7 @@ import logging
 from typing import NamedTuple
 from typing_extensions import NotRequired, TypedDict
 from .cvinfo import (
+    CvInfoType,
     CvdumpTypeKey,
     CVInfoTypeEnum,
     CvdumpTypeMap,
@@ -23,6 +24,16 @@ class CvdumpKeyError(KeyError):
 
 class CvdumpIntegrityError(Exception):
     pass
+
+
+def get_primitive(key: CvdumpTypeKey) -> CvInfoType:
+    """Throw CvdumpKeyError if we get a KeyError from the primitive map.
+    Log an error for the invalid type whether the exception is caught or not."""
+    try:
+        return CvdumpTypeMap[key]
+    except KeyError as ex:
+        logger.error("Unknown scalar type 0x%x", key)
+        raise CvdumpKeyError(key) from ex
 
 
 class FieldListItem(NamedTuple):
@@ -314,7 +325,7 @@ class CvdumpTypesParser:
         # Scalar type. Handled here because it makes the recursive steps
         # much simpler.
         if type_key.is_scalar():
-            cvinfo = CvdumpTypeMap[type_key]
+            cvinfo = get_primitive(type_key)
             if cvinfo.weird and cvinfo.key not in self.weird_types:
                 self.weird_types.add(cvinfo.key)
                 logger.info(
@@ -379,7 +390,7 @@ class CvdumpTypesParser:
         obj = self.get(type_key)
         if obj.is_scalar():
             # Use obj.key here for alias types like LF_POINTER
-            cvinfo = CvdumpTypeMap[obj.key]
+            cvinfo = get_primitive(obj.key)
             return [
                 ScalarType(
                     offset=0,
