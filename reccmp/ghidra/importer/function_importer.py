@@ -145,10 +145,10 @@ class FullPdbFunctionImporter(PdbFunctionImporter):
         self.arguments: Sequence[ParameterImpl] = [
             ParameterImpl(
                 f"param{index}",
-                type_importer.import_pdb_type_into_ghidra(type_name),
+                type_importer.import_pdb_type_into_ghidra(type_key),
                 api.getCurrentProgram(),
             )
-            for (index, type_name) in enumerate(self.signature.arglist)
+            for (index, type_key) in enumerate(self.signature.arglist)
         ]
 
     def matches_ghidra_function(self, ghidra_function: Function) -> bool:

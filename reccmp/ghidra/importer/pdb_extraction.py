@@ -64,19 +64,19 @@ class PdbFunctionExtractor:
     }
 
     def _get_cvdump_type(
-        self, type_name: CvdumpTypeKey | None
+        self, type_key: CvdumpTypeKey | None
     ) -> CvdumpParsedType | None:
-        return None if type_name is None else self.compare.types.keys.get(type_name)
+        return None if type_key is None else self.compare.types.keys.get(type_key)
 
     def get_func_signature(self, fn: SymbolsEntry) -> FunctionSignature | None:
-        function_type_str = fn.func_type
-        if function_type_str == CVInfoTypeEnum.T_NOTYPE:
+        function_type_key = fn.func_type
+        if function_type_key == CVInfoTypeEnum.T_NOTYPE:
             logger.debug("Treating NOTYPE function as thunk: %s", fn.name)
             return None
 
         # get corresponding function type
 
-        function_type = self.compare.types.keys.get(function_type_str)
+        function_type = self.compare.types.keys.get(function_type_key)
         if function_type is None:
             logger.error(
                 "Could not find function type %s for function %s", fn.func_type, fn.name
