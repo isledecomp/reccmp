@@ -45,13 +45,13 @@ SCALARS_WITH_NORMALIZED_ID = (
 # fmt: on
 
 
-@pytest.mark.parametrize("type_key, size, _, __", SCALARS_WITH_NORMALIZED_ID)
-def test_scalar_size(type_key: CvdumpTypeKey, size: int, _, __):
+@pytest.mark.parametrize("type_key, size, _", SCALARS_WITH_NORMALIZED_ID)
+def test_scalar_size(type_key: CvdumpTypeKey, size: int, _):
     assert CvdumpTypeMap[type_key].size == size
 
 
-@pytest.mark.parametrize("type_key, _, __, is_pointer", SCALARS_WITH_NORMALIZED_ID)
-def test_scalar_pointer(type_key: CvdumpTypeKey, _, __, is_pointer: bool):
+@pytest.mark.parametrize("type_key, _, is_pointer", SCALARS_WITH_NORMALIZED_ID)
+def test_scalar_pointer(type_key: CvdumpTypeKey, _, is_pointer: bool):
     assert (CvdumpTypeMap[type_key].pointer is not None) == is_pointer
 
 
