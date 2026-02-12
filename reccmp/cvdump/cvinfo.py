@@ -14,10 +14,15 @@ class CvdumpTypeKey(int):
 
     @classmethod
     def from_str(cls, key: str) -> "CvdumpTypeKey":
-        if key[0] == "0":
+        """The patterns we expect are:
+        1. Hex number, either 4 or 8 digits.
+        2. Primitive type name with hex digits in parens.
+            a. T_INT4(0074)
+            b. ???(007C)
+        """
+        if key.startswith("0x"):
             return cls(int(key, 16))
 
-        # Should cover both "T_" and "???" cases.
         return cls(int(key[-5:-1], 16))
 
 
@@ -36,25 +41,16 @@ class CvInfoType(NamedTuple):
     """Is this a type we have seen in the field?"""
 
 
+# This listing of types is taken from cvinfo.h.
+# We have modified the order for clarity.
+# The original description for each type is on the right, after the tuple.
+
 # fmt: off
 _CVINFO_TYPES = (
-
-#      Special Types
-
+    # Special Types
     CvInfoType(key=CvdumpTypeKey(0x0000),  name="T_NOTYPE",       fmt="",     size=0,   pointer=None,                   verified=True ), # uncharacterized type (no type)
     CvInfoType(key=CvdumpTypeKey(0x0001),  name="T_ABS",          fmt="",     size=0,   pointer=None,                   verified=False), # absolute symbol
     CvInfoType(key=CvdumpTypeKey(0x0002),  name="T_SEGMENT",      fmt="",     size=0,   pointer=None,                   verified=False), # segment type
-    CvInfoType(key=CvdumpTypeKey(0x0003),  name="T_VOID",         fmt="",     size=0,   pointer=None,                   verified=True ), # void
-    CvInfoType(key=CvdumpTypeKey(0x0008),  name="T_HRESULT",      fmt="I",    size=4,   pointer=None,                   verified=True ), # OLE/COM HRESULT
-    CvInfoType(key=CvdumpTypeKey(0x0408),  name="T_32PHRESULT",   fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0008),  verified=True ), # OLE/COM HRESULT __ptr32 *
-    CvInfoType(key=CvdumpTypeKey(0x0608),  name="T_64PHRESULT",   fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0008),  verified=False), # OLE/COM HRESULT __ptr64 *
-
-    CvInfoType(key=CvdumpTypeKey(0x0103),  name="T_PVOID",        fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0003),  verified=False), # near pointer to void
-    CvInfoType(key=CvdumpTypeKey(0x0203),  name="T_PFVOID",       fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0003),  verified=False), # far pointer to void
-    CvInfoType(key=CvdumpTypeKey(0x0303),  name="T_PHVOID",       fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0003),  verified=False), # huge pointer to void
-    CvInfoType(key=CvdumpTypeKey(0x0403),  name="T_32PVOID",      fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0003),  verified=True ), # 32 bit pointer to void
-    CvInfoType(key=CvdumpTypeKey(0x0503),  name="T_32PFVOID",     fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0003),  verified=False), # 16:32 pointer to void
-    CvInfoType(key=CvdumpTypeKey(0x0603),  name="T_64PVOID",      fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0003),  verified=False), # 64 bit pointer to void
     CvInfoType(key=CvdumpTypeKey(0x0004),  name="T_CURRENCY",     fmt="",     size=0,   pointer=None,                   verified=False), # BASIC 8 byte currency value
     CvInfoType(key=CvdumpTypeKey(0x0005),  name="T_NBASICSTR",    fmt="",     size=0,   pointer=None,                   verified=False), # Near BASIC string
     CvInfoType(key=CvdumpTypeKey(0x0006),  name="T_FBASICSTR",    fmt="",     size=0,   pointer=None,                   verified=False), # Far BASIC string
@@ -63,9 +59,22 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0061),  name="T_PASCHAR",      fmt="",     size=0,   pointer=None,                   verified=False), # Pascal CHAR
     CvInfoType(key=CvdumpTypeKey(0x0062),  name="T_BOOL32FF",     fmt="i",    size=4,   pointer=None,                   verified=False), # 32-bit BOOL where true is 0xffffffff
 
+    # void types
+    CvInfoType(key=CvdumpTypeKey(0x0003),  name="T_VOID",         fmt="",     size=0,   pointer=None,                   verified=True ), # void
+    CvInfoType(key=CvdumpTypeKey(0x0103),  name="T_PVOID",        fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0003),  verified=False), # near pointer to void
+    CvInfoType(key=CvdumpTypeKey(0x0203),  name="T_PFVOID",       fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0003),  verified=False), # far pointer to void
+    CvInfoType(key=CvdumpTypeKey(0x0303),  name="T_PHVOID",       fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0003),  verified=False), # huge pointer to void
+    CvInfoType(key=CvdumpTypeKey(0x0403),  name="T_32PVOID",      fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0003),  verified=True ), # 32 bit pointer to void
+    CvInfoType(key=CvdumpTypeKey(0x0503),  name="T_32PFVOID",     fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0003),  verified=False), # 16:32 pointer to void
+    CvInfoType(key=CvdumpTypeKey(0x0603),  name="T_64PVOID",      fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0003),  verified=False), # 64 bit pointer to void
 
-#      Character types
+    # HRESULT types
+    # We will add the missing pointer types if they ever appear.
+    CvInfoType(key=CvdumpTypeKey(0x0008),  name="T_HRESULT",      fmt="I",    size=4,   pointer=None,                   verified=True ), # OLE/COM HRESULT
+    CvInfoType(key=CvdumpTypeKey(0x0408),  name="T_32PHRESULT",   fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0008),  verified=True ), # OLE/COM HRESULT __ptr32 *
+    CvInfoType(key=CvdumpTypeKey(0x0608),  name="T_64PHRESULT",   fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0008),  verified=False), # OLE/COM HRESULT __ptr64 *
 
+    # 8-bit signed char types
     CvInfoType(key=CvdumpTypeKey(0x0010),  name="T_CHAR",         fmt="b",    size=1,   pointer=None,                   verified=True ), # 8 bit signed
     CvInfoType(key=CvdumpTypeKey(0x0110),  name="T_PCHAR",        fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0010),  verified=False), # 16 bit pointer to 8 bit signed
     CvInfoType(key=CvdumpTypeKey(0x0210),  name="T_PFCHAR",       fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0010),  verified=False), # 16:16 far pointer to 8 bit signed
@@ -74,6 +83,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0510),  name="T_32PFCHAR",     fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0010),  verified=False), # 16:32 pointer to 8 bit signed
     CvInfoType(key=CvdumpTypeKey(0x0610),  name="T_64PCHAR",      fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0010),  verified=False), # 64 bit pointer to 8 bit signed
 
+    # 8-bit unsigned char types
     CvInfoType(key=CvdumpTypeKey(0x0020),  name="T_UCHAR",        fmt="B",    size=1,   pointer=None,                   verified=True ), # 8 bit unsigned
     CvInfoType(key=CvdumpTypeKey(0x0120),  name="T_PUCHAR",       fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0020),  verified=False), # 16 bit pointer to 8 bit unsigned
     CvInfoType(key=CvdumpTypeKey(0x0220),  name="T_PFUCHAR",      fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0020),  verified=False), # 16:16 far pointer to 8 bit unsigned
@@ -82,9 +92,8 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0520),  name="T_32PFUCHAR",    fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0020),  verified=False), # 16:32 pointer to 8 bit unsigned
     CvInfoType(key=CvdumpTypeKey(0x0620),  name="T_64PUCHAR",     fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0020),  verified=False), # 64 bit pointer to 8 bit unsigned
 
-
-#      really a character types
-
+    # 8-bit char types
+    # RCHAR means "Really a char", to distinguish from the 8-bit value T_CHAR.
     CvInfoType(key=CvdumpTypeKey(0x0070),  name="T_RCHAR",        fmt="c",    size=1,   pointer=None,                   verified=True ), # really a char
     CvInfoType(key=CvdumpTypeKey(0x0170),  name="T_PRCHAR",       fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0070),  verified=False), # 16 bit pointer to a real char
     CvInfoType(key=CvdumpTypeKey(0x0270),  name="T_PFRCHAR",      fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0070),  verified=False), # 16:16 far pointer to a real char
@@ -93,9 +102,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0570),  name="T_32PFRCHAR",    fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0070),  verified=False), # 16:32 pointer to a real char
     CvInfoType(key=CvdumpTypeKey(0x0670),  name="T_64PRCHAR",     fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0070),  verified=False), # 64 bit pointer to a real char
 
-
-#      really a wide character types
-
+    # 16-bit widechar types
     CvInfoType(key=CvdumpTypeKey(0x0071),  name="T_WCHAR",        fmt="H",    size=2,   pointer=None,                   verified=True ), # wide char
     CvInfoType(key=CvdumpTypeKey(0x0171),  name="T_PWCHAR",       fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0071),  verified=False), # 16 bit pointer to a wide char
     CvInfoType(key=CvdumpTypeKey(0x0271),  name="T_PFWCHAR",      fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0071),  verified=False), # 16:16 far pointer to a wide char
@@ -104,8 +111,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0571),  name="T_32PFWCHAR",    fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0071),  verified=False), # 16:32 pointer to a wide char
     CvInfoType(key=CvdumpTypeKey(0x0671),  name="T_64PWCHAR",     fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0071),  verified=False), # 64 bit pointer to a wide char
 
-#      really a 16-bit unicode char
-
+    # 16-bit unicode char types
     CvInfoType(key=CvdumpTypeKey(0x007a),  name="T_CHAR16",       fmt="H",    size=2,   pointer=None,                   verified=False), # 16-bit unicode char
     CvInfoType(key=CvdumpTypeKey(0x017a),  name="T_PCHAR16",      fmt="H",    size=2,   pointer=CvdumpTypeKey(0x007a),  verified=False), # 16 bit pointer to a 16-bit unicode char
     CvInfoType(key=CvdumpTypeKey(0x027a),  name="T_PFCHAR16",     fmt="I",    size=4,   pointer=CvdumpTypeKey(0x007a),  verified=False), # 16:16 far pointer to a 16-bit unicode char
@@ -114,8 +120,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x057a),  name="T_32PFCHAR16",   fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x007a),  verified=False), # 16:32 pointer to a 16-bit unicode char
     CvInfoType(key=CvdumpTypeKey(0x067a),  name="T_64PCHAR16",    fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x007a),  verified=False), # 64 bit pointer to a 16-bit unicode char
 
-#      really a 32-bit unicode char
-
+    # 32-bit unicode char types
     CvInfoType(key=CvdumpTypeKey(0x007b),  name="T_CHAR32",       fmt="I",    size=4,   pointer=None,                   verified=False), # 32-bit unicode char
     CvInfoType(key=CvdumpTypeKey(0x017b),  name="T_PCHAR32",      fmt="H",    size=2,   pointer=CvdumpTypeKey(0x007b),  verified=False), # 16 bit pointer to a 32-bit unicode char
     CvInfoType(key=CvdumpTypeKey(0x027b),  name="T_PFCHAR32",     fmt="I",    size=4,   pointer=CvdumpTypeKey(0x007b),  verified=False), # 16:16 far pointer to a 32-bit unicode char
@@ -124,9 +129,8 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x057b),  name="T_32PFCHAR32",   fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x007b),  verified=False), # 16:32 pointer to a 32-bit unicode char
     CvInfoType(key=CvdumpTypeKey(0x067b),  name="T_64PCHAR32",    fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x007b),  verified=False), # 64 bit pointer to a 32-bit unicode char
 
-
-#      8-bit unicode char
-
+    # 8-bit unicode char types
+    # Not part of cvinfo.h but found in other sources. See GH #85.
     CvInfoType(key=CvdumpTypeKey(0x007c),  name="T_CHAR8",        fmt="B",    size=1,   pointer=None,                   verified=False), # 32-bit unicode char
     CvInfoType(key=CvdumpTypeKey(0x017c),  name="T_PCHAR8",       fmt="H",    size=2,   pointer=CvdumpTypeKey(0x007c),  verified=False), # 16 bit pointer to a 32-bit unicode char
     CvInfoType(key=CvdumpTypeKey(0x027c),  name="T_PFCHAR8",      fmt="I",    size=4,   pointer=CvdumpTypeKey(0x007c),  verified=False), # 16:16 far pointer to a 32-bit unicode char
@@ -135,9 +139,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x057c),  name="T_32PFCHAR8",    fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x007c),  verified=False), # 16:32 pointer to a 32-bit unicode char
     CvInfoType(key=CvdumpTypeKey(0x067c),  name="T_64PCHAR8",     fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x007c),  verified=False), # 64 bit pointer to a 32-bit unicode char
 
-
-#      8 bit int types
-
+    # 8-bit signed int types
     CvInfoType(key=CvdumpTypeKey(0x0068),  name="T_INT1",         fmt="b",    size=1,   pointer=None,                   verified=False), # 8 bit signed int
     CvInfoType(key=CvdumpTypeKey(0x0168),  name="T_PINT1",        fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0068),  verified=False), # 16 bit pointer to 8 bit signed int
     CvInfoType(key=CvdumpTypeKey(0x0268),  name="T_PFINT1",       fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0068),  verified=False), # 16:16 far pointer to 8 bit signed int
@@ -146,6 +148,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0568),  name="T_32PFINT1",     fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0068),  verified=False), # 16:32 pointer to 8 bit signed int
     CvInfoType(key=CvdumpTypeKey(0x0668),  name="T_64PINT1",      fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0068),  verified=False), # 64 bit pointer to 8 bit signed int
 
+    # 8-bit unsigned int types
     CvInfoType(key=CvdumpTypeKey(0x0069),  name="T_UINT1",        fmt="B",    size=1,   pointer=None,                   verified=False), # 8 bit unsigned int
     CvInfoType(key=CvdumpTypeKey(0x0169),  name="T_PUINT1",       fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0069),  verified=False), # 16 bit pointer to 8 bit unsigned int
     CvInfoType(key=CvdumpTypeKey(0x0269),  name="T_PFUINT1",      fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0069),  verified=False), # 16:16 far pointer to 8 bit unsigned int
@@ -154,9 +157,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0569),  name="T_32PFUINT1",    fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0069),  verified=False), # 16:32 pointer to 8 bit unsigned int
     CvInfoType(key=CvdumpTypeKey(0x0669),  name="T_64PUINT1",     fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0069),  verified=False), # 64 bit pointer to 8 bit unsigned int
 
-
-#      16 bit short types
-
+    # 16-bit signed short types
     CvInfoType(key=CvdumpTypeKey(0x0011),  name="T_SHORT",        fmt="h",    size=2,   pointer=None,                   verified=True ), # 16 bit signed
     CvInfoType(key=CvdumpTypeKey(0x0111),  name="T_PSHORT",       fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0011),  verified=False), # 16 bit pointer to 16 bit signed
     CvInfoType(key=CvdumpTypeKey(0x0211),  name="T_PFSHORT",      fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0011),  verified=False), # 16:16 far pointer to 16 bit signed
@@ -165,6 +166,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0511),  name="T_32PFSHORT",    fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0011),  verified=False), # 16:32 pointer to 16 bit signed
     CvInfoType(key=CvdumpTypeKey(0x0611),  name="T_64PSHORT",     fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0011),  verified=False), # 64 bit pointer to 16 bit signed
 
+    # 16-bit unsigned short types
     CvInfoType(key=CvdumpTypeKey(0x0021),  name="T_USHORT",       fmt="H",    size=2,   pointer=None,                   verified=True ), # 16 bit unsigned
     CvInfoType(key=CvdumpTypeKey(0x0121),  name="T_PUSHORT",      fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0021),  verified=False), # 16 bit pointer to 16 bit unsigned
     CvInfoType(key=CvdumpTypeKey(0x0221),  name="T_PFUSHORT",     fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0021),  verified=False), # 16:16 far pointer to 16 bit unsigned
@@ -173,9 +175,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0521),  name="T_32PFUSHORT",   fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0021),  verified=False), # 16:32 pointer to 16 bit unsigned
     CvInfoType(key=CvdumpTypeKey(0x0621),  name="T_64PUSHORT",    fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0021),  verified=False), # 64 bit pointer to 16 bit unsigned
 
-
-#      16 bit int types
-
+    # 16-bit signed int types
     CvInfoType(key=CvdumpTypeKey(0x0072),  name="T_INT2",         fmt="h",    size=2,   pointer=None,                   verified=False), # 16 bit signed int
     CvInfoType(key=CvdumpTypeKey(0x0172),  name="T_PINT2",        fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0072),  verified=False), # 16 bit pointer to 16 bit signed int
     CvInfoType(key=CvdumpTypeKey(0x0272),  name="T_PFINT2",       fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0072),  verified=False), # 16:16 far pointer to 16 bit signed int
@@ -184,6 +184,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0572),  name="T_32PFINT2",     fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0072),  verified=False), # 16:32 pointer to 16 bit signed int
     CvInfoType(key=CvdumpTypeKey(0x0672),  name="T_64PINT2",      fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0072),  verified=False), # 64 bit pointer to 16 bit signed int
 
+    # 16-bit unsigned int types
     CvInfoType(key=CvdumpTypeKey(0x0073),  name="T_UINT2",        fmt="H",    size=2,   pointer=None,                   verified=False), # 16 bit unsigned int
     CvInfoType(key=CvdumpTypeKey(0x0173),  name="T_PUINT2",       fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0073),  verified=False), # 16 bit pointer to 16 bit unsigned int
     CvInfoType(key=CvdumpTypeKey(0x0273),  name="T_PFUINT2",      fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0073),  verified=False), # 16:16 far pointer to 16 bit unsigned int
@@ -192,9 +193,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0573),  name="T_32PFUINT2",    fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0073),  verified=False), # 16:32 pointer to 16 bit unsigned int
     CvInfoType(key=CvdumpTypeKey(0x0673),  name="T_64PUINT2",     fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0073),  verified=False), # 64 bit pointer to 16 bit unsigned int
 
-
-#      32 bit long types
-
+    # 32-bit signed long types
     CvInfoType(key=CvdumpTypeKey(0x0012),  name="T_LONG",         fmt="l",    size=4,   pointer=None,                   verified=True ), # 32 bit signed
     CvInfoType(key=CvdumpTypeKey(0x0112),  name="T_PLONG",        fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0012),  verified=False), # 16 bit pointer to 32 bit signed
     CvInfoType(key=CvdumpTypeKey(0x0212),  name="T_PFLONG",       fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0012),  verified=False), # 16:16 far pointer to 32 bit signed
@@ -203,6 +202,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0512),  name="T_32PFLONG",     fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0012),  verified=False), # 16:32 pointer to 32 bit signed
     CvInfoType(key=CvdumpTypeKey(0x0612),  name="T_64PLONG",      fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0012),  verified=False), # 64 bit pointer to 32 bit signed
 
+    # 32-bit unsigned long types
     CvInfoType(key=CvdumpTypeKey(0x0022),  name="T_ULONG",        fmt="L",    size=4,   pointer=None,                   verified=True ), # 32 bit unsigned
     CvInfoType(key=CvdumpTypeKey(0x0122),  name="T_PULONG",       fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0022),  verified=False), # 16 bit pointer to 32 bit unsigned
     CvInfoType(key=CvdumpTypeKey(0x0222),  name="T_PFULONG",      fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0022),  verified=False), # 16:16 far pointer to 32 bit unsigned
@@ -211,8 +211,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0522),  name="T_32PFULONG",    fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0022),  verified=False), # 16:32 pointer to 32 bit unsigned
     CvInfoType(key=CvdumpTypeKey(0x0622),  name="T_64PULONG",     fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0022),  verified=False), # 64 bit pointer to 32 bit unsigned
 
-#      32 bit int types
-
+    # 32-bit signed int types
     CvInfoType(key=CvdumpTypeKey(0x0074),  name="T_INT4",         fmt="i",    size=4,   pointer=None,                   verified=True ), # 32 bit signed int
     CvInfoType(key=CvdumpTypeKey(0x0174),  name="T_PINT4",        fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0074),  verified=False), # 16 bit pointer to 32 bit signed int
     CvInfoType(key=CvdumpTypeKey(0x0274),  name="T_PFINT4",       fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0074),  verified=False), # 16:16 far pointer to 32 bit signed int
@@ -221,6 +220,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0574),  name="T_32PFINT4",     fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0074),  verified=False), # 16:32 pointer to 32 bit signed int
     CvInfoType(key=CvdumpTypeKey(0x0674),  name="T_64PINT4",      fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0074),  verified=False), # 64 bit pointer to 32 bit signed int
 
+    # 32-bit unsigned int types
     CvInfoType(key=CvdumpTypeKey(0x0075),  name="T_UINT4",        fmt="I",    size=4,   pointer=None,                   verified=True ), # 32 bit unsigned int
     CvInfoType(key=CvdumpTypeKey(0x0175),  name="T_PUINT4",       fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0075),  verified=False), # 16 bit pointer to 32 bit unsigned int
     CvInfoType(key=CvdumpTypeKey(0x0275),  name="T_PFUINT4",      fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0075),  verified=False), # 16:16 far pointer to 32 bit unsigned int
@@ -229,9 +229,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0575),  name="T_32PFUINT4",    fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0075),  verified=False), # 16:32 pointer to 32 bit unsigned int
     CvInfoType(key=CvdumpTypeKey(0x0675),  name="T_64PUINT4",     fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0075),  verified=False), # 64 bit pointer to 32 bit unsigned int
 
-
-#      64 bit quad types
-
+    # 64-bit signed quad types
     CvInfoType(key=CvdumpTypeKey(0x0013),  name="T_QUAD",         fmt="q",    size=8,   pointer=None,                   verified=True ), # 64 bit signed
     CvInfoType(key=CvdumpTypeKey(0x0113),  name="T_PQUAD",        fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0013),  verified=False), # 16 bit pointer to 64 bit signed
     CvInfoType(key=CvdumpTypeKey(0x0213),  name="T_PFQUAD",       fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0013),  verified=False), # 16:16 far pointer to 64 bit signed
@@ -240,6 +238,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0513),  name="T_32PFQUAD",     fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0013),  verified=False), # 16:32 pointer to 64 bit signed
     CvInfoType(key=CvdumpTypeKey(0x0613),  name="T_64PQUAD",      fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0013),  verified=False), # 64 bit pointer to 64 bit signed
 
+    # 64-bit unsigned quad types
     CvInfoType(key=CvdumpTypeKey(0x0023),  name="T_UQUAD",        fmt="Q",    size=8,   pointer=None,                   verified=True ), # 64 bit unsigned
     CvInfoType(key=CvdumpTypeKey(0x0123),  name="T_PUQUAD",       fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0023),  verified=False), # 16 bit pointer to 64 bit unsigned
     CvInfoType(key=CvdumpTypeKey(0x0223),  name="T_PFUQUAD",      fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0023),  verified=False), # 16:16 far pointer to 64 bit unsigned
@@ -248,9 +247,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0523),  name="T_32PFUQUAD",    fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0023),  verified=False), # 16:32 pointer to 64 bit unsigned
     CvInfoType(key=CvdumpTypeKey(0x0623),  name="T_64PUQUAD",     fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0023),  verified=False), # 64 bit pointer to 64 bit unsigned
 
-
-#      64 bit int types
-
+    # 64-bit signed int types
     CvInfoType(key=CvdumpTypeKey(0x0076),  name="T_INT8",         fmt="q",    size=8,   pointer=None,                   verified=False), # 64 bit signed int
     CvInfoType(key=CvdumpTypeKey(0x0176),  name="T_PINT8",        fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0076),  verified=False), # 16 bit pointer to 64 bit signed int
     CvInfoType(key=CvdumpTypeKey(0x0276),  name="T_PFINT8",       fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0076),  verified=False), # 16:16 far pointer to 64 bit signed int
@@ -259,6 +256,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0576),  name="T_32PFINT8",     fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0076),  verified=False), # 16:32 pointer to 64 bit signed int
     CvInfoType(key=CvdumpTypeKey(0x0676),  name="T_64PINT8",      fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0076),  verified=False), # 64 bit pointer to 64 bit signed int
 
+    # 64-bit unsigned int types
     CvInfoType(key=CvdumpTypeKey(0x0077),  name="T_UINT8",        fmt="Q",    size=8,   pointer=None,                   verified=False), # 64 bit unsigned int
     CvInfoType(key=CvdumpTypeKey(0x0177),  name="T_PUINT8",       fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0077),  verified=False), # 16 bit pointer to 64 bit unsigned int
     CvInfoType(key=CvdumpTypeKey(0x0277),  name="T_PFUINT8",      fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0077),  verified=False), # 16:16 far pointer to 64 bit unsigned int
@@ -267,9 +265,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0577),  name="T_32PFUINT8",    fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0077),  verified=False), # 16:32 pointer to 64 bit unsigned int
     CvInfoType(key=CvdumpTypeKey(0x0677),  name="T_64PUINT8",     fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0077),  verified=False), # 64 bit pointer to 64 bit unsigned int
 
-
-#      128 bit octet types
-
+    # 128-bit signed octet types
     CvInfoType(key=CvdumpTypeKey(0x0014),  name="T_OCT",          fmt="16B",  size=16,  pointer=None,                   verified=False), # 128 bit signed
     CvInfoType(key=CvdumpTypeKey(0x0114),  name="T_POCT",         fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0014),  verified=False), # 16 bit pointer to 128 bit signed
     CvInfoType(key=CvdumpTypeKey(0x0214),  name="T_PFOCT",        fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0014),  verified=False), # 16:16 far pointer to 128 bit signed
@@ -278,6 +274,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0514),  name="T_32PFOCT",      fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0014),  verified=False), # 16:32 pointer to 128 bit signed
     CvInfoType(key=CvdumpTypeKey(0x0614),  name="T_64POCT",       fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0014),  verified=False), # 64 bit pointer to 128 bit signed
 
+    # 128-bit unsigned octet types
     CvInfoType(key=CvdumpTypeKey(0x0024),  name="T_UOCT",         fmt="16B",  size=16,  pointer=None,                   verified=False), # 128 bit unsigned
     CvInfoType(key=CvdumpTypeKey(0x0124),  name="T_PUOCT",        fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0024),  verified=False), # 16 bit pointer to 128 bit unsigned
     CvInfoType(key=CvdumpTypeKey(0x0224),  name="T_PFUOCT",       fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0024),  verified=False), # 16:16 far pointer to 128 bit unsigned
@@ -286,9 +283,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0524),  name="T_32PFUOCT",     fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0024),  verified=False), # 16:32 pointer to 128 bit unsigned
     CvInfoType(key=CvdumpTypeKey(0x0624),  name="T_64PUOCT",      fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0024),  verified=False), # 64 bit pointer to 128 bit unsigned
 
-
-#      128 bit int types
-
+    # 128-bit signed int types
     CvInfoType(key=CvdumpTypeKey(0x0078),  name="T_INT16",        fmt="16B",  size=16,  pointer=None,                   verified=False), # 128 bit signed int
     CvInfoType(key=CvdumpTypeKey(0x0178),  name="T_PINT16",       fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0078),  verified=False), # 16 bit pointer to 128 bit signed int
     CvInfoType(key=CvdumpTypeKey(0x0278),  name="T_PFINT16",      fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0078),  verified=False), # 16:16 far pointer to 128 bit signed int
@@ -297,6 +292,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0578),  name="T_32PFINT16",    fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0078),  verified=False), # 16:32 pointer to 128 bit signed int
     CvInfoType(key=CvdumpTypeKey(0x0678),  name="T_64PINT16",     fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0078),  verified=False), # 64 bit pointer to 128 bit signed int
 
+    # 128-bit unsigned int types
     CvInfoType(key=CvdumpTypeKey(0x0079),  name="T_UINT16",       fmt="16B",  size=16,  pointer= None,   verified=False), # 128 bit unsigned int
     CvInfoType(key=CvdumpTypeKey(0x0179),  name="T_PUINT16",      fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0079),  verified=False), # 16 bit pointer to 128 bit unsigned int
     CvInfoType(key=CvdumpTypeKey(0x0279),  name="T_PFUINT16",     fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0079),  verified=False), # 16:16 far pointer to 128 bit unsigned int
@@ -305,9 +301,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0579),  name="T_32PFUINT16",   fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0079),  verified=False), # 16:32 pointer to 128 bit unsigned int
     CvInfoType(key=CvdumpTypeKey(0x0679),  name="T_64PUINT16",    fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0079),  verified=False), # 64 bit pointer to 128 bit unsigned int
 
-
-#      16 bit real types
-
+    # 16-bit real types
     CvInfoType(key=CvdumpTypeKey(0x0046),  name="T_REAL16",       fmt="2B",   size=2,   pointer=None,                   verified=False), # 16 bit real
     CvInfoType(key=CvdumpTypeKey(0x0146),  name="T_PREAL16",      fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0046),  verified=False), # 16 bit pointer to 16 bit real
     CvInfoType(key=CvdumpTypeKey(0x0246),  name="T_PFREAL16",     fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0046),  verified=False), # 16:16 far pointer to 16 bit real
@@ -316,9 +310,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0546),  name="T_32PFREAL16",   fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0046),  verified=False), # 16:32 pointer to 16 bit real
     CvInfoType(key=CvdumpTypeKey(0x0646),  name="T_64PREAL16",    fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0046),  verified=False), # 64 bit pointer to 16 bit real
 
-
-#      32 bit real types
-
+    # 32-bit real types
     CvInfoType(key=CvdumpTypeKey(0x0040),  name="T_REAL32",       fmt="f",    size=4,   pointer=None,                   verified=True ), # 32 bit real
     CvInfoType(key=CvdumpTypeKey(0x0140),  name="T_PREAL32",      fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0040),  verified=False), # 16 bit pointer to 32 bit real
     CvInfoType(key=CvdumpTypeKey(0x0240),  name="T_PFREAL32",     fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0040),  verified=False), # 16:16 far pointer to 32 bit real
@@ -327,9 +319,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0540),  name="T_32PFREAL32",   fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0040),  verified=False), # 16:32 pointer to 32 bit real
     CvInfoType(key=CvdumpTypeKey(0x0640),  name="T_64PREAL32",    fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0040),  verified=False), # 64 bit pointer to 32 bit real
 
-
-#      32 bit partial-precision real types
-
+    # 32-bit partial-precision real types
     CvInfoType(key=CvdumpTypeKey(0x0045),  name="T_REAL32PP",     fmt="4B",   size=4,   pointer=None,                   verified=False), # 32 bit PP real
     CvInfoType(key=CvdumpTypeKey(0x0145),  name="T_PREAL32PP",    fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0045),  verified=False), # 16 bit pointer to 32 bit PP real
     CvInfoType(key=CvdumpTypeKey(0x0245),  name="T_PFREAL32PP",   fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0045),  verified=False), # 16:16 far pointer to 32 bit PP real
@@ -338,9 +328,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0545),  name="T_32PFREAL32PP", fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0045),  verified=False), # 16:32 pointer to 32 bit PP real
     CvInfoType(key=CvdumpTypeKey(0x0645),  name="T_64PREAL32PP",  fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0045),  verified=False), # 64 bit pointer to 32 bit PP real
 
-
-#      48 bit real types
-
+    # 48-bit real types
     CvInfoType(key=CvdumpTypeKey(0x0044),  name="T_REAL48",       fmt="6B",   size=6,   pointer=None,                   verified=False), # 48 bit real
     CvInfoType(key=CvdumpTypeKey(0x0144),  name="T_PREAL48",      fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0044),  verified=False), # 16 bit pointer to 48 bit real
     CvInfoType(key=CvdumpTypeKey(0x0244),  name="T_PFREAL48",     fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0044),  verified=False), # 16:16 far pointer to 48 bit real
@@ -349,9 +337,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0544),  name="T_32PFREAL48",   fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0044),  verified=False), # 16:32 pointer to 48 bit real
     CvInfoType(key=CvdumpTypeKey(0x0644),  name="T_64PREAL48",    fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0044),  verified=False), # 64 bit pointer to 48 bit real
 
-
-#      64 bit real types
-
+    # 64-bit real types
     CvInfoType(key=CvdumpTypeKey(0x0041),  name="T_REAL64",       fmt="d",    size=8,   pointer=None,                   verified=True ), # 64 bit real
     CvInfoType(key=CvdumpTypeKey(0x0141),  name="T_PREAL64",      fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0041),  verified=False), # 16 bit pointer to 64 bit real
     CvInfoType(key=CvdumpTypeKey(0x0241),  name="T_PFREAL64",     fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0041),  verified=False), # 16:16 far pointer to 64 bit real
@@ -360,9 +346,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0541),  name="T_32PFREAL64",   fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0041),  verified=False), # 16:32 pointer to 64 bit real
     CvInfoType(key=CvdumpTypeKey(0x0641),  name="T_64PREAL64",    fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0041),  verified=False), # 64 bit pointer to 64 bit real
 
-
-#      80 bit real types
-
+    # 80-bit real types
     CvInfoType(key=CvdumpTypeKey(0x0042),  name="T_REAL80",       fmt="10B",  size=10,  pointer=None,                   verified=False), # 80 bit real
     CvInfoType(key=CvdumpTypeKey(0x0142),  name="T_PREAL80",      fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0042),  verified=False), # 16 bit pointer to 80 bit real
     CvInfoType(key=CvdumpTypeKey(0x0242),  name="T_PFREAL80",     fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0042),  verified=False), # 16:16 far pointer to 80 bit real
@@ -371,9 +355,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0542),  name="T_32PFREAL80",   fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0042),  verified=False), # 16:32 pointer to 80 bit real
     CvInfoType(key=CvdumpTypeKey(0x0642),  name="T_64PREAL80",    fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0042),  verified=False), # 64 bit pointer to 80 bit real
 
-
-#      128 bit real types
-
+    # 128-bit real types
     CvInfoType(key=CvdumpTypeKey(0x0043),  name="T_REAL128",      fmt="16B",  size=16,  pointer=None,                   verified=False), # 128 bit real
     CvInfoType(key=CvdumpTypeKey(0x0143),  name="T_PREAL128",     fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0043),  verified=False), # 16 bit pointer to 128 bit real
     CvInfoType(key=CvdumpTypeKey(0x0243),  name="T_PFREAL128",    fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0043),  verified=False), # 16:16 far pointer to 128 bit real
@@ -382,9 +364,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0543),  name="T_32PFREAL128",  fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0043),  verified=False), # 16:32 pointer to 128 bit real
     CvInfoType(key=CvdumpTypeKey(0x0643),  name="T_64PREAL128",   fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0043),  verified=False), # 64 bit pointer to 128 bit real
 
-
-#      32 bit complex types
-
+    # 32-bit complex types
     CvInfoType(key=CvdumpTypeKey(0x0050),  name="T_CPLX32",       fmt="4B",   size=4,   pointer=None,                   verified=False), # 32 bit complex
     CvInfoType(key=CvdumpTypeKey(0x0150),  name="T_PCPLX32",      fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0050),  verified=False), # 16 bit pointer to 32 bit complex
     CvInfoType(key=CvdumpTypeKey(0x0250),  name="T_PFCPLX32",     fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0050),  verified=False), # 16:16 far pointer to 32 bit complex
@@ -393,9 +373,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0550),  name="T_32PFCPLX32",   fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0050),  verified=False), # 16:32 pointer to 32 bit complex
     CvInfoType(key=CvdumpTypeKey(0x0650),  name="T_64PCPLX32",    fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0050),  verified=False), # 64 bit pointer to 32 bit complex
 
-
-#      64 bit complex types
-
+    # 64-bit complex types
     CvInfoType(key=CvdumpTypeKey(0x0051),  name="T_CPLX64",       fmt="F",    size=8,   pointer=None,                   verified=False), # 64 bit complex
     CvInfoType(key=CvdumpTypeKey(0x0151),  name="T_PCPLX64",      fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0051),  verified=False), # 16 bit pointer to 64 bit complex
     CvInfoType(key=CvdumpTypeKey(0x0251),  name="T_PFCPLX64",     fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0051),  verified=False), # 16:16 far pointer to 64 bit complex
@@ -404,9 +382,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0551),  name="T_32PFCPLX64",   fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0051),  verified=False), # 16:32 pointer to 64 bit complex
     CvInfoType(key=CvdumpTypeKey(0x0651),  name="T_64PCPLX64",    fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0051),  verified=False), # 64 bit pointer to 64 bit complex
 
-
-#      80 bit complex types
-
+    # 80-bit complex types
     CvInfoType(key=CvdumpTypeKey(0x0052),  name="T_CPLX80",       fmt="10B",  size=10,  pointer=None,                   verified=False), # 80 bit complex
     CvInfoType(key=CvdumpTypeKey(0x0152),  name="T_PCPLX80",      fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0052),  verified=False), # 16 bit pointer to 80 bit complex
     CvInfoType(key=CvdumpTypeKey(0x0252),  name="T_PFCPLX80",     fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0052),  verified=False), # 16:16 far pointer to 80 bit complex
@@ -415,9 +391,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0552),  name="T_32PFCPLX80",   fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0052),  verified=False), # 16:32 pointer to 80 bit complex
     CvInfoType(key=CvdumpTypeKey(0x0652),  name="T_64PCPLX80",    fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0052),  verified=False), # 64 bit pointer to 80 bit complex
 
-
-#      128 bit complex types
-
+    # 128-bit complex types
     CvInfoType(key=CvdumpTypeKey(0x0053),  name="T_CPLX128",      fmt="D",    size=16,  pointer=None,                   verified=False), # 128 bit complex
     CvInfoType(key=CvdumpTypeKey(0x0153),  name="T_PCPLX128",     fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0053),  verified=False), # 16 bit pointer to 128 bit complex
     CvInfoType(key=CvdumpTypeKey(0x0253),  name="T_PFCPLX128",    fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0053),  verified=False), # 16:16 far pointer to 128 bit complex
@@ -426,9 +400,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0553),  name="T_32PFCPLX128",  fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0053),  verified=False), # 16:32 pointer to 128 bit complex
     CvInfoType(key=CvdumpTypeKey(0x0653),  name="T_64PCPLX128",   fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0053),  verified=False), # 64 bit pointer to 128 bit complex
 
-
-#      boolean types
-
+    # 8-bit boolean types
     CvInfoType(key=CvdumpTypeKey(0x0030),  name="T_BOOL08",       fmt="B",    size=1,   pointer=None,                   verified=False), # 8 bit boolean
     CvInfoType(key=CvdumpTypeKey(0x0130),  name="T_PBOOL08",      fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0030),  verified=False), # 16 bit pointer to  8 bit boolean
     CvInfoType(key=CvdumpTypeKey(0x0230),  name="T_PFBOOL08",     fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0030),  verified=False), # 16:16 far pointer to  8 bit boolean
@@ -437,6 +409,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0530),  name="T_32PFBOOL08",   fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0030),  verified=False), # 16:32 pointer to 8 bit boolean
     CvInfoType(key=CvdumpTypeKey(0x0630),  name="T_64PBOOL08",    fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0030),  verified=False), # 64 bit pointer to 8 bit boolean
 
+    # 16-bit boolean types
     CvInfoType(key=CvdumpTypeKey(0x0031),  name="T_BOOL16",       fmt="H",    size=2,   pointer=None,                   verified=False), # 16 bit boolean
     CvInfoType(key=CvdumpTypeKey(0x0131),  name="T_PBOOL16",      fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0031),  verified=False), # 16 bit pointer to 16 bit boolean
     CvInfoType(key=CvdumpTypeKey(0x0231),  name="T_PFBOOL16",     fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0031),  verified=False), # 16:16 far pointer to 16 bit boolean
@@ -445,6 +418,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0531),  name="T_32PFBOOL16",   fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0031),  verified=False), # 16:32 pointer to 16 bit boolean
     CvInfoType(key=CvdumpTypeKey(0x0631),  name="T_64PBOOL16",    fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0031),  verified=False), # 64 bit pointer to 18 bit boolean
 
+    # 32-bit boolean types
     CvInfoType(key=CvdumpTypeKey(0x0032),  name="T_BOOL32",       fmt="I",    size=4,   pointer=None,                   verified=False), # 32 bit boolean
     CvInfoType(key=CvdumpTypeKey(0x0132),  name="T_PBOOL32",      fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0032),  verified=False), # 16 bit pointer to 32 bit boolean
     CvInfoType(key=CvdumpTypeKey(0x0232),  name="T_PFBOOL32",     fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0032),  verified=False), # 16:16 far pointer to 32 bit boolean
@@ -453,6 +427,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0532),  name="T_32PFBOOL32",   fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0032),  verified=False), # 16:32 pointer to 32 bit boolean
     CvInfoType(key=CvdumpTypeKey(0x0632),  name="T_64PBOOL32",    fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0032),  verified=False), # 64 bit pointer to 32 bit boolean
 
+    # 64-bit boolean types
     CvInfoType(key=CvdumpTypeKey(0x0033),  name="T_BOOL64",       fmt="Q",    size=8,   pointer=None,                   verified=False), # 64 bit boolean
     CvInfoType(key=CvdumpTypeKey(0x0133),  name="T_PBOOL64",      fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0033),  verified=False), # 16 bit pointer to 64 bit boolean
     CvInfoType(key=CvdumpTypeKey(0x0233),  name="T_PFBOOL64",     fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0033),  verified=False), # 16:16 far pointer to 64 bit boolean
@@ -461,9 +436,7 @@ _CVINFO_TYPES = (
     CvInfoType(key=CvdumpTypeKey(0x0533),  name="T_32PFBOOL64",   fmt="6x",   size=6,   pointer=CvdumpTypeKey(0x0033),  verified=False), # 16:32 pointer to 64 bit boolean
     CvInfoType(key=CvdumpTypeKey(0x0633),  name="T_64PBOOL64",    fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0033),  verified=False), # 64 bit pointer to 64 bit boolean
 
-
-#      ???
-
+    # Internal CV types
     CvInfoType(key=CvdumpTypeKey(0x01f0),  name="T_NCVPTR",       fmt="",     size=0,   pointer=None,                   verified=False), # CV Internal type for created near pointers
     CvInfoType(key=CvdumpTypeKey(0x02f0),  name="T_FCVPTR",       fmt="",     size=0,   pointer=None,                   verified=False), # CV Internal type for created far pointers
     CvInfoType(key=CvdumpTypeKey(0x03f0),  name="T_HCVPTR",       fmt="",     size=0,   pointer=None,                   verified=False), # CV Internal type for created huge pointers
