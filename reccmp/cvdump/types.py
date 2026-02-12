@@ -266,7 +266,7 @@ class CvdumpTypesParser:
 
     def __init__(self) -> None:
         self.keys: dict[CvdumpTypeKey, CvdumpParsedType] = {}
-        self.weird_types: set[int] = set()
+        self.alerted_types: set[int] = set()
 
     def _get_field_list(self, type_obj: CvdumpParsedType) -> list[FieldListItem]:
         """Return the field list for the given LF_CLASS/LF_STRUCTURE reference"""
@@ -326,10 +326,14 @@ class CvdumpTypesParser:
         # much simpler.
         if type_key.is_scalar():
             cvinfo = get_primitive(type_key)
-            if cvinfo.weird and cvinfo.key not in self.weird_types:
-                self.weird_types.add(cvinfo.key)
+            # We have seen some of the primitive types so far, but not all.
+            # The information in cvinfo.h is probably fine for most cases
+            # but warn users if we are dealing with an unseen type.
+            # (If you see this message in your project, we want to hear about it!)
+            if not cvinfo.verified and cvinfo.key not in self.alerted_types:
+                self.alerted_types.add(cvinfo.key)
                 logger.info(
-                    "Unusual type 0x%04x '%s' may not be handled correctly.",
+                    "Unverified primitive type 0x%04x '%s'",
                     cvinfo.key,
                     cvinfo.name,
                 )
