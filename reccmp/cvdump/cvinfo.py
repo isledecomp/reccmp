@@ -759,19 +759,3 @@ class CVInfoTypeEnum(CvdumpTypeKey, Enum):
 
 
 CvdumpTypeMap = MappingProxyType({cv.key: cv for cv in _CVINFO_TYPES})
-
-
-def scalar_type_signed(key: CvdumpTypeKey) -> bool:
-    return key in (
-        0x0010,
-        0x0068,
-        0x0011,
-        0x0072,
-        0x0012,
-        0x0074,
-        0x0013,
-        0x0076,
-        0x0014,
-        0x0078,
-        0x0070,
-    )
