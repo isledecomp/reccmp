@@ -3,6 +3,7 @@ and type dependency tree walker."""
 
 # pylint:disable=too-many-lines
 
+from typing import Iterable
 import pytest
 from reccmp.cvdump.types import (
     CvdumpTypeKey as TK,
@@ -12,6 +13,7 @@ from reccmp.cvdump.types import (
     CvdumpIntegrityError,
     EnumItem,
     FieldListItem,
+    ScalarType,
     VirtualBaseClass,
     VirtualBasePointer,
 )
@@ -361,8 +363,10 @@ NESTED,     enum name = JukeBox::JukeBoxScript, UDT(0x00003cc2)
 """
 
 
-def simplify_scalars(scalars) -> list[tuple[int, str | None, int]]:
-    return [(s.offset, s.name, s.type) for s in scalars]
+def simplify_scalars(scalars: Iterable[ScalarType]) -> list[tuple[int, str | None, TK]]:
+    """Helper for shortening tests. We only need to compare the scalar type key,
+    not each of the derived attributes."""
+    return [(s.offset, s.name, s.type.key) for s in scalars]
 
 
 @pytest.fixture(name="parser")

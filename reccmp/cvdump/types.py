@@ -65,10 +65,19 @@ class VirtualBasePointer:
 class ScalarType(NamedTuple):
     offset: int
     name: str | None
-    type: CvdumpTypeKey
-    size: int
-    format_char: str
-    is_pointer: bool
+    type: CvInfoType
+
+    @property
+    def size(self) -> int:
+        return self.type.size
+
+    @property
+    def format_char(self) -> str:
+        return self.type.fmt
+
+    @property
+    def is_pointer(self) -> bool:
+        return self.type.pointer is not None
 
 
 class TypeInfo(NamedTuple):
@@ -398,11 +407,8 @@ class CvdumpTypesParser:
             return [
                 ScalarType(
                     offset=0,
-                    type=cvinfo.key,
+                    type=cvinfo,
                     name=None,
-                    size=cvinfo.size,
-                    format_char=cvinfo.fmt,
-                    is_pointer=cvinfo.pointer is not None,
                 )
             ]
 
@@ -418,9 +424,6 @@ class CvdumpTypesParser:
                 offset=m.offset + cm.offset,
                 type=cm.type,
                 name=join_member_names(m.name, cm.name),
-                size=cm.size,
-                format_char=cm.format_char,
-                is_pointer=cm.is_pointer,
             )
             for m in unique_members
             for cm in self.get_scalars(m.type)
@@ -454,10 +457,7 @@ class CvdumpTypesParser:
                     ScalarType(
                         offset=this_extent + i,
                         name="(padding)",
-                        type=CVInfoTypeEnum.T_UCHAR,
-                        size=1,
-                        format_char="B",
-                        is_pointer=False,
+                        type=get_primitive(CVInfoTypeEnum.T_UCHAR),
                     ),
                 )
 
