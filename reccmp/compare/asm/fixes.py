@@ -30,6 +30,19 @@ def jump_swap_ok(a: str, b: str) -> bool:
     return (jmp_a, jmp_b) in ALLOWED_JUMP_SWAPS
 
 
+def _mnemonic(inst: str) -> str:
+    if not inst:
+        return ""
+    return inst.split(" ", 1)[0].lower()
+
+
+def _split_operands(inst: str) -> list[str]:
+    (_, _, operand_str) = inst.partition(" ")
+    if not operand_str:
+        return []
+    return [operand.strip() for operand in operand_str.split(",") if operand.strip()]
+
+
 def is_operand_swap(a: str, b: str) -> bool:
     """This is a hack to avoid parsing the operands. It's not as simple as
     breaking on the comma because templates or string literals interfere
@@ -56,6 +69,16 @@ def get_patched_jump(a: str, b: str) -> str:
 
 
 def patch_mov_cmp_jmp(orig: list[str], recomp: list[str]) -> set[int]:
+    return patch_mov_compare_jmp(orig, recomp, "cmp")
+
+
+def patch_mov_test_jmp(orig: list[str], recomp: list[str]) -> set[int]:
+    return patch_mov_compare_jmp(orig, recomp, "test")
+
+
+def patch_mov_compare_jmp(
+    orig: list[str], recomp: list[str], cmp_instruction: str
+) -> set[int]:
     """Can we resolve the diffs between orig and recomp by patching
     swapped cmp instructions?
     For example:
@@ -66,15 +89,17 @@ def patch_mov_cmp_jmp(orig: list[str], recomp: list[str]) -> set[int]:
     Returns set of fixed lines
     """
 
-    # find the first "cmp" instruction
-    cmp_index = next((i for i, s in enumerate(orig) if s.startswith("cmp")), -1)
+    # find the first "cmp"/"test" instruction
+    cmp_index = next(
+        (i for i, s in enumerate(orig) if s.startswith(cmp_instruction)), -1
+    )
 
     # return if not found, or only found on first or last line
     if (
         cmp_index in (-1, 0, len(orig) - 1)
         or
         # recomp should also have a cmp in the same line
-        not recomp[cmp_index].startswith("cmp")
+        not recomp[cmp_index].startswith(cmp_instruction)
         or
         # line before cmp must be a mov
         not orig[cmp_index - 1].startswith("mov")
@@ -98,7 +123,72 @@ def patch_mov_cmp_jmp(orig: list[str], recomp: list[str]) -> set[int]:
     return set()
 
 
+def patch_mov_commutative(orig: list[str], recomp: list[str]) -> set[int]:
+    """Can we resolve the diffs between orig and recomp by patching
+        swapped operands in mov + commutative ops (add, and, or, xor, imul).
+    For example:
+        mov eax, dword ptr [ebp - 0x4]      mov eax, dword ptr [ebp - 0x8]
+        add eax, dword ptr [ebp - 0x8]      add eax, dword ptr [ebp - 0x4]
+
+    Returns set of fixed lines
+    """
+
+    valid_mnemonics = ("add", "and", "or", "xor", "imul")
+    inst_index = next(
+        (i for i, s in enumerate(orig) if _mnemonic(s) in valid_mnemonics), -1
+    )
+
+    # commutative op must exist and have a preceding line in both slices
+    if inst_index in (-1, 0) or inst_index >= len(recomp):
+        return set()
+
+    # this pattern only handles mov + {valid_mnemonics}
+    if (
+        _mnemonic(recomp[inst_index]) != _mnemonic(orig[inst_index])
+        or _mnemonic(orig[inst_index - 1]) != "mov"
+        or _mnemonic(recomp[inst_index - 1]) != "mov"
+    ):
+        return set()
+
+    orig_mov_ops = _split_operands(orig[inst_index - 1])
+    recomp_mov_ops = _split_operands(recomp[inst_index - 1])
+    orig_ops = _split_operands(orig[inst_index])
+    recomp_ops = _split_operands(recomp[inst_index])
+
+    if len(orig_mov_ops) < 2 or len(recomp_mov_ops) < 2:
+        return set()
+
+    # MOV destination must be the same register in both versions.
+    mov_dest_norm = orig_mov_ops[0].lower()
+    if mov_dest_norm != recomp_mov_ops[0].lower() or mov_dest_norm not in REGISTER_SET:
+        return set()
+
+    # Must target the same register and swap sources exactly.
+    op_layout_ok = (
+        len(orig_ops) == 2
+        and len(recomp_ops) == 2
+        and orig_ops[0].lower() == mov_dest_norm
+        and recomp_ops[0].lower() == mov_dest_norm
+    )
+    swap_ok = orig_ops[1] == recomp_mov_ops[1] and recomp_ops[1] == orig_mov_ops[1]
+
+    if op_layout_ok and swap_ok:
+        return {inst_index - 1, inst_index}
+
+    return set()
+
+
 def patch_cmp_jmp(orig: list[str], recomp: list[str]) -> set[int]:
+    return patch_compare_jmp(orig, recomp, "cmp")
+
+
+def patch_test_jmp(orig: list[str], recomp: list[str]) -> set[int]:
+    return patch_compare_jmp(orig, recomp, "test")
+
+
+def patch_compare_jmp(
+    orig: list[str], recomp: list[str], cmp_instruction: str
+) -> set[int]:
     """Can we resolve the diffs between orig and recomp by patching
     swapped cmp instructions?
     For example:
@@ -111,14 +201,16 @@ def patch_cmp_jmp(orig: list[str], recomp: list[str]) -> set[int]:
     Returns set of fixed lines
     """
 
-    # find the first "cmp" instruction
-    cmp_index = next((i for i, s in enumerate(orig) if s.startswith("cmp")), -1)
+    # find the first "cmp"/"test" instruction
+    cmp_index = next(
+        (i for i, s in enumerate(orig) if s.startswith(cmp_instruction)), -1
+    )
     # return if not found, or only found on the last line
     if (
         cmp_index in (-1, len(orig) - 1)
         or
         # recomp should also have a cmp in the same line
-        not recomp[cmp_index].startswith("cmp")
+        not recomp[cmp_index].startswith(cmp_instruction)
         or
         # if the last lines are not a compatible jump difference
         not jump_swap_ok(orig[cmp_index + 1], recomp[cmp_index + 1])
@@ -148,7 +240,7 @@ def patch_fld_fmul(orig: list[str], recomp: list[str]) -> set[int]:
 
     valid_following_ops = ["fmul", "fadd"]
 
-    # find the first "cmp" instruction
+    # find the first "fld" instruction
     fld_index = next((i for i, s in enumerate(orig) if s.startswith("fld")), -1)
     # return if not found, or only found on the last line
     if (
@@ -190,7 +282,14 @@ def patch_cmp_swaps(
 
     fixed_lines = set()
 
-    patch_fns = [patch_cmp_jmp, patch_mov_cmp_jmp, patch_fld_fmul]
+    patch_fns = [
+        patch_cmp_jmp,
+        patch_test_jmp,
+        patch_mov_cmp_jmp,
+        patch_mov_test_jmp,
+        patch_fld_fmul,
+        patch_mov_commutative,
+    ]
 
     for code, i1, i2, j1, j2 in codes:
         # To save us the trouble of finding "compatible" cmp instructions
@@ -355,6 +454,7 @@ def relocate_instructions(
 DWORD_REGS = ("eax", "ebx", "ecx", "edx", "esi", "edi", "ebp", "esp")
 WORD_REGS = ("ax", "bx", "cx", "dx", "si", "di", "bp", "sp")
 BYTE_REGS = ("ah", "al", "bh", "bl", "ch", "cl", "dh", "dl")
+REGISTER_SET = set(reg for reg in (DWORD_REGS + WORD_REGS + BYTE_REGS))
 
 
 def naive_register_replacement(orig_asm: list[str], recomp_asm: list[str]) -> set[int]:

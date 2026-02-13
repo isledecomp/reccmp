@@ -13,6 +13,16 @@ def test_fix_cmp_jmp():
     assert is_effective is True
 
 
+def test_fix_test_jmp():
+    orig_asm = ["mov eax, 1", "mov ebx, 2", "test eax, ebx", "jg 0x1"]
+    recomp_asm = ["mov eax, 1", "mov ebx, 2", "test ebx, eax", "jl 0x1"]
+
+    diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
+    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+
+    assert is_effective is True
+
+
 def test_fix_mov_cmp_jmp_mem_with_different_operands():
     """This should not be fixed up, since the operands are different"""
     orig_asm = [
@@ -80,6 +90,25 @@ def test_fix_mov_cmp_jmp_mem_valid():
     recomp_asm = [
         "mov eax, dword ptr [gCurrent_key (DATA)]",
         "cmp dword ptr [ebp-4], eax",
+        "jne 0x1",
+    ]
+
+    diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
+    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+
+    assert is_effective is True
+
+
+def test_fix_mov_test_jmp_mem_valid():
+
+    orig_asm = [
+        "mov eax, dword ptr [ebp-4]",
+        "test dword ptr [gCurrent_key (DATA)], eax",
+        "jne 0x1",
+    ]
+    recomp_asm = [
+        "mov eax, dword ptr [gCurrent_key (DATA)]",
+        "test dword ptr [ebp-4], eax",
         "jne 0x1",
     ]
 
@@ -210,6 +239,110 @@ def test_fix_fld_fsub_invalid():
     assert is_effective is False
 
 
+def test_fix_mov_imul_swap_valid():
+
+    orig_asm = [
+        "mov eax, dword ptr [ebp - 0x4]",
+        "imul eax, dword ptr [ebp - 0x8]",
+    ]
+    recomp_asm = [
+        "mov eax, dword ptr [ebp - 0x8]",
+        "imul eax, dword ptr [ebp - 0x4]",
+    ]
+
+    diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
+    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+
+    assert is_effective is True
+
+
+def test_fix_mov_add_swap_valid():
+
+    orig_asm = [
+        "mov eax, dword ptr [ebp - 0x4]",
+        "add eax, dword ptr [ebp - 0x8]",
+    ]
+    recomp_asm = [
+        "mov eax, dword ptr [ebp - 0x8]",
+        "add eax, dword ptr [ebp - 0x4]",
+    ]
+
+    diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
+    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+
+    assert is_effective is True
+
+
+def test_fix_mov_add_swap_with_literal_valid():
+
+    orig_asm = [
+        "mov eax, 1",
+        "add eax, dword ptr [ebp - 0x8]",
+    ]
+    recomp_asm = [
+        "mov eax, dword ptr [ebp - 0x8]",
+        "add eax, 1",
+    ]
+
+    diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
+    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+
+    assert is_effective is True
+
+
+def test_fix_mov_add_swap_on_stack_invalid():
+
+    orig_asm = [
+        "mov dword ptr [ebp - 0x4], 1",
+        "add dword ptr [ebp - 0x4], 2",
+    ]
+    recomp_asm = [
+        "mov dword ptr [ebp - 0x4], 2",
+        "add dword ptr [ebp - 0x4], 1",
+    ]
+
+    diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
+    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+
+    # Pretty sure this is actually safe, but not implemented
+    assert is_effective is False
+
+
+def test_fix_mov_sub_swap_invalid():
+
+    orig_asm = [
+        "mov eax, dword ptr [ebp - 0x4]",
+        "sub eax, dword ptr [ebp - 0x8]",
+    ]
+    recomp_asm = [
+        "mov eax, dword ptr [ebp - 0x8]",
+        "sub eax, dword ptr [ebp - 0x4]",
+    ]
+
+    diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
+    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+
+    # Like the add/imul tests except subtraction is NOT commutative
+    assert is_effective is False
+
+
+def test_fix_mov_add_invalid_dest():
+
+    orig_asm = [
+        "mov eax, dword ptr [ebp - 0x4]",
+        "add eax, dword ptr [ebp - 0x8]",
+    ]
+    recomp_asm = [
+        "mov eax, dword ptr [ebp - 0x8]",
+        "add ebx, dword ptr [ebp - 0x4]",
+    ]
+
+    diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
+    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+
+    assert is_effective is False
+
+
 @pytest.mark.xfail(reason="Limitation of naive_register_replacement")
 def test_this_should_not_be_marked_as_effective():
     """The instructions `mov eax, 0` and `mov ecx, 1` cannot have their registers swapped."""
@@ -235,6 +368,28 @@ def test_this_should_not_be_marked_as_effective():
         "mov eax, 0",
         "mov ecx, 1",
         "mov dword ptr [ecx], 2",
+    ]
+
+    diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
+    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+
+    assert is_effective is False
+
+
+@pytest.mark.xfail(reason="Limitation of fix_mov_cmp_jmp")
+def test_fix_mov_cmp_jmp_unsafe_intermediate_reuse():
+    # These are NOT equivalent since eax is used after the jmp
+    orig_asm = [
+        "mov eax, dword ptr [ebp - 8]",
+        "cmp eax, dword ptr [ebp - 4]",
+        "jl 0x2",
+        "mov dword ptr [ebp - 0xc], eax",
+    ]
+    recomp_asm = [
+        "mov eax, dword ptr [ebp - 4]",
+        "cmp eax, dword ptr [ebp - 8]",
+        "jg 0x2",
+        "mov dword ptr [ebp - 0xc], eax",
     ]
 
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
