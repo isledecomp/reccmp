@@ -3,6 +3,7 @@ from pathlib import PureWindowsPath
 from typing import NamedTuple
 from .types import CvdumpTypesParser
 from .symbols import CvdumpSymbolsParser
+from .cvinfo import CvdumpTypeKey
 
 
 # e.g. `     27 00034EC0     28 00034EE2     29 00034EE7     30 00034EF4`
@@ -76,7 +77,7 @@ class GdataEntry(NamedTuple):
 
     section: int
     offset: int
-    type: str
+    type: CvdumpTypeKey
     name: str
     is_global: bool
 
@@ -165,7 +166,7 @@ class CvdumpParser:
                 GdataEntry(
                     section=int(match.group("section"), 16),
                     offset=int(match.group("offset"), 16),
-                    type=match.group("type"),
+                    type=CvdumpTypeKey.from_str(match.group("type")),
                     name=match.group("name"),
                     is_global=match.group("global") == "G",
                 )

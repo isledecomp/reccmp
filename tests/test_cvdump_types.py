@@ -1,13 +1,19 @@
 """Specifically testing the Cvdump TYPES parser
 and type dependency tree walker."""
 
+# pylint:disable=too-many-lines
+
+from typing import Iterable
 import pytest
 from reccmp.cvdump.types import (
+    CvdumpTypeKey as TK,
+    CVInfoTypeEnum,
     CvdumpTypesParser,
     CvdumpKeyError,
     CvdumpIntegrityError,
     EnumItem,
     FieldListItem,
+    ScalarType,
     VirtualBaseClass,
     VirtualBasePointer,
 )
@@ -357,6 +363,12 @@ NESTED,     enum name = JukeBox::JukeBoxScript, UDT(0x00003cc2)
 """
 
 
+def simplify_scalars(scalars: Iterable[ScalarType]) -> list[tuple[int, str | None, TK]]:
+    """Helper for shortening tests. We only need to compare the scalar type key,
+    not each of the derived attributes."""
+    return [(s.offset, s.name, s.type.key) for s in scalars]
+
+
 @pytest.fixture(name="parser")
 def types_parser_fixture():
     parser = CvdumpTypesParser()
@@ -371,75 +383,81 @@ def types_empty_parser_fixture():
 
 
 def test_basic_parsing(parser: CvdumpTypesParser):
-    obj = parser.keys["0x4db6"]
+    obj = parser.keys[TK(0x4DB6)]
     assert obj["type"] == "LF_CLASS"
     assert obj["name"] == "MxString"
-    assert obj["udt"] == "0x4db6"
+    assert obj["udt"] == TK(0x4DB6)
 
-    assert len(parser.keys["0x4db5"]["members"]) == 2
+    assert len(parser.keys[TK(0x4DB5)]["members"]) == 2
 
 
 def test_scalar_types(parser: CvdumpTypesParser):
     """Full tests on the scalar_* methods are in another file.
     Here we are just testing the passthrough of the "T_" types."""
-    assert parser.get("T_CHAR").name is None
-    assert parser.get("T_CHAR").size == 1
+    assert parser.get(CVInfoTypeEnum.T_CHAR).name is None
+    assert parser.get(CVInfoTypeEnum.T_CHAR).size == 1
 
-    assert parser.get("T_32PVOID").name is None
-    assert parser.get("T_32PVOID").size == 4
+    assert parser.get(CVInfoTypeEnum.T_32PVOID).name is None
+    assert parser.get(CVInfoTypeEnum.T_32PVOID).size == 4
 
 
 def test_resolve_forward_ref(parser: CvdumpTypesParser):
     # Non-forward ref
-    assert parser.get("0x22d5").name == "MxVariable"
+    assert parser.get(TK(0x22D5)).name == "MxVariable"
     # Forward ref
-    assert parser.get("0x14db").name == "MxString"
-    assert parser.get("0x14db").size == 16
+    assert parser.get(TK(0x14DB)).name == "MxString"
+    assert parser.get(TK(0x14DB)).size == 16
 
 
 def test_members(parser: CvdumpTypesParser):
     """Return the list of items to compare for a given complex type.
     If the class has a superclass, add those members too."""
     # MxCore field list
-    mxcore_members = parser.get_scalars("0x405f")
+    mxcore_members = simplify_scalars(parser.get_scalars(TK(0x405F)))
     assert mxcore_members == [
-        (0, "vftable", "T_32PVOID"),
-        (4, "m_id", "T_UINT4"),
+        (0, "vftable", CVInfoTypeEnum.T_32PVOID),
+        (4, "m_id", CVInfoTypeEnum.T_UINT4),
     ]
 
     # MxCore class id. Should be the same members
-    assert mxcore_members == parser.get_scalars("0x4060")
+    assert mxcore_members == simplify_scalars(parser.get_scalars(TK(0x4060)))
 
     # MxString field list. Should add inherited members from MxCore
-    assert parser.get_scalars("0x4db5") == [
-        (0, "vftable", "T_32PVOID"),
-        (4, "m_id", "T_UINT4"),
-        (8, "m_data", "T_32PRCHAR"),
-        (12, "m_length", "T_USHORT"),
+    assert simplify_scalars(parser.get_scalars(TK(0x4DB5))) == [
+        (0, "vftable", CVInfoTypeEnum.T_32PVOID),
+        (4, "m_id", CVInfoTypeEnum.T_UINT4),
+        (8, "m_data", CVInfoTypeEnum.T_32PRCHAR),
+        (12, "m_length", CVInfoTypeEnum.T_USHORT),
     ]
 
     # LegoRaceCar with multiple superclasses
-    assert parser.get("0x5594").members == [
-        FieldListItem(offset=0, name="vftable", type="T_32PVOID"),
-        FieldListItem(offset=0, name="vftable", type="T_32PVOID"),
-        FieldListItem(offset=8, name="m_parentClass1Field1", type="T_REAL32"),
-        FieldListItem(offset=8, name="m_parentClass2Field1", type="T_UCHAR"),
-        FieldListItem(offset=12, name="m_parentClass2Field2", type="T_32PVOID"),
-        FieldListItem(offset=84, name="m_childClassField", type="T_UCHAR"),
+    assert parser.get(TK(0x5594)).members == [
+        FieldListItem(offset=0, name="vftable", type=CVInfoTypeEnum.T_32PVOID),
+        FieldListItem(offset=0, name="vftable", type=CVInfoTypeEnum.T_32PVOID),
+        FieldListItem(
+            offset=8, name="m_parentClass1Field1", type=CVInfoTypeEnum.T_REAL32
+        ),
+        FieldListItem(
+            offset=8, name="m_parentClass2Field1", type=CVInfoTypeEnum.T_UCHAR
+        ),
+        FieldListItem(
+            offset=12, name="m_parentClass2Field2", type=CVInfoTypeEnum.T_32PVOID
+        ),
+        FieldListItem(offset=84, name="m_childClassField", type=CVInfoTypeEnum.T_UCHAR),
     ]
 
 
 def test_virtual_base_classes(parser: CvdumpTypesParser):
     """Make sure that virtual base classes are parsed correctly."""
 
-    lego_car_race_actor = parser.keys.get("0x5591")
+    lego_car_race_actor = parser.keys.get(TK(0x5591))
     assert lego_car_race_actor is not None
     assert lego_car_race_actor["vbase"] == VirtualBasePointer(
         vboffset=4,
         bases=[
-            VirtualBaseClass(type="0x1183", index=1, direct=False),
-            VirtualBaseClass(type="0x1468", index=2, direct=False),
-            VirtualBaseClass(type="0x15EA", index=3, direct=True),
+            VirtualBaseClass(type=TK(0x1183), index=1, direct=False),
+            VirtualBaseClass(type=TK(0x1468), index=2, direct=False),
+            VirtualBaseClass(type=TK(0x15EA), index=3, direct=True),
         ],
     )
 
@@ -447,29 +465,29 @@ def test_virtual_base_classes(parser: CvdumpTypesParser):
 def test_members_recursive(parser: CvdumpTypesParser):
     """Make sure that we unwrap the dependency tree correctly."""
     # MxVariable field list
-    assert parser.get_scalars("0x22d4") == [
-        (0, "vftable", "T_32PVOID"),
-        (4, "m_key.vftable", "T_32PVOID"),
-        (8, "m_key.m_id", "T_UINT4"),
-        (12, "m_key.m_data", "T_32PRCHAR"),
-        (16, "m_key.m_length", "T_USHORT"),  # with padding
-        (20, "m_value.vftable", "T_32PVOID"),
-        (24, "m_value.m_id", "T_UINT4"),
-        (28, "m_value.m_data", "T_32PRCHAR"),
-        (32, "m_value.m_length", "T_USHORT"),  # with padding
+    assert simplify_scalars(parser.get_scalars(TK(0x22D4))) == [
+        (0, "vftable", CVInfoTypeEnum.T_32PVOID),
+        (4, "m_key.vftable", CVInfoTypeEnum.T_32PVOID),
+        (8, "m_key.m_id", CVInfoTypeEnum.T_UINT4),
+        (12, "m_key.m_data", CVInfoTypeEnum.T_32PRCHAR),
+        (16, "m_key.m_length", CVInfoTypeEnum.T_USHORT),  # with padding
+        (20, "m_value.vftable", CVInfoTypeEnum.T_32PVOID),
+        (24, "m_value.m_id", CVInfoTypeEnum.T_UINT4),
+        (28, "m_value.m_data", CVInfoTypeEnum.T_32PRCHAR),
+        (32, "m_value.m_length", CVInfoTypeEnum.T_USHORT),  # with padding
     ]
 
 
 def test_struct(parser: CvdumpTypesParser):
     """Basic test for converting type into struct.unpack format string."""
     # MxCore: vftable and uint32. The vftable pointer is read as uint32.
-    assert parser.get_format_string("0x4060") == "<LL"
+    assert parser.get_format_string(TK(0x4060)) == "<II"
 
     # _D3DVECTOR, three floats. Union types should already be removed.
-    assert parser.get_format_string("0x10e1") == "<fff"
+    assert parser.get_format_string(TK(0x10E1)) == "<fff"
 
     # MxRect32, four signed ints.
-    assert parser.get_format_string("0x1214") == "<llll"
+    assert parser.get_format_string(TK(0x1214)) == "<iiii"
 
 
 def test_struct_padding(parser: CvdumpTypesParser):
@@ -477,147 +495,153 @@ def test_struct_padding(parser: CvdumpTypesParser):
     list of scalar types. Any gap is filled by an unsigned char."""
 
     # MxString, padded to 16 bytes. 4 actual members. 2 bytes of padding.
-    assert len(parser.get_scalars("0x4db6")) == 4
-    assert len(parser.get_scalars_gapless("0x4db6")) == 6
+    assert len(parser.get_scalars(TK(0x4DB6))) == 4
+    assert len(parser.get_scalars_gapless(TK(0x4DB6))) == 6
 
     # MxVariable, with two MxStrings (and a vtable)
     # Fill in the middle gap and the outer gap.
-    assert len(parser.get_scalars("0x22d5")) == 9
-    assert len(parser.get_scalars_gapless("0x22d5")) == 13
+    assert len(parser.get_scalars(TK(0x22D5))) == 9
+    assert len(parser.get_scalars_gapless(TK(0x22D5))) == 13
 
 
 def test_struct_format_string(parser: CvdumpTypesParser):
     """Generate the struct.unpack format string using the
     list of scalars with padding filled in."""
     # MxString, padded to 16 bytes.
-    assert parser.get_format_string("0x4db6") == "<LLLHBB"
+    assert parser.get_format_string(TK(0x4DB6)) == "<IIIHBB"
 
     # MxVariable, with two MxString members.
-    assert parser.get_format_string("0x22d5") == "<LLLLHBBLLLHBB"
+    assert parser.get_format_string(TK(0x22D5)) == "<IIIIHBBIIIHBB"
 
 
 def test_array(parser: CvdumpTypesParser):
     """LF_ARRAY members are created dynamically based on the
     total array size and the size of one element."""
     # unsigned char[8]
-    assert parser.get_scalars("0x10e4") == [
-        (0, "[0]", "T_UCHAR"),
-        (1, "[1]", "T_UCHAR"),
-        (2, "[2]", "T_UCHAR"),
-        (3, "[3]", "T_UCHAR"),
-        (4, "[4]", "T_UCHAR"),
-        (5, "[5]", "T_UCHAR"),
-        (6, "[6]", "T_UCHAR"),
-        (7, "[7]", "T_UCHAR"),
+    assert simplify_scalars(parser.get_scalars(TK(0x10E4))) == [
+        (0, "[0]", CVInfoTypeEnum.T_UCHAR),
+        (1, "[1]", CVInfoTypeEnum.T_UCHAR),
+        (2, "[2]", CVInfoTypeEnum.T_UCHAR),
+        (3, "[3]", CVInfoTypeEnum.T_UCHAR),
+        (4, "[4]", CVInfoTypeEnum.T_UCHAR),
+        (5, "[5]", CVInfoTypeEnum.T_UCHAR),
+        (6, "[6]", CVInfoTypeEnum.T_UCHAR),
+        (7, "[7]", CVInfoTypeEnum.T_UCHAR),
     ]
 
     # float[4]
-    assert parser.get_scalars("0x103b") == [
-        (0, "[0]", "T_REAL32"),
-        (4, "[1]", "T_REAL32"),
-        (8, "[2]", "T_REAL32"),
-        (12, "[3]", "T_REAL32"),
+    assert simplify_scalars(parser.get_scalars(TK(0x103B))) == [
+        (0, "[0]", CVInfoTypeEnum.T_REAL32),
+        (4, "[1]", CVInfoTypeEnum.T_REAL32),
+        (8, "[2]", CVInfoTypeEnum.T_REAL32),
+        (12, "[3]", CVInfoTypeEnum.T_REAL32),
     ]
 
 
 def test_2d_array(parser: CvdumpTypesParser):
     """Make sure 2d array elements are named as we expect."""
     # float[4][4]
-    float_array = parser.get_scalars("0x103c")
+    float_array = simplify_scalars(parser.get_scalars(TK(0x103C)))
     assert len(float_array) == 16
-    assert float_array[0] == (0, "[0][0]", "T_REAL32")
-    assert float_array[1] == (4, "[0][1]", "T_REAL32")
-    assert float_array[4] == (16, "[1][0]", "T_REAL32")
-    assert float_array[-1] == (60, "[3][3]", "T_REAL32")
+    assert float_array[0] == (0, "[0][0]", CVInfoTypeEnum.T_REAL32)
+    assert float_array[1] == (4, "[0][1]", CVInfoTypeEnum.T_REAL32)
+    assert float_array[4] == (16, "[1][0]", CVInfoTypeEnum.T_REAL32)
+    assert float_array[-1] == (60, "[3][3]", CVInfoTypeEnum.T_REAL32)
 
 
 def test_enum(parser: CvdumpTypesParser):
     """LF_ENUM should equal 4-byte int"""
-    assert parser.get("0x3cc2").size == 4
-    assert parser.get_scalars("0x3cc2") == [(0, None, "T_INT4")]
+    assert parser.get(TK(0x3CC2)).size == 4
+    assert simplify_scalars(parser.get_scalars(TK(0x3CC2))) == [
+        (0, None, CVInfoTypeEnum.T_INT4)
+    ]
 
     # Now look at an array of enum, 24 bytes
-    enum_array = parser.get_scalars("0x4262")
+    enum_array = parser.get_scalars(TK(0x4262))
     assert len(enum_array) == 6  # 24 / 4
     assert enum_array[0].size == 4
 
 
 def test_lf_pointer(parser: CvdumpTypesParser):
     """LF_POINTER is just a wrapper for scalar pointer type"""
-    assert parser.get("0x3fab").size == 4
-    # assert parser.get("0x3fab").is_pointer is True  # TODO: ?
+    assert parser.get(TK(0x3FAB)).size == 4
+    # assert parser.get(TK(0x3fab)).is_pointer is True  # TODO: ?
 
-    assert parser.get_scalars("0x3fab") == [(0, None, "T_32PVOID")]
+    assert simplify_scalars(parser.get_scalars(TK(0x3FAB))) == [
+        (0, None, CVInfoTypeEnum.T_32PVOID)
+    ]
 
 
 def test_lf_pointer_type(parser: CvdumpTypesParser):
     """Save pointer type from leaf."""
-    leaf = parser.keys["0x3fab"]
+    leaf = parser.keys[TK(0x3FAB)]
     assert leaf["pointer_type"] == "Pointer"
 
 
 def test_key_not_exist(parser: CvdumpTypesParser):
     """Accessing a non-existent type id should raise our exception"""
     with pytest.raises(CvdumpKeyError):
-        parser.get("0xbeef")
+        parser.get(TK(0xBEEF))
 
     with pytest.raises(CvdumpKeyError):
-        parser.get_scalars("0xbeef")
+        parser.get_scalars(TK(0xBEEF))
 
 
 def test_broken_forward_ref(parser: CvdumpTypesParser):
     """Raise an exception if we cannot follow a forward reference"""
     # Verify forward reference on MxCore
-    parser.get("0x1220")
+    parser.get(TK(0x1220))
 
     # Delete the MxCore LF_CLASS
-    del parser.keys["0x4060"]
+    del parser.keys[TK(0x4060)]
 
     # Forward ref via 0x1220 will fail
     with pytest.raises(CvdumpKeyError):
-        parser.get("0x1220")
+        parser.get(TK(0x1220))
 
 
 def test_null_forward_ref(parser: CvdumpTypesParser):
     """If the forward ref object is invalid and has no forward ref id,
     raise an exception."""
     # Test MxString forward reference
-    parser.get("0x14db")
+    parser.get(TK(0x14DB))
 
     # Delete the UDT for MxString
-    del parser.keys["0x14db"]["udt"]
+    del parser.keys[TK(0x14DB)]["udt"]
 
     # Cannot complete the forward reference lookup
     with pytest.raises(CvdumpIntegrityError):
-        parser.get("0x14db")
+        parser.get(TK(0x14DB))
 
 
 def test_broken_array_element_ref(parser: CvdumpTypesParser):
     # Test LF_ARRAY of ROIColorAlias
-    parser.get("0x19b1")
+    parser.get(TK(0x19B1))
 
     # Delete ROIColorAlias
-    del parser.keys["0x19b0"]
+    del parser.keys[TK(0x19B0)]
 
     # Type reference lookup will fail
     with pytest.raises(CvdumpKeyError):
-        parser.get("0x19b1")
+        parser.get(TK(0x19B1))
 
 
 def test_lf_modifier(parser: CvdumpTypesParser):
     """Is this an alias for another type?"""
     # Modifies float
-    assert parser.get("0x1028").size == 4
-    assert parser.get_scalars("0x1028") == [(0, None, "T_REAL32")]
+    assert parser.get(TK(0x1028)).size == 4
+    assert simplify_scalars(parser.get_scalars(TK(0x1028))) == [
+        (0, None, CVInfoTypeEnum.T_REAL32)
+    ]
 
-    mxrect = parser.get_scalars("0x1214")
+    mxrect = parser.get_scalars(TK(0x1214))
     # Modifies MxRect32 via forward ref
-    assert mxrect == parser.get_scalars("0x11f2")
+    assert mxrect == parser.get_scalars(TK(0x11F2))
 
 
 def test_lf_modifier_modified_how(parser: CvdumpTypesParser):
     """Store the modification type (e.g. const, volatile) from the leaf."""
-    leaf = parser.keys["0x1028"]
+    leaf = parser.keys[TK(0x1028)]
     assert leaf["modification"] == "const"
 
 
@@ -634,7 +658,7 @@ CONST_VOLATILE_MODIFIED_EXAMPLE = """
 def test_lf_modifier_const_and_volatile(empty_parser: CvdumpTypesParser):
     """Store the complete modifier text from the leaf."""
     empty_parser.read_all(CONST_VOLATILE_MODIFIED_EXAMPLE)
-    leaf = empty_parser.keys["0x40a5"]
+    leaf = empty_parser.keys[TK(0x40A5)]
     assert "const" in leaf["modification"]
     assert "volatile" in leaf["modification"]
 
@@ -646,69 +670,69 @@ def test_union_members(parser: CvdumpTypesParser):
     unique offset to simplify comparison."""
 
     # D3DVector type with duplicated offsets
-    d3dvector = parser.get("0x10e1")
+    d3dvector = parser.get(TK(0x10E1))
     assert d3dvector.members is not None
     assert len(d3dvector.members) == 6
     assert len([m for m in d3dvector.members if m.offset == 0]) == 2
 
     # Deduplicated comparison list
-    vector_items = parser.get_scalars("0x10e1")
+    vector_items = parser.get_scalars(TK(0x10E1))
     assert len(vector_items) == 3
 
 
 def test_arglist(parser: CvdumpTypesParser):
-    arglist = parser.keys["0x1018"]
+    arglist = parser.keys[TK(0x1018)]
     assert arglist["argcount"] == 3
-    assert arglist["args"] == ["0x100D", "0x1016", "0x1017"]
+    assert arglist["args"] == [TK(0x100D), 0x1016, 0x1017]
 
 
 def test_procedure(parser: CvdumpTypesParser):
-    procedure = parser.keys["0x1019"]
+    procedure = parser.keys[TK(0x1019)]
     assert procedure == {
         "type": "LF_PROCEDURE",
-        "return_type": "T_LONG(0012)",
+        "return_type": CVInfoTypeEnum.T_LONG,
         "call_type": "C Near",
         "func_attr": "none",
         "num_params": 3,
-        "arg_list_type": "0x1018",
+        "arg_list_type": 0x1018,
     }
 
 
 def test_mfunction(parser: CvdumpTypesParser):
-    mfunction = parser.keys["0x101e"]
+    mfunction = parser.keys[TK(0x101E)]
     assert mfunction == {
         "type": "LF_MFUNCTION",
-        "return_type": "T_CHAR(0010)",
-        "class_type": "0x101A",
-        "this_type": "0x101B",
+        "return_type": CVInfoTypeEnum.T_CHAR,
+        "class_type": 0x101A,
+        "this_type": 0x101B,
         "call_type": "ThisCall",
         "func_attr": "none",
         "num_params": 2,
-        "arg_list_type": "0x101d",
+        "arg_list_type": 0x101D,
         "this_adjust": 0,
     }
 
 
 def test_union_forward_ref(parser: CvdumpTypesParser):
-    union = parser.keys["0x2339"]
+    union = parser.keys[TK(0x2339)]
     assert union["is_forward_ref"] is True
     assert "field_list_type" not in union
-    assert union["udt"] == "0x2e85"
+    assert union["udt"] == TK(0x2E85)
 
 
 def test_union(parser: CvdumpTypesParser):
-    union = parser.keys["0x2e85"]
+    union = parser.keys[TK(0x2E85)]
     assert union == {
         "type": "LF_UNION",
         "name": "FlagBitfield",
-        "field_list_type": "0x2e84",
+        "field_list_type": 0x2E84,
         "size": 1,
-        "udt": "0x2e85",
+        "udt": 0x2E85,
     }
 
 
 def test_fieldlist_enumerate(parser: CvdumpTypesParser):
-    fieldlist_enum = parser.keys["0x3c45"]
+    fieldlist_enum = parser.keys[TK(0x3C45)]
     assert fieldlist_enum == {
         "type": "LF_FIELDLIST",
         "variants": [
@@ -736,10 +760,10 @@ def test_unnamed_union(empty_parser: CvdumpTypesParser):
     empty_parser.read_all(UNNAMED_UNION_DATA)
 
     # Make sure we can parse the members line
-    union = empty_parser.keys["0x369e"]
+    union = empty_parser.keys[TK(0x369E)]
     assert union["name"] == "__unnamed"
     assert union["size"] == 4
-    assert union["field_list_type"] == "0x369d"
+    assert union["field_list_type"] == TK(0x369D)
 
 
 ARGLIST_UNKNOWN_TYPE = """
@@ -758,8 +782,12 @@ def test_arglist_unknown_type(empty_parser: CvdumpTypesParser):
     """Should parse the ??? types and not fail with an assert."""
     empty_parser.read_all(ARGLIST_UNKNOWN_TYPE)
 
-    t = empty_parser.keys["0x11f3"]
+    t = empty_parser.keys[TK(0x11F3)]
     assert len(t["args"]) == t["argcount"]
+
+    # Make sure we correctly identify the type key.
+    assert t["args"][4] == TK(0x47C)
+    assert t["args"][5] == TK(0x47C)
 
 
 FUNC_ATTR_EXAMPLES = """
@@ -784,10 +812,10 @@ def test_mfunction_func_attr(empty_parser: CvdumpTypesParser):
     """Should parse "Func attr" values other than 'none'"""
     empty_parser.read_all(FUNC_ATTR_EXAMPLES)
 
-    assert empty_parser.keys["0x1216"]["func_attr"] == "return UDT (C++ style)"
-    assert empty_parser.keys["0x122b"]["func_attr"] == "instance constructor"
+    assert empty_parser.keys[TK(0x1216)]["func_attr"] == "return UDT (C++ style)"
+    assert empty_parser.keys[TK(0x122B)]["func_attr"] == "instance constructor"
     assert (
-        empty_parser.keys["0x1232"]["func_attr"]
+        empty_parser.keys[TK(0x1232)]["func_attr"]
         == "****Warning**** unused field non-zero!"
     )
 
@@ -802,8 +830,8 @@ def test_union_without_udt(empty_parser: CvdumpTypesParser):
     """Should parse union that is missing the UDT attribute"""
     empty_parser.read_all(UNION_UNNAMED_TAG)
 
-    assert "udt" not in empty_parser.keys["0x3352"]
-    assert empty_parser.keys["0x3352"]["name"] == "<unnamed-tag>"
+    assert "udt" not in empty_parser.keys[TK(0x3352)]
+    assert empty_parser.keys[TK(0x3352)]["name"] == "<unnamed-tag>"
 
 
 MFUNCTION_UNK_RETURN_TYPE = """
@@ -818,7 +846,7 @@ def test_mfunction_unk_return_type(empty_parser: CvdumpTypesParser):
     """Should parse unknown return type as-is"""
     empty_parser.read_all(MFUNCTION_UNK_RETURN_TYPE)
 
-    assert empty_parser.keys["0x11d8"]["return_type"] == "???(047C)"
+    assert empty_parser.keys[TK(0x11D8)]["return_type"] == TK(0x47C)
 
 
 CLASS_WITH_UNIQUE_NAME = """
@@ -834,7 +862,7 @@ def test_class_unique_name(empty_parser: CvdumpTypesParser):
     """Make sure we can parse the UDT when the 'unique name' attribute is present"""
     empty_parser.read_all(CLASS_WITH_UNIQUE_NAME)
 
-    assert empty_parser.keys["0x1cf0"]["udt"] == "0x1cf0"
+    assert empty_parser.keys[TK(0x1CF0)]["udt"] == TK(0x1CF0)
 
 
 TWO_FORMATS_FOR_ARRAY_LENGTH = """
@@ -856,8 +884,8 @@ def test_two_formats_for_array_length(empty_parser: CvdumpTypesParser):
     """Make sure we can parse the UDT when the 'unique name' attribute is present"""
     empty_parser.read_all(TWO_FORMATS_FOR_ARRAY_LENGTH)
 
-    assert empty_parser.keys["0x62c1"]["size"] == 50
-    assert empty_parser.keys["0x62c5"]["size"] == 131328
+    assert empty_parser.keys[TK(0x62C1)]["size"] == 50
+    assert empty_parser.keys[TK(0x62C5)]["size"] == 131328
 
 
 LF_POINTER_TO_MEMBER = """
@@ -871,7 +899,7 @@ LF_POINTER_TO_MEMBER = """
 def test_pointer_to_member(empty_parser: CvdumpTypesParser):
     """LF_POINTER with optional 'Containing class' attribute."""
     empty_parser.read_all(LF_POINTER_TO_MEMBER)
-    assert empty_parser.keys["0x1646"]["element_type"] == "0x1645"
+    assert empty_parser.keys[TK(0x1646)]["element_type"] == TK(0x1645)
 
 
 MSVC700_ENUM_WITH_LOCAL_FLAG = """
@@ -885,13 +913,34 @@ def test_enum_with_local_flag(empty_parser: CvdumpTypesParser):
     """Make sure we can parse an enum with the LOCAL flag set. At the moment, the flag is ignored."""
     empty_parser.read_all(MSVC700_ENUM_WITH_LOCAL_FLAG)
 
-    assert empty_parser.keys["0x26ba"] == {
-        "field_list_type": "0x26b9",
+    assert empty_parser.keys[TK(0x26BA)] == {
+        "field_list_type": 0x26B9,
         "name": "SomeEnumType::SomeEnumInternalName::__l2::__unnamed",
         "num_members": 3,
         "type": "LF_ENUM",
-        "underlying_type": "T_INT4",
+        "underlying_type": CVInfoTypeEnum.T_INT4,
     }
+
+
+ENUM_FORWARD_REF = """
+0x10b6 : Length = 38, Leaf = 0x1507 LF_ENUM
+    # members = 69,  type = T_CHAR(0010) field list type 0x10b5
+    enum name = JukeboxScript::Script, UDT(0x000010b6)
+
+0x11a6 : Length = 38, Leaf = 0x1507 LF_ENUM
+    # members = 0,  type = T_NOTYPE(0000) field list type 0x0000
+FORWARD REF,    enum name = JukeboxScript::Script, UDT(0x000010b6)
+"""
+
+
+def test_enum_forward_ref(empty_parser: CvdumpTypesParser):
+    """Make sure that we resolve forward refs for LF_ENUM."""
+    empty_parser.read_all(ENUM_FORWARD_REF)
+
+    # Using non-standard T_CHAR(0010) base type to demonstrate the problem.
+    # The main concern is to not use T_NOTYPE as the basis of the enum.
+    # Previously we assumed all but a few specific types had size 4.
+    assert empty_parser.get(TK(0x11A6)).size == 1
 
 
 MSVC700_POINTER_CONTAINING_CLASS_TYPE_OF_POINTED_TO = """
@@ -908,10 +957,10 @@ def test_enum_with_containing_class_and_type_of_pointed_to(
     """Make sure that a pointer with these attributes is parsed correctly. 'Type of pointed to' is currently ignored."""
     empty_parser.read_all(MSVC700_POINTER_CONTAINING_CLASS_TYPE_OF_POINTED_TO)
 
-    assert empty_parser.keys["0x64ca"] == {
-        "element_type": "0x2FD1",
+    assert empty_parser.keys[TK(0x64CA)] == {
+        "element_type": 0x2FD1,
         "type": "LF_POINTER",
-        "containing_class": "0x1165",
+        "containing_class": 0x1165,
         "pointer_type": "Pointer to member function",
     }
 
@@ -928,9 +977,8 @@ def test_pointer_without_containing_class(
 ):
     empty_parser.read_all(POINTER_WITHOUT_CONTAINING_CLASS)
 
-    assert empty_parser.keys["0x534e"] == {
-        "containing_class": None,
-        "element_type": "0x2505",
+    assert empty_parser.keys[TK(0x534E)] == {
+        "element_type": 0x2505,
         "type": "LF_POINTER",
         "pointer_type": "Pointer",
     }
@@ -948,13 +996,13 @@ def test_enum_with_whitespace_and_comma(
 ):
     empty_parser.read_all(ENUM_WITH_WHITESPACE_AND_COMMA)
 
-    assert empty_parser.keys["0x4dc2"] == {
-        "field_list_type": "0x2588",
+    assert empty_parser.keys[TK(0x4DC2)] == {
+        "field_list_type": 0x2588,
         "is_nested": True,
         "name": "CPool<CTask,signed char [128]>::__unnamed",
         "num_members": 1,
         "type": "LF_ENUM",
-        "underlying_type": "T_INT4",
+        "underlying_type": CVInfoTypeEnum.T_INT4,
     }
 
 
@@ -969,4 +1017,62 @@ def test_this_adjust_hex(empty_parser: CvdumpTypesParser):
     Parms = 3, Arg list type = 0x6579, This adjust = 24"""
     )
 
-    assert empty_parser.keys["0x657a"]["this_adjust"] == 0x24
+    assert empty_parser.keys[TK(0x657A)]["this_adjust"] == TK(0x24)
+
+
+BIG_TYPE_KEY_SAMPLE = """
+0x1023 : Length = 70, Leaf = 0x1505 LF_STRUCTURE
+    # members = 0,  field list type 0x0000, FORWARD REF, 
+    Derivation list type 0x0000, VT shape type 0x0000
+    Size = 0, class name = threadlocaleinfostruct, unique name = Uthreadlocaleinfostruct@@, UDT(0x00011738)
+
+0x00011736 : Length = 14, Leaf = 0x1503 LF_ARRAY
+    Element type = 0x00011735
+    Index type = T_ULONG(0022)
+    length = 96
+    Name = 
+
+0x00011737 : Length = 418, Leaf = 0x1203 LF_FIELDLIST
+    list[0] = LF_MEMBER, public, type = 0x00011736, offset = 72
+        member name = 'lc_category'
+
+0x00011738 : Length = 70, Leaf = 0x1505 LF_STRUCTURE
+    # members = 18,  field list type 0x11737, 
+    Derivation list type 0x0000, VT shape type 0x0000
+    Size = 216, class name = threadlocaleinfostruct, unique name = Uthreadlocaleinfostruct@@, UDT(0x00011738)
+"""
+
+
+def test_type_keys_over_ffff(empty_parser: CvdumpTypesParser):
+    """Make sure we can read type keys larger than 0xffff.
+    This checks various leaves where it could appear."""
+    empty_parser.read_all(BIG_TYPE_KEY_SAMPLE)
+    assert empty_parser.keys[TK(0x1023)]["udt"] == TK(0x11738)
+    assert empty_parser.keys[TK(0x11736)]["array_type"] == TK(0x11735)
+    assert empty_parser.keys[TK(0x11737)]["members"][0].type == TK(0x11736)
+    assert empty_parser.keys[TK(0x11738)]["field_list_type"] == TK(0x11737)
+
+
+ARRAY_WITH_UNKNOWN_ELEMENT = """
+0x1000 : Length = 14, Leaf = 0x1503 LF_ARRAY
+    Element type = ???(0555)
+    Index type = T_SHORT(0011)
+    length = 64
+    Name =
+"""
+
+
+def test_unknown_primitive_type(empty_parser: CvdumpTypesParser):
+    """Make sure we raise an exception if an unknown primitive type is used.
+    Our list of primitive types should be comprehensive and the caller has
+    the option to catch the exception and continue on."""
+    with pytest.raises(CvdumpKeyError):
+        empty_parser.get(TK(0x555))
+
+    with pytest.raises(CvdumpKeyError):
+        empty_parser.get_scalars(TK(0x555))
+
+    # Invalid type accessed indirectly via another type
+    empty_parser.read_all(ARRAY_WITH_UNKNOWN_ELEMENT)
+    with pytest.raises(CvdumpKeyError):
+        empty_parser.get_scalars(TK(0x1000))

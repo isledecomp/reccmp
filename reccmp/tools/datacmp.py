@@ -18,6 +18,7 @@ from reccmp.cvdump.types import (
     CvdumpKeyError,
     CvdumpIntegrityError,
 )
+from reccmp.cvdump.cvinfo import CvdumpTypeKey
 from reccmp.formats.pe import PEImage
 from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
 from reccmp.project.detect import (
@@ -275,7 +276,9 @@ def do_the_comparison(target: RecCmpTarget) -> Iterable[ComparisonItem]:
 
     for var in compare.get_variables():
         assert var.name is not None
-        type_name = var.get("data_type")
+        type_name = (
+            CvdumpTypeKey(var.get("data_type")) if var.get("data_type") else None
+        )
 
         # Start by assuming we can only compare the raw bytes
         data_size = var.size
@@ -294,7 +297,7 @@ def do_the_comparison(target: RecCmpTarget) -> Iterable[ComparisonItem]:
                     raw_only = False
                 else:
                     logger.info(
-                        "No struct members for type '%s' used by variable '%s' (0x%x). Comparing raw data.",
+                        "No struct members for type '0x%x' used by variable '%s' (0x%x). Comparing raw data.",
                         type_name,
                         var.name,
                         var.orig_addr,
@@ -305,7 +308,7 @@ def do_the_comparison(target: RecCmpTarget) -> Iterable[ComparisonItem]:
                 # For example: we do not handle bitfields and this complicates fieldlist parsing
                 # where they are used. (GH #299)
                 logger.error(
-                    "Could not materialize type '%s' used by variable '%s' (0x%x). Comparing raw data.",
+                    "Could not materialize type '0x%x' used by variable '%s' (0x%x). Comparing raw data.",
                     type_name,
                     var.name,
                     var.orig_addr,
@@ -333,6 +336,7 @@ def do_the_comparison(target: RecCmpTarget) -> Iterable[ComparisonItem]:
             orig_data = tuple(orig_block.data)
             recomp_data = tuple(recomp_block.data)
         else:
+            assert type_name is not None
             compare_items = [
                 DataOffset(offset=sc.offset, name=sc.name or "", pointer=sc.is_pointer)
                 for sc in compare.types.get_scalars_gapless(type_name)

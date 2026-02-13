@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-import re
 import logging
 
 from reccmp.formats.exceptions import InvalidVirtualAddressError
@@ -7,6 +6,7 @@ from reccmp.cvdump.symbols import SymbolsEntry
 from reccmp.compare import Compare
 from reccmp.compare.db import ReccmpMatch
 from reccmp.cvdump.types import CvdumpParsedType
+from reccmp.cvdump.cvinfo import CvdumpTypeKey, CVInfoTypeEnum
 
 logger = logging.getLogger(__file__)
 
@@ -14,7 +14,7 @@ logger = logging.getLogger(__file__)
 @dataclass
 class CppStackOrRegisterSymbol:
     name: str
-    data_type: str
+    data_type: CvdumpTypeKey
 
 
 @dataclass
@@ -33,9 +33,9 @@ class CppRegisterSymbol(CppStackOrRegisterSymbol):
 class FunctionSignature:
     original_function_symbol: SymbolsEntry
     call_type: str
-    arglist: list[str]
-    return_type: str
-    class_type: str | None
+    arglist: list[CvdumpTypeKey]
+    return_type: CvdumpTypeKey
+    class_type: CvdumpTypeKey | None
     stack_symbols: list[CppStackOrRegisterSymbol]
     # if non-zero: an offset to the `this` parameter in a __thiscall
     this_adjust: int
@@ -57,30 +57,26 @@ class PdbFunctionExtractor:
     def __init__(self, compare: Compare):
         self.compare = compare
 
-    scalar_type_regex = re.compile(r"t_(?P<typename>\w+)(?:\((?P<type_id>\d+)\))?")
-
     _call_type_map = {
         "ThisCall": "__thiscall",
         "C Near": "default",
         "STD Near": "__stdcall",
     }
 
-    def _get_cvdump_type(self, type_name: str | None) -> CvdumpParsedType | None:
-        return (
-            None
-            if type_name is None
-            else self.compare.types.keys.get(type_name.lower())
-        )
+    def _get_cvdump_type(
+        self, type_key: CvdumpTypeKey | None
+    ) -> CvdumpParsedType | None:
+        return None if type_key is None else self.compare.types.keys.get(type_key)
 
     def get_func_signature(self, fn: SymbolsEntry) -> FunctionSignature | None:
-        function_type_str = fn.func_type
-        if function_type_str == "T_NOTYPE(0000)":
+        function_type_key = fn.func_type
+        if function_type_key == CVInfoTypeEnum.T_NOTYPE:
             logger.debug("Treating NOTYPE function as thunk: %s", fn.name)
             return None
 
         # get corresponding function type
 
-        function_type = self.compare.types.keys.get(function_type_str.lower())
+        function_type = self.compare.types.keys.get(function_type_key)
         if function_type is None:
             logger.error(
                 "Could not find function type %s for function %s", fn.func_type, fn.name
