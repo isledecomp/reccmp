@@ -231,9 +231,7 @@ class VariableComparator:
     def compare_variable(self, var: ReccmpMatch) -> ComparisonItem:
         # pylint: disable=too-many-locals
         assert var.name is not None
-        type_key = (
-            CvdumpTypeKey(var.get("data_type")) if var.get("data_type") else None
-        )
+        type_key = CvdumpTypeKey(var.get("data_type")) if var.get("data_type") else None
 
         # Start by assuming we can only compare the raw bytes
         data_size = var.size
