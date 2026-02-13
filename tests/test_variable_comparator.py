@@ -1,7 +1,7 @@
 import pytest
 from reccmp.compare.variables import VariableComparator, CompareResult
+from reccmp.cvdump.cvinfo import CVInfoTypeEnum, CvdumpTypeKey
 from reccmp.cvdump.types import (
-    CvdumpTypeKey,
     CvdumpTypesParser,
     FieldListItem,
     TypeInfo,
@@ -18,27 +18,6 @@ def get_match(db: EntityDb, orig_addr: int) -> ReccmpMatch:
     m = db.get_one_match(orig_addr)
     assert m is not None
     return m
-
-
-class ScalarTypeId:
-    """Future-proofing a change to CvdumpTypeKey from str to int"""
-
-    T_CHAR: CvdumpTypeKey = "T_CHAR(0010)"
-    T_INT4: CvdumpTypeKey = "T_INT4(0074)"
-    T_32PINT4: CvdumpTypeKey = "T_32PINT4(0474)"
-    T_32PRCHAR: CvdumpTypeKey = "T_32PRCHAR(0470)"
-    T_32PVOID: CvdumpTypeKey = "T_32PVOID(0403)"
-    T_USHORT: CvdumpTypeKey = "T_USHORT(0021)"
-    T_UCHAR: CvdumpTypeKey = "T_UCHAR(0020)"
-    T_SHORT: CvdumpTypeKey = "T_SHORT(0011)"
-    T_UINT4: CvdumpTypeKey = "T_UINT4(0075)"
-    T_REAL32: CvdumpTypeKey = "T_REAL32(0040)"
-    T_REAL64: CvdumpTypeKey = "T_REAL64(0041)"
-
-
-def create_type_key(key: int) -> CvdumpTypeKey:
-    """Future-proofing a change to CvdumpTypeKey from str to int"""
-    return hex(key)
 
 
 @pytest.fixture(name="db")
@@ -73,7 +52,7 @@ def create_matched_variable(
 
 def test_compare_scalar_match(db: EntityDb, types: CvdumpTypesParser):
     """Match on scalar variable with initialized data."""
-    create_matched_variable(db, 0, data_type=ScalarTypeId.T_CHAR)
+    create_matched_variable(db, 0, data_type=CVInfoTypeEnum.T_CHAR)
 
     orig = RawImage.from_memory(b"\x05")
     recomp = RawImage.from_memory(b"\x05")
@@ -87,7 +66,7 @@ def test_compare_scalar_match(db: EntityDb, types: CvdumpTypesParser):
 
 def test_compare_scalar_diff(db: EntityDb, types: CvdumpTypesParser):
     """Diff on scalar variable with initialized data."""
-    create_matched_variable(db, 0, data_type=ScalarTypeId.T_CHAR)
+    create_matched_variable(db, 0, data_type=CVInfoTypeEnum.T_CHAR)
 
     orig = RawImage.from_memory(b"\x05")
     recomp = RawImage.from_memory(b"\x07")
@@ -101,7 +80,7 @@ def test_compare_scalar_diff(db: EntityDb, types: CvdumpTypesParser):
 
 def test_compare_pointer_match(db: EntityDb, types: CvdumpTypesParser):
     """Match on scalar variable with initialized data."""
-    create_matched_variable(db, 0, data_type=ScalarTypeId.T_32PVOID)
+    create_matched_variable(db, 0, data_type=CVInfoTypeEnum.T_32PVOID)
     # Entity at address 0x0004 required to match
     with db.batch() as batch:
         batch.set_recomp(4, name="Hello")
@@ -119,7 +98,7 @@ def test_compare_pointer_match(db: EntityDb, types: CvdumpTypesParser):
 
 def test_compare_pointer_diff(db: EntityDb, types: CvdumpTypesParser):
     """Diff on scalar variable with initialized data."""
-    create_matched_variable(db, 0, data_type=ScalarTypeId.T_32PVOID)
+    create_matched_variable(db, 0, data_type=CVInfoTypeEnum.T_32PVOID)
     # Create the entity only on the recomp side.
     with db.batch() as batch:
         batch.set_recomp(4, name="Hello")
@@ -141,7 +120,7 @@ def test_compare_pointer_diff(db: EntityDb, types: CvdumpTypesParser):
 
 def test_compare_null_pointer(db: EntityDb, types: CvdumpTypesParser):
     """Pointer variables set to zero in both binaries are matches."""
-    create_matched_variable(db, 0, data_type=ScalarTypeId.T_32PVOID)
+    create_matched_variable(db, 0, data_type=CVInfoTypeEnum.T_32PVOID)
 
     orig = RawImage.from_memory(b"\x00\x00\x00\x00")
     recomp = RawImage.from_memory(b"\x00\x00\x00\x00")
@@ -155,7 +134,7 @@ def test_compare_null_pointer(db: EntityDb, types: CvdumpTypesParser):
 
 def test_prefer_datatype_size(db: EntityDb, types: CvdumpTypesParser):
     """Override the entity size with the data type size (if it is set)"""
-    create_matched_variable(db, 0, size=2, data_type=ScalarTypeId.T_CHAR)
+    create_matched_variable(db, 0, size=2, data_type=CVInfoTypeEnum.T_CHAR)
 
     # Second byte is different
     orig = RawImage.from_memory(b"\x05\x06")
@@ -203,7 +182,7 @@ def test_compare_raw_diff(db: EntityDb, types: CvdumpTypesParser):
 
 def test_compare_scalar_bss_match(db: EntityDb, types: CvdumpTypesParser):
     """Match on scalar variable with uninitialized data."""
-    create_matched_variable(db, 0, data_type=ScalarTypeId.T_CHAR)
+    create_matched_variable(db, 0, data_type=CVInfoTypeEnum.T_CHAR)
 
     orig = RawImage.from_memory(size=1)
     recomp = RawImage.from_memory(size=1)
@@ -232,7 +211,7 @@ def test_compare_raw_bss_match(db: EntityDb, types: CvdumpTypesParser):
 
 def test_compare_scalar_bss_diff(db: EntityDb, types: CvdumpTypesParser):
     """Scalar variable, one initialized to non-zero, one uninitialized."""
-    create_matched_variable(db, 0, data_type=ScalarTypeId.T_CHAR)
+    create_matched_variable(db, 0, data_type=CVInfoTypeEnum.T_CHAR)
 
     orig = RawImage.from_memory(size=1)  # bss
     recomp = RawImage.from_memory(b"\x01")
@@ -247,7 +226,7 @@ def test_compare_scalar_bss_diff(db: EntityDb, types: CvdumpTypesParser):
 def test_compare_scalar_bss_effective_match(db: EntityDb, types: CvdumpTypesParser):
     """Scalar variable, one initialized to zero, one uninitialized.
     The initialized zero byte is in the BssState.MAYBE region."""
-    create_matched_variable(db, 0, data_type=ScalarTypeId.T_CHAR)
+    create_matched_variable(db, 0, data_type=CVInfoTypeEnum.T_CHAR)
 
     orig = RawImage.from_memory(size=1)  # bss
     recomp = RawImage.from_memory(b"\x00")
@@ -262,7 +241,7 @@ def test_compare_scalar_bss_effective_match(db: EntityDb, types: CvdumpTypesPars
 def test_compare_scalar_bss_true_diff(db: EntityDb, types: CvdumpTypesParser):
     """Scalar variable, one initialized to zero, one uninitialized.
     The initialized zero byte is in the BssState.NO region."""
-    create_matched_variable(db, 0, data_type=ScalarTypeId.T_CHAR)
+    create_matched_variable(db, 0, data_type=CVInfoTypeEnum.T_CHAR)
 
     orig = RawImage.from_memory(size=1)  # bss
     recomp = RawImage.from_memory(b"\x00\x01")
@@ -277,14 +256,14 @@ def test_compare_scalar_bss_true_diff(db: EntityDb, types: CvdumpTypesParser):
 def test_compare_complex_partial_diff(db: EntityDb):
     """Each struct member or array offset can match or diff.
     The variable will only match if all members match."""
-    key = create_type_key(0x1000)
+    key = CvdumpTypeKey(0x1000)
     type_info = [
         TypeInfo(
             key=key,
             size=4,
             members=[
-                FieldListItem(offset=0, name="[0]", type=ScalarTypeId.T_USHORT),
-                FieldListItem(offset=2, name="[1]", type=ScalarTypeId.T_USHORT),
+                FieldListItem(offset=0, name="[0]", type=CVInfoTypeEnum.T_USHORT),
+                FieldListItem(offset=2, name="[1]", type=CVInfoTypeEnum.T_USHORT),
             ],
         )
     ]
@@ -306,14 +285,14 @@ def test_compare_complex_partial_diff(db: EntityDb):
 
 def test_compare_complex_with_padding(db: EntityDb):
     """Make sure we report a diff if padding bytes don't match."""
-    key = create_type_key(0x1000)
+    key = CvdumpTypeKey(0x1000)
     type_info = [
         TypeInfo(
             key=key,
             size=8,
             members=[
-                FieldListItem(offset=0, name="m_test", type=ScalarTypeId.T_INT4),
-                FieldListItem(offset=4, name="m_short", type=ScalarTypeId.T_USHORT),
+                FieldListItem(offset=0, name="m_test", type=CVInfoTypeEnum.T_INT4),
+                FieldListItem(offset=4, name="m_short", type=CVInfoTypeEnum.T_USHORT),
                 # 2 bytes of padding to cover the 8 byte footprint
             ],
         )
@@ -337,7 +316,7 @@ def test_compare_complex_with_padding(db: EntityDb):
 def test_compare_string_effective_match(db: EntityDb, types: CvdumpTypesParser):
     """If the datatype is a string, report a match if the text matches,
     regardless of whether the pointers match."""
-    create_matched_variable(db, 0, data_type=ScalarTypeId.T_32PRCHAR)
+    create_matched_variable(db, 0, data_type=CVInfoTypeEnum.T_32PRCHAR)
 
     orig = RawImage.from_memory(b"\x04\x00\x00\x00test\x00")
     recomp = RawImage.from_memory(b"\x06\x00\x00\x00\x00\x00test\x00")
@@ -354,7 +333,7 @@ def test_compare_other_pointers_no_effective_match(
 ):
     """The above case `test_compare_string_effective_match` is true only for strings.
     Pointers to other scalar datatypes do not effectively match."""
-    create_matched_variable(db, 0, data_type=ScalarTypeId.T_32PINT4)
+    create_matched_variable(db, 0, data_type=CVInfoTypeEnum.T_32PINT4)
 
     orig = RawImage.from_memory(b"\x04\x00\x00\x00\x01\x02\x03\x04")
     recomp = RawImage.from_memory(b"\x06\x00\x00\x00\x00\x00\x01\x02\x03\x04")
@@ -370,7 +349,7 @@ def test_compare_other_pointers_no_effective_match(
 def test_compare_pointer_entity_offset(db: EntityDb, types: CvdumpTypesParser):
     """If a pointer variable points at the same offset to the same entity
     in both binaries, this is a match."""
-    create_matched_variable(db, 0, data_type=ScalarTypeId.T_32PVOID)
+    create_matched_variable(db, 0, data_type=CVInfoTypeEnum.T_32PVOID)
     with db.batch() as batch:
         batch.set_recomp(6, size=10, type=EntityType.DATA, name="hello")
         batch.match(4, 6)
@@ -388,7 +367,7 @@ def test_compare_pointer_entity_offset(db: EntityDb, types: CvdumpTypesParser):
 
 def test_compare_complex_raw_missing_key(db: EntityDb, types: CvdumpTypesParser):
     """Compare raw data (using size attribute) if we cannot derive struct members."""
-    key = create_type_key(0x1000)
+    key = CvdumpTypeKey(0x1000)
     create_matched_variable(db, 0, data_type=key, size=4)
 
     orig = RawImage.from_memory(b"\x01\x02\x03\x04")
@@ -403,7 +382,7 @@ def test_compare_complex_raw_missing_key(db: EntityDb, types: CvdumpTypesParser)
 
 def test_compare_complex_raw_empty_struct(db: EntityDb):
     """Compare raw data (using struct size) for structs or classes with no members."""
-    key = create_type_key(0x1000)
+    key = CvdumpTypeKey(0x1000)
     type_info = [
         TypeInfo(
             key=key,
@@ -427,7 +406,7 @@ def test_compare_complex_raw_empty_struct(db: EntityDb):
 
 def test_compare_orig_read_error(db: EntityDb, types: CvdumpTypesParser):
     """Trap a read error in the orig binary and report an error."""
-    create_matched_variable(db, 0, data_type=ScalarTypeId.T_INT4)
+    create_matched_variable(db, 0, data_type=CVInfoTypeEnum.T_INT4)
 
     # Needs at least one byte so the seek() call doesn't fail.
     orig = RawImage.from_memory(b"\x01")
@@ -441,16 +420,16 @@ def test_compare_orig_read_error(db: EntityDb, types: CvdumpTypesParser):
 
 
 DISPLAY_VALUES = (
-    (b"\xff", ScalarTypeId.T_CHAR, "-1"),
-    (b"\xff", ScalarTypeId.T_UCHAR, "255"),
-    (b"\xff\xff", ScalarTypeId.T_SHORT, "-1"),
-    (b"\xff\xff", ScalarTypeId.T_USHORT, "65535"),
-    (b"\xff\xff\xff\xff", ScalarTypeId.T_INT4, "-1"),
-    (b"\xff\xff\xff\xff", ScalarTypeId.T_UINT4, "4294967295"),
-    (b"\x00\x00\x80\xbf", ScalarTypeId.T_REAL32, "-1.0"),
-    (b"\x00\x00\x80\x3f", ScalarTypeId.T_REAL32, "1.0"),
-    (b"\x00\x00\x00\x00\x00\x00\xf0\xbf", ScalarTypeId.T_REAL64, "-1.0"),
-    (b"\x00\x00\x00\x00\x00\x00\xf0\x3f", ScalarTypeId.T_REAL64, "1.0"),
+    (b"\xff", CVInfoTypeEnum.T_CHAR, "-1"),
+    (b"\xff", CVInfoTypeEnum.T_UCHAR, "255"),
+    (b"\xff\xff", CVInfoTypeEnum.T_SHORT, "-1"),
+    (b"\xff\xff", CVInfoTypeEnum.T_USHORT, "65535"),
+    (b"\xff\xff\xff\xff", CVInfoTypeEnum.T_INT4, "-1"),
+    (b"\xff\xff\xff\xff", CVInfoTypeEnum.T_UINT4, "4294967295"),
+    (b"\x00\x00\x80\xbf", CVInfoTypeEnum.T_REAL32, "-1.0"),
+    (b"\x00\x00\x80\x3f", CVInfoTypeEnum.T_REAL32, "1.0"),
+    (b"\x00\x00\x00\x00\x00\x00\xf0\xbf", CVInfoTypeEnum.T_REAL64, "-1.0"),
+    (b"\x00\x00\x00\x00\x00\x00\xf0\x3f", CVInfoTypeEnum.T_REAL64, "1.0"),
 )
 
 

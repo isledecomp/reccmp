@@ -1,8 +1,8 @@
 import pytest
-from reccmp.cvdump.types import (
-    scalar_type_size,
-    scalar_type_pointer,
-    scalar_type_signed,
+from reccmp.cvdump.cvinfo import (
+    CVInfoTypeEnum,
+    CvdumpTypeKey,
+    CvdumpTypeMap,
 )
 
 # These are all the types seen in the cvdump.
@@ -15,45 +15,59 @@ from reccmp.cvdump.types import (
 # For reference: https://github.com/microsoft/microsoft-pdb/blob/master/include/cvinfo.h
 
 # fmt: off
-# Fields are: type_name, size, is_signed, is_pointer
-type_check_cases = (
-    ("T_32PINT4",      4,  False,  True),
-    ("T_32PLONG",      4,  False,  True),
-    ("T_32PRCHAR",     4,  False,  True),
-    ("T_32PREAL32",    4,  False,  True),
-    ("T_32PUCHAR",     4,  False,  True),
-    ("T_32PUINT4",     4,  False,  True),
-    ("T_32PULONG",     4,  False,  True),
-    ("T_32PUSHORT",    4,  False,  True),
-    ("T_32PVOID",      4,  False,  True),
-    ("T_CHAR",         1,  True,   False),
-    ("T_INT4",         4,  True,   False),
-    ("T_LONG",         4,  True,   False),
-    ("T_QUAD",         8,  True,   False),
-    ("T_RCHAR",        1,  True,   False),
-    ("T_REAL32",       4,  True,   False),
-    ("T_REAL64",       8,  True,   False),
-    ("T_SHORT",        2,  True,   False),
-    ("T_UCHAR",        1,  False,  False),
-    ("T_UINT4",        4,  False,  False),
-    ("T_ULONG",        4,  False,  False),
-    ("T_UQUAD",        8,  False,  False),
-    ("T_USHORT",       2,  False,  False),
-    ("T_WCHAR",        2,  False,  False),
+# Fields are: type_name, size, is_pointer
+SCALARS_WITH_NORMALIZED_ID = (
+    (CVInfoTypeEnum.T_32PINT4,      4,  True),
+    (CVInfoTypeEnum.T_32PLONG,      4,  True),
+    (CVInfoTypeEnum.T_32PRCHAR,     4,  True),
+    (CVInfoTypeEnum.T_32PREAL32,    4,  True),
+    (CVInfoTypeEnum.T_32PUCHAR,     4,  True),
+    (CVInfoTypeEnum.T_32PUINT4,     4,  True),
+    (CVInfoTypeEnum.T_32PULONG,     4,  True),
+    (CVInfoTypeEnum.T_32PUSHORT,    4,  True),
+    (CVInfoTypeEnum.T_32PVOID,      4,  True),
+    (CVInfoTypeEnum.T_BOOL08,       1,  False),
+    (CVInfoTypeEnum.T_CHAR,         1,  False),
+    (CVInfoTypeEnum.T_INT4,         4,  False),
+    (CVInfoTypeEnum.T_LONG,         4,  False),
+    (CVInfoTypeEnum.T_QUAD,         8,  False),
+    (CVInfoTypeEnum.T_RCHAR,        1,  False),
+    (CVInfoTypeEnum.T_REAL32,       4,  False),
+    (CVInfoTypeEnum.T_REAL64,       8,  False),
+    (CVInfoTypeEnum.T_SHORT,        2,  False),
+    (CVInfoTypeEnum.T_UCHAR,        1,  False),
+    (CVInfoTypeEnum.T_UINT4,        4,  False),
+    (CVInfoTypeEnum.T_ULONG,        4,  False),
+    (CVInfoTypeEnum.T_UQUAD,        8,  False),
+    (CVInfoTypeEnum.T_USHORT,       2,  False),
+    (CVInfoTypeEnum.T_WCHAR,        2,  False),
 )
 # fmt: on
 
 
-@pytest.mark.parametrize("type_name, size, _, __", type_check_cases)
-def test_scalar_size(type_name: str, size: int, _, __):
-    assert scalar_type_size(type_name) == size
+@pytest.mark.parametrize("type_key, size, _", SCALARS_WITH_NORMALIZED_ID)
+def test_scalar_size(type_key: CvdumpTypeKey, size: int, _):
+    assert CvdumpTypeMap[type_key].size == size
 
 
-@pytest.mark.parametrize("type_name, _, is_signed, __", type_check_cases)
-def test_scalar_signed(type_name: str, _, is_signed: bool, __):
-    assert scalar_type_signed(type_name) == is_signed
+@pytest.mark.parametrize("type_key, _, is_pointer", SCALARS_WITH_NORMALIZED_ID)
+def test_scalar_pointer(type_key: CvdumpTypeKey, _, is_pointer: bool):
+    assert (CvdumpTypeMap[type_key].pointer is not None) == is_pointer
 
 
-@pytest.mark.parametrize("type_name, _, __, is_pointer", type_check_cases)
-def test_scalar_pointer(type_name: str, _, __, is_pointer: bool):
-    assert scalar_type_pointer(type_name) == is_pointer
+def test_verify_cvinfo_enum():
+    """Assert that CVInfoTypeEnum and CvdumpTypeMap have exactly the same items."""
+
+    # Check each enum member against the type map.
+    for e in CVInfoTypeEnum:
+        # Make sure the enum members are functionally equivalent to both these dependent types.
+        assert isinstance(e, CvdumpTypeKey)
+        assert isinstance(e, int)
+        # Make sure the enum's const name is the same as the type's name in the map.
+        # e.g. The value of CVInfoTypeEnum.T_INT4 resolves to the type key for T_INT4.
+        assert CvdumpTypeMap[e].name == e.name
+
+    # Check each entry in the map against the enum.
+    for type_key, cvtype in CvdumpTypeMap.items():
+        # Use the type's name to get the CvdumpTypeKey from the enum.
+        assert CVInfoTypeEnum[cvtype.name] == type_key

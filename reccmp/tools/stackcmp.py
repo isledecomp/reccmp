@@ -18,6 +18,7 @@ from reccmp.project.detect import (
     argparse_parse_project_target,
     RecCmpProjectException,
 )
+from reccmp.cvdump.types import CvdumpTypeKey
 from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
 
 # pylint: disable=duplicate-code # misdetects a code duplication with reccmp
@@ -40,7 +41,7 @@ STACK_ENTRY_REGEX = re.compile(
 @dataclass
 class StackSymbol:
     name: str
-    data_type: str
+    data_type: CvdumpTypeKey
 
 
 @dataclass

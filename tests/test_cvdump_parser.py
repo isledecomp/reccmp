@@ -4,6 +4,7 @@ from reccmp.cvdump.parser import (
     CvdumpParser,
     GdataEntry,
 )
+from reccmp.cvdump.cvinfo import CVInfoTypeEnum
 
 GLOBALS_SAMPLE = """
 S_PROCREF: 0x00000000: (   5, 000000D4) WinMain
@@ -24,14 +25,14 @@ def test_globals():
     assert parser.globals[0] == GdataEntry(
         section=0x0003,
         offset=0x00018F84,
-        type="T_UINT4(0075)",
+        type=CVInfoTypeEnum.T_UINT4,
         name="_winver",
         is_global=True,
     )
     assert parser.globals[1] == GdataEntry(
         section=0x0003,
         offset=0x00018FCC,
-        type="T_INT4(0074)",
+        type=CVInfoTypeEnum.T_INT4,
         name="fSystemSet",
         is_global=False,
     )

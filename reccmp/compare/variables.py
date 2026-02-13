@@ -8,6 +8,7 @@ from typing_extensions import Self
 from reccmp.formats import Image
 from reccmp.formats.exceptions import InvalidVirtualReadError
 from reccmp.compare.db import EntityDb, ReccmpMatch
+from reccmp.cvdump.cvinfo import CvdumpTypeKey
 from reccmp.cvdump.types import (
     CvdumpTypesParser,
     CvdumpKeyError,
@@ -230,27 +231,29 @@ class VariableComparator:
     def compare_variable(self, var: ReccmpMatch) -> ComparisonItem:
         # pylint: disable=too-many-locals
         assert var.name is not None
-        type_name = var.get("data_type")
+        type_key = (
+            CvdumpTypeKey(var.get("data_type")) if var.get("data_type") else None
+        )
 
         # Start by assuming we can only compare the raw bytes
         data_size = var.size
         raw_only = True
 
-        if type_name is not None:
+        if type_key is not None:
             try:
                 # If we are type-aware, we can get the precise
                 # data size for the variable.
-                data_type = self.types.get(type_name)
+                data_type = self.types.get(type_key)
                 assert data_type.size is not None
                 data_size = data_type.size
 
                 # Make sure we can retrieve struct or array members.
-                if self.types.get_format_string(type_name):
+                if self.types.get_format_string(type_key):
                     raw_only = False
                 else:
                     logger.info(
-                        "No struct members for type '%s' used by variable '%s' (0x%x). Comparing raw data.",
-                        type_name,
+                        "No struct members for type '0x%x' used by variable '%s' (0x%x). Comparing raw data.",
+                        type_key,
                         var.name,
                         var.orig_addr,
                     )
@@ -260,8 +263,8 @@ class VariableComparator:
                 # For example: we do not handle bitfields and this complicates fieldlist parsing
                 # where they are used. (GH #299)
                 logger.error(
-                    "Could not materialize type '%s' used by variable '%s' (0x%x). Comparing raw data.",
-                    type_name,
+                    "Could not materialize type '0x%x' used by variable '%s' (0x%x). Comparing raw data.",
+                    type_key,
                     var.name,
                     var.orig_addr,
                 )
@@ -287,11 +290,12 @@ class VariableComparator:
             orig_data = tuple(orig_block.data)
             recomp_data = tuple(recomp_block.data)
         else:
+            assert type_key is not None
             compare_items = [
                 DataOffset(offset=sc.offset, name=sc.name or "", pointer=sc.is_pointer)
-                for sc in self.types.get_scalars_gapless(type_name)
+                for sc in self.types.get_scalars_gapless(type_key)
             ]
-            format_str = self.types.get_format_string(type_name)
+            format_str = self.types.get_format_string(type_key)
 
             orig_data = unpack(format_str, orig_block.data)
             recomp_data = unpack(format_str, recomp_block.data)
