@@ -83,11 +83,11 @@ def test_compare_pointer_match(db: EntityDb, types: CvdumpTypesParser):
     create_matched_variable(db, 0, data_type=CVInfoTypeEnum.T_32PVOID)
     # Entity at address 0x0004 required to match
     with db.batch() as batch:
-        batch.set_recomp(4, name="Hello")
-        batch.match(4, 4)
+        batch.set_recomp(8, name="Hello")
+        batch.match(4, 8)
 
     orig = RawImage.from_memory(b"\x04\x00\x00\x00")
-    recomp = RawImage.from_memory(b"\x04\x00\x00\x00")
+    recomp = RawImage.from_memory(b"\x08\x00\x00\x00")
     comparator = VariableComparator(db, types, orig, recomp)
 
     c = comparator.compare_variable(get_match(db, 0))
@@ -101,10 +101,10 @@ def test_compare_pointer_diff(db: EntityDb, types: CvdumpTypesParser):
     create_matched_variable(db, 0, data_type=CVInfoTypeEnum.T_32PVOID)
     # Create the entity only on the recomp side.
     with db.batch() as batch:
-        batch.set_recomp(4, name="Hello")
+        batch.set_recomp(8, name="Hello")
 
     orig = RawImage.from_memory(b"\x04\x00\x00\x00")
-    recomp = RawImage.from_memory(b"\x04\x00\x00\x00")
+    recomp = RawImage.from_memory(b"\x08\x00\x00\x00")
     comparator = VariableComparator(db, types, orig, recomp)
 
     c = comparator.compare_variable(get_match(db, 0))
