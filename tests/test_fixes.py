@@ -256,6 +256,26 @@ def test_fix_mov_imul_swap_valid():
     assert is_effective is True
 
 
+def test_fix_mov_imul_single_operand_imul():
+    """Should not crash with IndexError if single operand IMUL is used.
+    The desination is presumed to be EAX/AX/AL, so this example could be considered a match.
+    """
+
+    orig_asm = [
+        "mov ax, word ptr [ebp - 0x4]",
+        "imul word ptr [ebp - 0x8]",
+    ]
+    recomp_asm = [
+        "mov ax, word ptr [ebp - 0x8]",
+        "imul word ptr [ebp - 0x4]",
+    ]
+
+    diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
+    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+
+    assert is_effective is False
+
+
 def test_fix_mov_add_swap_valid():
 
     orig_asm = [
