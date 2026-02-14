@@ -425,13 +425,20 @@ def relocate_instructions(
     deletes = {
         i for code, i1, i2, _, __ in codes for i in range(i1, i2) if code == "delete"
     }
+    # Using list instead of set to preserve ordering.
+    # `i1` is the index of the orig_asm list where this line will be inserted.
+    # This is not necessarily equal to `j1`, the index of the inserted line in recomp_asm.
+    # Therefore we need to save `i1` so that we verify each line between the start and end of the move. (GH #332)
     inserts = [
-        j for code, _, __, j1, j2 in codes for j in range(j1, j2) if code == "insert"
+        (i1, j)
+        for code, i1, __, j1, j2 in codes
+        for j in range(j1, j2)
+        if code == "insert"
     ]
 
     relocated = set()
 
-    for j in inserts:
+    for orig_dest, j in inserts:
         line = recomp_asm[j]
         if not _is_relocatable(line):
             continue
@@ -441,9 +448,11 @@ def relocate_instructions(
             # TODO: This will grab the first instruction that matches.
             # We should probably use the nearest index instead, if it matters
             if orig_asm[i] == line:
-                # To account for a move in either direction
-                reloc_start = min(i, j)
-                reloc_end = max(i, j)
+                # To account for a move in either direction:
+                # the deleted line can precede or follow the inserted line.
+                reloc_start = min(i, orig_dest)
+                reloc_end = max(i, orig_dest)
+
                 if not any(
                     instruction_alters_regs(orig_asm[k], recomp_regs_used)
                     for k in range(reloc_start, reloc_end)
