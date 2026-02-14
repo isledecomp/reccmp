@@ -155,7 +155,11 @@ def patch_mov_commutative(orig: list[str], recomp: list[str]) -> set[int]:
     orig_ops = _split_operands(orig[inst_index])
     recomp_ops = _split_operands(recomp[inst_index])
 
-    if len(orig_mov_ops) < 2 or len(recomp_mov_ops) < 2:
+    # We expect these instructions to all have two operands.
+    if any(
+        len(operands) != 2
+        for operands in (orig_mov_ops, recomp_mov_ops, orig_ops, recomp_ops)
+    ):
         return set()
 
     # MOV destination must be the same register in both versions.
