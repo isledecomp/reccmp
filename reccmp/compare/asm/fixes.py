@@ -418,10 +418,8 @@ def relocate_instructions(
     into recomp, according to the diff opcodes. Using this list, match up
     any pairs of instructions that we assume to be relocated and return
     the indices in recomp where this has occurred.
-    For now, we are checking only for an exact match on the instruction.
-    We are not checking whether the given instruction can be moved from
-    point A to B. (i.e. does this set a register that is used by the
-    instructions between A and B?)"""
+    This function has many limitations and could be improved. See: GH #324.
+    """
     deletes = {
         i for code, i1, i2, _, __ in codes for i in range(i1, i2) if code == "delete"
     }
@@ -445,8 +443,6 @@ def relocate_instructions(
         recomp_regs_used = set(find_regs_used(line))
         for i in deletes:
             # Check for exact match.
-            # TODO: This will grab the first instruction that matches.
-            # We should probably use the nearest index instead, if it matters
             if orig_asm[i] == line:
                 # To account for a move in either direction:
                 # the deleted line can precede or follow the inserted line.
