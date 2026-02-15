@@ -12,7 +12,7 @@ from reccmp.project.detect import (
     argparse_parse_project_target,
     RecCmpProjectException,
 )
-from reccmp.compare.diff import CombinedDiffOutput
+from reccmp.compare.diff import CombinedDiffOutput, raw_diff_to_udiff
 
 
 logger = logging.getLogger(__name__)
@@ -74,8 +74,7 @@ def main():
         if tbl_match.ratio < 1:
             problem_count += 1
 
-            udiff = tbl_match.udiff
-            assert udiff is not None
+            udiff = raw_diff_to_udiff(tbl_match.result.diff)
 
             print(
                 tbl_match.name,
