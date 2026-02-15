@@ -416,3 +416,30 @@ def test_fix_mov_cmp_jmp_unsafe_intermediate_reuse():
     is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
     assert is_effective is False
+
+
+def test_and_swap_not_allowed():
+    """Cannot move the `and eax, 0xff` instruction for an effective match.
+    `eax` is modified by the intermediate instructions. (GH #322)"""
+
+    orig_asm = [
+        "mov eax, dword ptr [ebp - 4]",
+        "and eax, 0xff",  # Move this
+        "mov ecx, dword ptr [gReal_render_palette (DATA)]",
+        "mov eax, dword ptr [ecx + eax*4]",
+        # To here
+        "mov ecx, dword ptr [gRender_palette (DATA)]",
+    ]
+
+    recomp_asm = [
+        "mov eax, dword ptr [ebp - 4]",
+        "mov ecx, dword ptr [gReal_render_palette (DATA)]",
+        "mov eax, dword ptr [ecx + eax*4]",
+        "and eax, 0xff",
+        "mov ecx, dword ptr [gRender_palette (DATA)]",
+    ]
+
+    diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
+    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+
+    assert is_effective is False
