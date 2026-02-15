@@ -184,8 +184,8 @@ def test_compare_scalar_bss_match(db: EntityDb, types: CvdumpTypesParser):
     """Match on scalar variable with uninitialized data."""
     create_matched_variable(db, 0, data_type=CVInfoTypeEnum.T_CHAR)
 
-    orig = RawImage.from_memory(size=1)
-    recomp = RawImage.from_memory(size=1)
+    orig = RawImage.from_memory(bss=1)
+    recomp = RawImage.from_memory(bss=1)
     comparator = VariableComparator(db, types, orig, recomp)
 
     c = comparator.compare_variable(get_match(db, 0))
@@ -199,8 +199,8 @@ def test_compare_raw_bss_match(db: EntityDb, types: CvdumpTypesParser):
     # Size is required because it cannot be derived from the data type.
     create_matched_variable(db, 0, size=1)
 
-    orig = RawImage.from_memory(size=10)
-    recomp = RawImage.from_memory(size=10)
+    orig = RawImage.from_memory(bss=10)
+    recomp = RawImage.from_memory(bss=10)
     comparator = VariableComparator(db, types, orig, recomp)
 
     c = comparator.compare_variable(get_match(db, 0))
@@ -213,7 +213,7 @@ def test_compare_scalar_bss_diff(db: EntityDb, types: CvdumpTypesParser):
     """Scalar variable, one initialized to non-zero, one uninitialized."""
     create_matched_variable(db, 0, data_type=CVInfoTypeEnum.T_CHAR)
 
-    orig = RawImage.from_memory(size=1)  # bss
+    orig = RawImage.from_memory(bss=1)
     recomp = RawImage.from_memory(b"\x01")
     comparator = VariableComparator(db, types, orig, recomp)
 
@@ -228,7 +228,7 @@ def test_compare_scalar_bss_effective_match(db: EntityDb, types: CvdumpTypesPars
     The initialized zero byte is in the BssState.MAYBE region."""
     create_matched_variable(db, 0, data_type=CVInfoTypeEnum.T_CHAR)
 
-    orig = RawImage.from_memory(size=1)  # bss
+    orig = RawImage.from_memory(bss=1)
     recomp = RawImage.from_memory(b"\x00")
     comparator = VariableComparator(db, types, orig, recomp)
 
@@ -243,7 +243,7 @@ def test_compare_scalar_bss_true_diff(db: EntityDb, types: CvdumpTypesParser):
     The initialized zero byte is in the BssState.NO region."""
     create_matched_variable(db, 0, data_type=CVInfoTypeEnum.T_CHAR)
 
-    orig = RawImage.from_memory(size=1)  # bss
+    orig = RawImage.from_memory(bss=1)
     recomp = RawImage.from_memory(b"\x00\x01")
     comparator = VariableComparator(db, types, orig, recomp)
 
@@ -355,8 +355,8 @@ def test_compare_pointer_entity_offset(db: EntityDb, types: CvdumpTypesParser):
         batch.match(4, 6)
 
     # Pointers each point to "hello+4"
-    orig = RawImage.from_memory(b"\x08\x00\x00\x00", size=16)
-    recomp = RawImage.from_memory(b"\x0a\x00\x00\x00", size=16)
+    orig = RawImage.from_memory(b"\x08\x00\x00\x00", bss=12)
+    recomp = RawImage.from_memory(b"\x0a\x00\x00\x00", bss=12)
     comparator = VariableComparator(db, types, orig, recomp)
 
     c = comparator.compare_variable(get_match(db, 0))
@@ -447,7 +447,7 @@ def test_display_signed_unsigned(
 
     # This will report a diff for any nonzero value.
     orig = RawImage.from_memory(data)
-    recomp = RawImage.from_memory(size=500)
+    recomp = RawImage.from_memory(bss=500)
     comparator = VariableComparator(db, types, orig, recomp)
 
     c = comparator.compare_variable(get_match(db, 0))

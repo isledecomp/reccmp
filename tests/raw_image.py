@@ -18,15 +18,12 @@ class RawImage(Image):
     size: int
 
     @classmethod
-    def from_memory(cls, data: bytes = b"", *, size: int = 0) -> "RawImage":
-        if size is None:
-            maxsize = len(data)
-        else:
-            maxsize = max(size, len(data))
-
+    def from_memory(cls, data: bytes = b"", *, bss: int = 0) -> "RawImage":
+        assert bss >= 0
+        size = len(data) + bss
         view = memoryview(data).toreadonly()
 
-        image = cls(data=data, view=view, filepath=Path(""), size=maxsize)
+        image = cls(data=data, view=view, filepath=Path(""), size=size)
         return image
 
     def seek(self, vaddr: int) -> tuple[bytes, int]:
