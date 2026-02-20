@@ -11,20 +11,24 @@ from reccmp.formats.exceptions import InvalidVirtualAddressError
 # pylint: disable=abstract-method
 @dataclasses.dataclass
 class RawImage(Image):
-    """For testing functions implemented in the base Image class."""
+    """Image subclass with contents declared at runtime.
+    Creates a single section with either physical or uninitialized data, or both in sequence.
+    """
 
-    # Total size of the image.
-    # If it is more than the size of physical data, the remainder is uninitialized (all null).
     size: int
+    """Total size of the image including physical bytes (`data` property) and uninitialized memory."""
 
     @classmethod
     def from_memory(cls, data: bytes = b"", *, bss: int = 0) -> "RawImage":
+        """Creates the image's memory in this order:
+        1. Physical bytes from the `data` parameter.
+        2. Zero or more bytes of uninitialized data as directed by the `bss` parameter.
+        """
         assert bss >= 0
         size = len(data) + bss
         view = memoryview(data).toreadonly()
 
-        image = cls(data=data, view=view, filepath=Path(""), size=size)
-        return image
+        return cls(data=data, view=view, filepath=Path(""), size=size)
 
     def seek(self, vaddr: int) -> tuple[bytes, int]:
         if 0 <= vaddr < self.size:
