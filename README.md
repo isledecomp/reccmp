@@ -31,14 +31,14 @@ The next steps differ based on what kind of project you have.
 ### Contributing to a project that already uses `reccmp`
 
 1. Compile the C++ project.
-2. Run `reccmp-project detect --search-path path/to/folder/with/original/binaries`.
+2. Run `reccmp-project detect --search-path "path/to/folder/with/original/binaries"`.
 3. If there is no `reccmp-build.yml` after building: Navigate to the recompiled binaries folder and run `reccmp-project detect --what recompiled`.
 4. Look into `reccmp-project.yml` to see what the target is called.
 5. Run `reccmp-reccmp --target <YOURTARGET>`. You should see a list of functions and others together with their match percentage.
 
 ### Setting up an existing decompilation project that has not used `reccmp` before
 
-1. Run `reccmp-project create --originals path/to/original --scm`. This generates two files `reccmp-project.yml` and `reccmp-user.yml`; the latter will automatically be added to the `.gitignore`.
+1. Run `reccmp-project create --originals "path/to/original" --scm`. This generates two files `reccmp-project.yml` and `reccmp-user.yml`; the latter will automatically be added to the `.gitignore`.
 2. Annotate one function of your existing project as shown above and recompile. Note that the recompiled binary should have the same name file name as the original.
 3. Navigate to your recompiled binary and run `reccmp-project detect --what recompiled`. A file `reccmp-build.yml` will be generated. This file should also be user-specific (see below on how to auto-generate this file by the build toolchain).
 4. Look into `reccmp-project.yml` to see what the target is called.
@@ -46,7 +46,7 @@ The next steps differ based on what kind of project you have.
 
 ### Fresh project
 
-1. Run `reccmp-project create --originals path/to/original/binary [path/to/second/original/binary] --cmake-project`
+1. Run `reccmp-project create --originals "path/to/original/binary" ["path/to/second/original/binary"] --cmake-project`
 2. You will see a lot of new files. Set up your C++ compiler and compile the project defined by `CMakeLists.txt`, ideally into a sub-directory like `./build`. Advice on building with old MSVC versions can be found at the [LEGO Island Decompilation project](https://github.com/isledecomp/isle).
 3. Look into `reccmp-project.yml` to see what the target is called.
 4. Navigate to the build directory and run `reccmp-reccmp --target <YOURTARGET>`.

@@ -3,17 +3,15 @@ import re
 import logging
 from typing import NamedTuple
 from typing_extensions import NotRequired, TypedDict
+from .cvinfo import (
+    CvInfoType,
+    CvdumpTypeKey,
+    CVInfoTypeEnum,
+    CvdumpTypeMap,
+)
 
 
 logger = logging.getLogger(__name__)
-
-
-# TODO: For now, this is here just to document where we
-# expect a T_* (scalar) or 0x____ (complex) type key.
-# Not all occurrences are normalized with normalize_type_id().
-# The unit tests show where some hex digits are capitalized.
-# We would need to use typing.NewType for actual type-checking.
-CvdumpTypeKey = str
 
 
 class CvdumpTypeError(Exception):
@@ -26,6 +24,16 @@ class CvdumpKeyError(KeyError):
 
 class CvdumpIntegrityError(Exception):
     pass
+
+
+def get_primitive(key: CvdumpTypeKey) -> CvInfoType:
+    """Throw CvdumpKeyError if we get a KeyError from the primitive map.
+    Log an error for the invalid type whether the exception is caught or not."""
+    try:
+        return CvdumpTypeMap[key]
+    except KeyError as ex:
+        logger.error("Unknown scalar type 0x%x", key)
+        raise CvdumpKeyError(key) from ex
 
 
 class FieldListItem(NamedTuple):
@@ -57,23 +65,23 @@ class VirtualBasePointer:
 class ScalarType(NamedTuple):
     offset: int
     name: str | None
-    type: CvdumpTypeKey
+    type: CvInfoType
 
     @property
     def size(self) -> int:
-        return scalar_type_size(self.type)
+        return self.type.size
 
     @property
     def format_char(self) -> str:
-        return scalar_type_format_char(self.type)
+        return self.type.fmt
 
     @property
     def is_pointer(self) -> bool:
-        return scalar_type_pointer(self.type)
+        return self.type.pointer is not None
 
 
 class TypeInfo(NamedTuple):
-    key: str
+    key: CvdumpTypeKey
     size: int | None
     name: str | None = None
     members: list[FieldListItem] | None = None
@@ -81,64 +89,6 @@ class TypeInfo(NamedTuple):
     def is_scalar(self) -> bool:
         # TODO: distinction between a class with zero members and no vtable?
         return self.members is None
-
-
-def normalize_type_id(key: str) -> CvdumpTypeKey:
-    """Helper for TYPES parsing to ensure a consistent format.
-    If key begins with "T_" it is a built-in type.
-    Else it is a hex string. We prefer lower case letters and
-    no leading zeroes. (UDT identifier pads to 8 characters.)"""
-    if key[0] == "0":
-        return f"0x{key[-4:].lower()}"
-
-    # Remove numeric value for "T_" type. We don't use this.
-    return key.partition("(")[0]
-
-
-def scalar_type_pointer(type_name: str) -> bool:
-    return type_name.startswith("T_32P")
-
-
-def scalar_type_size(type_name: str) -> int:
-    if scalar_type_pointer(type_name):
-        return 4
-
-    if "CHAR" in type_name:
-        return 2 if "WCHAR" in type_name else 1
-
-    if "SHORT" in type_name:
-        return 2
-
-    if "QUAD" in type_name or "64" in type_name:
-        return 8
-
-    return 4
-
-
-def scalar_type_signed(type_name: str) -> bool:
-    if scalar_type_pointer(type_name):
-        return False
-
-    # According to cvinfo.h, T_WCHAR is unsigned
-    return not type_name.startswith("T_U") and not type_name.startswith("T_W")
-
-
-def scalar_type_format_char(type_name: str) -> str:
-    if scalar_type_pointer(type_name):
-        return "L"
-
-    # "Really a char"
-    if type_name.startswith("T_RCHAR"):
-        return "c"
-
-    # floats
-    if type_name.startswith("T_REAL"):
-        return "d" if "64" in type_name else "f"
-
-    size = scalar_type_size(type_name)
-    char = ({1: "b", 2: "h", 4: "l", 8: "q"}).get(size, "l")
-
-    return char if scalar_type_signed(type_name) else char.upper()
 
 
 def member_list_to_struct_string(members: list[ScalarType]) -> str:
@@ -195,6 +145,7 @@ class CvdumpParsedType(TypedDict):
 
     # LF_MODIFIER
     modifies: NotRequired[CvdumpTypeKey]
+    modification: NotRequired[str]
 
     # LF_FIELDLIST
     super: NotRequired[dict[CvdumpTypeKey, int]]
@@ -209,6 +160,7 @@ class CvdumpParsedType(TypedDict):
     # LF_POINTER
     element_type: NotRequired[CvdumpTypeKey]
     containing_class: NotRequired[CvdumpTypeKey]
+    pointer_type: NotRequired[str]
 
     # LF_PROCEDURE / LF_MFUNCTION
     return_type: NotRequired[CvdumpTypeKey]
@@ -265,7 +217,9 @@ class CvdumpTypesParser:
     )
 
     # LF_MODIFIER, type being modified
-    MODIFIES_RE = re.compile(r"\s+modifies type (?P<type>[^\n,]*)")
+    MODIFIES_RE = re.compile(
+        r"\n\s+(?P<modification>.+?), modifies type (?P<type>[^\n,]*)"
+    )
 
     # LF_ARGLIST number of entries
     LF_ARGLIST_ARGCOUNT = re.compile(r".*argument count = (?P<argcount>\d+)")
@@ -321,6 +275,7 @@ class CvdumpTypesParser:
 
     def __init__(self) -> None:
         self.keys: dict[CvdumpTypeKey, CvdumpParsedType] = {}
+        self.alerted_types: set[int] = set()
 
     def _get_field_list(self, type_obj: CvdumpParsedType) -> list[FieldListItem]:
         """Return the field list for the given LF_CLASS/LF_STRUCTURE reference"""
@@ -372,33 +327,38 @@ class CvdumpTypesParser:
             for i in range(n_elements)
         ]
 
-    def get(self, type_key: str) -> TypeInfo:
+    def get(self, type_key: CvdumpTypeKey) -> TypeInfo:
         """Convert our dictionary values read from the cvdump output
         into a consistent format for the given type."""
 
         # Scalar type. Handled here because it makes the recursive steps
         # much simpler.
-        if type_key.startswith("T_"):
-            size = scalar_type_size(type_key)
+        if type_key.is_scalar():
+            cvinfo = get_primitive(type_key)
+            # We have seen some of the primitive types so far, but not all.
+            # The information in cvinfo.h is probably fine for most cases
+            # but warn users if we are dealing with an unseen type.
+            # (If you see this message in your project, we want to hear about it!)
+            if not cvinfo.verified and cvinfo.key not in self.alerted_types:
+                self.alerted_types.add(cvinfo.key)
+                logger.info(
+                    "Unverified primitive type 0x%04x '%s'",
+                    cvinfo.key,
+                    cvinfo.name,
+                )
+
             return TypeInfo(
                 key=type_key,
-                size=size,
+                size=cvinfo.size,
             )
 
         # Go to our dictionary to find it.
-        obj = self.keys.get(type_key.lower())
+        obj = self.keys.get(type_key)
         if obj is None:
             raise CvdumpKeyError(type_key)
 
-        # These type references are just a wrapper around a scalar
-        if obj.get("type") == "LF_ENUM":
-            underlying_type = obj.get("underlying_type")
-            if underlying_type is None:
-                raise CvdumpKeyError(f"Missing 'underlying_type' in {obj}")
-            return self.get(underlying_type)
-
         if obj.get("type") == "LF_POINTER":
-            return self.get("T_32PVOID")
+            return self.get(CVInfoTypeEnum.T_32PVOID)
 
         if obj.get("is_forward_ref", False):
             # Get the forward reference to follow.
@@ -409,6 +369,14 @@ class CvdumpTypesParser:
                 raise CvdumpIntegrityError(f"Null forward ref for type {type_key}")
 
             return self.get(forward_ref)
+
+        # These type references are just a wrapper around a scalar
+        if obj.get("type") == "LF_ENUM":
+            underlying_type = obj.get("underlying_type")
+            if underlying_type is None:
+                raise CvdumpKeyError(f"Missing 'underlying_type' in {obj}")
+
+            return self.get(underlying_type)
 
         # Else it is not a forward reference, so build out the object here.
         if obj.get("type") == "LF_ARRAY":
@@ -428,14 +396,21 @@ class CvdumpTypesParser:
         # TODO
         raise NotImplementedError
 
-    def get_scalars(self, type_key: str) -> list[ScalarType]:
+    def get_scalars(self, type_key: CvdumpTypeKey) -> list[ScalarType]:
         """Reduce the given type to a list of scalars so we can
         compare each component value."""
 
         obj = self.get(type_key)
         if obj.is_scalar():
             # Use obj.key here for alias types like LF_POINTER
-            return [ScalarType(offset=0, type=obj.key, name=None)]
+            cvinfo = get_primitive(obj.key)
+            return [
+                ScalarType(
+                    offset=0,
+                    type=cvinfo,
+                    name=None,
+                )
+            ]
 
         # mypy?
         assert obj.members is not None
@@ -454,7 +429,7 @@ class CvdumpTypesParser:
             for cm in self.get_scalars(m.type)
         ]
 
-    def get_scalars_gapless(self, type_key: str) -> list[ScalarType]:
+    def get_scalars_gapless(self, type_key: CvdumpTypeKey) -> list[ScalarType]:
         """Reduce the given type to a list of scalars so we can
         compare each component value."""
 
@@ -472,7 +447,7 @@ class CvdumpTypesParser:
         # Walk the scalar list in reverse; we assume a gap could not
         # come at the start of the struct.
         for scalar in scalars[::-1]:
-            this_extent = scalar.offset + scalar_type_size(scalar.type)
+            this_extent = scalar.offset + scalar.size
             size_diff = last_extent - this_extent
             # We need to add the gap fillers in reverse here
             for i in range(size_diff - 1, -1, -1):
@@ -482,7 +457,7 @@ class CvdumpTypesParser:
                     ScalarType(
                         offset=this_extent + i,
                         name="(padding)",
-                        type="T_UCHAR",
+                        type=get_primitive(CVInfoTypeEnum.T_UCHAR),
                     ),
                 )
 
@@ -491,17 +466,18 @@ class CvdumpTypesParser:
 
         return output
 
-    def get_format_string(self, type_key: str) -> str:
+    def get_format_string(self, type_key: CvdumpTypeKey) -> str:
         members = self.get_scalars_gapless(type_key)
         return member_list_to_struct_string(members)
 
     def read_all(self, section: str):
-        r_leafsplit = re.compile(r"\n(?=0x\w{4} : )")
+        r_leafsplit = re.compile(r"\n(?=0x\w{4,8} : )")
         for leaf in r_leafsplit.split(section):
             if (match := self.INDEX_RE.match(leaf)) is None:
                 continue
 
-            (leaf_id, leaf_type) = match.groups()
+            (leaf_id_str, leaf_type) = match.groups()
+            leaf_id = CvdumpTypeKey.from_str(leaf_id_str)
             if leaf_type not in self.MODES_OF_INTEREST:
                 continue
 
@@ -553,7 +529,8 @@ class CvdumpTypesParser:
         return {
             "type": leaf_type,
             "is_forward_ref": True,
-            "modifies": normalize_type_id(match.group("type")),
+            "modifies": CvdumpTypeKey.from_str(match.group("type")),
+            "modification": match.group("modification"),
         }
 
     def read_array(self, leaf: str, leaf_type: str) -> CvdumpParsedType:
@@ -562,7 +539,7 @@ class CvdumpTypesParser:
 
         return {
             "type": leaf_type,
-            "array_type": normalize_type_id(match.group("type")),
+            "array_type": CvdumpTypeKey.from_str(match.group("type")),
             "size": int(match.group("length")),
         }
 
@@ -573,12 +550,14 @@ class CvdumpTypesParser:
         # If this class has a vtable, create a mock member at offset 0
         if self.VTABLE_RE.search(leaf) is not None:
             # For our purposes, any pointer type will do
-            members.append(FieldListItem(offset=0, type="T_32PVOID", name="vftable"))
+            members.append(
+                FieldListItem(offset=0, type=CVInfoTypeEnum.T_32PVOID, name="vftable")
+            )
 
         # Superclass is set here in the fieldlist rather than in LF_CLASS
         for match in self.SUPERCLASS_RE.finditer(leaf):
             superclass_list: dict[CvdumpTypeKey, int] = obj.setdefault("super", {})
-            superclass_list[normalize_type_id(match.group("type"))] = int(
+            superclass_list[CvdumpTypeKey.from_str(match.group("type"))] = int(
                 match.group("offset")
             )
 
@@ -597,7 +576,7 @@ class CvdumpTypesParser:
 
             virtual_base_pointer.bases.append(
                 VirtualBaseClass(
-                    type=match.group("type"),
+                    type=CvdumpTypeKey.from_str(match.group("type")),
                     index=-1,  # default to -1 until we parse the correct value
                     direct=match.group("indirect") != "I",
                 )
@@ -625,7 +604,7 @@ class CvdumpTypesParser:
         members += [
             FieldListItem(
                 offset=int(offset),
-                type=normalize_type_id(type_),
+                type=CvdumpTypeKey.from_str(type_),
                 name=name,
             )
             for (_, type_, offset, name) in self.LIST_RE.findall(leaf)
@@ -653,7 +632,7 @@ class CvdumpTypesParser:
             # These cases get reported as UDT mismatch.
             obj["is_forward_ref"] = True
         else:
-            field_list_type = normalize_type_id(match.group("field_type"))
+            field_list_type = CvdumpTypeKey.from_str(match.group("field_type"))
             obj["field_list_type"] = field_list_type
 
         match = self.CLASS_NAME_RE.search(leaf)
@@ -664,7 +643,7 @@ class CvdumpTypesParser:
         obj["name"] = match.group("name")
         udt = match.group("udt")
         if udt is not None:
-            obj["udt"] = normalize_type_id(udt)
+            obj["udt"] = CvdumpTypeKey.from_str(udt)
 
         obj["size"] = int(match.group("size"))
 
@@ -675,7 +654,10 @@ class CvdumpTypesParser:
         assert match is not None
         argcount = int(match.group("argcount"))
 
-        arglist = [arg_type for (_, arg_type) in self.LF_ARGLIST_ENTRY.findall(leaf)]
+        arglist = [
+            CvdumpTypeKey.from_str(arg_type)
+            for (_, arg_type) in self.LF_ARGLIST_ENTRY.findall(leaf)
+        ]
         assert len(arglist) == argcount
 
         obj: CvdumpParsedType = {"type": leaf_type, "argcount": argcount}
@@ -702,25 +684,32 @@ class CvdumpTypesParser:
             "Pointer to member function",
         )
 
-        return {
+        obj: CvdumpParsedType = {
             "type": leaf_type,
-            "element_type": match.group("element_type"),
-            # `containing_class` is set to `None` if not present
-            "containing_class": match.group("containing_class"),
+            "element_type": CvdumpTypeKey.from_str(match.group("element_type")),
+            "pointer_type": match.group("type"),
         }
+
+        # `containing_class` is unset if not present
+        if match.group("containing_class") is not None:
+            obj["containing_class"] = CvdumpTypeKey.from_str(
+                match.group("containing_class")
+            )
+
+        return obj
 
     def read_mfunction(self, leaf: str, leaf_type: str) -> CvdumpParsedType:
         match = self.LF_MFUNCTION_RE.search(leaf)
         assert match is not None
         return {
             "type": leaf_type,
-            "return_type": match.group("return_type"),
-            "class_type": match.group("class_type"),
-            "this_type": match.group("this_type"),
+            "return_type": CvdumpTypeKey.from_str(match.group("return_type")),
+            "class_type": CvdumpTypeKey.from_str(match.group("class_type")),
+            "this_type": CvdumpTypeKey.from_str(match.group("this_type")),
             "call_type": match.group("call_type"),
             "func_attr": match.group("func_attr"),
             "num_params": int(match.group("num_params")),
-            "arg_list_type": match.group("arg_list_type"),
+            "arg_list_type": CvdumpTypeKey.from_str(match.group("arg_list_type")),
             "this_adjust": int(match.group("this_adjust"), 16),
         }
 
@@ -729,11 +718,11 @@ class CvdumpTypesParser:
         assert match is not None
         return {
             "type": leaf_type,
-            "return_type": match.group("return_type"),
+            "return_type": CvdumpTypeKey.from_str(match.group("return_type")),
             "call_type": match.group("call_type"),
             "func_attr": match.group("func_attr"),
             "num_params": int(match.group("num_params")),
-            "arg_list_type": match.group("arg_list_type"),
+            "arg_list_type": CvdumpTypeKey.from_str(match.group("arg_list_type")),
         }
 
     def read_enum(self, leaf: str, leaf_type: str) -> CvdumpParsedType:
@@ -773,11 +762,13 @@ class CvdumpTypesParser:
         if attribute.startswith("UDT"):
             match = self.LF_ENUM_UDT.match(attribute)
             assert match is not None
-            return {"udt": normalize_type_id(match.group("udt"))}
+            return {"udt": CvdumpTypeKey.from_str(match.group("udt"))}
         if (match := self.LF_ENUM_TYPES.match(attribute)) is not None:
             return {
-                "underlying_type": normalize_type_id(match.group("underlying_type")),
-                "field_list_type": match.group("field_type"),
+                "underlying_type": CvdumpTypeKey.from_str(
+                    match.group("underlying_type")
+                ),
+                "field_list_type": CvdumpTypeKey.from_str(match.group("field_type")),
             }
 
         logger.error("Unknown attribute in enum: %s", attribute)
@@ -792,12 +783,12 @@ class CvdumpTypesParser:
         if match.group("field_type") == "0x0000":
             obj["is_forward_ref"] = True
         else:
-            field_list_type = normalize_type_id(match.group("field_type"))
+            field_list_type = CvdumpTypeKey.from_str(match.group("field_type"))
             obj["field_list_type"] = field_list_type
 
         udt = match.group("udt")
         if udt is not None:
-            obj["udt"] = normalize_type_id(udt)
+            obj["udt"] = CvdumpTypeKey.from_str(udt)
 
         obj["size"] = int(match.group("size"))
 

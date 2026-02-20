@@ -463,6 +463,7 @@ def test_variable_size_with_type_info(binfile: PEImage):
     entity = db.get_by_recomp(0x101015B8)
     assert entity is not None
     assert entity.get("size") == 1024
+    assert entity.get("data_type") == 0x1424
 
 
 def test_gproc32(binfile: PEImage):
