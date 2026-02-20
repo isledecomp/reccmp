@@ -417,7 +417,9 @@ def test_compare_complex_raw_missing_key(db: EntityDb, types: CvdumpTypesParser)
     assert c.result == CompareResult.MATCH
 
 
-def test_compare_complex_warn_for_missing_key_diff(db: EntityDb, types: CvdumpTypesParser):
+def test_compare_complex_warn_for_missing_key_diff(
+    db: EntityDb, types: CvdumpTypesParser
+):
     """If the variable has a type but we cannot produce any struct members, we compare raw bytes.
     If there is a diff, we report a warning because this may not be something the user can fix.
     This test is here to establish the behavior. (i.e. in the future, we may decide to report a diff
