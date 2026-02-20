@@ -283,8 +283,10 @@ def test_compare_complex_partial_diff(db: EntityDb):
     assert c.compared[1].match is False
 
 
-def test_compare_complex_with_padding(db: EntityDb):
-    """Make sure we report a diff if padding bytes don't match."""
+def test_compare_complex_with_trailing_padding(db: EntityDb):
+    """Make sure we report a diff if padding bytes don't match.
+    In this example, the two struct members are contiguous, followed by trailing pad bytes.
+    """
     key = CvdumpTypeKey(0x1000)
     type_info = [
         TypeInfo(
@@ -304,6 +306,41 @@ def test_compare_complex_with_padding(db: EntityDb):
     # Padding bytes are nonzero in orig
     orig = RawImage.from_memory(b"\x01\x02\x03\x04\x05\x06\x07\x08")
     recomp = RawImage.from_memory(b"\x01\x02\x03\x04\x05\x06\x00\x00")
+    comparator = VariableComparator(db, types, orig, recomp)
+
+    c = comparator.compare_variable(get_match(db, 0))
+
+    assert c is not None
+    assert c.result == CompareResult.DIFF
+
+
+def test_compare_complex_with_intermediate_padding(db: EntityDb):
+    """Make sure we report a diff if padding bytes don't match.
+    In this (contrived) example, each array entry has padding."""
+    key = CvdumpTypeKey(0x1000)
+    type_info = [
+        TypeInfo(
+            key=key,
+            size=8,
+            members=[
+                FieldListItem(offset=0, name="[0]", type=CVInfoTypeEnum.T_CHAR),
+                # Pad byte
+                FieldListItem(offset=2, name="[1]", type=CVInfoTypeEnum.T_CHAR),
+                # Pad byte
+                FieldListItem(offset=4, name="[2]", type=CVInfoTypeEnum.T_CHAR),
+                # Pad byte
+                FieldListItem(offset=6, name="[3]", type=CVInfoTypeEnum.T_CHAR),
+                # Pad byte
+            ],
+        )
+    ]
+
+    types = MockTypesDb(type_info)
+    create_matched_variable(db, 0, data_type=key)
+
+    # Padding bytes are nonzero in orig
+    orig = RawImage.from_memory(b"\x01\x02\x03\x04\x05\x06\x07\x08")
+    recomp = RawImage.from_memory(b"\x01\x00\x03\x00\x05\x00\x07\x00")
     comparator = VariableComparator(db, types, orig, recomp)
 
     c = comparator.compare_variable(get_match(db, 0))
@@ -378,6 +415,24 @@ def test_compare_complex_raw_missing_key(db: EntityDb, types: CvdumpTypesParser)
 
     assert c is not None
     assert c.result == CompareResult.MATCH
+
+
+def test_compare_complex_warn_for_missing_key_diff(db: EntityDb, types: CvdumpTypesParser):
+    """If the variable has a type but we cannot produce any struct members, we compare raw bytes.
+    If there is a diff, we report a warning because this may not be something the user can fix.
+    This test is here to establish the behavior. (i.e. in the future, we may decide to report a diff
+    because it *should* be possible to get the type)"""
+    key = CvdumpTypeKey(0x1000)
+    create_matched_variable(db, 0, data_type=key, size=4)
+
+    orig = RawImage.from_memory(b"\x01\x02\x03\x04")
+    recomp = RawImage.from_memory(b"\x01\x02\x03\x00")
+    comparator = VariableComparator(db, types, orig, recomp)
+
+    c = comparator.compare_variable(get_match(db, 0))
+
+    assert c is not None
+    assert c.result == CompareResult.WARN
 
 
 def test_compare_complex_raw_empty_struct(db: EntityDb):
