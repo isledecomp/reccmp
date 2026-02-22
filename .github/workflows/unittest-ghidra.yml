@@ -30,6 +30,7 @@ jobs:
         fail-on-cache-miss: true
         path: binfiles
         key: binfiles
+        restore-keys: binfiles
 
     # TODO: Try automatic again now that we have a different image
 
