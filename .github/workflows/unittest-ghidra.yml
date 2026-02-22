@@ -49,8 +49,7 @@ jobs:
 
     - name: Run unit tests
       shell: bash
-      # TODO: Need to implement --require-ghidra
       run: |
         source .venv/bin/activate
-        pytest .
-        # pytest . --binfiles=binfiles --require-binfiles
+        pytest . --require-ghidra
+        # pytest . --binfiles=binfiles --require-binfiles --require-ghidra
