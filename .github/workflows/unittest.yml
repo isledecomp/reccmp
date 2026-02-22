@@ -39,6 +39,7 @@ jobs:
       shell: bash
       run: |
         apk add python3 py3-pip
+        python3 -m venv .venv
 
 
     - name: Restore sample binaries
@@ -52,9 +53,11 @@ jobs:
     - name: Install python libraries
       shell: bash
       run: |
+        source .venv/bin/activate
         pip install -r requirements.txt -r requirements-tests.txt
 
     - name: Run unit tests
       shell: bash
       run: |
+        source .venv/bin/activate
         pytest . --binfiles=binfiles --require-binfiles
