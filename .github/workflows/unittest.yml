@@ -10,11 +10,6 @@ jobs:
   test:
     name: '${{ matrix.platform.name }} ${{ matrix.python-version }}'
     runs-on: ${{ matrix.platform.os }}
-
-    container:
-      image: blacktop/ghidra:12.0.2
-      env:
-        GHIDRA_INSTALL_DIR: '/ghidra'
     needs: fetch-deps
 
     strategy:
@@ -28,11 +23,10 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    # disabled (fails in container)
-    # - uses: actions/setup-python@v5
-    #   with:
-    #     python-version: ${{ matrix.python-version }}
-    #     cache: 'pip'
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
 
     - name: Restore sample binaries
       id: cache
@@ -45,11 +39,9 @@ jobs:
     - name: Install python libraries
       shell: bash
       run: |
-        source .venv/bin/activate
         pip install -r requirements.txt -r requirements-tests.txt
 
     - name: Run unit tests
       shell: bash
       run: |
-        source .venv/bin/activate
         pytest . --binfiles=binfiles --require-binfiles
