@@ -22,23 +22,24 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Restore sample binaries
-      id: cache
-      uses: actions/cache/restore@v3
-      with:
-        enableCrossOsArchive: true
-        fail-on-cache-miss: true
-        path: binfiles
-        key: binfiles
-        restore-keys: binfiles
+    # Can't make this work at the moment. Possibly a docker-in-docker issue?
+    #
+    # - name: Restore sample binaries
+    #   id: cache
+    #   uses: actions/cache/restore@v3
+    #   with:
+    #     enableCrossOsArchive: true
+    #     fail-on-cache-miss: true
+    #     path: binfiles
+    #     key: binfiles
 
     # TODO: Try automatic again now that we have a different image
 
-    # Experiment: disabled (fails in container)
-    # - uses: actions/setup-python@v5
-    #   with:
-    #     python-version: ${{ matrix.python-version }}
-    #     cache: 'pip'
+    # Try to see if this still fails
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+        cache: 'pip'
 
     # Install manually because (TODO)
     - name: Install python
@@ -59,4 +60,5 @@ jobs:
       # TODO: Need --require-ghidra
       run: |
         source .venv/bin/activate
-        pytest . --binfiles=binfiles --require-binfiles
+        pytest .
+        # pytest . --binfiles=binfiles --require-binfiles
