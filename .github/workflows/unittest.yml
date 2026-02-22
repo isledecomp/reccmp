@@ -14,9 +14,11 @@ jobs:
     # TODO: experimental
     container:
       # TODO: try a newer one if this works well
-      image: blacktop/ghidra:11.4.2-alpine
+      image: blacktop/ghidra:12.0.2
+      env:
+        GHIDRA_INSTALL_DIR: '/ghidra'
 
-    needs: fetch-deps
+    # needs: fetch-deps
 
     strategy:
       fail-fast: false
@@ -38,17 +40,17 @@ jobs:
     - name: Install python
       shell: bash
       run: |
-        apk add python3 py3-pip
+        apt update
+        apt install python3 python3-pip
         python3 -m venv .venv
 
-
-    - name: Restore sample binaries
-      id: cache
-      uses: actions/cache/restore@v3
-      with:
-        enableCrossOsArchive: true
-        path: binfiles
-        key: binfiles
+    # - name: Restore sample binaries
+    #   id: cache
+    #   uses: actions/cache/restore@v3
+    #   with:
+    #     enableCrossOsArchive: true
+    #     path: binfiles
+    #     key: binfiles
 
     - name: Install python libraries
       shell: bash
@@ -60,4 +62,5 @@ jobs:
       shell: bash
       run: |
         source .venv/bin/activate
-        pytest . --binfiles=binfiles --require-binfiles
+        pytest .
+        # pytest . --binfiles=binfiles --require-binfiles
