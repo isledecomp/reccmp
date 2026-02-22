@@ -38,7 +38,7 @@ jobs:
     - name: Install python
       shell: bash
       run: |
-        apk add python3
+        apk add python3 py3-pip
 
 
     - name: Restore sample binaries
