@@ -10,6 +10,12 @@ jobs:
   test:
     name: '${{ matrix.platform.name }} ${{ matrix.python-version }}'
     runs-on: ${{ matrix.platform.os }}
+
+    # TODO: experimental
+    container:
+      # TODO: try a newer one if this works well
+      image: blacktop/ghidra:11.4.2-alpine
+
     needs: fetch-deps
 
     strategy:
