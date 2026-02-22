@@ -8,31 +8,35 @@ jobs:
     uses: ./.github/workflows/binfiles.yml
 
   test:
-    name: '${{ matrix.platform.name }} ${{ matrix.python-version }}'
-    runs-on: ${{ matrix.platform.os }}
+    name: 'Ghidra integration tests'
+    runs-on: 'ubuntu-latest'
 
     container:
       image: blacktop/ghidra:12.0.2
       env:
+        # not set by default for some reason
         GHIDRA_INSTALL_DIR: '/ghidra'
+
     needs: fetch-deps
-
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
-        platform:
-          - { name: 'Windows', os: 'windows-latest' }
-          - { name: 'Linux',   os: 'ubuntu-latest' }
-
+    
     steps:
     - uses: actions/checkout@v4
 
-    # disabled (fails in container)
+    # TODO: Try automatic again now that we have a different image
+
+    # Experiment: disabled (fails in container)
     # - uses: actions/setup-python@v5
     #   with:
     #     python-version: ${{ matrix.python-version }}
     #     cache: 'pip'
+
+    # Install manually because (TODO)
+    - name: Install python
+      shell: bash
+      run: |
+        apt-get update
+        apt-get -y install python3 python3-pip python3-venv
+        python3 -m venv .venv
 
     - name: Restore sample binaries
       id: cache
@@ -50,6 +54,7 @@ jobs:
 
     - name: Run unit tests
       shell: bash
+      # TODO: Need --require-ghidra
       run: |
         source .venv/bin/activate
         pytest . --binfiles=binfiles --require-binfiles
