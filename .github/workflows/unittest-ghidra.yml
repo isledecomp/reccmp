@@ -3,9 +3,9 @@ name: Test with Ghidra
 on: [push, pull_request]
 
 jobs:
-  fetch-deps:
-    name: Prepare sample binary files
-    uses: ./.github/workflows/binfiles.yml
+#   fetch-deps:
+#     name: Prepare sample binary files
+#     uses: ./.github/workflows/binfiles.yml
 
   test:
     name: 'Ghidra integration tests'
@@ -17,7 +17,7 @@ jobs:
         # not set by default for some reason
         GHIDRA_INSTALL_DIR: '/ghidra'
 
-    needs: fetch-deps
+    # needs: fetch-deps
     
     steps:
     - uses: actions/checkout@v4
@@ -33,15 +33,7 @@ jobs:
     #     path: binfiles
     #     key: binfiles
 
-    # TODO: Try automatic again now that we have a different image
-
-    # Try to see if this still fails
-    - uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
-        cache: 'pip'
-
-    # Install manually because (TODO)
+    # Install manually because the install action does not work
     - name: Install python
       shell: bash
       run: |
@@ -57,7 +49,7 @@ jobs:
 
     - name: Run unit tests
       shell: bash
-      # TODO: Need --require-ghidra
+      # TODO: Need to implement --require-ghidra
       run: |
         source .venv/bin/activate
         pytest .
