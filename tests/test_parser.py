@@ -250,6 +250,23 @@ def test_implicit_lookup_by_name(parser):
     assert parser.functions[0].name == "TestClass::TestMethod()"
 
 
+def test_function_skips_clang_format_directive_after_marker(parser):
+    parser.read(
+        """\
+        // FUNCTION: TEST 0x1234
+        // clang-format off
+        int test_function()
+        {
+            return 1;
+        }
+        """
+    )
+    assert parser.state == ReaderState.SEARCH
+    assert len(parser.functions) == 1
+    assert parser.functions[0].lookup_by_name is False
+    assert parser.functions[0].name.startswith("int test_function")
+
+
 def test_function_with_spaces(parser):
     """There should not be any spaces between the end of FUNCTION markers
     and the start or name of the function. If it's a blank line, we can safely

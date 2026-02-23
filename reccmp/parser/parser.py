@@ -9,6 +9,7 @@ from .util import (
     get_class_name,
     get_variable_name,
     get_synthetic_name,
+    is_ignorable_marker_adjacent_comment,
     remove_trailing_comment,
     get_string_contents,
     ParserCodeString,
@@ -518,11 +519,16 @@ class DecompParser:
                 self._syntax_warning(AlertCode.UNEXPECTED_BLANK_LINE)
 
             elif line_strip.startswith("//"):
+                if is_ignorable_marker_adjacent_comment(line):
+                    return
+
                 # If we found a comment, assume implicit lookup-by-name
                 # function and end here. We know this is not a decomp marker
                 # because it would have been handled already.
                 synthetic_name = get_synthetic_name(line)
-                assert synthetic_name is not None
+                if synthetic_name is None:
+                    self._syntax_error(ParserError.BAD_NAMEREF)
+                    return
                 self.function_sig = synthetic_name
                 self._function_starts_here()
                 self._function_done(lookup_by_name=True)

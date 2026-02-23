@@ -23,6 +23,10 @@ regularCommentRegex = re.compile(r"(//.*)")
 # Get string contents, ignore escape characters that might interfere
 doubleQuoteRegex = re.compile(r'(L)?("(?:[^"\\]|\\.)*")')
 
+# Clang-format directive comments can appear between FUNCTION marker and signature.
+# These are not implicit by-name lookup comments and should be ignored.
+clangFormatDirectiveRegex = re.compile(r"^\s*//\s*clang-format\s+(?:on|off)\s*$", re.I)
+
 # Detect a line that would cause us to enter a new scope
 scopeDetectRegex = re.compile(r"(?:class|struct|namespace) (?P<name>\w+).*(?:{)?")
 
@@ -36,6 +40,10 @@ def get_synthetic_name(line: str) -> str | None:
         return template_match.group(1)
 
     return None
+
+
+def is_ignorable_marker_adjacent_comment(line: str) -> bool:
+    return clangFormatDirectiveRegex.match(line) is not None
 
 
 def sanitize_code_line(line: str) -> str:
