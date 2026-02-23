@@ -6,7 +6,12 @@ from reccmp.types import EntityType
 from .demangler import demangle_vtable
 from .parser import CvdumpParser, LineValue, NodeKey
 from .symbols import SymbolsEntry
-from .types import CvdumpKeyError, CvdumpIntegrityError, CvdumpTypesParser, TypeInfo
+from .types import (
+    CvdumpKeyError,
+    CvdumpIntegrityError,
+    CvdumpTypesParser,
+    TypeInfo,
+)
 
 
 @dataclass

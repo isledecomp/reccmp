@@ -27,6 +27,7 @@ from reccmp.cvdump.types import (
     FieldListItem,
     VirtualBasePointer,
 )
+from reccmp.cvdump.cvinfo import CvdumpTypeKey
 
 from .entity_names import NamespacePath, SanitizedEntityName, sanitize_name
 from .exceptions import (
@@ -45,6 +46,7 @@ from .ghidra_helper import (
     get_scalar_ghidra_type,
 )
 from .pdb_extraction import PdbFunctionExtractor
+from .type_conversion import scalar_type_to_cpp
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +82,7 @@ class PdbTypeImporter:
         return self.extraction.compare.types
 
     def import_pdb_type_into_ghidra(
-        self, type_index: str, slim_for_vbase: bool = False
+        self, type_index: CvdumpTypeKey, slim_for_vbase: bool = False
     ) -> DataType:
         """
         Recursively imports a type from the PDB into Ghidra.
@@ -93,24 +95,21 @@ class PdbTypeImporter:
             that fits inside C.
             This value should always be `False` when the referenced type is not (a pointer to) a class.
         """
-        type_index_lower = type_index.lower()
-        if type_index_lower.startswith("t_"):
-            return self._import_scalar_type(type_index_lower)
+        if type_index.is_scalar():
+            return self._import_scalar_type(type_index)
 
         try:
-            type_pdb = self.extraction.compare.types.keys[type_index_lower]
+            type_pdb = self.extraction.compare.types.keys[type_index]
         except KeyError as e:
             raise TypeNotFoundError(
-                f"Failed to find referenced type '{type_index_lower}'"
+                f"Failed to find referenced type '{type_index:#x}'"
             ) from e
 
         type_category = type_pdb["type"]
 
         # follow forward reference (class, struct, union)
         if type_pdb.get("is_forward_ref", False):
-            return self._import_forward_ref_type(
-                type_index_lower, type_pdb, slim_for_vbase
-            )
+            return self._import_forward_ref_type(type_index, type_pdb, slim_for_vbase)
 
         if type_category == "LF_POINTER":
             return get_or_add_pointer_type(
@@ -136,29 +135,15 @@ class PdbTypeImporter:
         else:
             raise TypeNotImplementedError(type_pdb)
 
-    _scalar_type_map = {
-        "rchar": "char",
-        "int4": "int",
-        "uint4": "uint",
-        "real32": "float",
-        "real64": "double",
-    }
+    def _import_scalar_type(self, type_key: CvdumpTypeKey) -> DataType:
+        if not type_key.is_scalar():
+            raise TypeNotFoundError(f"Type has unexpected format: {type_key:#x}")
 
-    def _scalar_type_to_cpp(self, scalar_type: str) -> str:
-        if scalar_type.startswith("32p"):
-            return f"{self._scalar_type_to_cpp(scalar_type[3:])} *"
-        return self._scalar_type_map.get(scalar_type, scalar_type)
-
-    def _import_scalar_type(self, type_index_lower: str) -> DataType:
-        if (match := self.extraction.scalar_type_regex.match(type_index_lower)) is None:
-            raise TypeNotFoundError(f"Type has unexpected format: {type_index_lower}")
-
-        scalar_cpp_type = self._scalar_type_to_cpp(match.group("typename"))
-        return get_scalar_ghidra_type(self.api, scalar_cpp_type)
+        return get_scalar_ghidra_type(self.api, scalar_type_to_cpp(type_key))
 
     def _import_forward_ref_type(
         self,
-        type_index,
+        type_index: CvdumpTypeKey,
         type_pdb: CvdumpParsedType,
         slim_for_vbase: bool = False,
     ) -> DataType:
@@ -233,8 +218,8 @@ class PdbTypeImporter:
         type_in_pdb: CvdumpParsedType,
         slim_for_vbase: bool = False,
     ) -> DataType:
-        field_list_type: str = type_in_pdb["field_list_type"]
-        field_list = self.types.keys[field_list_type.lower()]
+        field_list_type = type_in_pdb["field_list_type"]
+        field_list = self.types.keys[field_list_type]
 
         class_size: int = type_in_pdb["size"]
         raw_name: str = type_in_pdb["name"]
@@ -327,7 +312,7 @@ class PdbTypeImporter:
     def _get_components_from_base_classes(
         self, field_list: CvdumpParsedType
     ) -> Iterator[GhidraFieldListItem]:
-        non_virtual_base_classes: dict[str, int] = field_list.get("super", {})
+        non_virtual_base_classes: dict[CvdumpTypeKey, int] = field_list.get("super", {})
 
         for super_type, offset in non_virtual_base_classes.items():
             # If we have virtual inheritance _and_ a non-virtual base class here, we play safe and import slim version.

@@ -1,6 +1,7 @@
 """Test Cvdump SYMBOLS parser, reading function stack/params"""
 
 from reccmp.cvdump.symbols import CvdumpSymbolsParser
+from reccmp.cvdump.cvinfo import CvdumpTypeKey, CVInfoTypeEnum
 
 PROC_WITH_BLOC = """
 (000638) S_GPROC32: [0001:000C6135], Cb: 00000361, Type:             0x10ED, RegistrationBook::ReadyWorld
@@ -36,6 +37,7 @@ def test_sblock32():
     # Make sure we can read the proc and all its stack references
     assert len(parser.symbols) == 1
     assert len(parser.symbols[0].stack_symbols) == 8
+    assert parser.symbols[0].stack_symbols[0].data_type == CvdumpTypeKey(0x10EC)
 
 
 LOCAL_PROC = """
@@ -58,6 +60,7 @@ def test_local_proc():
 
     # Make sure we can read the proc
     assert len(parser.symbols) == 1
+    assert parser.symbols[0].func_type == CvdumpTypeKey(0x1078)
 
 
 LDATA32_INSIDE_FUNCTION = """\
@@ -79,10 +82,15 @@ def test_ldata32_inside_function():
         parser.read_line(line)
 
     assert len(parser.symbols) == 1
+    assert parser.symbols[0].func_type == CvdumpTypeKey(0x1010)
     assert len(parser.symbols[0].static_variables) == 2
     assert [v.name for v in parser.symbols[0].static_variables] == [
         "got_it_already",
         "cd_pathname",
+    ]
+    assert [v.type for v in parser.symbols[0].static_variables] == [
+        CVInfoTypeEnum.T_INT4,
+        CvdumpTypeKey(0x100B),
     ]
 
 
