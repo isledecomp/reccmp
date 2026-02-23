@@ -281,6 +281,24 @@ def test_function_with_spaces(parser):
     assert parser.alerts[0].code == AlertCode.UNEXPECTED_BLANK_LINE
 
 
+def test_multiline_function_signature(parser):
+    parser.read(
+        """\
+        // FUNCTION: TEST 0x1234
+        void __fastcall VeryLongFunctionNameWithManyArgs(
+            void* self, int a, int b, int c, int d, int e)
+        {
+            return;
+        }
+        """
+    )
+    assert parser.state == ReaderState.SEARCH
+    assert len(parser.functions) == 1
+    assert parser.functions[0].lookup_by_name is False
+    assert "VeryLongFunctionNameWithManyArgs" in parser.functions[0].name
+    assert "void* self" in parser.functions[0].name
+
+
 def test_function_with_spaces_implicit(parser):
     """Same as above, but for implicit lookup-by-name"""
     parser.read("""\

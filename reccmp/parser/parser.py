@@ -565,9 +565,28 @@ class DecompParser:
                     self.state = ReaderState.WANT_CURLY
 
         elif self.state == ReaderState.WANT_CURLY:
-            if line_strip == "{":
+            if len(line_strip) == 0:
+                return
+
+            if line_strip.startswith("//"):
+                return
+
+            if line_strip.startswith("#"):
+                return
+
+            # Function signatures can span multiple lines when the argument list is long.
+            # Keep appending signature fragments until we reach "{".
+            sig_line = remove_trailing_comment(line_strip)
+            self.function_sig = f"{self.function_sig} {sig_line}".strip()
+
+            if "{" in sig_line:
                 self.curly_indent_stops = line.index("{")
                 self.state = ReaderState.IN_FUNC
+            elif self.function_sig.endswith("}") or self.function_sig.endswith("};"):
+                self._function_done()
+            elif self.function_sig.endswith(");"):
+                # Detect forward reference or declaration
+                self._syntax_error(ParserError.NO_IMPLEMENTATION)
 
         elif self.state == ReaderState.IN_FUNC:
             if line_strip.startswith("}") and line[self.curly_indent_stops] == "}":
