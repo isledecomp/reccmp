@@ -589,7 +589,10 @@ class DecompParser:
                 self._syntax_error(ParserError.NO_IMPLEMENTATION)
 
         elif self.state == ReaderState.IN_FUNC:
-            if line_strip.startswith("}") and line[self.curly_indent_stops] == "}":
+            if line_strip.startswith("}") and (
+                (self.curly_indent_stops < len(line) and line[self.curly_indent_stops] == "}")
+                or line_strip == "}"
+            ):
                 self._function_done()
 
         elif self.state in (ReaderState.IN_GLOBAL, ReaderState.IN_FUNC_GLOBAL):
