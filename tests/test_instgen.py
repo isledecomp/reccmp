@@ -246,9 +246,14 @@ REPORT_SAVE_LOAD_EXCEPTION = (
 
 
 def test_movzx_data_table():
-    """Data table is accessed with a MOVZX instruction:
+    """Make sure we detect a data table accessed with a MOVZX instruction:
     00451df7 0f b6 88        MOVZX      this,byte ptr [EAX + 0x451ed5]=>PTR_caseD_7_00
              d5 1e 45 00
     """
     ig = InstructGen(REPORT_SAVE_LOAD_EXCEPTION, 0x451D73)
     assert len(ig.sections) == 3
+    assert [section.type for section in ig.sections] == [
+        SectionType.CODE,
+        SectionType.ADDR_TAB,
+        SectionType.DATA_TAB,
+    ]
