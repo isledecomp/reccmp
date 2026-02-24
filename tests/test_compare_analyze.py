@@ -17,7 +17,9 @@ from reccmp.compare.analyze import (
     complete_partial_strings,
     create_imports,
     create_import_thunks,
+    create_seh_entities,
 )
+from reccmp.analysis.funcinfo import FuncInfo, UnwindMapEntry
 
 
 @pytest.fixture(name="db")
@@ -361,3 +363,31 @@ def test_create_import_thunks_pe_only(db: EntityDb):
     with patch("reccmp.compare.analyze.find_import_thunks") as find_fn:
         create_import_thunks(db, ImageId.ORIG, image)
         find_fn.assert_not_called()
+
+
+@pytest.mark.parametrize("image_id", ImageId)
+def test_create_seh_entities(db: EntityDb, image_id: ImageId):
+    """Should create entities with specific types from a
+    Structured Exception Handling (SEH) funcinfo struct."""
+    handler_addr, unwind_addr, funcinfo_addr = (0x1000, 0x2000, 0x3000)
+    pe_image = Mock(spec=PEImage)
+    mock_funcinfo_data = [
+        (handler_addr, FuncInfo(funcinfo_addr, (UnwindMapEntry(-1, unwind_addr),)))
+    ]
+    with patch(
+        "reccmp.compare.analyze.find_eh_handlers", return_value=iter(mock_funcinfo_data)
+    ) as find_fn:
+        create_seh_entities(db, image_id, pe_image)
+        find_fn.assert_called()
+
+    e = db.get(image_id, handler_addr)
+    assert e is not None
+    assert e.get("type") == EntityType.LABEL
+
+    e = db.get(image_id, unwind_addr)
+    assert e is not None
+    assert e.get("type") == EntityType.LABEL
+
+    e = db.get(image_id, funcinfo_addr)
+    assert e is not None
+    assert e.get("type") == EntityType.DATA
