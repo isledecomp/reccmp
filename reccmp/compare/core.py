@@ -359,19 +359,6 @@ class Compare:
 
     ## Public API
 
-    def is_pointer_match(self, orig_addr, recomp_addr) -> bool:
-        """Check whether these pointers point at the same thing"""
-
-        # Null pointers considered matching
-        if orig_addr == 0 and recomp_addr == 0:
-            return True
-
-        match = self._db.get_by_orig(orig_addr)
-        if match is None:
-            return False
-
-        return match.recomp_addr == recomp_addr
-
     def get_by_orig(self, addr: int) -> ReccmpEntity | None:
         return self._db.get_by_orig(addr)
 
