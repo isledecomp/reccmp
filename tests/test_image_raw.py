@@ -1,39 +1,13 @@
-import dataclasses
-from pathlib import Path
+"""Testing the RawImage class where the bare minimum API is implemented.
+This allows for testing the other methods like read() or read_string()
+with specific data or BSS region."""
+
 import pytest
-from reccmp.formats.image import Image
 from reccmp.formats.exceptions import (
     InvalidVirtualAddressError,
     InvalidVirtualReadError,
 )
-
-
-# pylint: disable=abstract-method
-@dataclasses.dataclass
-class RawImage(Image):
-    """For testing functions implemented in the base Image class."""
-
-    # Total size of the image.
-    # If it is more than the size of physical data, the remainder is uninitialized (all null).
-    size: int
-
-    @classmethod
-    def from_memory(cls, data: bytes, size: int = 0) -> "RawImage":
-        if size is None:
-            maxsize = len(data)
-        else:
-            maxsize = max(size, len(data))
-
-        view = memoryview(data).toreadonly()
-
-        image = cls(data=data, view=view, filepath=Path(""), size=maxsize)
-        return image
-
-    def seek(self, vaddr: int) -> tuple[bytes, int]:
-        if 0 <= vaddr < self.size:
-            return (self.data[vaddr:], self.size - vaddr)
-
-        raise InvalidVirtualAddressError
+from .raw_image import RawImage
 
 
 def test_raw_size_parameter():
@@ -43,18 +17,15 @@ def test_raw_size_parameter():
     img = RawImage.from_memory(b"test")
     assert img.size == 4
 
-    # Use the max of len(data) and size parameter.
-    img = RawImage.from_memory(b"test", size=0)
-    assert img.size == 4
-
-    img = RawImage.from_memory(b"test", size=10)
+    # BSS (uninitialized) bytes added to physical to comprise total footprint
+    img = RawImage.from_memory(b"test", bss=6)
     assert img.size == 10
 
-    # Size cannot be less than len(data) even if that is zero.
-    img = RawImage.from_memory(b"", size=-10)
-    assert img.size == 0
+    # BSS cannot be negative
+    with pytest.raises(AssertionError):
+        img = RawImage.from_memory(b"", bss=-10)
 
-    img = RawImage.from_memory(b"", size=10)
+    img = RawImage.from_memory(b"", bss=10)
     assert img.size == 10
 
 
@@ -108,7 +79,7 @@ def test_raw_all_initialized():
 
 
 def test_raw_partially_initialized():
-    img = RawImage.from_memory(b"test", size=10)
+    img = RawImage.from_memory(b"test", bss=6)
     # Seek should show only the physical bytes that exist.
     # The number of bytes remaining should take the full image size into account.
     assert img.seek(0) == (b"test", 10)
@@ -129,7 +100,7 @@ def test_raw_partially_initialized():
 
 
 def test_raw_all_uninitialized():
-    img = RawImage.from_memory(b"", size=10)
+    img = RawImage.from_memory(b"", bss=10)
     # There are no physical bytes but make sure the remaining count is correct.
     assert img.seek(0) == (b"", 10)
     assert img.seek(9) == (b"", 1)
@@ -175,7 +146,7 @@ def test_widechar_null_terminator_missing():
         img.read_widechar(0)
 
     # Throws InvalidVirtualAddressError if not for the uninitialized padding.
-    img = RawImage.from_memory(b"", size=1)
+    img = RawImage.from_memory(b"", bss=1)
     assert img.read_widechar(0) == b""
 
     # UTF-16 LE: 1 byte for null-terminator

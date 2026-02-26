@@ -89,6 +89,15 @@ def create_seh_entities(db: EntityDb, img_id: ImageId, binfile: PEImage):
                 name="__ehfuncinfo",
             )
 
+            for unwind in funcinfo.unwinds:
+                if unwind.action_addr != 0:
+                    batch.set(
+                        img_id,
+                        unwind.action_addr,
+                        type=EntityType.LABEL,
+                        name=f"__Unwind({unwind.target_state})",
+                    )
+
 
 def create_imports(db: EntityDb, image_id: ImageId, binfile: Image):
     with db.batch() as batch:
