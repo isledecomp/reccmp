@@ -27,7 +27,7 @@ from reccmp.cvdump.types import (
     FieldListItem,
     VirtualBasePointer,
 )
-from reccmp.cvdump.cvinfo import CvdumpTypeKey, CvdumpTypeMap
+from reccmp.cvdump.cvinfo import CVInfoTypeEnum, CvdumpTypeKey, CvdumpTypeMap
 
 from .entity_names import NamespacePath, SanitizedEntityName, sanitize_name
 from .exceptions import (
@@ -128,8 +128,7 @@ class PdbTypeImporter:
                 "Not implemented: Function-valued argument or return type will be replaced by void pointer: %s",
                 type_pdb,
             )
-            # TODO refactor: get via enum
-            return get_scalar_ghidra_type(self.api, "void")
+            return self._import_scalar_type(CVInfoTypeEnum.T_32PVOID)
         elif type_category == "LF_UNION":
             return self._import_union(type_pdb)
         else:
