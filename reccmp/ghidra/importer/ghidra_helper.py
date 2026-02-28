@@ -18,7 +18,6 @@ from .entity_names import NamespacePath, SanitizedEntityName, sanitize_name
 from .exceptions import (
     ClassOrNamespaceNotFoundInGhidraError,
     TypeNotFoundInGhidraError,
-    MultipleTypesFoundInGhidraError,
 )
 
 
@@ -35,15 +34,15 @@ def get_scalar_ghidra_type(api: FlatProgramAPI, type_name: str) -> DataType:
     Note that this function may raise errors when a type by that name exists multiple times.
     Manual cleanup is needed in that case.
     """
+    category = (
+        api.getCurrentProgram().getDataTypeManager().getCategory(CategoryPath("/"))
+    )
+    data_type = category.getDataType(type_name)
 
-    result = list(api.getDataTypes(type_name))
-    match result:
-        case []:
-            raise TypeNotFoundInGhidraError(type_name)
-        case [value]:
-            return value
-        case _:
-            raise MultipleTypesFoundInGhidraError(type_name, result)
+    if data_type is None:
+        raise TypeNotFoundInGhidraError(type_name)
+
+    return data_type
 
 
 def get_ghidra_type(api: FlatProgramAPI, entity_name: SanitizedEntityName) -> DataType:
@@ -52,7 +51,6 @@ def get_ghidra_type(api: FlatProgramAPI, entity_name: SanitizedEntityName) -> Da
 
     Raises:
     - NotFoundInGhidraError
-    - MultipleTypesFoundInGhidraError
     """
 
     category_path = category_path_of(entity_name.namespace_path)

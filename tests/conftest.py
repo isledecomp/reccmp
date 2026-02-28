@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Callable, Iterator, TYPE_CHECKING
 import shutil
 import pytest
-from pyghidra import HeadlessPyGhidraLauncher
+from pyghidra import HeadlessPyGhidraLauncher  # type: ignore[import-untyped]
 
 from reccmp.formats import Image, NEImage, PEImage, detect_image
 

@@ -43,16 +43,6 @@ class ClassOrNamespaceNotFoundInGhidraError(ReccmpGhidraException):
         return f"Class or namespace not found in Ghidra: {self.get_namespace_str()}"
 
 
-class MultipleTypesFoundInGhidraError(ReccmpGhidraException):
-    def __init__(self, name: str, results: list["DataType"]):
-        super().__init__(name, results)
-        self.name = name
-        self.results = results
-
-    def __str__(self):
-        return f"Found multiple types matching '{self.name}' in Ghidra: {self.results}"
-
-
 class StackOffsetMismatchError(ReccmpGhidraException):
     pass
 
