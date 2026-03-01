@@ -28,11 +28,9 @@ def category_path_of(namespace_path: NamespacePath):
     return CategoryPath("/" + "/".join(namespace_path))
 
 
-def get_scalar_ghidra_type(api: FlatProgramAPI, type_name: str) -> DataType:
+def get_builtin_ghidra_type_by_name(api: FlatProgramAPI, type_name: str) -> DataType:
     """
-    Get a scalar/primitive type or type not contained in a namespace.
-    Note that this function may raise errors when a type by that name exists multiple times.
-    Manual cleanup is needed in that case.
+    Get a scalar/primitive type in the root category by name.
     """
     category = (
         api.getCurrentProgram().getDataTypeManager().getCategory(CategoryPath("/"))
