@@ -16,6 +16,7 @@ from reccmp.formats import Image, NEImage, PEImage, detect_image
 
 if TYPE_CHECKING:
     from ghidra.program.flatapi import FlatProgramAPI
+    from ghidra.program.model.listing import Program
 
 
 def pytest_addoption(parser):
@@ -95,7 +96,7 @@ def fixture_skifree(bin_loader) -> Iterator[NEImage]:
     yield image
 
 
-@pytest.fixture(name="ghidra_loader", scope="session")
+@pytest.fixture(name="ghidra_program", scope="session")
 def fixture_ghidra_loader(pytestconfig, tmp_path_factory) -> "Iterator[FlatProgramAPI]":
     try:
         source_dir = Path(__file__).parent / "ghidra"
@@ -104,7 +105,9 @@ def fixture_ghidra_loader(pytestconfig, tmp_path_factory) -> "Iterator[FlatProgr
 
         HeadlessPyGhidraLauncher().start()
 
-        from ghidra.program.flatapi import FlatProgramAPI
+        # pylint: disable-next=import-error
+        from java.lang import Object  # type: ignore[import-not-found]
+        from ghidra.util.task import TaskMonitor
         from reccmp.ghidra.importer.context import open_ghidra_project
 
         print("Ghidra started")
@@ -112,13 +115,20 @@ def fixture_ghidra_loader(pytestconfig, tmp_path_factory) -> "Iterator[FlatProgr
         with open_ghidra_project(
             str(project_dir), "integration-test", restore_project=False
         ) as project:
-            read_only = False
-            program = project.openProgram("/", "ISLE.EXE", read_only)
-            api = FlatProgramAPI(program)
+            # Do not use `project.openProgram()`, it creates a transaction by default
+            dom_file = project.getProjectData().getFile("/ISLE.EXE")
 
-            yield api
+            # The object responsible for releasing `program`
+            consumer = Object()
+            ok_to_upgrade = True  # not sure if this matters
+            ok_to_recover = False  # not sure if this matters
+            program = dom_file.getDomainObject(
+                consumer, ok_to_upgrade, ok_to_recover, TaskMonitor.DUMMY
+            )
 
-    # pylint: disable=broad-exception-caught # We cannot control all the exceptions that can be raised here
+            yield program
+
+    # pylint: disable-next=broad-exception-caught # We cannot control all the exceptions that can be raised here
     except Exception as e:
         reason = f"Unable to start Ghidra: {e}"
 
@@ -129,6 +139,19 @@ def fixture_ghidra_loader(pytestconfig, tmp_path_factory) -> "Iterator[FlatProgr
 
 
 @pytest.fixture(name="ghidra", scope="function")
-def fixture_ghidra(ghidra_loader) -> "Iterator[FlatProgramAPI]":
-    # TODO: add transaction in order to restore state by tests
-    yield ghidra_loader
+def fixture_ghidra(ghidra_program: "Program") -> "Iterator[FlatProgramAPI]":
+    from ghidra.program.flatapi import FlatProgramAPI
+
+    # The effect of `transaction.abort()` only becomes visible once all transactions are closed.
+    # Therefore, lingering transactions can cause interference between tests.
+    # If we want to be sure that the side effects of the tests we just ran have been reverted,
+    # we need to make sure that no other transactions is already open.
+    assert ghidra_program.getCurrentTransactionInfo() is None
+
+    transaction = ghidra_program.openTransaction("reccmp-integration-test")
+    api = FlatProgramAPI(ghidra_program)
+
+    yield api
+
+    # Revert all side effects of the test that just ran
+    transaction.abort()
