@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from pydantic import AliasChoices, BaseModel, Field
 import ruamel.yaml
+from .yml_extensions import PathSequence
 
 
 _yaml = ruamel.yaml.YAML()
@@ -73,8 +74,9 @@ class ProjectFileTarget(BaseModel):
     """Target schema for reccmp-project.yml"""
 
     filename: str
-    source_root: Path = Field(
-        validation_alias=AliasChoices("source-root", "source_root")
+    source_root: PathSequence = Field(
+        validation_alias=AliasChoices("source-root", "source_root"),
+        default_factory=tuple,
     )
     hash: Hash
     data_sources: list[Path] = Field(

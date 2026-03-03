@@ -147,14 +147,15 @@ class RecCmpPartialTarget:
     # SHA-256 checksum of the original binary.
     sha256: str
 
+    # Relative (to project root) directory of source code files for this target.
+    source_root: tuple[Path, ...] = tuple()
+
     # Ghidra-specific options for this target.
     ghidra_config: GhidraConfig | None = None
 
     # Report options for this target
     report_config: ReportConfig | None = None
 
-    # Relative (to project root) directory of source code files for this target.
-    source_root: Path | None = None
     original_path: Path | None = None
     recompiled_path: Path | None = None
     recompiled_pdb: Path | None = None
@@ -183,7 +184,7 @@ class RecCmpTarget:
     sha256: str
 
     # Relative (to project root) directory of source code files for this target.
-    source_root: Path
+    source_root: tuple[Path, ...]
 
     # Ghidra-specific options for this target.
     ghidra_config: GhidraConfig
@@ -236,16 +237,14 @@ class RecCmpProject:
             "recompiled_pdb",
         )
 
-        missing_attrs = [
-            attr for attr in required_attrs if getattr(target, attr) is None
-        ]
+        missing_attrs = [attr for attr in required_attrs if not getattr(target, attr)]
         if missing_attrs:
             raise IncompleteReccmpTargetError(
                 f"Target {target_id} is missing data: {','.join(missing_attrs)}"
             )
 
         # This list should match the one above. These asserts are for mypy.
-        assert target.source_root is not None
+        assert target.source_root  # Must have at least one
         assert target.original_path is not None
         assert target.recompiled_path is not None
         assert target.recompiled_pdb is not None
@@ -369,7 +368,9 @@ class RecCmpProject:
 
             # Assumes these are relative paths. If they are not, the second path
             # will replace the first instead of adding onto it.
-            source_root = project_directory / target.source_root
+            source_root = tuple(
+                project_directory / target_dir for target_dir in target.source_root
+            )
             data_sources = [
                 project_directory / ds_path for ds_path in target.data_sources
             ]
@@ -431,7 +432,7 @@ class RecCmpPathsAction(argparse.Action):
             original_path=original,
             recompiled_path=recompiled,
             recompiled_pdb=pdb,
-            source_root=source_root,
+            source_root=(source_root,),
             ghidra_config=GhidraConfig(),
             report_config=ReportConfig(),
         )
@@ -487,10 +488,11 @@ def argparse_parse_project_target(
             f"Symbols PDB {target.recompiled_pdb} does not exist"
         )
 
-    if not target.source_root.is_dir():
-        raise RecCmpProjectException(
-            f"Source directory {target.source_root} does not exist"
-        )
+    for source_dir in target.source_root:
+        if not source_dir.is_dir():
+            raise RecCmpProjectException(
+                f"Source directory {source_dir} does not exist"
+            )
     return target
 
 
