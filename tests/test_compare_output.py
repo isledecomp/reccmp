@@ -413,8 +413,9 @@ def test_compare_vtable_diff():
     assert udiff is not None
     assert len(udiff) == 1
 
-    assert udiff[0][0] == "@@ -vtable0x00,32 +vtable0x00,32 @@"
-    assert udiff[0][1][0].keys() == {"orig", "recomp"}
-    assert udiff[0][1][1].keys() == {"both"}
-    assert len(udiff[0][1][1]["both"]) > 10
-    assert udiff[0][1][2].keys() == {"orig", "recomp"}
+    [diff_hunk, diff_groups] = udiff[0]
+    assert diff_hunk == "@@ -vtable0x00,32 +vtable0x00,32 @@"
+    assert diff_groups[0].keys() == {"orig", "recomp"}
+    assert diff_groups[1].keys() == {"both"}
+    assert len(diff_groups[1]["both"]) > 10
+    assert diff_groups[2].keys() == {"orig", "recomp"}
