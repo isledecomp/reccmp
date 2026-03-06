@@ -148,7 +148,7 @@ class RecCmpPartialTarget:
     sha256: str
 
     # Relative (to project root) directory of source code files for this target.
-    source_root: tuple[Path, ...] = tuple()
+    source_paths: tuple[Path, ...] = tuple()
 
     # Ghidra-specific options for this target.
     ghidra_config: GhidraConfig | None = None
@@ -184,7 +184,7 @@ class RecCmpTarget:
     sha256: str
 
     # Relative (to project root) directory of source code files for this target.
-    source_root: tuple[Path, ...]
+    source_paths: tuple[Path, ...]
 
     # Ghidra-specific options for this target.
     ghidra_config: GhidraConfig
@@ -231,7 +231,7 @@ class RecCmpProject:
         # The error message should display the full list of missing attributes
         # so we check it here instead of waiting for a single assert to fail.
         required_attrs = (
-            "source_root",
+            "source_paths",
             "original_path",
             "recompiled_path",
             "recompiled_pdb",
@@ -244,7 +244,7 @@ class RecCmpProject:
             )
 
         # This list should match the one above. These asserts are for mypy.
-        assert target.source_root  # Must have at least one
+        assert target.source_paths  # Must have at least one
         assert target.original_path is not None
         assert target.recompiled_path is not None
         assert target.recompiled_pdb is not None
@@ -268,7 +268,7 @@ class RecCmpProject:
             original_path=target.original_path,
             recompiled_path=target.recompiled_path,
             recompiled_pdb=target.recompiled_pdb,
-            source_root=target.source_root,
+            source_paths=target.source_paths,
             ghidra_config=ghidra,
             data_sources=data_sources,
             report_config=report,
@@ -368,7 +368,7 @@ class RecCmpProject:
 
             # Assumes these are relative paths. If they are not, the second path
             # will replace the first instead of adding onto it.
-            source_root = tuple(
+            source_paths = tuple(
                 project_directory / target_dir for target_dir in target.source_root
             )
             data_sources = [
@@ -379,7 +379,7 @@ class RecCmpProject:
                 target_id=target_id,
                 filename=target.filename,
                 sha256=target.hash.sha256,
-                source_root=source_root,
+                source_paths=source_paths,
                 ghidra_config=ghidra,
                 data_sources=data_sources,
                 report_config=report,
@@ -418,7 +418,7 @@ class RecCmpPathsAction(argparse.Action):
         self, parser, namespace, values: Sequence[str] | None, option_string=None
     ):
         assert isinstance(values, Sequence)
-        original, recompiled, pdb, source_root = list(Path(o) for o in values)
+        original, recompiled, pdb, source_paths = list(Path(o) for o in values)
 
         # Assumes base filename of the original binary is the module name.
         target_id = original.stem.upper()
@@ -432,7 +432,7 @@ class RecCmpPathsAction(argparse.Action):
             original_path=original,
             recompiled_path=recompiled,
             recompiled_pdb=pdb,
-            source_root=(source_root,),
+            source_paths=(source_paths,),
             ghidra_config=GhidraConfig(),
             report_config=ReportConfig(),
         )
@@ -488,7 +488,7 @@ def argparse_parse_project_target(
             f"Symbols PDB {target.recompiled_pdb} does not exist"
         )
 
-    for source_dir in target.source_root:
+    for source_dir in target.source_paths:
         if not source_dir.is_dir():
             raise RecCmpProjectException(
                 f"Source directory {source_dir} does not exist"

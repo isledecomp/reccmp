@@ -197,7 +197,7 @@ class Compare:
 
         all_code_paths = [
             file
-            for source_dir in target.source_root
+            for source_dir in target.source_paths
             for file in walk_source_dir(source_dir)
         ]
         code_paths = sorted(set(all_code_paths))

@@ -223,7 +223,7 @@ def create_project(
             target_id=target_id,
             filename=target_filename,
             sha256=hash_sha256,
-            source_root=(Path("."),),
+            source_paths=(Path("."),),
             ghidra_config=GhidraConfig(),
             report_config=ReportConfig(),
         )
