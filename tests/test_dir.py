@@ -1,26 +1,12 @@
 """Tests for walking source code directories in search of relevant files"""
 
 from pathlib import Path
-import pytest
 from reccmp.dir import walk_source_dir
 
 
 def create_blank_file(p: Path):
     """Helper to make this action more idiomatic in the tests."""
     p.write_text("")
-
-
-@pytest.fixture(name="source_dir")
-def fixture_source_dir(tmp_path_factory) -> Path:
-    """Create a basic source root with files in two directories."""
-    src_dir = tmp_path_factory.mktemp("src")
-    (src_dir / "hello.cpp").write_text("")
-    (src_dir / "hello.hpp").write_text("")
-    (src_dir / "test").mkdir()
-    (src_dir / "test" / "game.cpp").write_text("")
-    (src_dir / "test" / "game.hpp").write_text("")
-
-    return src_dir
 
 
 def test_empty_dir(tmp_path_factory):
@@ -78,6 +64,30 @@ def test_recursion_disabled(tmp_path_factory):
     assert {f.name for f in files} == {"game.cpp"}
 
 
+def test_absolute_paths(tmp_path_factory):
+    """Returned paths should be absolute and include all subdirectories."""
+    path = tmp_path_factory.mktemp("recurse")
+    create_blank_file(path / "game.cpp")
+    (path / "x" / "y" / "z").mkdir(parents=True)
+    create_blank_file(path / "x" / "hello.cpp")
+    create_blank_file(path / "x" / "y" / "z" / "test.cpp")
+
+    files = list(walk_source_dir(path))
+    for f in files:
+        assert f.is_absolute()
+
+        # For files in subdirectories, make sure each one is represented.
+        # Check only the components relative to the base path.
+        # We don't control where pytest creates the tmp directory.
+        if f.name == "hello.cpp":
+            assert "x" in f.relative_to(path).parts
+
+        if f.name == "test.cpp":
+            assert "x" in f.relative_to(path).parts
+            assert "y" in f.relative_to(path).parts
+            assert "z" in f.relative_to(path).parts
+
+
 def test_mixed_case_extension(tmp_path_factory):
     """Should use case-insensitive match for file extensions."""
     path = tmp_path_factory.mktemp("mixed_case")
@@ -93,3 +103,24 @@ def test_mixed_case_extension(tmp_path_factory):
         "hello.h",
         "test.hpp",
     }
+
+
+def test_case_insensitive_order(tmp_path_factory):
+    """Make sure path order is consistent across Posix/Windows runners.
+    The difference is that paths are case-sensitive on Posix but not Windows.
+    The expectation is that reccmp returns the same results regardless of platform.
+    Metadata read from source code files could be overwritten if it is duplicated across files.
+    """
+    path = tmp_path_factory.mktemp("mixed_case")
+    create_blank_file(path / "game.CPP")
+    create_blank_file(path / "HELLO.C")
+    create_blank_file(path / "HELLO.h")
+    create_blank_file(path / "test.hpP")
+
+    files = list(walk_source_dir(path, sort=True))
+    assert [f.name.lower() for f in files] == [
+        "game.cpp",
+        "hello.c",
+        "hello.h",
+        "test.hpp",
+    ]
