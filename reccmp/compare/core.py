@@ -195,7 +195,12 @@ class Compare:
         )
         pdb_file = CvdumpAnalysis(cvdump)
 
-        code_paths = walk_source_dir(target.source_root)
+        all_code_paths = [
+            file
+            for source_dir in target.source_paths
+            for file in walk_source_dir(source_dir)
+        ]
+        code_paths = sorted(set(all_code_paths))
         code_files = list(TextFile.from_files(code_paths, allow_error=True))
 
         data_sources = list(TextFile.from_files(target.data_sources, allow_error=True))
