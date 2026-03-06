@@ -51,7 +51,7 @@ def test_dir_with_mixed_files(tmp_path_factory):
 
     files = list(walk_source_dir(path))
     assert len(files) == 2
-    assert [f.name for f in files] == ["game.cpp", "game.hpp"]
+    assert {f.name for f in files} == {"game.cpp", "game.hpp"}
 
 
 def test_recursion(tmp_path_factory):
@@ -63,7 +63,7 @@ def test_recursion(tmp_path_factory):
     create_blank_file(path / "x" / "y" / "z" / "test.cpp")
 
     files = list(walk_source_dir(path))
-    assert [f.name for f in files] == ["game.cpp", "hello.cpp", "test.cpp"]
+    assert {f.name for f in files} == {"game.cpp", "hello.cpp", "test.cpp"}
 
 
 def test_recursion_disabled(tmp_path_factory):
@@ -75,7 +75,7 @@ def test_recursion_disabled(tmp_path_factory):
     create_blank_file(path / "x" / "y" / "z" / "test.cpp")
 
     files = list(walk_source_dir(path, recursive=False))
-    assert [f.name for f in files] == ["game.cpp"]
+    assert {f.name for f in files} == {"game.cpp"}
 
 
 def test_mixed_case_extension(tmp_path_factory):
@@ -87,9 +87,9 @@ def test_mixed_case_extension(tmp_path_factory):
     create_blank_file(path / "test.hpP")
 
     files = list(walk_source_dir(path))
-    assert [f.name.lower() for f in files] == [
+    assert {f.name.lower() for f in files} == {
         "game.cpp",
         "hello.c",
         "hello.h",
         "test.hpp",
-    ]
+    }
