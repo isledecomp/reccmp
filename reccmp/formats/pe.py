@@ -1,0 +1,934 @@
+"""
+Based on the following resources:
+- Windows SDK Headers
+- PE: https://learn.microsoft.com/en-us/windows/win32/debug/pe-format
+- Debug information: https://www.debuginfo.com/examples/src/DebugDir.cpp
+"""
+
+import dataclasses
+from enum import IntEnum, IntFlag
+from functools import cached_property
+from pathlib import Path
+import struct
+from typing import Iterable, Iterator, cast
+
+from .exceptions import (
+    InvalidVirtualAddressError,
+    SectionNotFoundError,
+)
+from .image import Image, ImageRegion, ImageSection, ImageSectionFlags, ImageImport
+from .mz import ImageDosHeader
+
+# pylint: disable=too-many-lines
+
+
+class PEHeaderNotFoundError(ValueError):
+    """PE magic string not found."""
+
+
+class UnknownPEMachine(ValueError):
+    """The PE binary has an unknown machine architecture."""
+
+
+class PEMachine(IntEnum):
+    IMAGE_FILE_MACHINE_ALPHA = 0x184
+    IMAGE_FILE_MACHINE_ALPHA64 = 0x284
+    IMAGE_FILE_MACHINE_AM33 = 0x1D3
+    IMAGE_FILE_MACHINE_AMD64 = 0x8664
+    IMAGE_FILE_MACHINE_ARM = 0x1C0
+    IMAGE_FILE_MACHINE_ARM64 = 0xAA64
+    IMAGE_FILE_MACHINE_ARMNT = 0x1C4
+    IMAGE_FILE_MACHINE_AXP64 = 0x284
+    IMAGE_FILE_MACHINE_EBC = 0xEBC
+    IMAGE_FILE_MACHINE_I386 = 0x14C
+    IMAGE_FILE_MACHINE_IA64 = 0x200
+    IMAGE_FILE_MACHINE_LOONGARCH32 = 0x6232
+    IMAGE_FILE_MACHINE_LOONGARCH64 = 0x6264
+    IMAGE_FILE_MACHINE_M32R = 0x9041
+    IMAGE_FILE_MACHINE_MIPS16 = 0x266
+    IMAGE_FILE_MACHINE_MIPSFPU = 0x366
+    IMAGE_FILE_MACHINE_MIPSFPU16 = 0x466
+    IMAGE_FILE_MACHINE_POWERPC = 0x1F0
+    IMAGE_FILE_MACHINE_POWERPCFP = 0x1F1
+    IMAGE_FILE_MACHINE_R4000 = 0x166
+    IMAGE_FILE_MACHINE_RISCV32 = 0x5032
+    IMAGE_FILE_MACHINE_RISCV64 = 0x5064
+    IMAGE_FILE_MACHINE_RISCV128 = 0x5128
+    IMAGE_FILE_MACHINE_SH3 = 0x1A2
+    IMAGE_FILE_MACHINE_SH3DSP = 0x1A3
+    IMAGE_FILE_MACHINE_SH4 = 0x1A6
+    IMAGE_FILE_MACHINE_SH5 = 0x1A8
+    IMAGE_FILE_MACHINE_THUMB = 0x1C2
+    IMAGE_FILE_MACHINE_WCEMIPSV2 = 0x169
+
+
+class PECharacteristics(IntFlag):
+    IMAGE_FILE_RELOCS_STRIPPED = 0x0001
+    IMAGE_FILE_EXECUTABLE_IMAGE = 0x0002
+    IMAGE_FILE_LINE_NUMS_STRIPPED = 0x0004
+    IMAGE_FILE_LOCAL_SYMS_STRIPPED = 0x0008
+    IMAGE_FILE_AGGRESSIVE_WS_TRIM = 0x0010
+    IMAGE_FILE_LARGE_ADDRESS_ = 0x0020
+    IMAGE_FILE_RESERVED_0X40 = 0x0040
+    IMAGE_FILE_BYTES_REVERSED_LO = 0x0080
+    IMAGE_FILE_32BIT_MACHINE = 0x0100
+    IMAGE_FILE_DEBUG_STRIPPED = 0x0200
+    IMAGE_FILE_REMOVABLE_RUN_ = 0x0400
+    IMAGE_FILE_NET_RUN_FROM_SWAP = 0x0800
+    IMAGE_FILE_SYSTEM = 0x1000
+    IMAGE_FILE_DLL = 0x2000
+    IMAGE_FILE_UP_SYSTEM_ONLY = 0x4000
+    IMAGE_FILE_BYTES_REVERSED_HI = 0x8000
+
+
+# pylint: disable=too-many-instance-attributes
+@dataclasses.dataclass(frozen=True)
+class PEImageFileHeader:
+    signature: bytes
+    machine: int
+    number_of_sections: int
+    time_date_stamp: int
+    pointer_to_symbol_table: int  # deprecated
+    number_of_symbols: int  # deprecated
+    size_of_optional_header: int
+    characteristics: PECharacteristics
+
+    @classmethod
+    def from_memory(cls, data: bytes, offset: int) -> tuple["PEImageFileHeader", int]:
+        if not cls.taste(data, offset):
+            raise PEHeaderNotFoundError
+        struct_fmt = "<4s2H3I2H"
+        items = list(struct.unpack_from(struct_fmt, data, offset=offset))
+        offset += struct.calcsize(struct_fmt)
+        try:
+            items[1] = PEMachine(items[1])
+        except ValueError as e:
+            raise UnknownPEMachine(f"0x{items[1]:x}") from e
+        items[7] = PECharacteristics(items[7])
+        return cls(*items), offset
+
+    @classmethod
+    def taste(cls, data: bytes, offset: int) -> bool:
+        return data[offset : offset + 4] == b"PE\x00\x00"
+
+
+class WindowsSubsystem(IntEnum):
+    IMAGE_SUBSYSTEM_UNKNOWN = 0
+    IMAGE_SUBSYSTEM_NATIVE = 1
+    IMAGE_SUBSYSTEM_WINDOWS_GUI = 2
+    IMAGE_SUBSYSTEM_WINDOWS_CUI = 3
+    IMAGE_SUBSYSTEM_OS2_CUI = 5
+    IMAGE_SUBSYSTEM_POSIX_CUI = 7
+    IMAGE_SUBSYSTEM_NATIVE_WINDOWS = 8
+    IMAGE_SUBSYSTEM_WINDOWS_CE_GUI = 9
+    IMAGE_SUBSYSTEM_EFI_APPLICATION = 10
+    IMAGE_SUBSYSTEM_EFI_BOOT_SERVICE_DRIVER = 11
+    IMAGE_SUBSYSTEM_EFI_RUNTIME_DRIVER = 12
+    IMAGE_SUBSYSTEM_EFI_ROM = 13
+    IMAGE_SUBSYSTEM_XBOX = 14
+    IMAGE_SUBSYSTEM_WINDOWS_BOOT_APPLICATION = 16
+
+
+class DllCharacteristics(IntFlag):
+    IMAGE_DLLCHARACTERISTICS_RESERVED_0X0001 = 0x0001
+    IMAGE_DLLCHARACTERISTICS_RESERVED_0X0002 = 0x0002
+    IMAGE_DLLCHARACTERISTICS_RESERVED_0X0004 = 0x0004
+    IMAGE_DLLCHARACTERISTICS_RESERVED_0X0008 = 0x0008
+    IMAGE_DLLCHARACTERISTICS_HIGH_ENTROPY_VA = 0x0020
+    IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE = 0x0040
+    IMAGE_DLLCHARACTERISTICS_FORCE_INTEGRITY = 0x0080
+    IMAGE_DLLCHARACTERISTICS_NX_COMPAT = 0x0100
+    IMAGE_DLLCHARACTERISTICS_NO_ISOLATION = 0x0200
+    IMAGE_DLLCHARACTERISTICS_NO_SEH = 0x0400
+    IMAGE_DLLCHARACTERISTICS_NO_BIND = 0x0800
+    IMAGE_DLLCHARACTERISTICS_APPCONTAINER = 0x1000
+    IMAGE_DLLCHARACTERISTICS_WDM_DRIVER = 0x2000
+    IMAGE_DLLCHARACTERISTICS_GUARD_CF = 0x4000
+    IMAGE_DLLCHARACTERISTICS_TERMINAL_SERVER_AWARE = 0x8000
+
+
+class PEDataDirectoryItemType(IntEnum):
+    EXPORT_TABLE = 0
+    IMPORT_TABLE = 1
+    RESOURCE_TABLE = 2
+    EXCEPTION_TABLE = 3
+    CERTIFICATE_TABLE = 4
+    BASE_RELOCATION_TABLE = 5
+    DEBUG = 6
+    ARCHITECTURE = 7
+    GLOBAL_PTR = 8
+    TLS_TABLE = 9
+    LOAD_CONFIG_TABLE = 10
+    BOUND_IMPORT = 11
+    IAT = 12
+    DELAY_IMPORT_DESCRIPTOR = 13
+    CLR_RUNTIME_HEADER = 14
+    RESERVED_INDEX_0XF = 15
+
+
+@dataclasses.dataclass
+class PEDataDirectoryItemHeader:
+    rva: int
+    virtual_size: int
+
+
+@dataclasses.dataclass
+class PEDataDirectoryItemRegion:
+    virtual_address: int
+    virtual_size: int
+
+
+@dataclasses.dataclass(frozen=True)
+class PEImageOptionalHeader:
+    magic: int
+    major_linker_version: int
+    minor_linker_version: int
+    size_of_code: int
+    size_of_initialized_data: int
+    size_of_uninitialized_data: int
+    address_of_entry_point: int
+    base_of_code: int
+    base_of_data: int | None
+    image_base: int
+    section_alignment: int
+    file_alignment: int
+    major_operating_system_version: int
+    minor_operating_system_version: int
+    major_image_version: int
+    minor_image_version: int
+    major_subsystem_version: int
+    minor_subsystem_version: int
+    win32_version_value: int
+    size_of_image: int
+    size_of_headers: int
+    check_sum: int
+    subsystem: WindowsSubsystem
+    dll_characteristics: DllCharacteristics
+    size_of_stack_reserve: int
+    size_of_stack_commit: int
+    size_of_heap_reserve: int
+    size_of_heap_commit: int
+    loader_flags: int  # _reserved, always 0
+    number_of_rva_and_sizes: int
+    directories: tuple[PEDataDirectoryItemHeader, ...]
+
+    @classmethod
+    def from_memory(
+        cls, data: bytes, offset: int
+    ) -> tuple["PEImageOptionalHeader", int]:
+        struct_fmt1 = "<H2B5I"
+        part1: tuple[int, int, int, int, int, int, int, int] = struct.unpack_from(
+            struct_fmt1, data, offset=offset
+        )
+        assert part1[0] in (0x10B, 0x20B)  # PE32, PE32+
+        pe32_plus = part1[0] == 0x20B
+        base_of_data: int | None = None
+        struct_fmt2 = "<"
+        offset += struct.calcsize(struct_fmt1)
+        if not pe32_plus:
+            struct_fmt2 = "<I"
+            (base_of_data,) = struct.unpack_from(struct_fmt2, data, offset=offset)
+        offset += struct.calcsize(struct_fmt2)
+        if pe32_plus:
+            struct_fmt3 = "<QII6H4I2H4Q2I"
+        else:
+            struct_fmt3 = "<III6H4I2H4I2I"
+
+        # fmt: off
+        part3: tuple[int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int] = (
+            struct.unpack_from(struct_fmt3, data, offset=offset)
+        )
+        # fmt: on
+        offset += struct.calcsize(struct_fmt3)
+
+        count_directories = part3[-1]
+        directories = tuple(
+            PEDataDirectoryItemHeader(*item)
+            for item in struct.iter_unpack(
+                "<II", data[offset : offset + 8 * count_directories]
+            )
+        )
+        offset += 8 * count_directories
+        return (
+            cls(
+                *part1,
+                base_of_data,
+                *part3[:13],
+                WindowsSubsystem(part3[13]),
+                DllCharacteristics(part3[14]),
+                *part3[15:],
+                directories,
+            ),
+            offset,
+        )
+
+
+class PESectionFlags(IntFlag):
+    IMAGE_SCN_RESERVED_0X0 = 0x00000000
+    IMAGE_SCN_RESERVED_0X1 = 0x00000001
+    IMAGE_SCN_RESERVED_0X2 = 0x00000002
+    IMAGE_SCN_RESERVED_0X4 = 0x00000004
+    IMAGE_SCN_TYPE_NO_PAD = 0x00000008
+    IMAGE_SCN_RESERVED_0X10 = 0x00000010
+    IMAGE_SCN_CNT_CODE = 0x00000020
+    IMAGE_SCN_CNT_INITIALIZED_DATA = 0x00000040
+    IMAGE_SCN_CNT_UNINITIALIZED_DATA = 0x00000080
+    IMAGE_SCN_LNK_OTHER = 0x00000100
+    IMAGE_SCN_LNK_INFO = 0x00000200
+    IMAGE_SCN_RESERVED_0X400 = 0x00000400
+    IMAGE_SCN_LNK_REMOVE = 0x00000800
+    IMAGE_SCN_LNK_COMDAT = 0x00001000
+    IMAGE_SCN_GPREL = 0x00008000
+    IMAGE_SCN_MEM_PURGEABLE = 0x00020000
+    IMAGE_SCN_MEM_16BIT = 0x00020000
+    IMAGE_SCN_MEM_LOCKED = 0x00040000
+    IMAGE_SCN_MEM_PRELOAD = 0x00080000
+    # IMAGE_SCN_ALIGN_1BYTES = 0x00100000
+    # IMAGE_SCN_ALIGN_2BYTES = 0x00200000
+    # IMAGE_SCN_ALIGN_4BYTES = 0x00300000
+    # IMAGE_SCN_ALIGN_8BYTES = 0x00400000
+    # IMAGE_SCN_ALIGN_16BYTES = 0x00500000
+    # IMAGE_SCN_ALIGN_32BYTES = 0x00600000
+    # IMAGE_SCN_ALIGN_64BYTES = 0x00700000
+    # IMAGE_SCN_ALIGN_128BYTES = 0x00800000
+    # IMAGE_SCN_ALIGN_256BYTES = 0x00900000
+    # IMAGE_SCN_ALIGN_512BYTES = 0x00A00000
+    # IMAGE_SCN_ALIGN_1024BYTES = 0x00B00000
+    # IMAGE_SCN_ALIGN_2048BYTES = 0x00C00000
+    # IMAGE_SCN_ALIGN_4096BYTES = 0x00D00000
+    # IMAGE_SCN_ALIGN_8192BYTES = 0x00E00000
+    IMAGE_SCN_LNK_NRELOC_OVFL = 0x01000000
+    IMAGE_SCN_MEM_DISCARDABLE = 0x02000000
+    IMAGE_SCN_MEM_NOT_CACHED = 0x04000000
+    IMAGE_SCN_MEM_NOT_PAGED = 0x08000000
+    IMAGE_SCN_MEM_SHARED = 0x10000000
+    IMAGE_SCN_MEM_EXECUTE = 0x20000000
+    IMAGE_SCN_MEM_READ = 0x40000000
+    IMAGE_SCN_MEM_WRITE = 0x80000000
+
+
+@dataclasses.dataclass(frozen=True)
+class PEImageSectionHeader:
+    name: str
+    virtual_size: int
+    virtual_address: int
+    size_of_raw_data: int
+    pointer_to_raw_data: int
+    pointer_to_relocations: int
+    pointer_to_line_numbers: int
+    number_of_relocations: int
+    number_of_line_numbers: int
+    characteristics: PESectionFlags
+
+    @classmethod
+    def from_memory(
+        cls, data: bytes, offset: int, count: int
+    ) -> tuple[tuple["PEImageSectionHeader", ...], int]:
+        struct_fmt = "<8s6I2HI"
+        s_size = struct.calcsize(struct_fmt)
+        items = tuple(
+            cls(
+                members[0].decode("ascii").rstrip("\x00"),
+                *members[1:-1],
+                PESectionFlags(members[-1]),
+            )
+            for members in cast(
+                Iterator[tuple[bytes, int, int, int, int, int, int, int, int, int]],
+                struct.iter_unpack(struct_fmt, data[offset : offset + count * s_size]),
+            )
+        )
+        return items, offset + count * struct.calcsize(struct_fmt)
+
+
+@dataclasses.dataclass
+class CodeViewHeaderNB10:
+    cv_signature: bytes  # "NB10" (or NBxx?)
+    offset: int  # always 0 for NB20
+    signature: int  # seconds since 1970-01-01
+    age: int  # incrementing value
+    pdb_file_name: bytes  # zero terminated string with the name of the PDB file
+
+    @classmethod
+    def from_memory(cls, data: bytes, offset: int) -> "CodeViewHeaderNB10| None":
+        struct_fmt = "<4sIII"
+        if not cls.taste(data, offset):
+            raise ValueError
+        items: tuple[bytes, int, int, int] = struct.unpack_from(
+            struct_fmt, data, offset
+        )
+        offset_pdb_filename = offset + struct.calcsize(struct_fmt)
+        try:
+            pos_null = data.index(0, offset_pdb_filename)
+            pdb_file_name = data[offset_pdb_filename:pos_null]
+        except ValueError:
+            pdb_file_name = b""
+        return cls(*items, pdb_file_name=pdb_file_name)
+
+    @classmethod
+    def taste(cls, data: bytes, offset: int) -> bool:
+        return data[offset : offset + 4] == b"NB10"
+
+
+@dataclasses.dataclass
+class CodeViewHeaderRSDS:
+    cv_signature: bytes  # "RSDS"
+    signature: bytes  # GUID
+    pdb_file_name: bytes  # zero terminated string with the name of the PDB file
+
+    @classmethod
+    def from_memory(cls, data: bytes, offset: int) -> "CodeViewHeaderRSDS | None":
+        struct_fmt = "<4s16s"
+        if not cls.taste(data, offset):
+            raise ValueError
+        items: tuple[bytes, bytes] = struct.unpack_from(struct_fmt, data, offset)
+        offset_pdb_filename = offset + struct.calcsize(struct_fmt)
+        try:
+            pos_null = data.index(0, offset_pdb_filename)
+            pdb_file_name = data[offset_pdb_filename:pos_null]
+        except ValueError:
+            pdb_file_name = b""
+        return cls(*items, pdb_file_name=pdb_file_name)
+
+    @classmethod
+    def taste(cls, data: bytes, offset: int) -> bool:
+        return data[offset : offset + 4] == b"RSDS"
+
+
+@dataclasses.dataclass(frozen=True)
+class DebugDirectoryEntryHeader:
+    characteristics: int  # Reserved, must be zero.
+    time_data_stamp: int  # The time and date that the debug data was created.
+    major_version: int  # The major version number of the debug data format.
+    minor_version: int  # The minor version number of the debug data format.
+    type: int  # The format of debugging information. This field enables support of multiple debuggers. For more information, see Debug Type.
+    size_of_data: (
+        int  # The size of the debug data (not including the debug directory itself).
+    )
+    address_of_raw_data: (
+        int  # The address of the debug data when loaded, relative to the image base.
+    )
+    pointer_to_raw_data: int  # The file pointer to the debug data.
+
+    @classmethod
+    def from_memory(
+        cls, data: bytes, offset: int
+    ) -> tuple["DebugDirectoryEntryHeader", int]:
+        struct_fmt = "<2I2H4I"
+        items = struct.unpack_from(struct_fmt, data, offset=offset)
+        return cls(*items), offset + struct.calcsize(struct_fmt)
+
+
+@dataclasses.dataclass(frozen=True)
+class ExportDirectoryTable:
+    export_flags: int
+    time_date_stamp: int
+    major_version: int
+    minor_version: int
+    name_rva: int
+    ordinal_base: int
+    address_table_entries: int
+    number_of_name_pointers: int
+    export_address_table_rva: int
+    name_pointer_rva: int
+    ordinal_table_rva: int
+
+
+def get_pe_sections(
+    section_headers: Iterable[PEImageSectionHeader],
+    image_base: int,
+    view: memoryview,
+) -> Iterator[ImageSection]:
+    """Helper that creates ImageSections based on the PE section headers."""
+    for s in section_headers:
+        virtual_start = image_base + s.virtual_address
+        physical_start = s.pointer_to_raw_data
+
+        flags = ImageSectionFlags(0)
+
+        for pe_flag, our_flag in (
+            (PESectionFlags.IMAGE_SCN_MEM_EXECUTE, ImageSectionFlags.EXECUTE),
+            (PESectionFlags.IMAGE_SCN_MEM_READ, ImageSectionFlags.READ),
+            (PESectionFlags.IMAGE_SCN_MEM_WRITE, ImageSectionFlags.WRITE),
+        ):
+            if s.characteristics & pe_flag:
+                flags |= our_flag
+
+        if s.size_of_raw_data == 0:
+            flags |= ImageSectionFlags.BSS
+
+        yield ImageSection(
+            name=s.name,
+            virtual_range=range(virtual_start, virtual_start + s.virtual_size),
+            physical_range=range(physical_start, physical_start + s.size_of_raw_data),
+            view=view[physical_start : physical_start + s.size_of_raw_data],
+            flags=flags,
+        )
+
+
+# pylint: disable=too-many-public-methods
+@dataclasses.dataclass
+class PEImage(Image):
+    mz_header: ImageDosHeader
+    header: PEImageFileHeader
+    optional_header: PEImageOptionalHeader
+    section_headers: tuple[PEImageSectionHeader, ...]
+
+    @classmethod
+    def from_memory(
+        cls, data: bytes, mz_header: ImageDosHeader, filepath: Path
+    ) -> "PEImage":
+        offset = mz_header.e_lfanew
+        view = memoryview(data)
+        header, offset_optional = PEImageFileHeader.from_memory(data, offset=offset)
+        optional_header, offset_sections = PEImageOptionalHeader.from_memory(
+            data, offset=offset_optional
+        )
+        section_headers, _ = PEImageSectionHeader.from_memory(
+            data, count=header.number_of_sections, offset=offset_sections
+        )
+        sections = tuple(
+            get_pe_sections(section_headers, optional_header.image_base, view)
+        )
+        section_map = {section.name: section for section in sections if section.name}
+        image = cls(
+            filepath=filepath,
+            data=data,
+            view=view,
+            mz_header=mz_header,
+            header=header,
+            optional_header=optional_header,
+            section_headers=section_headers,
+            sections=sections,
+            section_map=section_map,
+        )
+        image.load()
+        return image
+
+    def load(self):
+        if self.header.machine != PEMachine.IMAGE_FILE_MACHINE_I386:
+            raise ValueError(
+                f"reccmp only supports i386 binaries: {self.header.machine}."
+            )
+
+        return self
+
+    def get_data_directory_region(
+        self, t: PEDataDirectoryItemType
+    ) -> PEDataDirectoryItemRegion | None:
+        directory_header = self.optional_header.directories[t.value]
+        if not directory_header.rva:
+            return None
+        return PEDataDirectoryItemRegion(
+            virtual_address=self.optional_header.image_base + directory_header.rva,
+            virtual_size=directory_header.virtual_size,
+        )
+
+    @property
+    def entry(self) -> int:
+        return (
+            self.optional_header.image_base
+            + self.optional_header.address_of_entry_point
+        )
+
+    @property
+    def is_debug(self) -> bool:
+        return (
+            self.optional_header.directories[PEDataDirectoryItemType.DEBUG.value].rva
+            != 0
+        )
+
+    @property
+    def pdb_filename(self) -> str | None:
+        debug_directory = self.get_data_directory_region(PEDataDirectoryItemType.DEBUG)
+        if not debug_directory:
+            return None
+        debug_entry_data = self.read(
+            debug_directory.virtual_address, debug_directory.virtual_size
+        )
+        offset = 0
+        while offset < debug_directory.virtual_size:
+            debug_entry, offset = DebugDirectoryEntryHeader.from_memory(
+                debug_entry_data, offset=offset
+            )
+            if CodeViewHeaderNB10.taste(
+                data=self.data, offset=debug_entry.pointer_to_raw_data
+            ):
+                cv_nb10 = CodeViewHeaderNB10.from_memory(
+                    data=self.data, offset=debug_entry.pointer_to_raw_data
+                )
+                assert cv_nb10 is not None
+                return cv_nb10.pdb_file_name.decode("ascii")
+            if CodeViewHeaderRSDS.taste(
+                data=self.data, offset=debug_entry.pointer_to_raw_data
+            ):
+                cv_rsds = CodeViewHeaderRSDS.from_memory(
+                    data=self.data, offset=debug_entry.pointer_to_raw_data
+                )
+                assert cv_rsds is not None
+                return cv_rsds.pdb_file_name.decode()
+        return None
+
+    @property
+    def imagebase(self) -> int:
+        return self.optional_header.image_base
+
+    def get_relocated_addresses(self) -> list[int]:
+        return sorted(self._relocated_addrs)
+
+    def is_relocated_addr(self, addr: int) -> bool:
+        return addr in self._relocated_addrs
+
+    def get_sections_in_data_directory(
+        self, t: PEDataDirectoryItemType
+    ) -> list[ImageSection]:
+        result = []
+        region = self.get_data_directory_region(t)
+        if region:
+            for section in self.sections:
+                if (
+                    region.virtual_address
+                    <= section.virtual_address
+                    < region.virtual_address + region.virtual_size
+                ):
+                    result.append(section)
+        return result
+
+    @cached_property
+    def relocations(self) -> set[int]:
+        """The relocation table in .reloc gives each virtual address where the next four
+        bytes are, itself, another virtual address. During loading, these values will be
+        patched according to the virtual address space for the image, as provided by Windows.
+        We can use this information to get a list of where each significant "thing"
+        in the file is located. Anything that is referenced absolutely (i.e. excluding
+        jump destinations given by local offset) will be here.
+        One use case is to tell whether an immediate value in an operand represents
+        a virtual address or just a big number."""
+        reloc_sections = self.get_sections_in_data_directory(
+            PEDataDirectoryItemType.BASE_RELOCATION_TABLE
+        )
+
+        relocations = set()
+
+        for reloc_section in reloc_sections:
+            reloc = reloc_section.view
+            ofs = 0
+
+            # Parse the structure in .reloc to get the list locations to check.
+            # The first 8 bytes are 2 dwords that give the base page address
+            # and the total block size (including this header).
+            # The page address is used to compact the list; each entry is only
+            # 2 bytes, and these are added to the base to get the full location.
+            # If the entry read in is zero, we are at the end of this section and
+            # these are padding bytes.
+            while True:
+                (page_base, block_size) = struct.unpack("<2I", reloc[ofs : ofs + 8])
+                if block_size == 0:
+                    break
+
+                values = [
+                    v[0]
+                    for v in struct.iter_unpack("<H", reloc[ofs + 8 : ofs + block_size])
+                ]
+                relocations.update(
+                    [
+                        # HACK: ignore the relocation type for now (the top 4 bits of the value).
+                        self.imagebase + page_base + (v & 0xFFF)
+                        for v in values
+                        if v != 0
+                    ]
+                )
+
+                ofs += block_size
+
+        return relocations
+
+    @cached_property
+    def _relocated_addrs(self) -> set[int]:
+        """We are now interested in the relocated addresses themselves. Seek to the
+        address where there is a relocation, then read the four bytes into our set."""
+        relocated = set()
+
+        for reloc_addr in self.relocations:
+            view, _ = self.seek(reloc_addr)
+            # If we can read a pointer:
+            if len(view) >= 4:
+                (relocated_addr,) = struct.unpack_from("<I", view)
+                relocated.add(relocated_addr)
+
+        return relocated
+
+    def get_import_descriptors(self) -> Iterator[tuple[int, int, int]]:
+        import_directory = self.get_data_directory_region(
+            PEDataDirectoryItemType.IMPORT_TABLE
+        )
+
+        if import_directory is None:
+            return
+
+        addr = import_directory.virtual_address
+        while True:
+            # Read 5 dwords until all are zero.
+            image_import_descriptor = struct.unpack("<5I", self.read(addr, 20))
+            addr += 20
+            if all(x == 0 for x in image_import_descriptor):
+                break
+
+            (rva_ilt, _, __, dll_name, rva_iat) = image_import_descriptor
+            # Convert relative virtual addresses into absolute
+            yield (
+                self.imagebase + rva_ilt,
+                self.imagebase + dll_name,
+                self.imagebase + rva_iat,
+            )
+
+    def get_imports(self) -> Iterator[ImageImport]:
+        # ILT = Import Lookup Table
+        # IAT = Import Address Table
+        # ILT gives us the symbol name of the import.
+        # IAT gives the address. The compiler generated a thunk function
+        # that jumps to the value of this address.
+        for start_ilt, dll_addr, start_iat in self.get_import_descriptors():
+            dll_name = self.read_string(dll_addr).decode("ascii")
+            ofs_ilt = start_ilt
+            # Address of "__imp__*" symbols.
+            ofs_iat = start_iat
+            while True:
+                (lookup_addr,) = struct.unpack("<L", self.read(ofs_ilt, 4))
+                (import_addr,) = struct.unpack("<L", self.read(ofs_iat, 4))
+                if lookup_addr == 0 or import_addr == 0:
+                    break
+
+                # MSB set if this is an ordinal import
+                if lookup_addr & 0x80000000 != 0:
+                    ordinal_num = lookup_addr & 0x7FFF
+                    yield ImageImport(
+                        addr=ofs_iat, module=dll_name, ordinal=ordinal_num
+                    )
+                else:
+                    # Skip the "Hint" field, 2 bytes
+                    name_ofs = lookup_addr + self.imagebase + 2
+                    symbol_name = self.read_string(name_ofs).decode("ascii")
+                    yield ImageImport(addr=ofs_iat, module=dll_name, name=symbol_name)
+
+                ofs_ilt += 4
+                ofs_iat += 4
+
+    @property
+    def imports(self) -> Iterator[ImageImport]:
+        return self.get_imports()
+
+    @cached_property
+    def thunks(self) -> list[tuple[int, int]]:
+        """For each imported function, we generate a thunk function. The only
+        instruction in the function is a jmp to the address in .idata.
+        Search .text to find these functions."""
+
+        text_sect = self.get_section_by_name(".text")
+        text_start = text_sect.virtual_address
+        thunks = []
+
+        # If this is a debug build, read the thunks at the start of .text
+        # Terminated by a big block of 0xcc padding bytes before the first
+        # real function in the section.
+        if self.is_debug:
+            ofs = 0
+            while True:
+                (opcode, operand) = struct.unpack("<Bi", text_sect.view[ofs : ofs + 5])
+                if opcode != 0xE9:
+                    break
+
+                thunk_ofs = text_start + ofs
+                jmp_ofs = text_start + ofs + 5 + operand
+                thunks.append((thunk_ofs, jmp_ofs))
+                ofs += 5
+
+        return thunks
+
+    @cached_property
+    def exports(self) -> list[tuple[int, bytes]]:
+        """If you are missing a lot of annotations in your file
+        (e.g. debug builds) then you can at least match up the
+        export symbol names."""
+
+        export_directory = self.get_data_directory_region(
+            PEDataDirectoryItemType.EXPORT_TABLE
+        )
+        if not export_directory:
+            return []
+        export_start = export_directory.virtual_address
+
+        export_table = ExportDirectoryTable(
+            *struct.unpack("<2L2H7L", self.read(export_start, 40))
+        )
+
+        # TODO: if the number of functions doesn't match the number of names,
+        # are the remaining functions ordinals?
+        n_functions = export_table.address_table_entries
+
+        func_start = export_start + 40
+        func_addrs: list[int] = [
+            self.imagebase + rva
+            for rva, in struct.iter_unpack("<L", self.read(func_start, 4 * n_functions))
+        ]
+
+        name_start = func_start + 4 * n_functions
+        name_addrs: list[int] = [
+            self.imagebase + rva
+            for rva, in struct.iter_unpack("<L", self.read(name_start, 4 * n_functions))
+        ]
+
+        combined = zip(func_addrs, name_addrs)
+        return [
+            (func_addr, self.read_string(name_addr))
+            for (func_addr, name_addr) in combined
+        ]
+
+    def iter_string(self, encoding: str = "ascii") -> Iterator[tuple[int, str]]:
+        """Search for possible strings at each verified address in .data."""
+        for section in (
+            self.get_section_by_name(".data"),
+            self.get_section_by_name(".rdata"),
+        ):
+            for addr in self._relocated_addrs:
+                if section.contains_vaddr(addr):
+                    raw = self.read_string(addr)
+                    if raw is None:
+                        continue
+
+                    try:
+                        string = raw.decode(encoding)
+                    except UnicodeDecodeError:
+                        continue
+
+                    yield addr, string
+
+    def get_section_by_name(self, name: str) -> ImageSection:
+        try:
+            return self.section_map[name]
+        except KeyError as ex:
+            raise SectionNotFoundError from ex
+
+    def get_section_by_index(self, index: int) -> ImageSection:
+        """Convert 1-based index into 0-based."""
+        try:
+            assert index > 0
+            return self.sections[index - 1]
+        except (AssertionError, IndexError) as ex:
+            raise SectionNotFoundError from ex
+
+    def get_section_extent_by_index(self, index: int) -> int:
+        return self.get_section_by_index(index).extent
+
+    def get_section_offset_by_index(self, index: int) -> int:
+        """The symbols output from cvdump gives addresses in this format: AAAA.BBBBBBBB
+        where A is the index (1-based) into the section table and B is the local offset.
+        This will return the virtual address for the start of the section at the given index
+        so you can get the virtual address for whatever symbol you are looking at.
+        """
+        return self.get_section_by_index(index).virtual_address
+
+    def get_section_offset_by_name(self, name: str) -> int:
+        """Same as above, but use the section name as the lookup"""
+
+        section = self.get_section_by_name(name)
+        return section.virtual_address
+
+    def get_abs_addr(self, section: int, offset: int) -> int:
+        """Convenience function for converting section:offset pairs from cvdump
+        into an absolute vaddr."""
+        return self.get_section_offset_by_index(section) + offset
+
+    @cached_property
+    def vaddr_ranges(self) -> list[range]:
+        """Return the start and end virtual address of each section in the file."""
+        return list(
+            range(
+                self.imagebase + section.virtual_address,
+                self.imagebase
+                + section.virtual_address
+                + max(section.size_of_raw_data, section.virtual_size),
+            )
+            for section in self.section_headers
+        )
+
+    def get_relative_addr(self, addr: int) -> tuple[int, int]:
+        """Convert an absolute address back into a (section_id, offset) pair.
+        n.b. section_id is 1-based to match PDB output."""
+        for i, range_ in enumerate(self.vaddr_ranges):
+            if addr in range_:
+                return i + 1, addr - range_.start
+
+        raise InvalidVirtualAddressError(f"{self.filepath} : 0x{addr:x}")
+
+    def is_valid_section(self, section_id: int) -> bool:
+        """The PDB will refer to sections that are not listed in the headers
+        and so should ignore these references."""
+        try:
+            _ = self.get_section_by_index(section_id)
+            return True
+        except SectionNotFoundError:
+            return False
+
+    def is_valid_vaddr(self, vaddr: int) -> bool:
+        """Is this virtual address part of the image when loaded?"""
+        # Use max here just in case the section headers are not ordered by v.addr
+        last_range = max(self.vaddr_ranges, key=lambda r: r.stop)
+        return self.imagebase <= vaddr < last_range.stop
+
+    def get_code_regions(self) -> Iterator[ImageRegion]:
+        # TODO: Don't depend on section names. (#72)
+        for sect in (self.get_section_by_name(".text"),):
+            yield ImageRegion(sect.virtual_address, sect.view, sect.extent)
+
+    def get_data_regions(self) -> Iterator[ImageRegion]:
+        # TODO: Don't depend on section names. (#72)
+        for sect in (
+            self.get_section_by_name(".rdata"),
+            self.get_section_by_name(".data"),
+        ):
+            yield ImageRegion(sect.virtual_address, sect.view, sect.extent)
+
+    def get_const_regions(self) -> Iterator[ImageRegion]:
+        # TODO: Don't depend on section names. (#72)
+        for sect in (self.get_section_by_name(".rdata"),):
+            yield ImageRegion(sect.virtual_address, sect.view, sect.extent)
+
+    @cached_property
+    def uninitialized_ranges(self) -> list[range]:
+        """Return a start and end range of each region in the file that holds uninitialized data.
+        This can be an entire section (.bss) or the gap between the end of the physical data
+        and the virtual size. These ranges do not correspond to section ids."""
+        output = []
+        for section in self.section_headers:
+            if (
+                section.characteristics
+                & PESectionFlags.IMAGE_SCN_CNT_UNINITIALIZED_DATA
+            ):
+                output.append(
+                    range(
+                        self.imagebase + section.virtual_address,
+                        self.imagebase + section.virtual_address + section.virtual_size,
+                    )
+                )
+            elif section.virtual_size > section.size_of_raw_data:
+                # Should also cover the case where size_of_raw_data = 0.
+                output.append(
+                    range(
+                        self.imagebase
+                        + section.virtual_address
+                        + section.size_of_raw_data,
+                        self.imagebase + section.virtual_address + section.virtual_size,
+                    )
+                )
+
+        return output
+
+    def addr_is_uninitialized(self, vaddr: int) -> bool:
+        return any(vaddr in range_ for range_ in self.uninitialized_ranges)
+
+    def seek(self, vaddr: int) -> tuple[bytes, int]:
+        for sect, range_ in zip(self.sections, self.vaddr_ranges):
+            if vaddr in range_:
+                return (sect.view[vaddr - range_.start :], range_.stop - vaddr)
+
+        raise InvalidVirtualAddressError(f"{self.filepath} : 0x{vaddr:x}")

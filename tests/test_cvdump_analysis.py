@@ -1,10 +1,11 @@
-from reccmp.isledecomp.types import EntityType
-from reccmp.isledecomp.cvdump.parser import CvdumpParser
-from reccmp.isledecomp.cvdump.symbols import SymbolsEntry
-from reccmp.isledecomp.cvdump.analysis import (
+from reccmp.types import EntityType
+from reccmp.cvdump.parser import CvdumpParser
+from reccmp.cvdump.symbols import SymbolsEntry
+from reccmp.cvdump.analysis import (
     CvdumpAnalysis,
     CvdumpNode,
 )
+from reccmp.cvdump.cvinfo import CvdumpTypeKey as TK
 
 
 TEST_SYMBOLS = [
@@ -13,7 +14,7 @@ TEST_SYMBOLS = [
         section=1,
         offset=0xCC3,
         size=0xA9,
-        func_type="0x100D",
+        func_type=TK(0x100D),
         name="__setargv",
     ),
     SymbolsEntry(
@@ -21,7 +22,7 @@ TEST_SYMBOLS = [
         section=1,
         offset=0x12EC,
         size=0x56,
-        func_type="0x100D",
+        func_type=TK(0x100D),
         name="check_managed_app",
     ),
 ]

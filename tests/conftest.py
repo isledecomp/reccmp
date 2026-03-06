@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Callable, Iterator
 import pytest
 
-from reccmp.isledecomp import Image, NEImage, PEImage, detect_image
+from reccmp.formats import Image, NEImage, PEImage, detect_image
 
 
 def pytest_addoption(parser):

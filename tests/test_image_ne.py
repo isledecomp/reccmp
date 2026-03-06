@@ -1,5 +1,5 @@
-from reccmp.isledecomp.formats import NEImage
-from reccmp.isledecomp.formats.ne import NESegmentFlags, NETargetOSFlags
+from reccmp.formats import NEImage
+from reccmp.formats.ne import NESegmentFlags, NETargetOSFlags
 
 
 def test_vitals(skifree: NEImage):

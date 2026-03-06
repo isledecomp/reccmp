@@ -9,7 +9,7 @@ from functools import partial
 
 from ghidra.program.flatapi import FlatProgramAPI
 
-from reccmp.isledecomp.compare.core import Compare
+from reccmp.compare.core import Compare
 from reccmp.project.detect import RecCmpTarget
 
 from .exceptions import ReccmpGhidraException

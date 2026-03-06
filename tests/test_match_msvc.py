@@ -1,10 +1,10 @@
 """Tests MSVC-specific match strategies"""
 
-from unittest.mock import Mock, ANY
+from unittest.mock import Mock, ANY, patch
 import pytest
-from reccmp.isledecomp.types import EntityType
-from reccmp.isledecomp.compare.db import EntityDb
-from reccmp.isledecomp.compare.match_msvc import (
+from reccmp.types import EntityType, ImageId
+from reccmp.compare.db import EntityDb
+from reccmp.compare.match_msvc import (
     match_functions,
     match_static_variables,
     match_strings,
@@ -12,8 +12,9 @@ from reccmp.isledecomp.compare.match_msvc import (
     match_variables,
     match_vtables,
     match_ref,
+    match_imports,
 )
-from reccmp.isledecomp.compare.event import ReccmpEvent, ReccmpReportProtocol
+from reccmp.compare.event import ReccmpEvent, ReccmpReportProtocol
 
 
 @pytest.fixture(name="db")
@@ -658,24 +659,194 @@ def test_match_strings_stable_order(db):
 
 
 def test_match_ref(db):
+    """Match child entities that refer to the same matched parent entity, regardless of type."""
     with db.batch() as batch:
-        # Main entity
+        batch.set_orig(100)
+        batch.set_recomp(500)
+        batch.match(100, 500)
+
+        batch.set(ImageId.ORIG, 200)
+        batch.set_ref(ImageId.ORIG, 200, ref=100)
+
+        batch.set(ImageId.RECOMP, 600)
+        batch.set_ref(ImageId.RECOMP, 600, ref=500)
+
+    match_ref(db)
+
+    assert db.get_by_orig(200).recomp_addr == 600
+    assert db.get_by_recomp(600).orig_addr == 200
+
+
+def test_match_ref_chained(db):
+    """Match any child entities that refer to other child entities,
+    provided we have a matched parent at the end of the chain."""
+    with db.batch() as batch:
+        batch.set_orig(100)
+        batch.set_recomp(500)
+        batch.match(100, 500)
+
+        # First level
+        batch.set(ImageId.ORIG, 200)
+        batch.set_ref(ImageId.ORIG, 200, ref=100)
+
+        batch.set(ImageId.RECOMP, 600)
+        batch.set_ref(ImageId.RECOMP, 600, ref=500)
+
+        # Second level
+        batch.set(ImageId.ORIG, 300)
+        batch.set_ref(ImageId.ORIG, 300, ref=200)
+
+        batch.set(ImageId.RECOMP, 700)
+        batch.set_ref(ImageId.RECOMP, 700, ref=600)
+
+    match_ref(db)
+
+    assert db.get_by_orig(200).recomp_addr == 600
+    assert db.get_by_recomp(600).orig_addr == 200
+
+    assert db.get_by_orig(300).recomp_addr == 700
+    assert db.get_by_recomp(700).orig_addr == 300
+
+
+def test_match_ref_parent_not_matched(db):
+    """Don't match child entities if the parent is not matched."""
+    with db.batch() as batch:
+        batch.set_orig(100)
+        batch.set_recomp(500)
+        # Don't match parent entity.
+
+        batch.set(ImageId.ORIG, 200)
+        batch.set_ref(ImageId.ORIG, 200, ref=100)
+
+        batch.set(ImageId.RECOMP, 600)
+        batch.set_ref(ImageId.RECOMP, 600, ref=500)
+
+    match_ref(db)
+
+    # Child entities unchanged.
+    assert db.get_by_orig(200).recomp_addr is None
+    assert db.get_by_recomp(600).orig_addr is None
+
+
+def test_match_ref_expected_order(db):
+    """If there is more than one child entity that points to the same matched parent,
+    match according to child address order."""
+    with db.batch() as batch:
         batch.set_orig(100)
         batch.set_recomp(500)
         batch.match(100, 500)
 
         # Orig thunks
-        batch.set_orig(200, ref_orig=100)
-        batch.set_orig(201, ref_orig=100)
-        batch.set_orig(202, ref_orig=100)
+        for addr in (200, 201, 202):
+            batch.set(ImageId.ORIG, addr)
+            batch.set_ref(ImageId.ORIG, addr, ref=100)
 
         # Recomp thunks (reverse order to verify expected match)
-        batch.set_recomp(602, ref_recomp=500)
-        batch.set_recomp(601, ref_recomp=500)
-        batch.set_recomp(600, ref_recomp=500)
+        for addr in (602, 601, 600):
+            batch.set(ImageId.RECOMP, addr)
+            batch.set_ref(ImageId.RECOMP, addr, ref=500)
 
     match_ref(db)
 
     assert db.get_by_orig(200).recomp_addr == 600
     assert db.get_by_orig(201).recomp_addr == 601
     assert db.get_by_orig(202).recomp_addr == 602
+
+
+def test_match_ref_include_vtordisp(db):
+    """If a displacement value is specified for the child entity (vtordisp)
+    use it when matching the parent."""
+    with db.batch() as batch:
+        batch.set_orig(100)
+        batch.set_recomp(500)
+        batch.match(100, 500)
+
+        batch.set(ImageId.ORIG, 200)
+        batch.set(ImageId.ORIG, 201)
+        batch.set_ref(ImageId.ORIG, 200, ref=100)
+        batch.set_ref(ImageId.ORIG, 201, ref=100, displacement=(-4, 0))
+
+        batch.set(ImageId.RECOMP, 600)
+        batch.set(ImageId.RECOMP, 601)
+        batch.set_ref(ImageId.RECOMP, 600, ref=500)
+        batch.set_ref(ImageId.RECOMP, 601, ref=500, displacement=(-4, 0))
+
+    match_ref(db)
+
+    # Match thunks and vtordisp separately.
+    assert db.get_by_orig(200).recomp_addr == 600
+    assert db.get_by_orig(201).recomp_addr == 601
+
+
+def test_match_ref_include_vtordisp_order(db):
+    """For child entities with duplicate parent and displacement values, match
+    by child address order.
+    NOTE: It may not be possible for MSVC to duplicate vtordisps in this way."""
+    with db.batch() as batch:
+        batch.set_orig(100)
+        batch.set_recomp(500)
+        batch.match(100, 500)
+
+        # Orig thunks
+        for addr in (200, 201, 202):
+            batch.set(ImageId.ORIG, addr)
+            batch.set_ref(ImageId.ORIG, addr, ref=100, displacement=(-4, 0))
+
+        # Recomp thunks (reverse order to verify expected match)
+        for addr in (602, 601, 600):
+            batch.set(ImageId.RECOMP, addr)
+            batch.set_ref(ImageId.RECOMP, addr, ref=500, displacement=(-4, 0))
+
+    match_ref(db)
+
+    assert db.get_by_orig(200).recomp_addr == 600
+    assert db.get_by_orig(201).recomp_addr == 601
+    assert db.get_by_orig(202).recomp_addr == 602
+
+
+def test_match_ref_maximum_depth(db, report):
+    """If we cannot match all referencing entities in 10 iterations, report a warning."""
+
+    # No entities to match: should not report.
+    match_ref(db, report)
+    report.assert_not_called()
+
+    # Run one iteration: should not report.
+    with patch(
+        "reccmp.compare.match_msvc.get_referencing_entity_matches",
+        return_value=iter([(100, 100)]),
+    ) as getter:
+        match_ref(db, report)
+        assert getter.call_count == 2  # Yields nothing on the second call.
+        report.assert_not_called()
+
+    # Run indefinitely: should report.
+    with patch(
+        "reccmp.compare.match_msvc.get_referencing_entity_matches",
+        return_value=[(100, 100)],
+    ) as getter:
+        match_ref(db, report)
+        assert getter.call_count == 10
+        report.assert_called_once()
+
+
+def test_match_imports(db: EntityDb):
+    """Match import descriptors using case-insensitive pairing."""
+    with db.batch() as batch:
+        # Same case
+        batch.set(ImageId.ORIG, 100, type=EntityType.IMPORT, name="TEST.DLL::Test")
+        batch.set(ImageId.RECOMP, 100, type=EntityType.IMPORT, name="TEST.DLL::Test")
+
+        # Different case
+        batch.set(ImageId.ORIG, 200, type=EntityType.IMPORT, name="Test.Dll::Hello")
+        batch.set(ImageId.RECOMP, 200, type=EntityType.IMPORT, name="TEST.DLL::hello")
+
+    match_imports(db)
+
+    e = db.get_by_orig(100)
+    assert e is not None
+    assert e.recomp_addr == 100
+
+    e = db.get_by_orig(200)
+    assert e is not None
+    assert e.recomp_addr == 200

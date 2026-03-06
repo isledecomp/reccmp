@@ -106,6 +106,16 @@ class GhidraConfig:
 
     Example value: `[r"FUN_([0-9a-f]{8})", r"LEGO1_\\1"]`.
     """
+    allow_hash_mismatch: bool = False
+    """
+    When enabled, we allow the Ghidra import to continue even if the hash of the
+    binary reported by Ghidra does not match the target hash in reccmp-project.yml.
+
+    By default, we stop the import if the hashes do not match.
+
+    This is intended as a safety feature to prevent the user from adding metadata to the
+    wrong Ghidra file.
+    """
 
 
 @dataclass
@@ -149,6 +159,9 @@ class RecCmpPartialTarget:
     recompiled_path: Path | None = None
     recompiled_pdb: Path | None = None
 
+    # Data to set directly in the database (addresses refer to orig binary)
+    data_sources: list[Path] | None = None
+
 
 @dataclass
 class RecCmpTarget:
@@ -181,6 +194,9 @@ class RecCmpTarget:
     original_path: Path
     recompiled_path: Path
     recompiled_pdb: Path
+
+    # Data to set directly in the database (addresses refer to orig binary)
+    data_sources: list[Path] = field(default_factory=list)
 
 
 class RecCmpProject:
@@ -239,6 +255,8 @@ class RecCmpProject:
         else:
             ghidra = GhidraConfig()
 
+        data_sources = target.data_sources or []
+
         if target.report_config is not None:
             report = target.report_config
         else:
@@ -253,6 +271,7 @@ class RecCmpProject:
             recompiled_pdb=target.recompiled_pdb,
             source_root=target.source_root,
             ghidra_config=ghidra,
+            data_sources=data_sources,
             report_config=report,
         )
 
@@ -319,7 +338,9 @@ class RecCmpProject:
         # We must have found the project if we are here.
         assert project.project_config_path is not None
         project_directory = project.project_config_path.parent
-        user_data = project.find_user_config(project_directory)
+        # As of this writing, the user config must be located next to the project config
+        user_config_directory = project_directory
+        user_data = project.find_user_config(user_config_directory)
 
         verify_target_names(
             project_keys=set(project_data.targets) if project_data else set(),
@@ -335,6 +356,7 @@ class RecCmpProject:
                     ignore_types=target.ghidra.ignore_types,
                     ignore_functions=target.ghidra.ignore_functions,
                     name_substitutions=target.ghidra.name_substitutions,
+                    allow_hash_mismatch=target.ghidra.allow_hash_mismatch,
                 )
             else:
                 ghidra = None
@@ -345,7 +367,12 @@ class RecCmpProject:
             else:
                 report = None
 
+            # Assumes these are relative paths. If they are not, the second path
+            # will replace the first instead of adding onto it.
             source_root = project_directory / target.source_root
+            data_sources = [
+                project_directory / ds_path for ds_path in target.data_sources
+            ]
 
             project.targets[target_id] = RecCmpPartialTarget(
                 target_id=target_id,
@@ -353,6 +380,7 @@ class RecCmpProject:
                 sha256=target.hash.sha256,
                 source_root=source_root,
                 ghidra_config=ghidra,
+                data_sources=data_sources,
                 report_config=report,
             )
 
@@ -362,7 +390,9 @@ class RecCmpProject:
                 if target_id not in project.targets:
                     continue
 
-                project.targets[target_id].original_path = user_target.path
+                project.targets[target_id].original_path = (
+                    user_config_directory / user_target.path
+                )
 
         # Apply reccmp-build.yml
         if build_data is not None:
@@ -372,11 +402,11 @@ class RecCmpProject:
                 if target_id not in project.targets:
                     continue
 
-                project.targets[target_id].recompiled_path = build_directory.joinpath(
-                    build_target.path
+                project.targets[target_id].recompiled_path = (
+                    build_directory / build_target.path
                 )
-                project.targets[target_id].recompiled_pdb = build_directory.joinpath(
-                    build_target.pdb
+                project.targets[target_id].recompiled_pdb = (
+                    build_directory / build_target.pdb
                 )
 
         return project

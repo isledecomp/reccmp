@@ -14,12 +14,12 @@ import statistics
 import bisect
 from typing import Iterator, NamedTuple
 import reccmp
-from reccmp.isledecomp import PEImage
-from reccmp.isledecomp.compare.db import ReccmpEntity
-from reccmp.isledecomp.cvdump import Cvdump
-from reccmp.isledecomp.compare import Compare as IsleCompare
-from reccmp.isledecomp.formats.exceptions import InvalidVirtualAddressError
-from reccmp.isledecomp.types import EntityType
+from reccmp.formats import PEImage
+from reccmp.compare.db import ReccmpEntity
+from reccmp.cvdump import Cvdump
+from reccmp.compare import Compare
+from reccmp.formats.exceptions import InvalidVirtualAddressError
+from reccmp.types import EntityType
 from reccmp.project.detect import (
     argparse_add_project_target_args,
     argparse_parse_project_target,
@@ -387,15 +387,20 @@ def main() -> int:
         logger.error(e.args[0])
         return 1
 
-    engine = IsleCompare.from_target(target)
+    engine = Compare.from_target(target)
     orig_bin = engine.orig_bin
     recomp_bin = engine.recomp_bin
+
+    if not isinstance(orig_bin, PEImage) or not isinstance(recomp_bin, PEImage):
+        raise ValueError("`roadmap` currently only supports 32-bit PE images")
 
     module_map = ModuleMap(target.recompiled_pdb, recomp_bin)
 
     def is_same_section(orig: int, recomp: int) -> bool:
-        """Compare the section name instead of the index.
-        LEGO1.dll adds extra sections for some reason. (Smacker library?)"""
+        """
+        It is better to compare the sections by name since orig and recomp might not have the same number of sections.
+        We have encountered this e.g. for LEGO1.
+        """
 
         try:
             orig_name = orig_bin.sections[orig - 1].name

@@ -2,14 +2,14 @@ from pathlib import PureWindowsPath
 from typing import Callable
 from unittest.mock import Mock
 import pytest
-from reccmp.isledecomp.compare.db import EntityDb, ReccmpMatch
-from reccmp.isledecomp.compare.event import ReccmpEvent, ReccmpReportProtocol
-from reccmp.isledecomp.compare.functions import (
+from reccmp.compare.db import EntityDb, ReccmpMatch
+from reccmp.compare.event import ReccmpEvent, ReccmpReportProtocol
+from reccmp.compare.functions import (
     FunctionComparator,
     FunctionCompareResult,
 )
-from reccmp.isledecomp.compare.lines import LinesDb
-from reccmp.isledecomp.types import EntityType
+from reccmp.compare.lines import LinesDb
+from reccmp.types import EntityType
 
 
 MOCK_PATH = PureWindowsPath("some/path/test.cpp")

@@ -38,10 +38,19 @@ class YmlGhidraConfig(BaseModel):
         default_factory=list,
         validation_alias=AliasChoices("name-substitutions", "name_substitutions"),
     )
+    allow_hash_mismatch: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("allow-hash-mismatch", "allow_hash_mismatch"),
+    )
 
     @classmethod
     def default(cls) -> "YmlGhidraConfig":
-        return cls(ignore_types=[], ignore_functions=[], name_substitutions=[])
+        return cls(
+            ignore_types=[],
+            ignore_functions=[],
+            name_substitutions=[],
+            allow_hash_mismatch=False,
+        )
 
 
 class YmlReportConfig(BaseModel):
@@ -68,6 +77,10 @@ class ProjectFileTarget(BaseModel):
         validation_alias=AliasChoices("source-root", "source_root")
     )
     hash: Hash
+    data_sources: list[Path] = Field(
+        validation_alias=AliasChoices("data-sources", "data_sources"),
+        default_factory=list,
+    )
     ghidra: YmlGhidraConfig = Field(default_factory=YmlGhidraConfig.default)
     report: YmlReportConfig = Field(default_factory=YmlReportConfig.default)
 

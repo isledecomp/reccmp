@@ -1,8 +1,8 @@
 import os
 from typing import TextIO
 import pytest
-from reccmp.isledecomp.parser import DecompParser
-from reccmp.isledecomp.parser.node import ParserSymbol
+from reccmp.parser import DecompParser
+from reccmp.parser.node import ParserSymbol
 
 SAMPLE_DIR = os.path.join(os.path.dirname(__file__), "samples")
 

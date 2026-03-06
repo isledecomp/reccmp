@@ -170,8 +170,8 @@ def reload_module(module: str):
     and are not reloaded when relaunching the script. Therefore, in order to facilitate development
     we force reload all our own modules at startup. See also https://github.com/mandiant/Ghidrathon/issues/103.
 
-    Note that as of 2024-05-30, this remedy does not work perfectly (yet): Some changes in isledecomp are
-    still not detected correctly and require a Ghidra restart to be applied.
+    Note that as of 2024-05-30, this remedy does not work perfectly (yet): Some changes are still not detected
+    correctly and require a Ghidra restart to be applied.
     """
     importlib.reload(importlib.import_module(module))
 
@@ -184,11 +184,11 @@ def main():
     logger.info("Importing file: %s", target.original_path)
 
     if not VERBOSE:
-        logging.getLogger("isledecomp.bin").setLevel(logging.WARNING)
-        logging.getLogger("isledecomp.compare.core").setLevel(logging.WARNING)
-        logging.getLogger("isledecomp.compare.db").setLevel(logging.WARNING)
-        logging.getLogger("isledecomp.compare.lines").setLevel(logging.WARNING)
-        logging.getLogger("isledecomp.cvdump.symbols").setLevel(logging.WARNING)
+        logging.getLogger("bin").setLevel(logging.WARNING)
+        logging.getLogger("compare.core").setLevel(logging.WARNING)
+        logging.getLogger("compare.db").setLevel(logging.WARNING)
+        logging.getLogger("compare.lines").setLevel(logging.WARNING)
+        logging.getLogger("cvdump.symbols").setLevel(logging.WARNING)
 
     import_target_into_ghidra(target, api)
     logger.info("Done!")
@@ -207,8 +207,8 @@ try:
     reload_module("reccmp.ghidra.importer.importer")
     from reccmp.ghidra.importer.importer import import_target_into_ghidra
 
-    reload_module("reccmp.isledecomp.compare")
-    reload_module("reccmp.isledecomp.compare.db")
+    reload_module("reccmp.compare")
+    reload_module("reccmp.compare.db")
     reload_module("reccmp.ghidra.importer.entity_names")
     reload_module("reccmp.ghidra.importer.exceptions")
     reload_module("reccmp.ghidra.importer.pdb_extraction")

@@ -3,7 +3,8 @@
 import sqlite3
 from unittest.mock import patch
 import pytest
-from reccmp.isledecomp.compare.db import EntityDb
+from reccmp.compare.db import EntityDb
+from reccmp.types import EntityType, ImageId
 
 
 @pytest.fixture(name="db")
@@ -225,12 +226,12 @@ def test_batch_commit_twice(db):
     batch = db.batch()
     batch.set_orig(100, name="Test")
 
-    with patch("reccmp.isledecomp.compare.db.EntityDb.bulk_orig_insert") as mock:
+    with patch("reccmp.compare.db.EntityDb.bulk_orig_insert") as mock:
         batch.commit()
         batch.commit()
         mock.assert_called_once()
 
-    with patch("reccmp.isledecomp.compare.db.EntityDb.bulk_orig_insert") as mock:
+    with patch("reccmp.compare.db.EntityDb.bulk_orig_insert") as mock:
         batch.commit()
         mock.assert_not_called()
 
@@ -327,3 +328,136 @@ def test_batch_sqlite_exception(db):
     # Should rollback everything
     assert db.get_by_orig(100) is None
     assert db.get_by_recomp(200) is None
+
+
+def test_generic_used_function(db: EntityDb):
+    """used() has a parameter to select which address space to check."""
+    assert db.used(ImageId.ORIG, 100) is False
+    assert db.used(ImageId.RECOMP, 100) is False
+
+    with db.batch() as batch:
+        batch.set_orig(100, name="Test")
+
+    assert db.used(ImageId.ORIG, 100) is True
+    assert db.used(ImageId.RECOMP, 100) is False
+
+    with db.batch() as batch:
+        batch.set_recomp(100, name="Test")
+
+    assert db.used(ImageId.ORIG, 100) is True
+    assert db.used(ImageId.RECOMP, 100) is True
+
+
+def test_generic_used_invalid_id(db: EntityDb):
+    """Should fail if the image id is outside the enum"""
+    with pytest.raises(AssertionError):
+        db.used(2, 100)  # type: ignore
+
+
+def test_generic_set_function(db: EntityDb):
+    """set() has a parameter to select which address space to update."""
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, name="Test")
+
+    e = db.get_by_orig(100)
+    assert e is not None
+    assert e.name == "Test"
+
+    with db.batch() as batch:
+        batch.set(ImageId.RECOMP, 100, name="Test")
+
+    e = db.get_by_recomp(100)
+    assert e is not None
+    assert e.name == "Test"
+
+
+def test_generic_set_invalid_id(db: EntityDb):
+    """Should fail if the image id is outside the enum"""
+    with pytest.raises(AssertionError):
+        with db.batch() as batch:
+            batch.set(2, 100, name="Test")  # type: ignore
+
+
+def test_generic_get_function(db: EntityDb):
+    """used() has a parameter to select which address space to check."""
+    assert db.get(ImageId.ORIG, 100) is None
+    assert db.get(ImageId.ORIG, 110, exact=False) is None
+
+    with db.batch() as batch:
+        batch.set_orig(100, name="Test")
+
+    e = db.get(ImageId.ORIG, 100)
+    assert e is not None
+    assert e.get("name") == "Test"
+    assert db.get(ImageId.ORIG, 110, exact=False) is not None
+
+    assert db.get(ImageId.RECOMP, 100) is None
+    assert db.get(ImageId.RECOMP, 110, exact=False) is None
+
+    with db.batch() as batch:
+        batch.set_recomp(100, name="Test")
+
+    e = db.get(ImageId.RECOMP, 100)
+    assert e is not None
+    assert e.get("name") == "Test"
+    assert db.get(ImageId.RECOMP, 110, exact=False) is not None
+
+
+def test_generic_get_invalid_id(db: EntityDb):
+    """Should fail if the image id is outside the enum"""
+    with pytest.raises(AssertionError):
+        db.get(2, 100)  # type: ignore
+
+
+def test_get_next_orig_addr(db: EntityDb):
+    """Should return the address of the entity from
+    the orig address space after the given address."""
+    with db.batch() as batch:
+        batch.set_orig(100, type=EntityType.FUNCTION)
+        batch.set_orig(200, type=EntityType.FUNCTION)
+
+    # The value does not need to contain an entity itself
+    assert db.get_next_orig_addr(0) == 100
+
+    # Always return the following address, even if the one provided is an entity
+    assert db.get_next_orig_addr(100) == 200
+
+    # Addresses following the final entity return None
+    assert db.get_next_orig_addr(200) is None
+
+
+def test_get_next_orig_addr_any_type(db: EntityDb):
+    """Demonstrate that the function works with all entity types (not just functions)."""
+    with db.batch() as batch:
+        batch.set_orig(100, type=EntityType.STRING)
+        batch.set_orig(200, type=EntityType.DATA)
+
+    assert db.get_next_orig_addr(0) == 100
+    assert db.get_next_orig_addr(100) == 200
+    assert db.get_next_orig_addr(200) is None
+
+
+def test_get_next_orig_addr_no_type(db: EntityDb):
+    """Skip entities without a type."""
+    with db.batch() as batch:
+        batch.set_orig(100, type=EntityType.FUNCTION)
+        batch.set_orig(150)
+        batch.set_orig(200, type=EntityType.FUNCTION)
+
+    assert db.get_next_orig_addr(100) == 200
+    assert db.get_next_orig_addr(150) == 200
+
+
+def test_get_next_orig_addr_function_passenger_type(db: EntityDb):
+    """Skip entities with the LINE or LABEL types.
+    These entities appear inside of other entities (i.e. functions)
+    If we did not skip them, our estimate on function size will be too small."""
+    with db.batch() as batch:
+        batch.set_orig(100, type=EntityType.FUNCTION)
+        batch.set_orig(150, type=EntityType.LINE)
+        batch.set_orig(160, type=EntityType.LABEL)
+        batch.set_orig(200, type=EntityType.FUNCTION)
+
+    assert db.get_next_orig_addr(100) == 200
+    assert db.get_next_orig_addr(150) == 200
+    assert db.get_next_orig_addr(160) == 200

@@ -1,6 +1,7 @@
 include reccmp/bin/cvdump.exe
 include reccmp/bin/LICENSE.cvdump.txt
 include reccmp/assets/cmake/reccmp.cmake
-include reccmp/assets/reccmp.js
+include reccmp/assets/*.js
+include reccmp/assets/components/*.js
 include reccmp/assets/template.html
 include reccmp/assets/template.svg
