@@ -2,7 +2,7 @@
 
 import os
 import subprocess
-from typing import Iterator
+from typing import Iterable, Iterator
 from pathlib import Path, PurePath, PureWindowsPath
 
 
@@ -134,8 +134,9 @@ class PathResolver:
         return self._memo[path_str]
 
 
-def is_file_c_like(filename: Path | str) -> bool:
-    return Path(filename).suffix.lower() in (
+def is_file_c_like(filename: str) -> bool:
+    (_, ext) = os.path.splitext(filename)
+    return ext.lower() in (
         ".c",
         ".h",
         ".cc",
@@ -144,18 +145,51 @@ def is_file_c_like(filename: Path | str) -> bool:
         ".hxx",
         ".cpp",
         ".hpp",
-        ".C",
     )
 
 
-def walk_source_dir(source: Path, recursive: bool = True) -> Iterator[Path]:
+def platform_independent_path_sort(paths: Iterable[Path]) -> Iterator[Path]:
+    """PosixPaths are case-sensitive. WindowsPaths are not.
+    To ensure that reccmp processing is consistent across platforms,
+    use this method to sort paths in a case-insensitive order.
+    An example of the problem we want to fix: metadata for the same entity address
+    in multiple files may cause us to overwrite data. If we do, it should be done
+    in a consistent way because we have processed the metadata files in the same order.
+    """
+    yield from sorted(paths, key=lambda p: str(p).lower())
+
+
+def walk_source_dir(source: Path, *, recursive: bool = True) -> Iterator[Path]:
     """Generator to walk the given directory recursively and return
     any C++ files found."""
 
-    for subdir, _, files in source.walk():
+    for subdir, _, files in os.walk(source.absolute()):
         for file in files:
             if is_file_c_like(file):
-                yield subdir / file
+                yield Path(os.path.join(subdir, file))
 
         if not recursive:
             break
+
+
+def source_code_search(search_paths: Path | Iterable[Path]) -> Iterator[Path]:
+    """Use the provided search paths to find source code files in the project
+    that we will scan for reccmp metadata. Returns a list of distinct paths
+    sorted by their lower-case string representation."""
+    code_files = set()
+
+    # Allow single Path argument
+    if not isinstance(search_paths, Iterable):
+        search_paths = (search_paths,)
+
+    for path in search_paths:
+        if not path.exists():
+            continue
+
+        if path.is_file() and is_file_c_like(path.name):
+            code_files.add(path)
+            continue
+
+        code_files.update(walk_source_dir(path))
+
+    yield from platform_independent_path_sort(code_files)
