@@ -4,8 +4,8 @@ import struct
 from typing import Iterable, Iterator
 from typing_extensions import Self
 from reccmp.project.detect import RecCmpTarget
-from reccmp.difflib import get_grouped_opcodes
 from reccmp.dir import walk_source_dir
+from reccmp.compare.diff import FunctionCompareResult, RawDiffOutput
 from reccmp.compare.functions import FunctionComparator
 from reccmp.formats import (
     Image,
@@ -31,7 +31,7 @@ from .match_msvc import (
     match_imports,
 )
 from .db import EntityDb, ReccmpEntity, ReccmpMatch
-from .diff import DiffReport, combined_diff
+from .diff import DiffReport
 from .lines import LinesDb
 from .analyze import (
     create_imports,
@@ -220,7 +220,7 @@ class Compare:
         self._debug = debug
         self.function_comparator.debug = debug
 
-    def _compare_vtable(self, match: ReccmpMatch) -> DiffReport:
+    def _compare_vtable(self, match: ReccmpMatch) -> FunctionCompareResult:
         vtable_size = match.size
 
         # The vtable size should always be a multiple of 4 because that
@@ -286,24 +286,20 @@ class Compare:
 
         ratio = ratio / float(n_entries) if n_entries > 0 else 0.0
 
-        # We do not use `get_grouped_opcodes()` because we want to show the entire table
-        # if there is a diff to display. Otherwise it would be confusing if the table got cut off.
         opcodes = difflib.SequenceMatcher(
             None,
             [x[1] for x in orig_text],
             [x[1] for x in recomp_text],
         ).get_opcodes()
 
-        unified_diff = combined_diff([opcodes], orig_text, recomp_text)
-
-        assert match.name is not None
-        return DiffReport(
-            match_type=EntityType.VTABLE,
-            orig_addr=match.orig_addr,
-            recomp_addr=match.recomp_addr,
-            name=match.name,
-            udiff=unified_diff,
-            ratio=ratio,
+        return FunctionCompareResult(
+            diff=RawDiffOutput(
+                # TODO: type conflict here between `str` and the literal strings.
+                codes=list(opcodes),
+                orig_inst=orig_text,
+                recomp_inst=recomp_text,
+            ),
+            match_ratio=ratio,
         )
 
     def _compare_match(self, match: ReccmpMatch) -> DiffReport | None:
@@ -326,36 +322,31 @@ class Compare:
                 is_stub=True,
             )
 
-        # Thunks are matched using the destination of their JMP instruction.
-        # They always match 100%. There is nothing to compare.
+        # We only compare certain entity types in reccmp-asmcmp:
         if match.entity_type in (EntityType.FUNCTION, EntityType.VTORDISP):
-            best_name = match.best_name()
-            assert best_name is not None
+            # Thunks are excluded from comparison. They always match 100% because
+            # they are paired up using the destination of their JMP instruction.
+            result = self.function_comparator.compare_function(match)
+            output_type = EntityType.FUNCTION
 
-            diff_result = self.function_comparator.compare_function(match)
-            if diff_result.match_ratio != 1.0:
-                grouped_codes = list(get_grouped_opcodes(diff_result.codes, n=10))
-                udiff = combined_diff(
-                    grouped_codes, diff_result.orig_inst, diff_result.recomp_inst
-                )
-            else:
-                udiff = None
+        elif match.entity_type == EntityType.VTABLE:
+            result = self._compare_vtable(match)
+            output_type = EntityType.VTABLE
 
-            return DiffReport(
-                match_type=EntityType.FUNCTION,
-                orig_addr=match.orig_addr,
-                recomp_addr=match.recomp_addr,
-                name=best_name,
-                udiff=udiff,
-                ratio=diff_result.match_ratio,
-                is_effective_match=diff_result.is_effective_match,
-                is_library=match.get("library", False),
-            )
+        else:
+            return None
 
-        if match.entity_type == EntityType.VTABLE:
-            return self._compare_vtable(match)
+        best_name = match.best_name()
+        assert best_name is not None
 
-        return None
+        return DiffReport(
+            match_type=output_type,
+            orig_addr=match.orig_addr,
+            recomp_addr=match.recomp_addr,
+            name=best_name,
+            result=result,
+            is_library=match.get("library", False),
+        )
 
     ## Public API
 

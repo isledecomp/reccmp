@@ -38,13 +38,12 @@ def to_report(compare: Compare) -> ReccmpStatusReport:
         report.entities[orig_addr] = ReccmpComparedEntity(
             orig_addr=orig_addr,
             name=match.name,
-            # type=match.match_type,
+            type=match.match_type,
             accuracy=match.effective_ratio,
             recomp_addr=recomp_addr,
             is_effective_match=match.is_effective_match,
             is_stub=match.is_stub,
-            # rdiff=match.result.diff,
-            diff=match.udiff,
+            rdiff=match.result.diff,
         )
 
     json_text = serialize_reccmp_report(report, diff_included=True)
@@ -54,7 +53,7 @@ def to_report(compare: Compare) -> ReccmpStatusReport:
 def get_udiff(entity: ReccmpComparedEntity) -> CombinedDiffOutput | None:
     """This is here for mypy type coersion and to protect against
     changes to the ReccmpStatusReport structure."""
-    return entity.diff
+    return entity.udiff
 
 
 def test_empty():

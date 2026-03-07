@@ -11,6 +11,7 @@ from reccmp.compare import Compare
 from reccmp.compare.diff import (
     CombinedDiffOutput,
     MatchingOrMismatchingBlock,
+    raw_diff_to_udiff,
 )
 from reccmp.cvdump.symbols import SymbolsEntry
 from reccmp.project.detect import (
@@ -343,7 +344,9 @@ def main():
         print(f"Failed to find a match at address 0x{args.address:x}")
         return 1
 
-    assert match.udiff is not None
+    assert match.result is not None
+    # Analyze the entire function, including long sections that already match.
+    udiff = raw_diff_to_udiff(match.result.diff, grouped=False)
 
     function_data = next(
         (y for y in compare.cvdump_analysis.nodes if y.addr == match.recomp_addr),
@@ -352,7 +355,7 @@ def main():
     assert function_data is not None
     assert function_data.symbol_entry is not None
 
-    compare_function_stacks(match.udiff, function_data.symbol_entry)
+    compare_function_stacks(udiff, function_data.symbol_entry)
     return 0
 
 
