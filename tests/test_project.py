@@ -410,3 +410,15 @@ def test_create_original_path_must_exist(tmp_path_factory):
         create_project(
             project_directory=project_root, original_paths=[temp_dir / "nonexist.dll"]
         )
+
+
+def test_create_dont_overwrite_cmake_files(tmp_path_factory, binfile: PEImage):
+    """Fail if a CMake project is already present"""
+    project_root = tmp_path_factory.mktemp("project")
+    bin_path = Path(binfile.filepath)
+    (project_root / "CMakeLists.txt").touch()
+
+    with pytest.raises(RecCmpProjectException):
+        create_project(
+            project_directory=project_root, original_paths=[bin_path], cmake=True
+        )
