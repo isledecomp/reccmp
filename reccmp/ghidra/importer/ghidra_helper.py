@@ -18,7 +18,6 @@ from .entity_names import NamespacePath, SanitizedEntityName, sanitize_name
 from .exceptions import (
     ClassOrNamespaceNotFoundInGhidraError,
     TypeNotFoundInGhidraError,
-    MultipleTypesFoundInGhidraError,
 )
 
 
@@ -29,21 +28,19 @@ def category_path_of(namespace_path: NamespacePath):
     return CategoryPath("/" + "/".join(namespace_path))
 
 
-def get_scalar_ghidra_type(api: FlatProgramAPI, type_name: str) -> DataType:
+def get_builtin_ghidra_type_by_name(api: FlatProgramAPI, type_name: str) -> DataType:
     """
-    Get a scalar/primitive type or type not contained in a namespace.
-    Note that this function may raise errors when a type by that name exists multiple times.
-    Manual cleanup is needed in that case.
+    Get a scalar/primitive type in the root category by name.
     """
+    category = (
+        api.getCurrentProgram().getDataTypeManager().getCategory(CategoryPath("/"))
+    )
+    data_type = category.getDataType(type_name)
 
-    result = list(api.getDataTypes(type_name))
-    match result:
-        case []:
-            raise TypeNotFoundInGhidraError(type_name)
-        case [value]:
-            return value
-        case _:
-            raise MultipleTypesFoundInGhidraError(type_name, result)
+    if data_type is None:
+        raise TypeNotFoundInGhidraError(type_name)
+
+    return data_type
 
 
 def get_ghidra_type(api: FlatProgramAPI, entity_name: SanitizedEntityName) -> DataType:
@@ -52,7 +49,6 @@ def get_ghidra_type(api: FlatProgramAPI, entity_name: SanitizedEntityName) -> Da
 
     Raises:
     - NotFoundInGhidraError
-    - MultipleTypesFoundInGhidraError
     """
 
     category_path = category_path_of(entity_name.namespace_path)

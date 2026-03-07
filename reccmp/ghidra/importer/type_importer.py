@@ -27,11 +27,10 @@ from reccmp.cvdump.types import (
     FieldListItem,
     VirtualBasePointer,
 )
-from reccmp.cvdump.cvinfo import CvdumpTypeKey
+from reccmp.cvdump.cvinfo import CVInfoTypeEnum, CvdumpTypeKey, CvdumpTypeMap
 
 from .entity_names import NamespacePath, SanitizedEntityName, sanitize_name
 from .exceptions import (
-    MultipleTypesFoundInGhidraError,
     TypeNotFoundError,
     TypeNotFoundInGhidraError,
     TypeNotImplementedError,
@@ -43,7 +42,7 @@ from .ghidra_helper import (
     get_or_add_pointer_type,
     get_ghidra_type,
     get_or_create_class_namespace,
-    get_scalar_ghidra_type,
+    get_builtin_ghidra_type_by_name,
 )
 from .pdb_extraction import PdbFunctionExtractor
 from .type_conversion import scalar_type_to_cpp
@@ -129,17 +128,24 @@ class PdbTypeImporter:
                 "Not implemented: Function-valued argument or return type will be replaced by void pointer: %s",
                 type_pdb,
             )
-            return get_scalar_ghidra_type(self.api, "void")
+            return self._import_scalar_type(CVInfoTypeEnum.T_32PVOID)
         elif type_category == "LF_UNION":
             return self._import_union(type_pdb)
         else:
             raise TypeNotImplementedError(type_pdb)
 
     def _import_scalar_type(self, type_key: CvdumpTypeKey) -> DataType:
-        if not type_key.is_scalar():
-            raise TypeNotFoundError(f"Type has unexpected format: {type_key:#x}")
+        cvtype = CvdumpTypeMap[type_key]
 
-        return get_scalar_ghidra_type(self.api, scalar_type_to_cpp(type_key))
+        if cvtype.pointer is None:
+            return get_builtin_ghidra_type_by_name(
+                self.api, scalar_type_to_cpp(type_key)
+            )
+
+        points_to = get_builtin_ghidra_type_by_name(
+            self.api, scalar_type_to_cpp(cvtype.pointer)
+        )
+        return get_or_add_pointer_type(self.api, points_to)
 
     def _import_forward_ref_type(
         self,
@@ -534,22 +540,6 @@ class PdbTypeImporter:
         except TypeNotFoundInGhidraError:
             logger.info(
                 "Creating new %s data type %s",
-                readable_name_of_type_category,
-                sanitized_name,
-            )
-            data_type = data_type_manager.addDataType(
-                new_instance_callback(category_path, sanitized_name.base_name),
-                DataTypeConflictHandler.KEEP_HANDLER,
-            )
-        except MultipleTypesFoundInGhidraError as e:
-            logger.error(
-                "Found multiple existing types matching '%s'. Deleting all of them and trying to recreate..."
-            )
-            for result in e.results:
-                logger.info("Deleting data type '%s'", result.getPathName())
-                data_type_manager.remove(result, ConsoleTaskMonitor())
-            logger.info(
-                "(Re)creating new %s data type '%s'",
                 readable_name_of_type_category,
                 sanitized_name,
             )

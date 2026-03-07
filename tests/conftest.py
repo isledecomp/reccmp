@@ -1,9 +1,22 @@
 import hashlib
 from pathlib import Path
-from typing import Callable, Iterator
+from typing import Callable, Iterator, TYPE_CHECKING
+import shutil
 import pytest
+from pyghidra import HeadlessPyGhidraLauncher  # type: ignore[import-untyped]
 
 from reccmp.formats import Image, NEImage, PEImage, detect_image
+
+# Suppress linter warnings related to the fact that the header support for Ghidra is limited
+# and that we cannot import Ghidra classes before Ghidra has been loaded
+
+# pylint: disable=import-outside-toplevel
+# pyright: reportMissingModuleSource=false
+
+
+if TYPE_CHECKING:
+    from ghidra.program.flatapi import FlatProgramAPI
+    from ghidra.program.model.listing import Program
 
 
 def pytest_addoption(parser):
@@ -13,6 +26,11 @@ def pytest_addoption(parser):
         "--require-binfiles",
         action="store_true",
         help="Fail tests that depend on binary samples if we cannot load them.",
+    )
+    parser.addoption(
+        "--require-ghidra",
+        action="store_true",
+        help="Fail tests that depend on Ghidra it is not available.",
     )
 
 
@@ -76,3 +94,64 @@ def fixture_skifree(bin_loader) -> Iterator[NEImage]:
     )
     assert isinstance(image, NEImage)
     yield image
+
+
+@pytest.fixture(name="ghidra_program", scope="session")
+def fixture_ghidra_loader(pytestconfig, tmp_path_factory) -> "Iterator[FlatProgramAPI]":
+    try:
+        source_dir = Path(__file__).parent / "ghidra"
+        project_dir = tmp_path_factory.mktemp("ghidra")
+        shutil.copytree(source_dir, project_dir, dirs_exist_ok=True)
+
+        HeadlessPyGhidraLauncher().start()
+
+        # pylint: disable-next=import-error
+        from java.lang import Object  # type: ignore[import-not-found]
+        from ghidra.util.task import TaskMonitor
+        from reccmp.ghidra.importer.context import open_ghidra_project
+
+        print("Ghidra started")
+
+        with open_ghidra_project(
+            str(project_dir), "integration-test", restore_project=False
+        ) as project:
+            # Do not use `project.openProgram()`, it creates a transaction by default
+            dom_file = project.getProjectData().getFile("/ISLE.EXE")
+
+            # The object responsible for releasing `program`
+            consumer = Object()
+            ok_to_upgrade = True  # not sure if this matters
+            ok_to_recover = False  # not sure if this matters
+            program = dom_file.getDomainObject(
+                consumer, ok_to_upgrade, ok_to_recover, TaskMonitor.DUMMY
+            )
+
+            yield program
+
+    # pylint: disable-next=broad-exception-caught # We cannot control all the exceptions that can be raised here
+    except Exception as e:
+        reason = f"Unable to start Ghidra: {e}"
+
+        if pytestconfig.getoption("--require-ghidra"):
+            pytest.fail(pytrace=False, reason=reason)
+
+        pytest.skip(allow_module_level=True, reason=reason)
+
+
+@pytest.fixture(name="ghidra", scope="function")
+def fixture_ghidra(ghidra_program: "Program") -> "Iterator[FlatProgramAPI]":
+    from ghidra.program.flatapi import FlatProgramAPI
+
+    # The effect of `transaction.abort()` only becomes visible once all transactions are closed.
+    # Therefore, lingering transactions can cause interference between tests.
+    # If we want to be sure that the side effects of the tests we just ran have been reverted,
+    # we need to make sure that no other transactions is already open.
+    assert ghidra_program.getCurrentTransactionInfo() is None
+
+    transaction = ghidra_program.openTransaction("reccmp-integration-test")
+    api = FlatProgramAPI(ghidra_program)
+
+    yield api
+
+    # Revert all side effects of the test that just ran
+    transaction.abort()
