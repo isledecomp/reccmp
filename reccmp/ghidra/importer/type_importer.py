@@ -42,10 +42,9 @@ from .ghidra_helper import (
     get_or_add_pointer_type,
     get_ghidra_type,
     get_or_create_class_namespace,
-    get_builtin_ghidra_type_by_name,
 )
 from .pdb_extraction import PdbFunctionExtractor
-from .type_conversion import scalar_type_to_cpp
+from .type_conversion import get_scalar_ghidra_type
 
 logger = logging.getLogger(__name__)
 
@@ -138,13 +137,9 @@ class PdbTypeImporter:
         cvtype = CvdumpTypeMap[type_key]
 
         if cvtype.pointer is None:
-            return get_builtin_ghidra_type_by_name(
-                self.api, scalar_type_to_cpp(type_key)
-            )
+            return get_scalar_ghidra_type(type_key)
 
-        points_to = get_builtin_ghidra_type_by_name(
-            self.api, scalar_type_to_cpp(cvtype.pointer)
-        )
+        points_to = get_scalar_ghidra_type(cvtype.pointer)
         return get_or_add_pointer_type(self.api, points_to)
 
     def _import_forward_ref_type(
