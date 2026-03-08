@@ -134,9 +134,9 @@ class PathResolver:
         return self._memo[path_str]
 
 
-def is_file_c_like(filename: str) -> bool:
-    (_, ext) = os.path.splitext(filename)
-    return ext.lower() in (
+def is_file_c_like(path: Path) -> bool:
+    """Tests the given path for typical C/C++ file extensions."""
+    return path.suffix.lower() in (
         ".c",
         ".h",
         ".cc",
@@ -160,13 +160,14 @@ def platform_independent_path_sort(paths: Iterable[Path]) -> Iterator[Path]:
 
 
 def walk_source_dir(source: Path, *, recursive: bool = True) -> Iterator[Path]:
-    """Generator to walk the given directory recursively and return
-    any C++ files found."""
+    """Returns any C/C++ source code files found in the given directory tree."""
 
+    # Python 3.12 introduced Path.walk(). We use os.walk() instead for broader compatibility.
     for subdir, _, files in os.walk(source.absolute()):
         for file in files:
-            if is_file_c_like(file):
-                yield Path(os.path.join(subdir, file))
+            path = Path(os.path.join(subdir, file))
+            if is_file_c_like(path):
+                yield path
 
         if not recursive:
             break
@@ -186,7 +187,7 @@ def source_code_search(search_paths: Path | Iterable[Path]) -> Iterator[Path]:
         if not path.exists():
             continue
 
-        if path.is_file() and is_file_c_like(path.name):
+        if path.is_file() and is_file_c_like(path):
             code_files.add(path)
             continue
 
