@@ -3,9 +3,9 @@ name: Test with Ghidra
 on: [push, pull_request]
 
 jobs:
-#   fetch-deps:
-#     name: Prepare sample binary files
-#     uses: ./.github/workflows/binfiles.yml
+  fetch-deps:
+    name: Prepare sample binary files
+    uses: ./.github/workflows/binfiles.yml
 
   test:
     name: 'Ghidra integration tests'
@@ -22,16 +22,16 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    # Can't make this work at the moment. Possibly a docker-in-docker issue?
-    #
-    # - name: Restore sample binaries
-    #   id: cache
-    #   uses: actions/cache/restore@v3
-    #   with:
-    #     enableCrossOsArchive: true
-    #     fail-on-cache-miss: true
-    #     path: binfiles
-    #     key: binfiles
+    # TODO: Can't make this work at the moment. Possibly a docker-in-docker issue?
+    
+    - name: Restore sample binaries
+      id: cache
+      uses: actions/cache/restore@v3
+      with:
+        enableCrossOsArchive: true
+        fail-on-cache-miss: true
+        path: binfiles
+        key: binfiles
 
     # Install manually because the install action does not work
     - name: Install python
