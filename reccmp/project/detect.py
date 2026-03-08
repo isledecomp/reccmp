@@ -488,10 +488,10 @@ def argparse_parse_project_target(
             f"Symbols PDB {target.recompiled_pdb} does not exist"
         )
 
-    for source_dir in target.source_paths:
-        if not source_dir.is_dir():
+    for source_path in target.source_paths:
+        if not source_path.exists():
             raise RecCmpProjectException(
-                f"Source directory {source_dir} does not exist"
+                f"Source code search path '{source_path}' does not exist"
             )
     return target
 
