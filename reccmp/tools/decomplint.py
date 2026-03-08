@@ -6,7 +6,7 @@ from pathlib import Path, PurePath
 from typing import Iterable
 import colorama
 import reccmp
-from reccmp.dir import walk_source_dir
+from reccmp.dir import source_code_search
 from reccmp.parser import DecompLinter
 from reccmp.parser.error import ParserAlert
 from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
@@ -108,7 +108,7 @@ def process_files(
 
 def main():
     args = parse_args()
-    files_to_check: list[Path] = []
+    search_paths: list[Path] = []
 
     if not args.paths:
         # No path specified. Try to find the project file.
@@ -120,19 +120,17 @@ def main():
         # Read each target from the reccmp-project file
         # then get all filenames from each code directory.
         for target in project.targets.values():
-            for source_dir in target.source_paths:
-                files_to_check.extend(walk_source_dir(source_dir))
+            if target.source_root:
+                search_paths.extend(target.source_root)
     else:
         for path in args.paths:
-            if path.is_dir():
-                files_to_check.extend(walk_source_dir(path))
-            elif path.is_file():
-                files_to_check.append(path)
+            if path.is_dir() or path.is_file():
+                search_paths.append(path)
             else:
                 logger.error("Invalid path: %s", path)
 
     # Use set() so we check each file only once.
-    reduced_file_list = sorted(set(files_to_check))
+    reduced_file_list = source_code_search(search_paths)
 
     codefiles = list(TextFile.from_files(reduced_file_list, allow_error=True))
 
