@@ -5,7 +5,7 @@ on: [push, pull_request]
 jobs:
   fetch-deps:
     name: Prepare sample binary files
-    uses: ./.github/workflows/binfiles.yml
+    uses: ./.github/workflows/binfile-lego-container.yml
 
   test:
     name: 'Ghidra integration tests'
@@ -31,7 +31,7 @@ jobs:
         enableCrossOsArchive: true
         fail-on-cache-miss: true
         path: binfiles
-        key: binfiles
+        key: legobin
 
     # Install manually because the install action does not work
     - name: Install python
