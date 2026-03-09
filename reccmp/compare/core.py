@@ -5,7 +5,6 @@ from typing import Iterable, Iterator
 from typing_extensions import Self
 from reccmp.project.detect import RecCmpTarget
 from reccmp.compare.diff import FunctionCompareResult, RawDiffOutput
-from reccmp.difflib import get_grouped_opcodes
 from reccmp.dir import source_code_search
 from reccmp.compare.functions import FunctionComparator
 from reccmp.formats import (
