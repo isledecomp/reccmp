@@ -5,8 +5,8 @@ import pytest
 from _pytest.config.argparsing import Parser
 
 from reccmp.formats import NEImage, PEImage, detect_image
-from tests.binfiles_test_setup import LEGO1_SHA256, SKI_SHA256
 
+from .binfiles_test_setup import BINFILE_LEGO1, BINFILE_SKI, TestBinfile
 from .ghidra_integration_test_setup import ghidra_integration_test_program
 
 # Suppress linter warnings related to the fact that the header support for Ghidra is limited
@@ -35,7 +35,7 @@ def pytest_addoption(parser: Parser):
     parser.addoption(
         "--require-ghidra",
         action="store_true",
-        help=f"Fail tests that depend on Ghidra it is not available. Implies {REQUIRE_BINFILES_OPTION}.",
+        help="Fail tests that depend on Ghidra it is not available.",
     )
 
 
@@ -46,7 +46,7 @@ def check_hash(path: Path, hash_str: str) -> bool:
 
 
 @pytest.fixture(name="bin_loader", scope="session")
-def fixture_loader(pytestconfig) -> Iterator[Callable[[str, str], Path]]:
+def fixture_loader(pytestconfig) -> Iterator[Callable[[str, str, bool], Path]]:
     # Search path is ./tests/binfiles unless the user provided an alternate location.
     binfiles_arg = pytestconfig.getoption("--binfiles")
     if binfiles_arg is not None:
@@ -54,7 +54,7 @@ def fixture_loader(pytestconfig) -> Iterator[Callable[[str, str], Path]]:
     else:
         binfile_path = Path(__file__).resolve().parent / "binfiles"
 
-    def loader(filename: str, hash_str: str) -> Path:
+    def loader(filename: str, hash_str: str, file_is_required: bool) -> Path:
         file = binfile_path / filename
         if file.exists():
             if not check_hash(file, hash_str):
@@ -65,51 +65,46 @@ def fixture_loader(pytestconfig) -> Iterator[Callable[[str, str], Path]]:
             return file
 
         not_found_reason = "No path to " + filename.upper()
-        if pytestconfig.getoption(REQUIRE_BINFILES_OPTION) or pytestconfig.getoption(
-            REQUIRE_GHIDRA_OPTION
-        ):
+        if file_is_required or pytestconfig.getoption(REQUIRE_BINFILES_OPTION):
             pytest.fail(pytrace=False, reason=not_found_reason)
 
         pytest.skip(allow_module_level=True, reason=not_found_reason)
-        # Unreachable because both skip and fail raise exceptions, but `pylint` complains otherwise
+        # Unreachable because pytest.skip raises unconditionally, but `pylint` complains without this return statement
         return None
 
     yield loader
 
 
 @pytest.fixture(name="binfile", scope="session")
-def fixture_binfile(bin_loader: Callable[[str, str], Path]) -> Iterator[PEImage]:
-    """LEGO1.DLL: v1.1 English, September"""
-    image = detect_image(
-        bin_loader(
-            "LEGO1.DLL",
-            LEGO1_SHA256,
-        )
-    )
+def fixture_binfile(
+    bin_loader: Callable[[TestBinfile, bool], Path],
+) -> Iterator[PEImage]:
+    image = detect_image(bin_loader(BINFILE_LEGO1, False))
     assert isinstance(image, PEImage)
     yield image
 
 
 @pytest.fixture(name="skifree", scope="session")
-def fixture_skifree(bin_loader: Callable[[str, str], Path]) -> Iterator[NEImage]:
-    """SkiFree 1.0
-    https://ski.ihoc.net/"""
-    image = detect_image(
-        bin_loader(
-            "SKI.EXE",
-            SKI_SHA256,
-        )
-    )
+def fixture_skifree(
+    bin_loader: Callable[[TestBinfile, bool], Path],
+) -> Iterator[NEImage]:
+    image = detect_image(bin_loader(BINFILE_SKI, False))
     assert isinstance(image, NEImage)
     yield image
 
 
 @pytest.fixture(name="ghidra_program", scope="session")
 def fixture_ghidra_loader(
-    pytestconfig, request: pytest.FixtureRequest, bin_loader: Callable[[str, str], Path]
+    pytestconfig,
+    request: pytest.FixtureRequest,
+    bin_loader: Callable[[TestBinfile, bool], Path],
 ) -> "Iterator[FlatProgramAPI]":
+    ghidra_is_required = pytestconfig.getoption(REQUIRE_GHIDRA_OPTION)
+
     try:
-        yield from ghidra_integration_test_program(request, bin_loader)
+        yield from ghidra_integration_test_program(
+            request, lambda binfile: bin_loader(binfile, ghidra_is_required)
+        )
     # pylint: disable-next=broad-exception-caught # We cannot control all the exceptions that can be raised here
     except Exception as e:
         reason = f"Unable to start Ghidra: {e}"

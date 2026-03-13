@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Callable, Iterator, cast
 import pytest
 from pyghidra import HeadlessPyGhidraLauncher  # type: ignore[import-untyped]
 
-from .binfiles_test_setup import ISLE_SHA256
+from .binfiles_test_setup import BINFILE_ISLE, TestBinfile
 
 
 # Suppress linter warnings related to the fact that the header support for Ghidra is limited
@@ -17,7 +17,6 @@ from .binfiles_test_setup import ISLE_SHA256
 
 if TYPE_CHECKING:
     from ghidra.program.flatapi import FlatProgramAPI
-    from ghidra.program.model.listing import Program
 
 GHIDRA_PROJECT_NAME = "ghidra-integration-test"
 
@@ -38,7 +37,7 @@ def ghidra_bundle_host_reference():
 
 
 def ghidra_integration_test_program(
-    request: pytest.FixtureRequest, bin_loader: Callable[[str, str], Path]
+    request: pytest.FixtureRequest, bin_loader: Callable[[TestBinfile], Path]
 ) -> "Iterator[FlatProgramAPI]":
     assert request.config.cache is not None
 
@@ -82,13 +81,7 @@ def ghidra_integration_test_program(
         print(f"Failed to load a cached Ghidra test project: {e}")
         print("Creating a new Ghidra test project...")
 
-        # In case this file is not available, a `pytest.OutcomeException` is raised.
-        # Then we drop into the `except` below, where we skip or fail depending
-        # on whether `--require-ghidra` is set.
-        bin_file_path = bin_loader(
-            "ISLE.EXE",
-            ISLE_SHA256,
-        )
+        bin_file_path = bin_loader(BINFILE_ISLE)
 
         ghidra_project = GhidraProject.createProject(
             str(project_dir), GHIDRA_PROJECT_NAME, False
