@@ -53,4 +53,3 @@ jobs:
       run: |
         source .venv/bin/activate
         pytest . --binfiles=binfiles --require-ghidra
-        # pytest . --binfiles=binfiles --require-binfiles --require-ghidra

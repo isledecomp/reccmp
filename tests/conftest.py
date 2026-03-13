@@ -33,7 +33,7 @@ def pytest_addoption(parser: Parser):
         help="Fail tests that depend on binary samples if we cannot load them.",
     )
     parser.addoption(
-        "--require-ghidra",
+        REQUIRE_GHIDRA_OPTION,
         action="store_true",
         help="Fail tests that depend on Ghidra it is not available.",
     )
