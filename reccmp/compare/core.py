@@ -5,7 +5,7 @@ from typing import Iterable, Iterator
 from typing_extensions import Self
 from reccmp.project.detect import RecCmpTarget
 from reccmp.difflib import get_grouped_opcodes
-from reccmp.dir import walk_source_dir
+from reccmp.dir import source_code_search
 from reccmp.compare.functions import FunctionComparator
 from reccmp.formats import (
     Image,
@@ -195,7 +195,7 @@ class Compare:
         )
         pdb_file = CvdumpAnalysis(cvdump)
 
-        code_paths = walk_source_dir(target.source_root)
+        code_paths = source_code_search(target.source_root)
         code_files = list(TextFile.from_files(code_paths, allow_error=True))
 
         data_sources = list(TextFile.from_files(target.data_sources, allow_error=True))
