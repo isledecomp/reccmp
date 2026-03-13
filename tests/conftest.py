@@ -46,7 +46,7 @@ def check_hash(path: Path, hash_str: str) -> bool:
 
 
 @pytest.fixture(name="bin_loader", scope="session")
-def fixture_loader(pytestconfig) -> Iterator[Callable[[str, str, bool], Path]]:
+def fixture_loader(pytestconfig) -> Iterator[Callable[[TestBinfile, bool], Path]]:
     # Search path is ./tests/binfiles unless the user provided an alternate location.
     binfiles_arg = pytestconfig.getoption("--binfiles")
     if binfiles_arg is not None:
@@ -54,17 +54,18 @@ def fixture_loader(pytestconfig) -> Iterator[Callable[[str, str, bool], Path]]:
     else:
         binfile_path = Path(__file__).resolve().parent / "binfiles"
 
-    def loader(filename: str, hash_str: str, file_is_required: bool) -> Path:
-        file = binfile_path / filename
+    def loader(binfile: TestBinfile, file_is_required: bool) -> Path:
+        file = binfile_path / binfile.filename
         if file.exists():
-            if not check_hash(file, hash_str):
+            if not check_hash(file, binfile.hash_str):
                 pytest.fail(
-                    pytrace=False, reason="Did not match expected " + filename.upper()
+                    pytrace=False,
+                    reason="Did not match expected " + binfile.filename.upper(),
                 )
 
             return file
 
-        not_found_reason = "No path to " + filename.upper()
+        not_found_reason = "No path to " + binfile.filename.upper()
         if file_is_required or pytestconfig.getoption(REQUIRE_BINFILES_OPTION):
             pytest.fail(pytrace=False, reason=not_found_reason)
 
