@@ -813,3 +813,29 @@ def test_widechar_string(parser):
     assert parser.strings[0].name == "test"
     assert parser.strings[1].is_widechar is False
     assert parser.strings[1].name == "test"
+
+
+def test_mixed_case_module_name(parser):
+    """By convention, we expect module/target names to be upper-case.
+    As such, the parser converts mixed-case module names to upper-case
+    so that annotations with a typo are still read. If the house style
+    of the project requires upper-case modules, decomplint will alert
+    to the inconsistency.
+    This documents the current behavior though it may change. (GH #336)"""
+    parser.read(
+        dedent(
+            """\
+        // FUNCTION: Hello 0x1234
+        void interesting_function() {
+        }
+        """
+        )
+    )
+
+    # Module name converted to the (expected) upper-case.
+    assert len(parser.functions) == 1
+    assert parser.functions[0].module == "HELLO"
+
+    # Syntax warning for mixed-case module name.
+    assert len(parser.alerts) == 1
+    assert parser.alerts[0].code == ParserError.BAD_DECOMP_MARKER
