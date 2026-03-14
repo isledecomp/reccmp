@@ -36,7 +36,7 @@ def pytest_addoption(parser: Parser):
     parser.addoption(
         REQUIRE_GHIDRA_OPTION,
         action="store_true",
-        help="Fail tests that depend on Ghidra it is not available.",
+        help="Fail tests that depend on Ghidra if it is not available.",
     )
 
 
@@ -137,9 +137,9 @@ def fixture_ghidra_program(ghidra_program: "Program") -> "Iterator[FlatProgramAP
     assert ghidra_program.getCurrentTransactionInfo() is None
 
     transaction = ghidra_program.openTransaction("reccmp-integration-test")
-    api = FlatProgramAPI(ghidra_program)
-
-    yield api
-
-    # Revert all side effects of the test that just ran
-    transaction.abort()
+    try:
+        api = FlatProgramAPI(ghidra_program)
+        yield api
+    finally:
+        # Revert all side effects of the test that just ran
+        transaction.abort()
