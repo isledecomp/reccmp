@@ -6,6 +6,7 @@ build
 __pycache__/
 dist
 /.venv*
+/.pytest_cache
 
 # VS Code
 .vscode/
