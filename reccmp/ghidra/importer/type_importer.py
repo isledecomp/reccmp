@@ -124,10 +124,10 @@ class PdbTypeImporter:
             return self._import_enum(type_pdb)
         elif type_category == "LF_PROCEDURE":
             logger.warning(
-                "Not implemented: Function-valued argument or return type will be replaced by void pointer: %s",
+                "Not implemented: Function-valued type will be replaced by void: %s",
                 type_pdb,
             )
-            return self._import_scalar_type(CVInfoTypeEnum.T_32PVOID)
+            return self._import_scalar_type(CVInfoTypeEnum.T_VOID)
         elif type_category == "LF_UNION":
             return self._import_union(type_pdb)
         else:
