@@ -11,7 +11,6 @@ from reccmp.compare.functions import (
 from reccmp.compare.lines import LinesDb
 from reccmp.types import EntityType
 
-
 MOCK_PATH = PureWindowsPath("some/path/test.cpp")
 ORIG_GLOBAL_OFFSET = 0x200
 RECOMP_GLOBAL_OFFSET = 0x400

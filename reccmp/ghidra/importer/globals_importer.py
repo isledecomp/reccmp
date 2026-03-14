@@ -15,7 +15,6 @@ from .exceptions import ReccmpGhidraException
 from .type_importer import PdbTypeImporter
 from .ghidra_helper import set_ghidra_label
 
-
 logger = logging.getLogger(__name__)
 
 

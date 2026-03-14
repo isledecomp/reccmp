@@ -21,7 +21,6 @@ from .vtable_importer import import_vftables_into_ghidra
 from .globals import GLOBALS
 from .types import CompiledRegexReplacements
 
-
 logger = logging.getLogger(__name__)
 
 

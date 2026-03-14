@@ -15,7 +15,6 @@ from reccmp.cvdump.types import (
     CvdumpIntegrityError,
 )
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -103,7 +102,7 @@ class DataBlock(NamedTuple):
         data = image.read(addr, size)
         # Per the seek() API, phys_data is a memoryview of the remaining
         # physical bytes in this section.
-        (phys_data, _) = image.seek(addr)
+        phys_data, _ = image.seek(addr)
 
         # If we find any non-zero bytes then this variable must be initialized
         # even if all of the variable's values are zero.

@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from pydantic import AliasChoices, BaseModel, Field
 import ruamel.yaml
 
-
 _yaml = ruamel.yaml.YAML()
 
 

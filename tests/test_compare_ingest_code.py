@@ -25,12 +25,10 @@ def test_load_code_invalid_addr(db: EntityDb, lines_db: LinesDb, binfile: PEImag
     files = (
         TextFile(
             PurePath("test.cpp"),
-            dedent(
-                """\
+            dedent("""\
                 // FUNCTION: TEST 0x11001000"
                 void test() { }
-            """
-            ),
+            """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
@@ -46,21 +44,17 @@ def test_load_code_duplicate_addr(db: EntityDb, lines_db: LinesDb, binfile: PEIm
     files = (
         TextFile(
             PurePath("test.h"),
-            dedent(
-                """\
+            dedent("""\
                 // FUNCTION: TEST 0x1001dde0
                 // _Lockit::~_Lockit
-                """
-            ),
+                """),
         ),
         TextFile(
             PurePath("zzz.h"),
-            dedent(
-                """\
+            dedent("""\
                 // FUNCTION: TEST 0x1001dde0
                 // Hello
-                """
-            ),
+                """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
@@ -78,11 +72,9 @@ def test_load_code_cpp_symbol_function(
     files = (
         TextFile(
             PurePath("test.h"),
-            dedent(
-                """\
+            dedent("""\
                 // LIBRARY: TEST 0x10086240
-                // ??2@YAPAXI@Z"""
-            ),
+                // ??2@YAPAXI@Z"""),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
@@ -99,12 +91,10 @@ def test_load_code_cpp_symbol_global(db: EntityDb, lines_db: LinesDb, binfile: P
     files = (
         TextFile(
             PurePath("test.h"),
-            dedent(
-                """\
+            dedent("""\
                 // GLOBAL: TEST 0x100fd624
                 // ?__pInconsistency@@3P6AXXZA
-                """
-            ),
+                """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
@@ -121,12 +111,10 @@ def test_load_code_c_symbol_implicit(db: EntityDb, lines_db: LinesDb, binfile: P
     files = (
         TextFile(
             PurePath("test.h"),
-            dedent(
-                """\
+            dedent("""\
                 // LIBRARY: TEST 0x1008c410
                 // _strlwr
-                """
-            ),
+                """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
@@ -142,12 +130,10 @@ def test_load_code_c_symbol_explicit(db: EntityDb, lines_db: LinesDb, binfile: P
     files = (
         TextFile(
             PurePath("test.h"),
-            dedent(
-                """\
+            dedent("""\
                 // LIBRARY: TEST 0x1008c410 SYMBOL
                 // _strlwr
-                """
-            ),
+                """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
@@ -165,8 +151,7 @@ def test_load_code_function_nameref_variants(
     files = (
         TextFile(
             PurePath("test.h"),
-            dedent(
-                """\
+            dedent("""\
                 // FUNCTION: TEST 0x1001dde0
                 // _Lockit::~_Lockit
 
@@ -181,8 +166,7 @@ def test_load_code_function_nameref_variants(
 
                 // SYNTHETIC: TEST 0x100380e0
                 // Pizza::`scalar deleting destructor'
-                """
-            ),
+                """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
@@ -236,14 +220,12 @@ def test_load_code_lineref(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     files = (
         TextFile(
             PurePath("test.cpp"),
-            dedent(
-                """\
+            dedent("""\
                 // FUNCTION: TEST 0x10038220
                 void Pizza::Start()
                 {
                 }
-                """
-            ),
+                """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
@@ -261,14 +243,12 @@ def test_load_code_match_line(db: EntityDb, lines_db: LinesDb, binfile: PEImage)
     files = (
         TextFile(
             PurePath("test.cpp"),
-            dedent(
-                """\
+            dedent("""\
                 // FUNCTION: TEST 0x10038220
                 void Pizza::Start()
                 {
                 }
-                """
-            ),
+                """),
         ),
     )
 
@@ -295,14 +275,12 @@ def test_load_code_no_match_line(db: EntityDb, lines_db: LinesDb, binfile: PEIma
     files = (
         TextFile(
             PurePath("test.cpp"),
-            dedent(
-                """\
+            dedent("""\
                 // FUNCTION: TEST 0x10038220
                 void Pizza::Start()
                 {
                 }
-                """
-            ),
+                """),
         ),
     )
 
@@ -326,12 +304,10 @@ def test_load_code_string(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     files = (
         TextFile(
             PurePath("test.cpp"),
-            dedent(
-                """\
+            dedent("""\
                 // STRING: TEST 0x100f038c
                 char* pizza = "Pizza";
-                """
-            ),
+                """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
@@ -348,12 +324,10 @@ def test_load_code_string_no_match(db: EntityDb, lines_db: LinesDb, binfile: PEI
     files = (
         TextFile(
             PurePath("test.cpp"),
-            dedent(
-                """\
+            dedent("""\
                 // STRING: TEST 0x100f038c
                 char* jetski = "Jetski";
-                """
-            ),
+                """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
@@ -367,12 +341,10 @@ def test_load_code_widechar(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     files = (
         TextFile(
             PurePath("test.cpp"),
-            dedent(
-                """\
+            dedent("""\
                 // STRING: TEST 0x100daaa0
                 char* nullstr = L"(null)";
-                """
-            ),
+                """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
@@ -390,12 +362,10 @@ def test_load_code_string_with_nulls(db: EntityDb, lines_db: LinesDb, binfile: P
     files = (
         TextFile(
             PurePath("test.cpp"),
-            dedent(
-                """\
+            dedent("""\
                 // STRING: TEST 0x100daaa0
                 char* nullstr = "(\\x00n\\x00u\\x00l\\x00l\\x00)";
-                """
-            ),
+                """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
@@ -413,12 +383,10 @@ def test_load_code_widechar_invalid(db: EntityDb, lines_db: LinesDb, binfile: PE
     files = (
         TextFile(
             PurePath("test.cpp"),
-            dedent(
-                """\
+            dedent("""\
                 // STRING: TEST 0x100dda7b
                 char* test = L"test";
-                """
-            ),
+                """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
@@ -431,13 +399,11 @@ def test_load_code_vtable(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     files = (
         TextFile(
             PurePath("test.h"),
-            dedent(
-                """\
+            dedent("""\
                 // VTABLE: TEST 0x100d7380
                 class Pizza {
                 };
-                """
-            ),
+                """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
@@ -456,14 +422,12 @@ def test_load_code_vtable_vbase(db: EntityDb, lines_db: LinesDb, binfile: PEImag
     files = (
         TextFile(
             PurePath("test.h"),
-            dedent(
-                """\
+            dedent("""\
                 // VTABLE: TEST 0x100d9ec8 Lunch
                 // VTABLE: TEST 0x100d7380 Pizza
                 class Pizza : public Lunch {
                 };
-                """
-            ),
+                """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
@@ -486,12 +450,10 @@ def test_load_code_variable(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     files = (
         TextFile(
             PurePath("test.cpp"),
-            dedent(
-                """\
+            dedent("""\
                 // GLOBAL: TEST 0x10102048
                 const char* g_strACTION = "ACTION";
-                """
-            ),
+                """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
@@ -507,16 +469,14 @@ def test_load_code_static_variable(db: EntityDb, lines_db: LinesDb, binfile: PEI
     files = (
         TextFile(
             PurePath("test.cpp"),
-            dedent(
-                """\
+            dedent("""\
                 // FUNCTION: TEST 0x1009da20
                 void EnableResizing()
                 {
                     // GLOBAL: TEST 0x10109594
                     static DWORD g_dwStyle;
                 }
-                """
-            ),
+                """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
@@ -537,15 +497,13 @@ def test_load_code_static_variable_no_function(
     files = (
         TextFile(
             PurePath("test.cpp"),
-            dedent(
-                """\
+            dedent("""\
                 void EnableResizing()
                 {
                     // GLOBAL: TEST 0x10109594
                     static DWORD g_dwStyle;
                 }
-                """
-            ),
+                """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
@@ -562,14 +520,12 @@ def test_load_code_line_marker(db: EntityDb, lines_db: LinesDb, binfile: PEImage
     files = (
         TextFile(
             PurePath("test.cpp"),
-            dedent(
-                """\
+            dedent("""\
                 void Test()
                 {
                     // LINE: TEST 0x10001038
                 }
-                """
-            ),
+                """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
