@@ -2,11 +2,12 @@ import hashlib
 from pathlib import Path
 from typing import Callable, Iterator, TYPE_CHECKING
 import pytest
+from _pytest.config import Config
 from _pytest.config.argparsing import Parser
 
 from reccmp.formats import NEImage, PEImage, detect_image
 
-from .binfiles_test_setup import BINFILE_LEGO1, BINFILE_SKI, TestBinfile
+from .binfiles_test_setup import BINFILE_ISLE, BINFILE_LEGO1, BINFILE_SKI, TestBinfile
 from .ghidra_integration_test_setup import ghidra_integration_test_program
 
 # Suppress linter warnings related to the fact that the header support for Ghidra is limited
@@ -46,10 +47,13 @@ def check_hash(path: Path, hash_str: str) -> bool:
 
 
 @pytest.fixture(name="bin_loader", scope="session")
-def fixture_loader(pytestconfig) -> Iterator[Callable[[TestBinfile, bool], Path]]:
+def fixture_loader(
+    pytestconfig: Config,
+) -> Iterator[Callable[[TestBinfile, bool], Path]]:
     # Search path is ./tests/binfiles unless the user provided an alternate location.
     binfiles_arg = pytestconfig.getoption("--binfiles")
     if binfiles_arg is not None:
+        assert isinstance(binfiles_arg, str)
         binfile_path = Path(binfiles_arg).resolve()
     else:
         binfile_path = Path(__file__).resolve().parent / "binfiles"
@@ -66,7 +70,7 @@ def fixture_loader(pytestconfig) -> Iterator[Callable[[TestBinfile, bool], Path]
             return file
 
         not_found_reason = "No path to " + binfile.filename.upper()
-        if file_is_required or pytestconfig.getoption(REQUIRE_BINFILES_OPTION):
+        if file_is_required:
             pytest.fail(pytrace=False, reason=not_found_reason)
 
         pytest.skip(allow_module_level=True, reason=not_found_reason)
@@ -78,34 +82,40 @@ def fixture_loader(pytestconfig) -> Iterator[Callable[[TestBinfile, bool], Path]
 
 @pytest.fixture(name="binfile", scope="session")
 def fixture_binfile(
+    pytestconfig: Config,
     bin_loader: Callable[[TestBinfile, bool], Path],
 ) -> Iterator[PEImage]:
-    image = detect_image(bin_loader(BINFILE_LEGO1, False))
+    file_is_required = pytestconfig.getoption(REQUIRE_BINFILES_OPTION)
+    assert isinstance(file_is_required, bool)
+    image = detect_image(bin_loader(BINFILE_LEGO1, file_is_required))
     assert isinstance(image, PEImage)
     yield image
 
 
 @pytest.fixture(name="skifree", scope="session")
 def fixture_skifree(
+    pytestconfig: Config,
     bin_loader: Callable[[TestBinfile, bool], Path],
 ) -> Iterator[NEImage]:
-    image = detect_image(bin_loader(BINFILE_SKI, False))
+    file_is_required = pytestconfig.getoption(REQUIRE_BINFILES_OPTION)
+    assert isinstance(file_is_required, bool)
+    image = detect_image(bin_loader(BINFILE_SKI, file_is_required))
     assert isinstance(image, NEImage)
     yield image
 
 
 @pytest.fixture(name="ghidra_program", scope="session")
 def fixture_ghidra_loader(
-    pytestconfig,
+    pytestconfig: Config,
     request: pytest.FixtureRequest,
     bin_loader: Callable[[TestBinfile, bool], Path],
-) -> "Iterator[FlatProgramAPI]":
+) -> "Iterator[Program]":
     ghidra_is_required = pytestconfig.getoption(REQUIRE_GHIDRA_OPTION)
+    assert isinstance(ghidra_is_required, bool)
+    isle_binary_path = bin_loader(BINFILE_ISLE, ghidra_is_required)
 
     try:
-        yield from ghidra_integration_test_program(
-            request, lambda binfile: bin_loader(binfile, ghidra_is_required)
-        )
+        yield from ghidra_integration_test_program(request, isle_binary_path)
     # pylint: disable-next=broad-exception-caught # We cannot control all the exceptions that can be raised here
     except Exception as e:
         reason = f"Unable to start Ghidra: {e}"
