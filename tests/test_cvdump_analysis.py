@@ -7,7 +7,6 @@ from reccmp.cvdump.analysis import (
 )
 from reccmp.cvdump.cvinfo import CvdumpTypeKey as TK
 
-
 TEST_SYMBOLS = [
     SymbolsEntry(
         type="S_GPROC32",

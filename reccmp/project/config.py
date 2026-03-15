@@ -7,7 +7,6 @@ from pydantic import AliasChoices, BaseModel, Field
 import ruamel.yaml
 from .yml_extensions import PathSequence
 
-
 _yaml = ruamel.yaml.YAML()
 
 

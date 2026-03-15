@@ -133,7 +133,7 @@ def main():
 
     codefiles = list(TextFile.from_files(reduced_file_list, allow_error=True))
 
-    (warning_count, error_count) = process_files(codefiles, module=args.module)
+    warning_count, error_count = process_files(codefiles, module=args.module)
 
     print(colorama.Style.RESET_ALL, end="")
 

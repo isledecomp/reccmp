@@ -15,7 +15,6 @@ from reccmp.project.detect import (
     DetectWhat,
 )
 
-
 logger = logging.getLogger(__name__)
 
 

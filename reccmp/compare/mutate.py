@@ -13,7 +13,6 @@ from reccmp.types import EntityType
 from .db import EntityDb
 from .queries import get_overloaded_functions, get_named_thunks
 
-
 logger = logging.getLogger(__name__)
 
 

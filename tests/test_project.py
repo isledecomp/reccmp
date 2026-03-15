@@ -30,7 +30,6 @@ from reccmp.project.error import (
 )
 from reccmp.formats import PEImage
 
-
 LEGO1_SHA256 = "14645225bbe81212e9bc1919cd8a692b81b8622abb6561280d99b0fc4151ce17"
 
 
@@ -45,18 +44,14 @@ def test_project_loading_no_files(tmp_path_factory):
 def test_project_loading_project_only(tmp_path_factory):
     """Can load with a project.yml file only."""
     project_root = tmp_path_factory.mktemp("project")
-    (project_root / RECCMP_PROJECT_CONFIG).write_text(
-        textwrap.dedent(
-            f"""\
+    (project_root / RECCMP_PROJECT_CONFIG).write_text(textwrap.dedent(f"""\
             targets:
               LEGO1:
                 filename: LEGO1.dll
                 source-root: sources
                 hash:
                   sha256: {LEGO1_SHA256}
-            """
-        )
-    )
+            """))
 
     project = RecCmpProject.from_directory(project_root)
     assert len(project.targets) == 1
@@ -70,31 +65,23 @@ def test_project_loading_project_only(tmp_path_factory):
 def test_project_loading_project_and_user(tmp_path_factory):
     """Can load project.yml and combine with user.yml in the same directory."""
     project_root = tmp_path_factory.mktemp("project")
-    (project_root / RECCMP_PROJECT_CONFIG).write_text(
-        textwrap.dedent(
-            f"""\
+    (project_root / RECCMP_PROJECT_CONFIG).write_text(textwrap.dedent(f"""\
             targets:
               LEGO1:
                 filename: LEGO1.dll
                 source-root: sources
                 hash:
                   sha256: {LEGO1_SHA256}
-            """
-        )
-    )
+            """))
 
     # does not need to exist in this test
     original_binary_path = Path("./binfiles/LEGO1.DLL")
 
-    (project_root / RECCMP_USER_CONFIG).write_text(
-        textwrap.dedent(
-            f"""\
+    (project_root / RECCMP_USER_CONFIG).write_text(textwrap.dedent(f"""\
             targets:
               LEGO1:
                 path: {original_binary_path}
-            """
-        )
-    )
+            """))
 
     project = RecCmpProject.from_directory(project_root)
     assert len(project.targets) == 1
@@ -116,18 +103,14 @@ def test_project_loading_project_recursive_search(tmp_path_factory):
     build_path.mkdir()
     # Don't create the build file.
 
-    (project_root / RECCMP_PROJECT_CONFIG).write_text(
-        textwrap.dedent(
-            f"""\
+    (project_root / RECCMP_PROJECT_CONFIG).write_text(textwrap.dedent(f"""\
             targets:
               LEGO1:
                 filename: LEGO1.dll
                 source-root: sources
                 hash:
                   sha256: {LEGO1_SHA256}
-            """
-        )
-    )
+            """))
 
     project = RecCmpProject.from_directory(build_path)
     assert project is not None
@@ -144,17 +127,13 @@ def test_project_loading_build_only(tmp_path_factory):
     recompiled_pdb = build_path / "LEGO1.pdb"
 
     # Create only the build file to start. Project attribute points to a non-existent file.
-    (build_path / RECCMP_BUILD_CONFIG).write_text(
-        textwrap.dedent(
-            f"""\
+    (build_path / RECCMP_BUILD_CONFIG).write_text(textwrap.dedent(f"""\
             project: {project_root}
             targets:
               LEGO1:
                 path: {recompiled_lib}
                 pdb: {recompiled_pdb}
-            """
-        )
-    )
+            """))
 
     # Cannot finish loading: no project file
     with pytest.raises(InvalidRecCmpProjectException):
@@ -171,31 +150,23 @@ def test_project_loading_build_and_project(tmp_path_factory):
     recompiled_pdb = Path("LEGO1.pdb")
 
     # Create only the build file to start. Project attribute points to a non-existent file.
-    (build_path / RECCMP_BUILD_CONFIG).write_text(
-        textwrap.dedent(
-            f"""\
+    (build_path / RECCMP_BUILD_CONFIG).write_text(textwrap.dedent(f"""\
             project: ..
             targets:
               LEGO1:
                 path: {recompiled_lib}
                 pdb: {recompiled_pdb}
-            """
-        )
-    )
+            """))
 
     # Now create the project file. We should be able to finish loading.
-    (project_root / RECCMP_PROJECT_CONFIG).write_text(
-        textwrap.dedent(
-            f"""\
+    (project_root / RECCMP_PROJECT_CONFIG).write_text(textwrap.dedent(f"""\
             targets:
               LEGO1:
                 filename: LEGO1.dll
                 source-root: sources
                 hash:
                   sha256: {LEGO1_SHA256}
-            """
-        )
-    )
+            """))
 
     # Most properties are set for the target:
     project = RecCmpProject.from_directory(build_path)
@@ -219,40 +190,28 @@ def test_project_loading_three_files(tmp_path_factory, binfile: PEImage):
     recompiled_lib = build_path / "LEGO1.dll"
     recompiled_pdb = build_path / "LEGO1.pdb"
 
-    (build_path / RECCMP_BUILD_CONFIG).write_text(
-        textwrap.dedent(
-            f"""\
+    (build_path / RECCMP_BUILD_CONFIG).write_text(textwrap.dedent(f"""\
             project: {project_root}
             targets:
               LEGO1:
                 path: {recompiled_lib}
                 pdb: {recompiled_pdb}
-            """
-        )
-    )
+            """))
 
-    (project_root / RECCMP_PROJECT_CONFIG).write_text(
-        textwrap.dedent(
-            f"""\
+    (project_root / RECCMP_PROJECT_CONFIG).write_text(textwrap.dedent(f"""\
             targets:
               LEGO1:
                 filename: LEGO1.dll
                 source-root: sources
                 hash:
                   sha256: {LEGO1_SHA256}
-            """
-        )
-    )
+            """))
 
-    (project_root / RECCMP_USER_CONFIG).write_text(
-        textwrap.dedent(
-            f"""\
+    (project_root / RECCMP_USER_CONFIG).write_text(textwrap.dedent(f"""\
             targets:
               LEGO1:
                 path: {binfile.filepath}
-            """
-        )
-    )
+            """))
 
     project = RecCmpProject.from_directory(build_path)
     assert len(project.targets) == 1
@@ -273,18 +232,14 @@ def test_project_runtime_target(tmp_path_factory, binfile: PEImage):
     project_root = tmp_path_factory.mktemp("project")
 
     # Create project file first.
-    (project_root / RECCMP_PROJECT_CONFIG).write_text(
-        textwrap.dedent(
-            f"""\
+    (project_root / RECCMP_PROJECT_CONFIG).write_text(textwrap.dedent(f"""\
             targets:
               LEGO1:
                 filename: LEGO1.dll
                 source-root: sources
                 hash:
                   sha256: {LEGO1_SHA256}
-            """
-        )
-    )
+            """))
 
     # We have an incomplete target with only the project data.
     project = RecCmpProject.from_directory(project_root)
@@ -296,32 +251,24 @@ def test_project_runtime_target(tmp_path_factory, binfile: PEImage):
     build_path.mkdir()
     recompiled_lib = build_path / "LEGO1.dll"
     recompiled_pdb = build_path / "LEGO1.pdb"
-    (build_path / RECCMP_BUILD_CONFIG).write_text(
-        textwrap.dedent(
-            f"""\
+    (build_path / RECCMP_BUILD_CONFIG).write_text(textwrap.dedent(f"""\
             project: {project_root}
             targets:
               LEGO1:
                 path: {recompiled_lib}
                 pdb: {recompiled_pdb}
-            """
-        )
-    )
+            """))
 
     # It is still incomplete without user data.
     project = RecCmpProject.from_directory(build_path)
     with pytest.raises(IncompleteReccmpTargetError):
         project.get("LEGO1")
 
-    (project_root / RECCMP_USER_CONFIG).write_text(
-        textwrap.dedent(
-            f"""\
+    (project_root / RECCMP_USER_CONFIG).write_text(textwrap.dedent(f"""\
             targets:
               LEGO1:
                 path: {binfile.filepath}
-            """
-        )
-    )
+            """))
 
     project = RecCmpProject.from_directory(build_path)
     assert project.get("LEGO1") is not None
@@ -333,18 +280,14 @@ def test_project_runtime_target(tmp_path_factory, binfile: PEImage):
 
 def test_project_original_detection(tmp_path_factory, binfile: PEImage):
     project_root = tmp_path_factory.mktemp("project")
-    (project_root / "reccmp-project.yml").write_text(
-        textwrap.dedent(
-            f"""\
+    (project_root / "reccmp-project.yml").write_text(textwrap.dedent(f"""\
             targets:
               LEGO1:
                 filename: LEGO1.dll
                 source-root: sources
                 hash:
                   sha256: {LEGO1_SHA256}
-            """
-        )
-    )
+            """))
     bin_path = binfile.filepath
     detect_project(
         project_directory=project_root,

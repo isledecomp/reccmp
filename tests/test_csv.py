@@ -48,32 +48,20 @@ def test_duplicate_columns():
 def test_value_includes_delimiter():
     """If the value contains the delimiter, we can still parse it correctly
     if the value is quoted. This is a feature of the python csv module."""
-    values = list(
-        csv_parse(
-            dedent(
-                """\
+    values = list(csv_parse(dedent("""\
         address,symbol
         1000,"hello,world"
-    """
-            )
-        )
-    )
+    """)))
 
     assert values == [(0x1000, {"symbol": "hello,world"})]
 
 
 def test_ignore_columns():
     """We only parse certain columns that correspond to attribute names in the database."""
-    values = list(
-        csv_parse(
-            dedent(
-                """\
+    values = list(csv_parse(dedent("""\
         address|symbol|test
         1000|hello|123
-    """
-            )
-        )
-    )
+    """)))
 
     assert values == [(0x1000, {"symbol": "hello"})]
 
@@ -81,46 +69,28 @@ def test_ignore_columns():
 def test_address_not_hex():
     """Raise an exception if we cannot parse the address on one of the rows."""
     with pytest.raises(CsvInvalidAddressError):
-        list(
-            csv_parse(
-                dedent(
-                    """\
+        list(csv_parse(dedent("""\
             address|symbol
             wrong|test
-        """
-                )
-            )
-        )
+        """)))
 
 
 def test_too_many_columns():
     """Should ignore extra values in a row."""
-    values = list(
-        csv_parse(
-            dedent(
-                """\
+    values = list(csv_parse(dedent("""\
         address|symbol
         1000|hello|world
-    """
-            )
-        )
-    )
+    """)))
 
     assert values == [(0x1000, {"symbol": "hello"})]
 
 
 def test_blank_column_header():
     """Should ignore a blank column header and its value"""
-    values = list(
-        csv_parse(
-            dedent(
-                """\
+    values = list(csv_parse(dedent("""\
         address|symbol||type
         1000|hello|world|function
-    """
-            )
-        )
-    )
+    """)))
 
     assert values == [(0x1000, {"symbol": "hello", "type": EntityType.FUNCTION})]
 
@@ -128,10 +98,7 @@ def test_blank_column_header():
 def test_ignore_blank_lines():
     """Parsing should ignore blank lines.
     n.b. make sure the triple quote string and dedent() remove leading spaces."""
-    values = list(
-        csv_parse(
-            dedent(
-                """\
+    values = list(csv_parse(dedent("""\
 
                 address|symbol
 
@@ -141,10 +108,7 @@ def test_ignore_blank_lines():
 
 
                 3000|test
-            """
-            )
-        )
-    )
+            """)))
 
     assert values == [
         (0x1000, {"symbol": "test"}),
@@ -155,37 +119,25 @@ def test_ignore_blank_lines():
 
 def test_ignore_comments():
     """We ignore any line starting with // or #."""
-    values = list(
-        csv_parse(
-            dedent(
-                """\
+    values = list(csv_parse(dedent("""\
                 # Test CSV file
                 address|symbol
                 # 1000|test
                 2000|test
                 // 3000|test
-            """
-            )
-        )
-    )
+            """)))
 
     assert values == [(0x2000, {"symbol": "test"})]
 
 
 def test_tab_delimiter():
     """We support tab as an option for delimiter. (It is not covered in the other tests.)"""
-    values = list(
-        csv_parse(
-            dedent(
-                """\
+    values = list(csv_parse(dedent("""\
                 address\tsymbol
                 1000\ttest
                 2000\ttest
                 3000\ttest
-            """
-            )
-        )
-    )
+            """)))
 
     assert values == [
         (0x1000, {"symbol": "test"}),
@@ -223,17 +175,11 @@ def test_address_not_first():
     """Since the address is the unique id for the annotation, it will probably appear first in most cases.
     However, this is not required."""
 
-    values = list(
-        csv_parse(
-            dedent(
-                """\
+    values = list(csv_parse(dedent("""\
                 symbol|name|address
                 test|hello|1000
                 test|world|2000
-            """
-            )
-        )
-    )
+            """)))
 
     addrs = [addr for addr, _ in values]
     assert addrs == [0x1000, 0x2000]
@@ -243,17 +189,11 @@ def test_address_repeated():
     """The address can appear more than once and we will parse it correctly.
     It's up to the caller to decide how to handle this."""
 
-    values = list(
-        csv_parse(
-            dedent(
-                """\
+    values = list(csv_parse(dedent("""\
                 address|name
                 1000|hello
                 1000|world
-            """
-            )
-        )
-    )
+            """)))
 
     assert values == [(0x1000, {"name": "hello"}), (0x1000, {"name": "world"})]
 
@@ -282,36 +222,24 @@ def test_type():
 
 def test_header_case():
     """Should allow mixed/upper/lower case for header line."""
-    values = list(
-        csv_parse(
-            dedent(
-                """\
+    values = list(csv_parse(dedent("""\
                 ADDRESS|NAME
                 1000|hello
                 1000|world
-            """
-            )
-        )
-    )
+            """)))
 
     assert values == [(0x1000, {"name": "hello"}), (0x1000, {"name": "world"})]
 
 
 def test_ignore_empty_values():
     """If a field has no value, we should not put anything in the output dict."""
-    values = list(
-        csv_parse(
-            dedent(
-                """\
+    values = list(csv_parse(dedent("""\
             address|type|name|size
             1234||hello|
             1234|||5
             1234|function||
             1234|||
-            """
-            )
-        )
-    )
+            """)))
 
     assert values == [
         (0x1234, {"name": "hello"}),
@@ -325,20 +253,14 @@ def test_ignore_empty_values():
 
 def test_type_function_aliases():
     """All these options for "type" resolve to EntityType.FUNCTION"""
-    values = list(
-        csv_parse(
-            dedent(
-                """\
+    values = list(csv_parse(dedent("""\
             address|type
             1234|function
             1234|library
             1234|stub
             1234|template
             1234|synthetic
-            """
-            )
-        )
-    )
+            """)))
 
     assert all(row["type"] == EntityType.FUNCTION for _, row in values)
 
@@ -346,10 +268,7 @@ def test_type_function_aliases():
 def test_type_field_conversion():
     """The string in the "type" field is converted to the EntityType enum.
     This allows for some flexibility in the supported values."""
-    values = list(
-        csv_parse(
-            dedent(
-                """\
+    values = list(csv_parse(dedent("""\
             address|type
             1234|function
             1234|FUNCTION
@@ -357,10 +276,7 @@ def test_type_field_conversion():
             1234|  function
             1234|function  
             1234|"  function  "
-            """
-            )
-        )
-    )
+            """)))
 
     assert all(row["type"] == EntityType.FUNCTION for _, row in values)
 
@@ -369,18 +285,12 @@ def test_function_type_side_effects():
     """Should set additional fields if the CSV type field is LIBRARY or STUB.
     Both are aliases for FUNCTION, so use this enum value in the final "type" attribute.
     """
-    values = list(
-        csv_parse(
-            dedent(
-                """\
+    values = list(csv_parse(dedent("""\
             address|type
             1234|function
             1234|library
             1234|stub
-            """
-            )
-        )
-    )
+            """)))
 
     assert values == [
         (0x1234, {"type": EntityType.FUNCTION}),
@@ -391,15 +301,13 @@ def test_function_type_side_effects():
 
 def test_continuable():
     """Make sure we can continue parsing after handling a non-fatal error."""
-    text = dedent(
-        """\
+    text = dedent("""\
         address|type
         5555|libary
         1234|function
         zzzz|function
         4321|template
-        """
-    )
+        """)
 
     # Should throw for "libary"
     with pytest.raises(ReccmpCsvParserError):
@@ -426,8 +334,7 @@ def test_continuable():
 def test_exception_details():
     """Should capture the original line number (before removing blank lines)
     and the value that led to the exception and report both."""
-    text = dedent(
-        """\
+    text = dedent("""\
         address|type
 
         5555|libary
@@ -435,8 +342,7 @@ def test_exception_details():
 
         zzzz|function
         4321|template
-        """
-    )
+        """)
 
     reader = csv_parse(text)
 
@@ -465,27 +371,23 @@ def test_exception_details():
 
 def test_docs_example_basic():
     """Just make sure we can parse it"""
-    text = dedent(
-        """\
+    text = dedent("""\
         address|name|size
         1008b400|_atol|164
         1008b4b0|_atoi|14
         1008b4c0|_strtok|216
         1008b5a0|_sprintf|103
-        1008b608|__ftol|39"""
-    )
+        1008b608|__ftol|39""")
     assert (0x1008B400, {"name": "_atol", "size": 164}) in list(csv_parse(text))
 
 
 def test_docs_example_null_field():
     """0x10001070 has null type"""
-    text = dedent(
-        """\
+    text = dedent("""\
         address|type|size
         0x10001000|function|92
         0x10001070||25
-        0x10001090|function|10"""
-    )
+        0x10001090|function|10""")
     assert (0x10001070, {"size": 25}) in list(csv_parse(text))
 
 
@@ -506,14 +408,12 @@ def test_docs_example_quoted_field():
 
 def test_docs_example_escaping():
     """Can escape the double quote character or the delimiter as needed."""
-    text = dedent(
-        """\
+    text = dedent("""\
         address,name
         10001000,\\"hello world\\"
         10002000,"\\"hello, world\\""
         10003000,\\"hello\\, world\\"
-        """
-    )
+        """)
     assert list(csv_parse(text)) == [
         (0x10001000, {"name": '"hello world"'}),
         (0x10002000, {"name": '"hello, world"'}),
@@ -523,12 +423,10 @@ def test_docs_example_escaping():
 
 def test_docs_example_escape_escape():
     """Can escape the escape character if this is needed."""
-    text = dedent(
-        """\
+    text = dedent("""\
         address,name
         10004000,te\\\\st
-        """
-    )
+        """)
     assert list(csv_parse(text)) == [
         (0x10004000, {"name": "te\\st"}),
     ]
@@ -536,8 +434,7 @@ def test_docs_example_escape_escape():
 
 def test_docs_example_comments_and_blanks():
     """Should ignore comment lines and blank lines"""
-    text = dedent(
-        """\
+    text = dedent("""\
         address,type
 
         # Months of the year
@@ -548,8 +445,7 @@ def test_docs_example_comments_and_blanks():
         # Days of the week
         100db614,string
         100db620,string
-        100db628,string"""
-    )
+        100db628,string""")
     assert (0x100DB614, {"type": EntityType.STRING}) in list(csv_parse(text))
 
 
@@ -562,14 +458,12 @@ def test_ignore_skip():
 def test_non_function_entity_types():
     """Should parse all entity types not covered in previous tests."""
 
-    text = dedent(
-        """\
+    text = dedent("""\
         address,type
         1000,global
         2000,string
         3000,float
-        4000,vtable"""
-    )
+        4000,vtable""")
     assert list(csv_parse(text)) == [
         (0x1000, {"type": EntityType.DATA}),
         (0x2000, {"type": EntityType.STRING}),

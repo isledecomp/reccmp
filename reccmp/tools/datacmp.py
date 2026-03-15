@@ -22,7 +22,6 @@ from reccmp.project.detect import (
     argparse_parse_project_target,
 )
 
-
 logger = logging.getLogger(__name__)
 
 colorama.just_fix_windows_console()
@@ -123,7 +122,7 @@ def compared_offset_string(c: ComparedOffset, no_color: bool) -> str:
         f"{c.name if c.name else '':30}",
     ]
 
-    (value_a, value_b) = c.values
+    value_a, value_b = c.values
     values_chunk = [ansi_wrap(colorama.Fore.LIGHTWHITE_EX), value_a]
     if not c.match:
         values_chunk.extend([" : ", ansi_wrap(colorama.Fore.LIGHTBLACK_EX), value_b])

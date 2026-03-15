@@ -23,7 +23,6 @@ from .error import (
 )
 from .util import get_path_sha256
 
-
 logger = logging.getLogger(__file__)
 
 

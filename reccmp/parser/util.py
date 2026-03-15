@@ -78,7 +78,7 @@ class_decl_regex = re.compile(
 
 
 def template_replace(match: re.Match) -> str:
-    (type_name, asterisks) = match.groups()
+    type_name, asterisks = match.groups()
     if asterisks is None:
         return f"<{type_name}>"
 

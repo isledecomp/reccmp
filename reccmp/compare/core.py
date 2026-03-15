@@ -62,7 +62,6 @@ from .verify import (
     check_vtables,
 )
 
-
 logger = logging.getLogger(__name__)
 
 

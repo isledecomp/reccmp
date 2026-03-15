@@ -1,25 +1,55 @@
 """Converting scalar types (CvdumpTypeKey) into the corresponding type name in Ghidra."""
 
-from reccmp.cvdump.cvinfo import CvdumpTypeMap, CvdumpTypeKey
+# Disable spurious warnings in vscode / pylance
+# pyright: reportMissingModuleSource=false
 
+from ghidra.program.model.data import (
+    BuiltIn,
+    LongDataType,
+    VoidDataType,
+    IntegerDataType,
+    LongLongDataType,
+    UnsignedLongLongDataType,
+    CharDataType,
+    ShortDataType,
+    UnsignedCharDataType,
+    UnsignedShortDataType,
+    UnsignedIntegerDataType,
+    UnsignedLongDataType,
+    FloatDataType,
+    DoubleDataType,
+    WideCharDataType,
+)
 
-_scalar_type_map = {
-    "T_RCHAR": "char",
-    "T_INT4": "int",
-    "T_UINT4": "uint",
-    "T_REAL32": "float",
-    "T_REAL64": "double",
+from reccmp.cvdump.cvinfo import CVInfoTypeEnum, CvdumpTypeKey
+from reccmp.ghidra.importer.exceptions import TypeNotImplementedError
+
+_scalar_type_map: dict[CvdumpTypeKey, BuiltIn] = {
+    CVInfoTypeEnum.T_VOID: VoidDataType(),
+    CVInfoTypeEnum.T_HRESULT: LongDataType(),
+    CVInfoTypeEnum.T_CHAR: CharDataType(),
+    CVInfoTypeEnum.T_SHORT: ShortDataType(),
+    CVInfoTypeEnum.T_LONG: LongDataType(),
+    CVInfoTypeEnum.T_QUAD: LongLongDataType(),
+    CVInfoTypeEnum.T_UCHAR: UnsignedCharDataType(),
+    CVInfoTypeEnum.T_USHORT: UnsignedShortDataType(),
+    CVInfoTypeEnum.T_ULONG: UnsignedLongDataType(),
+    CVInfoTypeEnum.T_UQUAD: UnsignedLongLongDataType(),
+    CVInfoTypeEnum.T_REAL32: FloatDataType(),
+    CVInfoTypeEnum.T_REAL64: DoubleDataType(),
+    CVInfoTypeEnum.T_RCHAR: CharDataType(),
+    CVInfoTypeEnum.T_WCHAR: WideCharDataType(),
+    CVInfoTypeEnum.T_INT4: IntegerDataType(),
+    CVInfoTypeEnum.T_UINT4: UnsignedIntegerDataType(),
 }
 
 
-def scalar_type_to_cpp(type_key: CvdumpTypeKey) -> str:
-    """Return the Ghidra name for the given scalar type."""
-    cvtype = CvdumpTypeMap[type_key]
+def get_scalar_ghidra_type(type_key: CvdumpTypeKey) -> "BuiltIn":
+    """Return the Ghidra type for the given scalar Cvdump type."""
+    result = _scalar_type_map.get(type_key)
+    if result is not None:
+        return result
 
-    if cvtype.name.startswith("T_32P"):
-        assert cvtype.pointer is not None
-        return f"{scalar_type_to_cpp(cvtype.pointer)} *"
-
-    # Removing the "T_" prefix is good enough for most types.
-    # Some types require special handling via _scalar_type_map.
-    return _scalar_type_map.get(cvtype.name, cvtype.name[2:].lower())
+    raise TypeNotImplementedError(
+        f"Ghidra import for Cvdump type {type_key} is not implemented"
+    )
