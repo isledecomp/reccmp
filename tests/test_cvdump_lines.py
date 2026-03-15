@@ -3,7 +3,6 @@
 from pathlib import PureWindowsPath
 from reccmp.cvdump import CvdumpParser
 
-
 SAMPLE_BASE = """\
 ** Module: "test.obj"
 
