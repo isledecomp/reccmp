@@ -57,7 +57,7 @@ def convert_foreign_path(
         return None
 
     if len(scored) == 1:
-        (top_score, top_path) = scored[0]
+        top_score, top_path = scored[0]
         # Return only if we matched at least one part
         if top_score > 0:
             return top_path

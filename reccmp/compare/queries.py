@@ -134,8 +134,7 @@ def get_referencing_entity_matches(db: EntityDb) -> Iterator[tuple[int, int]]:
     To match, the child entities must have the same displacement values (or none).
     If we cannot match uniquely, match by child address order in each address space.
     """
-    for orig_addr, recomp_addr in db.sql.execute(
-        """
+    for orig_addr, recomp_addr in db.sql.execute("""
         WITH linked_refs AS (
             SELECT r.img, r.addr, m.match_id, disp0, disp1,
             row_number() OVER (PARTITION BY r.img, m.match_id, disp0, disp1 ORDER BY r.addr) nth
@@ -160,8 +159,7 @@ def get_referencing_entity_matches(db: EntityDb) -> Iterator[tuple[int, int]]:
         AND x.disp1 = y.disp1
         AND x.nth = y.nth
         AND x.match_id = y.match_id
-        """
-    ):
+        """):
         assert isinstance(orig_addr, int)
         assert isinstance(recomp_addr, int)
         yield (orig_addr, recomp_addr)

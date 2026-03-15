@@ -5,7 +5,6 @@ from re import Match
 from typing import NamedTuple
 from reccmp.cvdump.types import CvdumpTypeKey
 
-
 logger = logging.getLogger(__name__)
 
 

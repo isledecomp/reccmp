@@ -61,7 +61,7 @@ def can_resolve_register_differences(original_asm, new_asm):
             to_replace = get_registers(original_line)
 
             for replace in to_replace:
-                (reg, reg_index) = replace
+                reg, reg_index = replace
                 replacing_reg = new_line[reg_index : reg_index + len(reg)]
                 if replacing_reg in REGISTER_LIST:
                     if replacing_reg != reg:

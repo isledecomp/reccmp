@@ -6,7 +6,6 @@ import struct
 from typing import Iterator, NamedTuple
 from reccmp.formats import PEImage
 
-
 # Magic strings:
 # - 0x19930520: up to VC6
 # - 0x19930521: VC7.x(2002-2003)
@@ -39,7 +38,7 @@ def find_funcinfo_in_buffer(buf: bytes, base_addr: int) -> Iterator[FuncInfo]:
     for ofs in find_funcinfo_offsets_in_buffer(buf):
         # TODO: The structure may vary depending on the magic string.
         # We support format 19930520 to start.
-        (max_state, unwind_map_addr) = struct.unpack_from("<4x2I", buf, offset=ofs)
+        max_state, unwind_map_addr = struct.unpack_from("<4x2I", buf, offset=ofs)
 
         # Unwind offset is an absolute address.
         unwind_map_ofs = unwind_map_addr - base_addr

@@ -21,7 +21,6 @@ from .csv import ReccmpCsvParserError, ReccmpCsvFatalParserError, csv_parse
 from .db import EntityDb, entity_name_from_string
 from .lines import LinesDb
 
-
 logger = logging.getLogger(__name__)
 
 

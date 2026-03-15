@@ -12,7 +12,6 @@ from reccmp.compare.db import ReccmpMatch
 
 from .ghidra_helper import set_ghidra_label
 
-
 logger = logging.getLogger(__name__)
 
 

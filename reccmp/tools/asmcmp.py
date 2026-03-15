@@ -32,7 +32,6 @@ from reccmp.project.detect import (
     argparse_parse_project_target,
 )
 
-
 logger = logging.getLogger()
 colorama.just_fix_windows_console()
 
