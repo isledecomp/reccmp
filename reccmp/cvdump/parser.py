@@ -12,7 +12,7 @@ _line_addr_pairs_findall = re.compile(r"\s+(?P<line_no>\d+) (?P<addr>[A-F0-9]{8}
 # We assume no spaces in the file name
 # e.g. `  Z:\lego-island\isle\LEGO1\viewmanager\viewroi.cpp (None), 0001:00034E90-00034E97, line/addr pairs = 2`
 _lines_subsection_header = re.compile(
-    r"^\s*(?P<filename>\S+).*?, (?P<section>[A-F0-9]{4}):(?P<start>[A-F0-9]{8})-(?P<end>[A-F0-9]{8}), line/addr pairs = (?P<len>\d+)"
+    r"^\s*(?P<filename>.+?) \((?:None|\w+: [0-9A-F]+?)\), (?P<section>[A-F0-9]{4}):(?P<start>[A-F0-9]{8})-(?P<end>[A-F0-9]{8}), line/addr pairs = (?P<len>\d+)"
 )
 
 # e.g. `S_PUB32: [0001:0003FF60], Flags: 00000000, __read`
