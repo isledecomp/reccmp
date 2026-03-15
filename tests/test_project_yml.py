@@ -58,16 +58,14 @@ def test_project_data_source_non_csv():
 def test_project_source_root_single():
     """source_root field: Make sure we create the Path tuple for a single value."""
 
-    p = ProjectFile.from_str(
-        """\
+    p = ProjectFile.from_str("""\
         targets:
             TEST:
                 source-root: test
                 hash:
                     sha256: test
                 filename: test.exe
-        """
-    )
+        """)
 
     assert isinstance(p.targets["TEST"].source_root, tuple)
     assert p.targets["TEST"].source_root == (Path("test"),)
@@ -76,8 +74,7 @@ def test_project_source_root_single():
 def test_project_source_root_multi_line_array():
     """source_root field: Make sure we create the Path tuple for a multi-line array."""
 
-    p = ProjectFile.from_str(
-        """\
+    p = ProjectFile.from_str("""\
         targets:
             TEST:
                 source-root:
@@ -86,8 +83,7 @@ def test_project_source_root_multi_line_array():
                 hash:
                     sha256: test
                 filename: test.exe
-        """
-    )
+        """)
 
     assert isinstance(p.targets["TEST"].source_root, tuple)
     assert p.targets["TEST"].source_root == (Path("test"), Path("hello"))
@@ -96,16 +92,14 @@ def test_project_source_root_multi_line_array():
 def test_project_source_root_inline_array():
     """source_root field: Make sure we create the Path tuple for an inline array"""
 
-    p = ProjectFile.from_str(
-        """\
+    p = ProjectFile.from_str("""\
         targets:
             TEST:
                 source-root: ['test', 'hello']
                 hash:
                     sha256: test
                 filename: test.exe
-        """
-    )
+        """)
 
     assert isinstance(p.targets["TEST"].source_root, tuple)
     assert p.targets["TEST"].source_root == (Path("test"), Path("hello"))
@@ -114,16 +108,14 @@ def test_project_source_root_inline_array():
 def test_project_source_root_inline_array_empty():
     """source_root field: Make sure we create an empty tuple for an empty inline array."""
 
-    p = ProjectFile.from_str(
-        """\
+    p = ProjectFile.from_str("""\
         targets:
             TEST:
                 source-root:
                 hash:
                     sha256: test
                 filename: test.exe
-        """
-    )
+        """)
 
     assert isinstance(p.targets["TEST"].source_root, tuple)
     assert p.targets["TEST"].source_root == ()
@@ -132,15 +124,13 @@ def test_project_source_root_inline_array_empty():
 def test_project_source_root_missing_key():
     """source_root field: Make sure we create an empty tuple if source_root is missing."""
 
-    p = ProjectFile.from_str(
-        """\
+    p = ProjectFile.from_str("""\
         targets:
             TEST:
                 hash:
                     sha256: test
                 filename: test.exe
-        """
-    )
+        """)
 
     assert isinstance(p.targets["TEST"].source_root, tuple)
     assert p.targets["TEST"].source_root == ()

@@ -6,7 +6,6 @@ from pydantic import BaseModel
 import ruamel.yaml
 from reccmp.project.yml_extensions import PathSequence
 
-
 _yaml = ruamel.yaml.YAML()
 
 
