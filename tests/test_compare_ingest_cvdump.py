@@ -5,7 +5,6 @@ from reccmp.compare.db import EntityDb
 from reccmp.compare.ingest import load_cvdump
 from reccmp.types import EntityType
 
-
 # These functions use our sample PE image to "cheat" and not have to mock as much.
 # This sets up the imagebase and valid section boundaries for calculation inside load_cvdump.
 # The seg:offsets and addresses in the tests match where strings and other items can be found.
@@ -32,12 +31,10 @@ def test_size_estimate(binfile: PEImage):
     parser = CvdumpParser()
     parser.read_section(
         "PUBLICS",
-        dedent(
-            """\
+        dedent("""\
         S_PUB32: [0003:0001292A], Flags: 00000000, __OP_LOG10jmptab
         S_PUB32: [0003:0001294A], Flags: 00000000, __OP_LOGjmptab
-        """
-        ),
+        """),
     )
 
     cvdump_analysis = CvdumpAnalysis(parser)
@@ -62,12 +59,10 @@ def test_size_estimate_different_sections(binfile: PEImage):
     parser = CvdumpParser()
     parser.read_section(
         "PUBLICS",
-        dedent(
-            """\
+        dedent("""\
         S_PUB32: [0002:00000018], Flags: 00000000, ??_7Score@@6B@
         S_PUB32: [0003:0001292A], Flags: 00000000, __OP_LOG10jmptab
-        """
-        ),
+        """),
     )
 
     cvdump_analysis = CvdumpAnalysis(parser)
@@ -93,23 +88,19 @@ def test_size_estimate_section_contrib(binfile: PEImage):
     parser = CvdumpParser()
     parser.read_section(
         "PUBLICS",
-        dedent(
-            """\
+        dedent("""\
         S_PUB32: [0003:0001292A], Flags: 00000000, __OP_LOG10jmptab
         S_PUB32: [0003:0001294A], Flags: 00000000, __OP_LOGjmptab
         S_PUB32: [0003:0001296A], Flags: 00000000, __OP_EXPjmptab
-        """
-        ),
+        """),
     )
     parser.read_section(
         "SECTION CONTRIBUTIONS",
-        dedent(
-            """\
+        dedent("""\
           0032  0003:0001292A  00000100  40303040
           0032  0003:0001294A  00000010  40303040
           0032  0003:0001296A  00000010  40303040
-        """
-        ),
+        """),
     )
 
     cvdump_analysis = CvdumpAnalysis(parser)
@@ -157,12 +148,10 @@ def test_symbol_overwrite(binfile: PEImage):
     parser = CvdumpParser()
     parser.read_section(
         "PUBLICS",
-        dedent(
-            """\
+        dedent("""\
             S_PUB32: [0001:0008B410], Flags: 00000000, __strlwr
             S_PUB32: [0001:0008B410], Flags: 00000000, _strlwr
-            """
-        ),
+            """),
     )
 
     cvdump_analysis = CvdumpAnalysis(parser)
@@ -447,15 +436,13 @@ def test_variable_size_with_type_info(binfile: PEImage):
     )
     parser.read_section(
         "TYPES",
-        dedent(
-            """\
+        dedent("""\
             0x1424 : Length = 14, Leaf = 0x1503 LF_ARRAY
                 Element type = T_RCHAR(0070)
                 Index type = T_SHORT(0011)
                 length = 1024
                 Name = 
-        """
-        ),
+        """),
     )
     cvdump_analysis = CvdumpAnalysis(parser)
     load_cvdump(cvdump_analysis, db, binfile)
@@ -472,8 +459,7 @@ def test_gproc32(binfile: PEImage):
     parser = CvdumpParser()
     parser.read_section(
         "SYMBOLS",
-        dedent(
-            """\
+        dedent("""\
         (00038C) S_GPROC32: [0001:00037220], Cb: 0000008B, Type:             0x2068, Pizza::Start
                  Parent: 00000000, End: 000003E8, Next: 00000000
                  Debug start: 00000001, Debug end: 00000087
@@ -482,8 +468,7 @@ def test_gproc32(binfile: PEImage):
         (0003D0)  S_BPREL32: [00000004], Type:             0x1134, p_objectId
 
         (0003E8) S_END
-        """
-        ),
+        """),
     )
 
     cvdump_analysis = CvdumpAnalysis(parser)
@@ -502,13 +487,11 @@ def test_lproc32(binfile: PEImage):
     parser = CvdumpParser()
     parser.read_section(
         "SYMBOLS",
-        dedent(
-            """\
+        dedent("""\
         (0000A8) S_LPROC32: [0001:00091350], Cb: 00000005, Type:             0x164F, $E28
                  Parent: 00000000, End: 000000D4, Next: 00000000
                  Debug start: 00000000, Debug end: 00000005
-        """
-        ),
+        """),
     )
 
     cvdump_analysis = CvdumpAnalysis(parser)
@@ -550,8 +533,7 @@ def test_gproc_with_static_var(binfile: PEImage):
     # MSVC 4.20 doesn't indicate static variables like this.
     parser.read_section(
         "SYMBOLS",
-        dedent(
-            """\
+        dedent("""\
         (000780) S_GPROC32: [0001:0009CA20], Cb: 00000051, Type:             0x234C, EnableResizing
                  Parent: 00000000, End: 000007EC, Next: 00000000
                  Debug start: 00000007, Debug end: 0000004E
@@ -560,8 +542,7 @@ def test_gproc_with_static_var(binfile: PEImage):
         (0007CC)  S_LDATA32: [0003:00019594], Type:       T_UINT4(0075), g_dwStyle
 
         (0007EC) S_END
-        """
-        ),
+        """),
     )
 
     cvdump_analysis = CvdumpAnalysis(parser)
@@ -588,12 +569,10 @@ def test_floats(binfile: PEImage):
     parser = CvdumpParser()
     parser.read_section(
         "PUBLICS",
-        dedent(
-            """\
+        dedent("""\
         S_PUB32: [0002:00001740], Flags: 00000000, __real@4@00000000000000000000
         S_PUB32: [0002:00001748], Flags: 00000000, __real@8@00000000000000000000
-        """
-        ),
+        """),
     )
 
     cvdump_analysis = CvdumpAnalysis(parser)
@@ -629,12 +608,10 @@ def test_skip_global_without_matching_public(binfile: PEImage):
     )
     parser.read_section(
         "GLOBALS",
-        dedent(
-            """\
+        dedent("""\
         S_GDATA32: [0004:0002F6BC], Type:             0x10D5, g_infomainScript
         S_GDATA32: [0004:0000C718], Type:             0x10D5, g_infomainScript
-        """
-        ),
+        """),
     )
 
     cvdump_analysis = CvdumpAnalysis(parser)

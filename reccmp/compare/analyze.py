@@ -21,7 +21,6 @@ from reccmp.analysis import (
 from .db import EntityDb, entity_name_from_string
 from .queries import get_floats_without_data, get_strings_without_data
 
-
 logger = logging.getLogger(__name__)
 
 

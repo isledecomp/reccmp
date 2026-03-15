@@ -21,7 +21,6 @@ from .csv import ReccmpCsvParserError, ReccmpCsvFatalParserError, csv_parse
 from .db import EntityDb, entity_name_from_string
 from .lines import LinesDb
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -138,6 +137,7 @@ def load_cvdump_lines(
     lines_db.mark_function_starts(tuple(seen_addrs))
 
 
+# pylint: disable=too-many-positional-arguments
 def load_markers(
     code_files: Sequence[TextFile],
     lines_db: LinesDb,

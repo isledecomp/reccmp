@@ -113,7 +113,7 @@ def test_compare_pointer_diff(db: EntityDb, types: CvdumpTypesParser):
     assert c.result == CompareResult.DIFF
 
     # Verify pointer display
-    (orig_value, recomp_value) = c.compared[0].values
+    orig_value, recomp_value = c.compared[0].values
     assert "Hello" not in orig_value
     assert "Hello" in recomp_value
 

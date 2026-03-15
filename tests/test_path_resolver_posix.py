@@ -3,7 +3,6 @@ from unittest.mock import patch
 import pytest
 from reccmp.dir import PathResolver
 
-
 if os_name == "nt":
     pytest.skip(reason="Skip Posix-only tests", allow_module_level=True)
 
