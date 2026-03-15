@@ -4,20 +4,26 @@
 # pylint: disable=import-outside-toplevel
 # pyright: reportMissingModuleSource=false
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar
 from unittest.mock import Mock
 
 import pytest
 from reccmp.compare.core import Compare
 from reccmp.cvdump.cvinfo import CVInfoTypeEnum, CvdumpTypeKey, CvdumpTypeMap
-from reccmp.cvdump.types import CvdumpParsedType, EnumItem, FieldListItem
+from reccmp.cvdump.types import (
+    CvdumpParsedType,
+    EnumItem,
+    FieldListItem,
+    VirtualBaseClass,
+    VirtualBasePointer,
+)
 from reccmp.ghidra.importer.exceptions import TypeNotFoundError, TypeNotImplementedError
 from reccmp.ghidra.importer.pdb_extraction import PdbFunctionExtractor
 from tests.test_image_raw import RawImage
 
 if TYPE_CHECKING:
     from ghidra.program.flatapi import FlatProgramAPI
-    from ghidra.program.model.data import Structure
+    from ghidra.program.model.data import DataType
     from reccmp.ghidra.importer.type_importer import PdbTypeImporter
 
 verified_types = (
@@ -25,6 +31,17 @@ verified_types = (
     for t in CVInfoTypeEnum
     if CvdumpTypeMap[t].verified and t != CVInfoTypeEnum.T_NOTYPE
 )
+
+
+# TODO: Move to a general helper file
+
+T = TypeVar("T")
+
+
+def assert_instance(value: object, expected_class: type[T]) -> T:
+    """Type narrowing does not work well in the IDE for some reason, this makes it explicit"""
+    assert isinstance(value, expected_class)
+    return value
 
 
 @pytest.fixture(name="type_importer", scope="function")
@@ -40,7 +57,6 @@ def pdb_type_importer_fixture(ghidra: "FlatProgramAPI"):
 def test_ghidra_scalar_types(
     type_importer: "PdbTypeImporter", scalar_type: CVInfoTypeEnum
 ):
-    from reccmp.ghidra.importer.type_importer import PdbTypeImporter
     from ghidra.program.model.data import Pointer
 
     cv_type_info = CvdumpTypeMap[scalar_type]
@@ -87,7 +103,7 @@ def _set_up_test_class(compare: Compare):
     )
 
 
-def _assert_test_class(imported_structure: "Structure"):
+def _assert_test_class(imported_structure: "DataType"):
     from ghidra.program.model.data import Structure
 
     assert isinstance(imported_structure, Structure)
@@ -165,11 +181,9 @@ def test_ghidra_pointer_to_class(type_importer: "PdbTypeImporter"):
     from ghidra.program.model.data import Pointer
 
     _set_up_test_class(type_importer.extraction.compare)
-    imported_pointer: Pointer = type_importer.import_pdb_type_into_ghidra(
-        pointer_to_class_key
+    imported_pointer = assert_instance(
+        type_importer.import_pdb_type_into_ghidra(pointer_to_class_key), Pointer
     )
-
-    assert isinstance(imported_pointer, Pointer)
     _assert_test_class(imported_pointer.dataType)
 
 
@@ -181,9 +195,10 @@ def test_array(type_importer: "PdbTypeImporter"):
         type="LF_ARRAY", array_type=CVInfoTypeEnum.T_INT4, size=16
     )
 
-    imported_array: Array = type_importer.import_pdb_type_into_ghidra(array_key)
+    imported_array = assert_instance(
+        type_importer.import_pdb_type_into_ghidra(array_key), Array
+    )
 
-    assert isinstance(imported_array, Array)
     assert imported_array.getLength() == 16
     assert imported_array.getElementLength() == 4
     assert imported_array.getDataType() == type_importer.import_pdb_type_into_ghidra(
@@ -213,8 +228,9 @@ def test_enum(type_importer: "PdbTypeImporter"):
         underlying_type=CVInfoTypeEnum.T_INT4,
     )
 
-    imported_enum: Enum = type_importer.import_pdb_type_into_ghidra(enum_key)
-    assert isinstance(imported_enum, Enum)
+    imported_enum = assert_instance(
+        type_importer.import_pdb_type_into_ghidra(enum_key), Enum
+    )
     assert imported_enum.getDisplayName() == "TestEnum"
     assert imported_enum.getCount() == 2
     assert list(imported_enum.getNames()) == ["c_zero", "c_one"]
@@ -271,8 +287,9 @@ def test_union(type_importer: "PdbTypeImporter"):
         name="MY_ENUM",
     )
 
-    imported_union: Union = type_importer.import_pdb_type_into_ghidra(union_key)
-    assert isinstance(imported_union, Union)
+    imported_union = assert_instance(
+        type_importer.import_pdb_type_into_ghidra(union_key), Union
+    )
 
     assert imported_union.getDisplayName() == "MY_ENUM"
     assert imported_union.getLength() == 4
@@ -280,3 +297,164 @@ def test_union(type_importer: "PdbTypeImporter"):
         type_importer.import_pdb_type_into_ghidra(CVInfoTypeEnum.T_32PUCHAR),
         type_importer.import_pdb_type_into_ghidra(CVInfoTypeEnum.T_32PUSHORT),
     ]
+
+
+base_class_fieldlist_key = CvdumpTypeKey.from_str("0x100c")
+base_class_key = CvdumpTypeKey.from_str("0x100d")
+virtual_subclass_fieldlist_key = CvdumpTypeKey.from_str("0x100e")
+virtual_subclass_key = CvdumpTypeKey.from_str("0x100f")
+non_virtual_grandchild_fieldlist_key = CvdumpTypeKey.from_str("0x1010")
+non_virtual_grandchild_key = CvdumpTypeKey.from_str("0x1011")
+
+
+def _setup_virtual_inheritance_example(compare: Compare):
+    compare.types.keys[base_class_fieldlist_key] = CvdumpParsedType(
+        type="LF_FIELDLIST",
+        members=[
+            FieldListItem(offset=0, name="a", type=CVInfoTypeEnum.T_INT4),
+        ],
+    )
+    compare.types.keys[base_class_key] = CvdumpParsedType(
+        type="LF_CLASS",
+        name="TestVirtualBaseClass",
+        field_list_type=base_class_fieldlist_key,
+        size=4,
+    )
+
+    # Memory layout:
+    # 0x00: virtual function table
+    # 0x04: virtual base pointer
+    # 0x08: field "b"
+    # 0x0c: space for virtual `TestVirtualBaseClass`
+    #  +0x00: field "a"
+    compare.types.keys[virtual_subclass_fieldlist_key] = CvdumpParsedType(
+        type="LF_FIELDLIST",
+        members=[
+            FieldListItem(offset=0, type=CVInfoTypeEnum.T_32PVOID, name="vftable"),
+            FieldListItem(offset=8, name="b", type=CVInfoTypeEnum.T_INT4),
+        ],
+        vbase=VirtualBasePointer(
+            vboffset=4,
+            bases=[VirtualBaseClass(type=base_class_key, index=1, direct=True)],
+        ),
+    )
+    compare.types.keys[virtual_subclass_key] = CvdumpParsedType(
+        type="LF_CLASS",
+        name="TestVirtualSubClass",
+        field_list_type=virtual_subclass_fieldlist_key,
+        size=0x10,
+    )
+
+    # Memory layout:
+    # 0x00: embedded  **slim** `TestVirtualSubClass` (without the TestVirtualBaseClass inside TestVirtualSubClass)
+    #   +0x00: virtual function table
+    #   +0x04: virtual base pointer
+    #   +0x08: field "b"
+    # 0x0c: field "c"
+    # 0x10: space for virtual `TestVirtualBaseClass`
+    #   +0x00: field "a"
+    compare.types.keys[non_virtual_grandchild_fieldlist_key] = CvdumpParsedType(
+        type="LF_FIELDLIST",
+        super={virtual_subclass_key: 0},
+        members=[FieldListItem(name="c", offset=0x0C, type=CVInfoTypeEnum.T_INT4)],
+        vbase=VirtualBasePointer(
+            vboffset=4,
+            bases=[VirtualBaseClass(type=base_class_key, index=1, direct=False)],
+        ),
+    )
+    compare.types.keys[non_virtual_grandchild_key] = CvdumpParsedType(
+        type="LF_CLASS",
+        name="TestNonVirtualGrandchildClass",
+        field_list_type=non_virtual_grandchild_fieldlist_key,
+        size=0x14,
+    )
+
+
+def test_virtual_base_ptr(type_importer: "PdbTypeImporter"):
+    from ghidra.program.model.data import (
+        Structure,
+        Pointer,
+        TypeDef,
+        ComponentOffsetSettingsDefinition,
+    )
+
+    _setup_virtual_inheritance_example(type_importer.extraction.compare)
+
+    # Part 1: Assert on the layout of the class
+
+    virtual_subclass = assert_instance(
+        type_importer.import_pdb_type_into_ghidra(virtual_subclass_key), Structure
+    )
+
+    [vftable_component, vbaseptr_component, b_field_component, *unallocated] = list(
+        virtual_subclass.getComponents()
+    )
+    assert vftable_component.getFieldName() == "vftable"
+
+    assert vbaseptr_component.getFieldName() == "vbase_offset"
+    vbase_record_ptr = assert_instance(vbaseptr_component.getDataType(), Pointer)
+
+    assert b_field_component.getFieldName() == "b"
+    # Unallocated bytes from 0x0c to 0x0f because we currently don't parse the virtual layout.
+    # It requires looking into the recompiled binary and finding the actual virtual base tables.
+    # Strictly speaking, they don't even have to be uniform for one type (e.g. across multiple constructors).
+    assert len(unallocated) == 4
+    for i, value in enumerate(unallocated):
+        assert value.getOffset() == 0x0C + i
+        assert value.getDataType().getName() == "undefined"
+
+    # Part 2: Assert on the virtual base pointer type
+
+    vbase_record = assert_instance(vbase_record_ptr.getDataType(), Structure)
+    [vbase_self_component, vbase_base_component] = list(vbase_record.getComponents())
+
+    assert vbase_self_component.getFieldName() == "o_self"
+    vbase_self_ptr = assert_instance(vbase_self_component.getDataType(), Pointer)
+    assert vbase_self_ptr.getDataType() == virtual_subclass
+
+    assert vbase_base_component.getFieldName() == "o_TestVirtualBaseClass"
+
+    vbase_base_ptr_typedef = assert_instance(
+        vbase_base_component.getDataType(), TypeDef
+    )
+    assert (
+        ComponentOffsetSettingsDefinition.DEF.getValue(
+            vbase_base_ptr_typedef.getDefaultSettings()
+        )
+        == -4
+    )
+
+    vbase_base_ptr = assert_instance(vbase_base_ptr_typedef.getDataType(), Pointer)
+    imported_base_class = assert_instance(vbase_base_ptr.getDataType(), Structure)
+    assert imported_base_class.getName() == "TestVirtualBaseClass"
+
+
+def test_slim_vbase_pointer(type_importer: "PdbTypeImporter"):
+    from ghidra.program.model.data import Structure
+
+    _setup_virtual_inheritance_example(type_importer.extraction.compare)
+    non_virtual_grandchild = assert_instance(
+        type_importer.import_pdb_type_into_ghidra(non_virtual_grandchild_key), Structure
+    )
+
+    [base_component, c_field_component, *unallocated] = list(
+        non_virtual_grandchild.getComponents()
+    )
+
+    assert base_component.getFieldName() == "base"
+    virtual_child_slim = assert_instance(base_component.getDataType(), Structure)
+    assert virtual_child_slim.getName() == "TestVirtualSubClass_vbase_slim"
+    # The full size of `TestVirtualSubClass` is 0x10, the slim size is 0x0c
+    assert virtual_child_slim.getLength() == 0x0C
+
+    assert c_field_component.getFieldName() == "c"
+    assert c_field_component.getOffset() == 0x0C
+    assert c_field_component.getDataType().getLength() == 4
+
+    # Unallocated bytes from 0x10 to 0x13 because we currently don't parse the virtual layout.
+    # It requires looking into the recompiled binary and finding the actual virtual base tables.
+    # Strictly speaking, they don't even have to be uniform for one type (e.g. across multiple constructors).
+    assert len(unallocated) == 4
+    for i, value in enumerate(unallocated):
+        assert value.getOffset() == 0x10 + i
+        assert value.getDataType().getName() == "undefined"
