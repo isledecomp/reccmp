@@ -33,6 +33,7 @@ def fixture_report_mock() -> ReccmpReportProtocol:
     return Mock(spec=ReccmpReportProtocol)
 
 
+# pylint: disable=too-many-positional-arguments
 def compare_functions(
     db: EntityDb,
     lines_db: LinesDb,
