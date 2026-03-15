@@ -2,7 +2,6 @@
 
 from typing import Iterator
 
-
 DiffOpcode = tuple[str, int, int, int, int]
 
 

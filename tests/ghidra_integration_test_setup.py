@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Iterator, cast
 import pytest
 from pyghidra import HeadlessPyGhidraLauncher  # type: ignore[import-untyped]
 
-
 # Suppress linter warnings related to the fact that the header support for Ghidra is limited
 # and that we cannot import Ghidra classes before Ghidra has been loaded
 

@@ -13,7 +13,6 @@ from reccmp.parser.util import (
     get_string_contents,
 )
 
-
 blank_or_comment_param = [
     (True, ""),
     (True, "\t"),

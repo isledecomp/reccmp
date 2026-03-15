@@ -17,12 +17,10 @@ def test_load_data_sources(db: EntityDb):
     ds_files = (
         TextFile(
             PurePath("test.csv"),
-            dedent(
-                """\
+            dedent("""\
                 address,name
                 0x1234,hello
-            """
-            ),
+            """),
         ),
     )
 
@@ -38,21 +36,17 @@ def test_load_data_sources_skip_unknown(db: EntityDb):
     ds_files = (
         TextFile(
             PurePath("test.txt"),
-            dedent(
-                """\
+            dedent("""\
                 address,name
                 0x5555,hello
-            """
-            ),
+            """),
         ),
         TextFile(
             PurePath("test.csv"),
-            dedent(
-                """\
+            dedent("""\
                 address,name
                 0x1234,hello
-            """
-            ),
+            """),
         ),
     )
 
@@ -69,12 +63,10 @@ def test_load_csv(db: EntityDb):
     """Should create an entity by parsing the CSV."""
     csv_file = TextFile(
         PurePath("test.csv"),
-        dedent(
-            """\
+        dedent("""\
             address,name
             0x1234,hello
-        """
-        ),
+        """),
     )
 
     load_csv(db, csv_file)
@@ -89,23 +81,19 @@ def test_load_csv_overwrite(db: EntityDb):
     csv_files = (
         TextFile(
             PurePath("test.csv"),
-            dedent(
-                """\
+            dedent("""\
                 address,name,type
                 0x1234,hello,function
                 0x5555,pizza,function
                 0x5555,jetski,global
-            """
-            ),
+            """),
         ),
         TextFile(
             PurePath("zzzz.csv"),
-            dedent(
-                """\
+            dedent("""\
                 address,name
                 0x1234,test
-            """
-            ),
+            """),
         ),
     )
 
@@ -129,15 +117,13 @@ def test_load_csv_with_errors(db: EntityDb):
     """Should skip lines with a syntax error and create entities for the rest."""
     csv_file = TextFile(
         PurePath("test.csv"),
-        dedent(
-            """\
+        dedent("""\
             address|type
             5555|libary
             1234|function
             zzzz|function
             4321|template
-            """
-        ),
+            """),
     )
 
     load_csv(db, csv_file)
@@ -157,13 +143,11 @@ def test_load_csv_with_fatal_error(db: EntityDb):
     """Should not create entities from a CSV with a fatal parsing error."""
     csv_file = TextFile(
         PurePath("test.csv"),
-        dedent(
-            """\
+        dedent("""\
             address|name|name
             1234|test|test
             4321|hello|hello
-            """
-        ),
+            """),
     )
 
     load_csv(db, csv_file)

@@ -8,7 +8,6 @@ from reccmp.formats.pe import PEImage
 from reccmp.types import EntityType
 from .db import EntityDb
 
-
 logger = logging.getLogger(__name__)
 
 

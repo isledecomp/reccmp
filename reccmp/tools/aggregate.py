@@ -15,7 +15,6 @@ from reccmp.compare.report import (
     serialize_reccmp_report,
 )
 
-
 logger = logging.getLogger(__name__)
 
 

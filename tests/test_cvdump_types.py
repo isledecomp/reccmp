@@ -1009,13 +1009,11 @@ def test_enum_with_whitespace_and_comma(
 def test_this_adjust_hex(empty_parser: CvdumpTypesParser):
     """The 'this adjust' attribute is a hex number.
     Make sure we parse it correctly."""
-    empty_parser.read_all(
-        """\
+    empty_parser.read_all("""\
 0x657a : Length = 26, Leaf = 0x1009 LF_MFUNCTION
     Return type = T_VOID(0003), Class type = 0x15ED, This type = 0x15EE, 
     Call type = ThisCall, Func attr = none
-    Parms = 3, Arg list type = 0x6579, This adjust = 24"""
-    )
+    Parms = 3, Arg list type = 0x6579, This adjust = 24""")
 
     assert empty_parser.keys[TK(0x657A)]["this_adjust"] == TK(0x24)
 

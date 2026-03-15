@@ -32,7 +32,6 @@ from reccmp.project.detect import (
     argparse_parse_project_target,
 )
 
-
 logger = logging.getLogger()
 colorama.just_fix_windows_console()
 
@@ -44,6 +43,7 @@ def gen_json(json_file: str, json_str: str):
         f.write(json_str)
 
 
+# pylint: disable=too-many-positional-arguments
 def gen_svg(svg_file, name_svg, icon, svg_implemented_funcs, total_funcs, raw_accuracy):
     icon_data = None
     if icon:

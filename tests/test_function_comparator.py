@@ -11,7 +11,6 @@ from reccmp.compare.functions import (
 from reccmp.compare.lines import LinesDb
 from reccmp.types import EntityType
 
-
 MOCK_PATH = PureWindowsPath("some/path/test.cpp")
 ORIG_GLOBAL_OFFSET = 0x200
 RECOMP_GLOBAL_OFFSET = 0x400
@@ -34,6 +33,7 @@ def fixture_report_mock() -> ReccmpReportProtocol:
     return Mock(spec=ReccmpReportProtocol)
 
 
+# pylint: disable=too-many-positional-arguments
 def compare_functions(
     db: EntityDb,
     lines_db: LinesDb,

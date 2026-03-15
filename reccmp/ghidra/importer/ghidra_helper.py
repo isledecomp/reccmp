@@ -20,7 +20,6 @@ from .exceptions import (
     TypeNotFoundInGhidraError,
 )
 
-
 logger = logging.getLogger(__name__)
 
 

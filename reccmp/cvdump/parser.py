@@ -5,7 +5,6 @@ from .types import CvdumpTypesParser
 from .symbols import CvdumpSymbolsParser
 from .cvinfo import CvdumpTypeKey
 
-
 # e.g. `     27 00034EC0     28 00034EE2     29 00034EE7     30 00034EF4`
 _line_addr_pairs_findall = re.compile(r"\s+(?P<line_no>\d+) (?P<addr>[A-F0-9]{8})")
 

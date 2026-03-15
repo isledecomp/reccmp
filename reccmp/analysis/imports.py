@@ -3,7 +3,6 @@ import struct
 from typing import Iterator, NamedTuple
 from reccmp.formats import PEImage
 
-
 # Match 6 byte absolute jump instructions.
 ABS_JUMP_RE = re.compile(rb"(?<=\xff\x25).{4}", flags=re.S)
 
