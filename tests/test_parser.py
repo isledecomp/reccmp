@@ -720,15 +720,11 @@ def test_mixed_case_module_name(parser):
     of the project requires upper-case modules, decomplint will alert
     to the inconsistency.
     This documents the current behavior though it may change. (GH #336)"""
-    parser.read(
-        dedent(
-            """\
+    parser.read(dedent("""\
         // FUNCTION: Hello 0x1234
         void interesting_function() {
         }
-        """
-        )
-    )
+        """))
 
     # Module name converted to the (expected) upper-case.
     assert len(parser.functions) == 1
