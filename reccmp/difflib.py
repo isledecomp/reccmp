@@ -1,8 +1,9 @@
 """Wrappers and items related to the builtin python difflib module."""
 
-from typing import Iterator
+from typing import Literal, Iterator
 
-DiffOpcode = tuple[str, int, int, int, int]
+DiffTag = Literal["delete", "equal", "insert", "replace"]
+DiffOpcode = tuple[DiffTag, int, int, int, int]
 
 
 def get_grouped_opcodes(
@@ -23,7 +24,9 @@ def get_grouped_opcodes(
         codes[-1] = tag, i1, min(i2, i1 + n), j1, min(j2, j1 + n)
 
     nn = n + n
-    group = []
+    # Type hint required here or mypy will assume tag has type Literal["equal"].
+    # Typing the `tag` variable didn't work.
+    group: list[DiffOpcode] = []
     for tag, i1, i2, j1, j2 in codes:
         # End the current group and start a new one whenever
         # there is a large range with no changes.

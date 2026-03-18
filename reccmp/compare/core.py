@@ -294,8 +294,7 @@ class Compare:
 
         return FunctionCompareResult(
             diff=RawDiffOutput(
-                # TODO: type conflict here between `str` and the literal strings.
-                codes=list(opcodes),
+                codes=opcodes,
                 orig_inst=orig_text,
                 recomp_inst=recomp_text,
             ),
