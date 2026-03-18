@@ -12,7 +12,6 @@ from reccmp.formats.exceptions import (
     InvalidVirtualReadError,
 )
 
-
 # The section layout for the `binfile` fixture is:
 #
 #     name │    start │   v.size │ raw size

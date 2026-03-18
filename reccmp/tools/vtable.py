@@ -14,7 +14,6 @@ from reccmp.project.detect import (
 )
 from reccmp.compare.diff import CombinedDiffOutput, raw_diff_to_udiff
 
-
 logger = logging.getLogger(__name__)
 
 # Ignore all compare-db messages.

@@ -580,14 +580,12 @@ class EntityDb:
         """Copy name/computed_name from parent to child (referencing) entities.
         Return value tells whether any entities were updated.
         Can be repeated to cover chains of thunk/vtordisp entities."""
-        cur = self._sql.execute(
-            """INSERT INTO names (img, addr, name, computed_name)
+        cur = self._sql.execute("""INSERT INTO names (img, addr, name, computed_name)
             SELECT r.img, r.addr, x.name, x.computed_name
             FROM refs r
             INNER JOIN names x ON r.img = x.img and r.ref = x.addr
             LEFT JOIN names y ON r.img = y.img and r.addr = y.addr
             WHERE y.addr IS NULL
-            """
-        )
+            """)
 
         return cur.rowcount > 0

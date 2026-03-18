@@ -7,7 +7,6 @@ from pathlib import Path, PurePath, PureWindowsPath
 from typing import Iterable, Iterator
 from reccmp.dir import convert_foreign_path
 
-
 logger = logging.getLogger(__name__)
 
 

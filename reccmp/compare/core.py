@@ -62,7 +62,6 @@ from .verify import (
     check_vtables,
 )
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -82,6 +81,7 @@ class Compare:
     data_sources: list[TextFile]
 
     # pylint: disable=too-many-arguments
+    # pylint: disable=too-many-positional-arguments
     def __init__(
         self,
         orig_bin: Image,
