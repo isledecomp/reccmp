@@ -5,3 +5,4 @@ include reccmp/assets/*.js
 include reccmp/assets/components/*.js
 include reccmp/assets/template.html
 include reccmp/assets/template.svg
+include README.md
