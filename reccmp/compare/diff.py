@@ -15,7 +15,7 @@ class RawDiffOutput:
 
 
 @dataclasses.dataclass
-class FunctionCompareResult:
+class EntityCompareResult:
     diff: RawDiffOutput = dataclasses.field(default_factory=RawDiffOutput)
     is_effective_match: bool = False
     match_ratio: float = 0.0
@@ -144,9 +144,7 @@ class DiffReport:
     orig_addr: int
     recomp_addr: int
     name: str
-    result: FunctionCompareResult = dataclasses.field(
-        default_factory=FunctionCompareResult
-    )
+    result: EntityCompareResult = dataclasses.field(default_factory=EntityCompareResult)
     is_stub: bool = False
     is_library: bool = False
 

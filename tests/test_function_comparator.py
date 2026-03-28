@@ -6,7 +6,7 @@ from reccmp.compare.db import EntityDb, ReccmpMatch
 from reccmp.compare.event import ReccmpEvent, ReccmpReportProtocol
 from reccmp.compare.functions import (
     FunctionComparator,
-    FunctionCompareResult,
+    EntityCompareResult,
 )
 from reccmp.compare.lines import LinesDb
 from reccmp.types import EntityType
@@ -41,7 +41,7 @@ def compare_functions(
     recomp: bytes,
     report: ReccmpReportProtocol,
     is_relocated_addr: Callable[[int], bool] | None = None,
-) -> FunctionCompareResult:
+) -> EntityCompareResult:
     """Executes `FunctionComparator.compare_function` on the provided binary code."""
 
     # Do not use `spec=PEImage`. It may have default implementations that don't do what you expect

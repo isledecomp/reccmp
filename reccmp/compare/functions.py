@@ -13,7 +13,7 @@ from reccmp.compare.asm.replacement import (
     create_name_lookup,
 )
 from reccmp.compare.db import EntityDb, ReccmpMatch
-from reccmp.compare.diff import FunctionCompareResult, RawDiffOutput
+from reccmp.compare.diff import EntityCompareResult, RawDiffOutput
 from reccmp.compare.event import ReccmpEvent, ReccmpReportProtocol
 from reccmp.formats.exceptions import (
     InvalidVirtualAddressError,
@@ -135,7 +135,7 @@ class FunctionComparator:
             return None
         return f"{path_line_pair[0].name}:{path_line_pair[1]}"
 
-    def compare_function(self, match: ReccmpMatch) -> FunctionCompareResult:
+    def compare_function(self, match: ReccmpMatch) -> EntityCompareResult:
         # Detect when the recomp function size would cause us to read
         # enough bytes from the original function that we cross into
         # the next annotated function.
@@ -207,7 +207,7 @@ class FunctionComparator:
         orig: AsmExcerpt,
         recomp: AsmExcerpt,
         split_points: list[tuple[int, int]],
-    ) -> FunctionCompareResult:
+    ) -> EntityCompareResult:
         # Detach addresses from asm lines for the text diff.
         orig_asm = [x[1] for x in orig]
         recomp_asm = [x[1] for x in recomp]
@@ -242,7 +242,7 @@ class FunctionComparator:
             for line_index, (addr, instruction) in enumerate(recomp)
         ]
 
-        return FunctionCompareResult(
+        return EntityCompareResult(
             diff=RawDiffOutput(
                 codes=diff.get_opcodes(),
                 orig_inst=orig_for_printing,

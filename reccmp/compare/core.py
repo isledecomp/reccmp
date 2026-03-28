@@ -4,7 +4,7 @@ import struct
 from typing import Iterable, Iterator
 from typing_extensions import Self
 from reccmp.project.detect import RecCmpTarget
-from reccmp.compare.diff import FunctionCompareResult, RawDiffOutput
+from reccmp.compare.diff import EntityCompareResult, RawDiffOutput
 from reccmp.dir import source_code_search
 from reccmp.compare.functions import FunctionComparator
 from reccmp.formats import (
@@ -220,7 +220,7 @@ class Compare:
         self._debug = debug
         self.function_comparator.debug = debug
 
-    def _compare_vtable(self, match: ReccmpMatch) -> FunctionCompareResult:
+    def _compare_vtable(self, match: ReccmpMatch) -> EntityCompareResult:
         vtable_size = match.size
 
         # The vtable size should always be a multiple of 4 because that
@@ -292,7 +292,7 @@ class Compare:
             [x[1] for x in recomp_text],
         ).get_opcodes()
 
-        return FunctionCompareResult(
+        return EntityCompareResult(
             diff=RawDiffOutput(
                 codes=opcodes,
                 orig_inst=orig_text,
