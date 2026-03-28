@@ -124,6 +124,15 @@ def combine_reports(samples: list[ReccmpStatusReport]) -> ReccmpStatusReport:
 
 
 def get_udiff_for_entity(entity: ReccmpComparedEntity) -> CombinedDiffOutput | None:
+    """Create a unified diff for this entity to add to a version 1 report.
+
+    If the entity was imported from a version 1 report and we already have a unified diff, use it.
+    This can occur with `reccmp-aggregate` where we copy the entity with the highest accuracy score.
+
+    If there is no unified diff, create a new one using the entity's raw diff, if it exists.
+
+    If we return None, no diff is possible because the entity matches 100%, is a stub,
+    or was created from a deserialized report without diff data."""
     if entity.udiff is not None:
         # An aggregate report may already have a deserialized udiff.
         return entity.udiff
