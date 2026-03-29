@@ -611,7 +611,6 @@ def test_float_symbols_without_size(binfile: PEImage):
     cvdump_analysis = CvdumpAnalysis(parser)
     load_cvdump(cvdump_analysis, db, binfile)
 
-    # Zero in single precision
     entity = db.get(ImageId.RECOMP, 0x100D5740)
     assert entity is not None
     assert entity.get("symbol") == "__real@3b95a025"
@@ -621,7 +620,6 @@ def test_float_symbols_without_size(binfile: PEImage):
     # The name will be blank until we read from the binary in a later step.
     assert entity.get("name") is None
 
-    # Zero in double precision
     entity = db.get(ImageId.RECOMP, 0x100D5748)
     assert entity is not None
     assert entity.get("symbol") == "__real@0000000000000000"
