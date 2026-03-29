@@ -346,6 +346,8 @@ def main():
 
     assert match.result is not None
     # Analyze the entire function, including long sections that already match.
+    # This comment explains why this is necessary:
+    # https://github.com/isledecomp/reccmp/pull/307#issuecomment-3796146436
     udiff = raw_diff_to_udiff(match.result.diff, grouped=False)
 
     function_data = next(
