@@ -195,7 +195,7 @@ class Compare:
         )
         pdb_file = CvdumpAnalysis(cvdump)
 
-        code_paths = source_code_search(target.source_root)
+        code_paths = source_code_search(target.source_paths)
         code_files = list(TextFile.from_files(code_paths, allow_error=True))
 
         data_sources = list(TextFile.from_files(target.data_sources, allow_error=True))
