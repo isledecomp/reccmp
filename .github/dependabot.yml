@@ -11,3 +11,4 @@ updates:
       interval: "weekly"
     cooldown:
       default-days: 5 # some protection against supply chain attacks
+    target-branch: "add-dependabot" # FIXME: Remove this line after testing is done
