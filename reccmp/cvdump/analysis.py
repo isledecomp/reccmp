@@ -14,6 +14,35 @@ from .types import (
 )
 
 
+def get_size_from_float_symbol(symbol: str) -> int | None:
+    """Get the size for the floating point constant from its symbol that resembles:
+    1. __real@X@... where X being 4 or 8 indicates the length in bytes.
+    2. __real@..... using the length of the hex string following the prefix.
+    """
+    prefix, delim, suffix = symbol.partition("__real@")
+
+    # Make sure the string was split as we expect.
+    if prefix or not delim:
+        return None
+
+    # We have only seen __real@4@ and __real@8@. This is probably overkill, but
+    # we should protect against typos in symbols imported from user metadata.
+    if "@" in suffix:
+        if suffix.startswith("4@"):
+            return 4
+
+        if suffix.startswith("8@"):
+            return 8
+
+        return None
+
+    size = len(suffix) // 2
+    if size > 0:
+        return size
+
+    return None
+
+
 @dataclass
 class CvdumpNode:
     # pylint: disable=too-many-instance-attributes
@@ -69,15 +98,9 @@ class CvdumpNode:
         elif self.decorated_name.startswith("??_C@_1"):
             self.node_type = EntityType.WIDECHAR
 
-        elif self.decorated_name.startswith("__real@4"):
-            # Single precision float
+        elif self.decorated_name.startswith("__real@"):
             self.node_type = EntityType.FLOAT
-            self.confirmed_size = 4
-
-        elif self.decorated_name.startswith("__real@8"):
-            # Double precision float
-            self.node_type = EntityType.FLOAT
-            self.confirmed_size = 8
+            self.confirmed_size = get_size_from_float_symbol(self.decorated_name)
 
         elif not self.decorated_name.startswith("?") and "@" in self.decorated_name:
             # C mangled symbol. The trailing at-sign with number tells the number of bytes
