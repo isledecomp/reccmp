@@ -21,9 +21,9 @@ def test_overloaded_functions_all_unique(db: EntityDb):
     assert len(list(get_overloaded_functions(db))) == 0
 
     with db.batch() as batch:
-        batch.set_orig(100, name="Hello", type=EntityType.FUNCTION)
-        batch.set_orig(200, name="Test", type=EntityType.FUNCTION)
-        batch.set_recomp(300, name="xyz", type=EntityType.FUNCTION)
+        batch.set(ImageId.ORIG, 100, name="Hello", type=EntityType.FUNCTION)
+        batch.set(ImageId.ORIG, 200, name="Test", type=EntityType.FUNCTION)
+        batch.set(ImageId.RECOMP, 300, name="xyz", type=EntityType.FUNCTION)
 
     # All entities are functions, but their names are unique.
     assert len(list(get_overloaded_functions(db))) == 0
@@ -31,21 +31,21 @@ def test_overloaded_functions_all_unique(db: EntityDb):
 
 def test_overloaded_functions_ignore_non_functions(db: EntityDb):
     with db.batch() as batch:
-        batch.set_orig(100, name="Hello")
-        batch.set_orig(200, name="Hello")
-        batch.set_recomp(300, name="Hello")
+        batch.set(ImageId.ORIG, 100, name="Hello")
+        batch.set(ImageId.ORIG, 200, name="Hello")
+        batch.set(ImageId.RECOMP, 300, name="Hello")
 
     # Name reused, but no entities are functions.
     assert len(list(get_overloaded_functions(db))) == 0
 
     with db.batch() as batch:
-        batch.set_orig(400, name="Hello", type=EntityType.FUNCTION)
+        batch.set(ImageId.ORIG, 400, name="Hello", type=EntityType.FUNCTION)
 
     # The name is not shared with *other* functions
     assert len(list(get_overloaded_functions(db))) == 0
 
     with db.batch() as batch:
-        batch.set_recomp(400, name="Hello", type=EntityType.FUNCTION)
+        batch.set(ImageId.RECOMP, 400, name="Hello", type=EntityType.FUNCTION)
 
     # Now we have two entities that are functions and have the same name.
     # Don't count the other entities that are *not* functions.
@@ -55,9 +55,9 @@ def test_overloaded_functions_ignore_non_functions(db: EntityDb):
 def test_overloaded_functions(db: EntityDb):
     with db.batch() as batch:
         # Inserted in reverse order to test numbering
-        batch.set_recomp(300, name="Hello", type=EntityType.FUNCTION)
-        batch.set_recomp(200, name="Hello", type=EntityType.FUNCTION)
-        batch.set_orig(100, name="Hello", type=EntityType.FUNCTION)
+        batch.set(ImageId.RECOMP, 300, name="Hello", type=EntityType.FUNCTION)
+        batch.set(ImageId.RECOMP, 200, name="Hello", type=EntityType.FUNCTION)
+        batch.set(ImageId.ORIG, 100, name="Hello", type=EntityType.FUNCTION)
         batch.match(200, 200)
 
     # Should have three entities, one matched, all functions and all with the name "Hello".
@@ -71,18 +71,18 @@ def test_overloaded_functions_ignore_thunks(db: EntityDb):
     """When deciding which functions have duplicate names, exclude thunk entities."""
     with db.batch() as batch:
         # Unique among non-ref functions
-        batch.set_orig(100, name="Hello", type=EntityType.FUNCTION)
-        batch.set_orig(200, name="Hello", type=EntityType.THUNK)
+        batch.set(ImageId.ORIG, 100, name="Hello", type=EntityType.FUNCTION)
+        batch.set(ImageId.ORIG, 200, name="Hello", type=EntityType.THUNK)
         batch.set_ref(ImageId.ORIG, 200, ref=1000)
         # Non-unique but both are refs
-        batch.set_orig(300, name="Test", type=EntityType.THUNK)
-        batch.set_orig(400, name="Test", type=EntityType.THUNK)
+        batch.set(ImageId.ORIG, 300, name="Test", type=EntityType.THUNK)
+        batch.set(ImageId.ORIG, 400, name="Test", type=EntityType.THUNK)
         batch.set_ref(ImageId.ORIG, 300, ref=1000)
         batch.set_ref(ImageId.ORIG, 400, ref=1000)
         # Non-unique but should ignore the ref function
-        batch.set_orig(500, name="Hey", type=EntityType.FUNCTION)
-        batch.set_orig(600, name="Hey", type=EntityType.FUNCTION)
-        batch.set_orig(700, name="Hey", type=EntityType.THUNK)
+        batch.set(ImageId.ORIG, 500, name="Hey", type=EntityType.FUNCTION)
+        batch.set(ImageId.ORIG, 600, name="Hey", type=EntityType.FUNCTION)
+        batch.set(ImageId.ORIG, 700, name="Hey", type=EntityType.THUNK)
         batch.set_ref(ImageId.ORIG, 700, ref=1000)
 
     # Should only include the duplicate names where both are not ref entities.
@@ -96,8 +96,8 @@ def test_get_referencing_entity_matches(db: EntityDb):
 
     # Set up matched parent entity.
     with db.batch() as batch:
-        batch.set_orig(100)
-        batch.set_recomp(100)
+        batch.set(ImageId.ORIG, 100)
+        batch.set(ImageId.RECOMP, 100)
         batch.match(100, 100)
 
     # There are no referencing entities.
@@ -105,8 +105,8 @@ def test_get_referencing_entity_matches(db: EntityDb):
 
     # Set up child entities with reference link.
     with db.batch() as batch:
-        batch.set_orig(200)
-        batch.set_recomp(300)
+        batch.set(ImageId.ORIG, 200)
+        batch.set(ImageId.RECOMP, 300)
 
         batch.set_ref(ImageId.ORIG, 200, ref=100)
         batch.set_ref(ImageId.RECOMP, 300, ref=100)
@@ -127,12 +127,12 @@ def test_get_referencing_entity_matches_check_entity_type(db: EntityDb):
     """Possible future behavior of the query: require types of child entities
     to match along with checking reference and displacement values."""
     with db.batch() as batch:
-        batch.set_orig(100)
-        batch.set_recomp(100)
+        batch.set(ImageId.ORIG, 100)
+        batch.set(ImageId.RECOMP, 100)
         batch.match(100, 100)
 
-        batch.set_orig(200, type=EntityType.THUNK)
-        batch.set_recomp(300, type=EntityType.FUNCTION)
+        batch.set(ImageId.ORIG, 200, type=EntityType.THUNK)
+        batch.set(ImageId.RECOMP, 300, type=EntityType.FUNCTION)
 
         batch.set_ref(ImageId.ORIG, 200, ref=100)
         batch.set_ref(ImageId.RECOMP, 300, ref=100)

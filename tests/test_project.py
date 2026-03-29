@@ -15,7 +15,12 @@ from reccmp.project.config import (
     ProjectFile,
     UserFile,
 )
-from reccmp.project.detect import detect_project, DetectWhat, RecCmpProject
+from reccmp.project.detect import (
+    detect_project,
+    DetectWhat,
+    RecCmpProject,
+    RecCmpPartialTarget,
+)
 from reccmp.project.error import (
     RecCmpProjectException,
     RecCmpProjectNotFoundException,
@@ -51,7 +56,7 @@ def test_project_loading_project_only(tmp_path_factory):
     project = RecCmpProject.from_directory(project_root)
     assert len(project.targets) == 1
     assert project.targets["LEGO1"].sha256 == LEGO1_SHA256
-    assert project.targets["LEGO1"].source_root == project_root / "sources"
+    assert project.targets["LEGO1"].source_paths == (project_root / "sources",)
     assert project.project_config_path == project_root / RECCMP_PROJECT_CONFIG
     assert project.build_config_path is None
     assert project.user_config_path is None
@@ -81,7 +86,7 @@ def test_project_loading_project_and_user(tmp_path_factory):
     project = RecCmpProject.from_directory(project_root)
     assert len(project.targets) == 1
     assert project.targets["LEGO1"].sha256 == LEGO1_SHA256
-    assert project.targets["LEGO1"].source_root == project_root / "sources"
+    assert project.targets["LEGO1"].source_paths == (project_root / "sources",)
     assert project.targets["LEGO1"].original_path is not None
     assert (
         project.targets["LEGO1"].original_path.resolve()
@@ -167,7 +172,7 @@ def test_project_loading_build_and_project(tmp_path_factory):
     project = RecCmpProject.from_directory(build_path)
     assert len(project.targets) == 1
     assert project.targets["LEGO1"].filename == "LEGO1.dll"
-    assert project.targets["LEGO1"].source_root == project_root / "sources"
+    assert project.targets["LEGO1"].source_paths == (project_root / "sources",)
     assert project.targets["LEGO1"].recompiled_path == build_path / recompiled_lib
     assert project.targets["LEGO1"].recompiled_pdb == build_path / recompiled_pdb
 
@@ -211,7 +216,7 @@ def test_project_loading_three_files(tmp_path_factory, binfile: PEImage):
     project = RecCmpProject.from_directory(build_path)
     assert len(project.targets) == 1
     assert project.targets["LEGO1"].filename == "LEGO1.dll"
-    assert project.targets["LEGO1"].source_root == project_root / "sources"
+    assert project.targets["LEGO1"].source_paths == (project_root / "sources",)
     assert project.targets["LEGO1"].original_path == binfile.filepath
     assert project.targets["LEGO1"].recompiled_path == recompiled_lib
     assert project.targets["LEGO1"].recompiled_pdb == recompiled_pdb
@@ -310,10 +315,10 @@ def test_project_creation(tmp_path_factory, binfile: PEImage):
     assert project.targets[target_name].filename == bin_path.name
 
     # Must use relative paths in project file. Each contributor uses the same file.
-    assert project.targets[target_name].source_root.is_absolute() is False
+    assert project.targets[target_name].source_root[0].is_absolute() is False
 
     # We assume the source root directory is the location of reccmp-project.yml.
-    assert project_root / project.targets[target_name].source_root == project_root
+    assert project_root / project.targets[target_name].source_root[0] == project_root
 
     # Make sure the target list is established in reccmp-user.yml.
     user_config = UserFile.from_file(user_config_path)
@@ -353,3 +358,53 @@ def test_create_original_path_must_exist(tmp_path_factory):
         create_project(
             project_directory=project_root, original_paths=[temp_dir / "nonexist.dll"]
         )
+
+
+def test_materialize_project_target():
+    """Demonstrating where project.get() will fail to
+    materialize a RecCmpTarget from a RecCmpPartialTarget."""
+    base_target = RecCmpPartialTarget(
+        target_id="TEST",
+        filename="test.exe",
+        sha256="",
+        original_path=Path("test.exe"),
+        recompiled_path=Path("build/test.exe"),
+        recompiled_pdb=Path("build/test.pdb"),
+        source_paths=(Path("src"),),
+    )
+
+    project = RecCmpProject()
+
+    # Should succeed with the base case
+    project.targets["TEST"] = base_target
+    project.get("TEST")
+
+    # Should fail without original binary
+    project.targets["TEST"] = base_target
+    del project.targets["TEST"].original_path
+    with pytest.raises(IncompleteReccmpTargetError):
+        project.get("TEST")
+
+    # Should fail without recompiled binary
+    project.targets["TEST"] = base_target
+    del project.targets["TEST"].recompiled_path
+    with pytest.raises(IncompleteReccmpTargetError):
+        project.get("TEST")
+
+    # Should fail without recompiled PDB
+    project.targets["TEST"] = base_target
+    del project.targets["TEST"].recompiled_pdb
+    with pytest.raises(IncompleteReccmpTargetError):
+        project.get("TEST")
+
+    # Should fail with empty list of source code dirs
+    project.targets["TEST"] = base_target
+    project.targets["TEST"].source_paths = ()
+    with pytest.raises(IncompleteReccmpTargetError):
+        project.get("TEST")
+
+    # Should fail with deleted source code dirs
+    project.targets["TEST"] = base_target
+    del project.targets["TEST"].source_paths
+    with pytest.raises(IncompleteReccmpTargetError):
+        project.get("TEST")

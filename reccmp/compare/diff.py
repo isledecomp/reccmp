@@ -1,11 +1,24 @@
-from dataclasses import dataclass
+import dataclasses
 from typing import Iterable, Sequence
 from typing_extensions import NotRequired, TypedDict
-
-from reccmp.compare.pinned_sequences import DiffOpcode
+from reccmp.difflib import DiffOpcode, get_grouped_opcodes
 from reccmp.types import EntityType
 
 CombinedDiffInput = list[tuple[str, str]]
+
+
+@dataclasses.dataclass
+class RawDiffOutput:
+    codes: list[DiffOpcode] = dataclasses.field(default_factory=list)
+    orig_inst: CombinedDiffInput = dataclasses.field(default_factory=list)
+    recomp_inst: CombinedDiffInput = dataclasses.field(default_factory=list)
+
+
+@dataclasses.dataclass
+class EntityCompareResult:
+    diff: RawDiffOutput = dataclasses.field(default_factory=RawDiffOutput)
+    is_effective_match: bool = False
+    match_ratio: float = 0.0
 
 
 class MatchingOrMismatchingBlock(TypedDict):
@@ -113,18 +126,35 @@ def combined_diff(
     return unified_diff
 
 
-@dataclass
+def raw_diff_to_udiff(
+    diff: RawDiffOutput, *, grouped: bool = True
+) -> CombinedDiffOutput:
+    if grouped:
+        opcode_groups = list(get_grouped_opcodes(diff.codes, n=10))
+    else:
+        # One group.
+        opcode_groups = [diff.codes]
+
+    return combined_diff(opcode_groups, diff.orig_inst, diff.recomp_inst)
+
+
+@dataclasses.dataclass
 class DiffReport:
-    # pylint: disable=too-many-instance-attributes
     match_type: EntityType
     orig_addr: int
     recomp_addr: int
     name: str
-    udiff: CombinedDiffOutput | None = None
-    ratio: float = 0.0
-    is_effective_match: bool = False
+    result: EntityCompareResult = dataclasses.field(default_factory=EntityCompareResult)
     is_stub: bool = False
     is_library: bool = False
+
+    @property
+    def ratio(self) -> float:
+        return self.result.match_ratio
+
+    @property
+    def is_effective_match(self) -> bool:
+        return self.result.is_effective_match
 
     @property
     def effective_ratio(self) -> float:

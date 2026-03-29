@@ -120,8 +120,7 @@ def main():
         # Read each target from the reccmp-project file
         # then get all filenames from each code directory.
         for target in project.targets.values():
-            if target.source_root:
-                search_paths.append(target.source_root)
+            search_paths.extend(target.source_paths)
     else:
         for path in args.paths:
             if path.is_dir() or path.is_file():
