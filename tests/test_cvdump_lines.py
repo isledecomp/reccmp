@@ -148,3 +148,29 @@ def test_regex_attack():
 
     path = PureWindowsPath("C:\\test\\list (None),")
     assert path in parser.lines
+
+
+TEMPLATE_FUNCTIONS = """\
+** Module: "test.obj"
+
+  G:\\msvc420\\include\\xmemory (None), 0001:000D4600-000D4624, line/addr pairs = 1
+
+     68 000D4600
+
+  G:\\msvc420\\include\\xmemory (None), 0001:000D5F90-000D5FB4, line/addr pairs = 1
+
+     68 000D5F90
+"""
+
+
+def test_template_function():
+    """Should collect all line/address pairs even if the same line is used more than once.
+    For example: template functions."""
+    parser = CvdumpParser()
+    parser.read_section("LINES", TEMPLATE_FUNCTIONS)
+
+    path = PureWindowsPath("G:\\msvc420\\include\\xmemory")
+    assert parser.lines[path] == [
+        (68, 1, 0xD4600),
+        (68, 1, 0xD5F90),
+    ]
