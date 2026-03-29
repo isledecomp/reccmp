@@ -7,7 +7,7 @@ from reccmp.cvdump.types import (
     TypeInfo,
 )
 from reccmp.compare.db import EntityDb, ReccmpMatch
-from reccmp.types import EntityType
+from reccmp.types import EntityType, ImageId
 from .mock_types_db import MockTypesDb
 from .raw_image import RawImage
 
@@ -40,12 +40,12 @@ def create_matched_variable(
     """Helper to create a matched entity for the variable.
     Intended to reduce boilerplate code in the tests."""
     with db.batch() as batch:
-        batch.set_recomp(addr, type=EntityType.DATA, name=f"test_{addr:#04x}")
+        batch.set(ImageId.RECOMP, addr, type=EntityType.DATA, name=f"test_{addr:#04x}")
         if data_type is not None:
-            batch.set_recomp(addr, data_type=data_type)
+            batch.set(ImageId.RECOMP, addr, data_type=data_type)
 
         if size is not None:
-            batch.set_recomp(addr, size=size)
+            batch.set(ImageId.RECOMP, addr, size=size)
 
         batch.match(addr, addr)
 
@@ -83,7 +83,7 @@ def test_compare_pointer_match(db: EntityDb, types: CvdumpTypesParser):
     create_matched_variable(db, 0, data_type=CVInfoTypeEnum.T_32PVOID)
     # Entity at address 0x0004 required to match
     with db.batch() as batch:
-        batch.set_recomp(8, name="Hello")
+        batch.set(ImageId.RECOMP, 8, name="Hello")
         batch.match(4, 8)
 
     orig = RawImage.from_memory(b"\x04\x00\x00\x00")
@@ -101,7 +101,7 @@ def test_compare_pointer_diff(db: EntityDb, types: CvdumpTypesParser):
     create_matched_variable(db, 0, data_type=CVInfoTypeEnum.T_32PVOID)
     # Create the entity only on the recomp side.
     with db.batch() as batch:
-        batch.set_recomp(8, name="Hello")
+        batch.set(ImageId.RECOMP, 8, name="Hello")
 
     orig = RawImage.from_memory(b"\x04\x00\x00\x00")
     recomp = RawImage.from_memory(b"\x08\x00\x00\x00")
@@ -388,7 +388,7 @@ def test_compare_pointer_entity_offset(db: EntityDb, types: CvdumpTypesParser):
     in both binaries, this is a match."""
     create_matched_variable(db, 0, data_type=CVInfoTypeEnum.T_32PVOID)
     with db.batch() as batch:
-        batch.set_recomp(6, size=10, type=EntityType.DATA, name="hello")
+        batch.set(ImageId.RECOMP, 6, size=10, type=EntityType.DATA, name="hello")
         batch.match(4, 6)
 
     # Pointers each point to "hello+4"

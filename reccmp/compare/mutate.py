@@ -33,6 +33,7 @@ def match_array_elements(db: EntityDb, types: CvdumpTypesParser):
         return type_.size
 
     # Helper function
+    # pylint: disable=too-many-positional-arguments
     def _add_match_in_array(
         name: str,
         size: int,

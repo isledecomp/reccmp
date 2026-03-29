@@ -87,7 +87,7 @@ def test_complete_partial_floats_matched(
 ):
     """Will update matched entities by reading from whichever binary is provided."""
     with db.batch() as batch:
-        batch.set_recomp(0x100D5748, type=EntityType.FLOAT, size=8)
+        batch.set(ImageId.RECOMP, 0x100D5748, type=EntityType.FLOAT, size=8)
         batch.match(0x100D5748, 0x100D5748)
 
     # Parametrized so we will use both address spaces as the key.

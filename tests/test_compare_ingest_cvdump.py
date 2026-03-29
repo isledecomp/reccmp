@@ -3,7 +3,7 @@ from reccmp.formats import PEImage
 from reccmp.cvdump import CvdumpAnalysis, CvdumpParser
 from reccmp.compare.db import EntityDb
 from reccmp.compare.ingest import load_cvdump
-from reccmp.types import EntityType
+from reccmp.types import EntityType, ImageId
 
 # These functions use our sample PE image to "cheat" and not have to mock as much.
 # This sets up the imagebase and valid section boundaries for calculation inside load_cvdump.
@@ -41,13 +41,13 @@ def test_size_estimate(binfile: PEImage):
     load_cvdump(cvdump_analysis, db, binfile)
 
     # There are 32 bytes between this and __OP_LOGjmptab
-    entity = db.get_by_recomp(0x1010292A)
+    entity = db.get(ImageId.RECOMP, 0x1010292A)
     assert entity is not None
     assert entity.get("symbol") == "__OP_LOG10jmptab"
     assert entity.get("size") == 0x20
 
     # Calculate the distance to the end of the .data section.
-    entity = db.get_by_recomp(0x1010294A)
+    entity = db.get(ImageId.RECOMP, 0x1010294A)
     assert entity is not None
     assert entity.get("symbol") == "__OP_LOGjmptab"
     assert entity.get("size") == 0x100F0000 + 0x1A734 - 0x1010294A
@@ -71,12 +71,12 @@ def test_size_estimate_different_sections(binfile: PEImage):
     # Calculate the distance to the end of the .rdata section.
     # n.b. The physical size is aligned to the image FileAlignment value
     # so it is used instead of the smaller virtual size.
-    entity = db.get_by_recomp(0x100D4018)
+    entity = db.get(ImageId.RECOMP, 0x100D4018)
     assert entity is not None
     assert entity.get("size") == 0x100D4000 + 0x1B600 - 0x100D4018
 
     # Calculate the distance to the end of the .data section.
-    entity = db.get_by_recomp(0x1010292A)
+    entity = db.get(ImageId.RECOMP, 0x1010292A)
     assert entity is not None
     assert entity.get("size") == 0x100F0000 + 0x1A734 - 0x1010292A
 
@@ -107,19 +107,19 @@ def test_size_estimate_section_contrib(binfile: PEImage):
     load_cvdump(cvdump_analysis, db, binfile)
 
     # Distance to next entity is smaller than section contribution.
-    entity = db.get_by_recomp(0x1010292A)
+    entity = db.get(ImageId.RECOMP, 0x1010292A)
     assert entity is not None
     assert entity.get("symbol") == "__OP_LOG10jmptab"
     assert entity.get("size") == 0x20
 
     # Section contribution size is smaller than distance to next entity.
-    entity = db.get_by_recomp(0x1010294A)
+    entity = db.get(ImageId.RECOMP, 0x1010294A)
     assert entity is not None
     assert entity.get("symbol") == "__OP_LOGjmptab"
     assert entity.get("size") == 0x10
 
     # Prefer section contribution size over distance to end of section.
-    entity = db.get_by_recomp(0x1010296A)
+    entity = db.get(ImageId.RECOMP, 0x1010296A)
     assert entity is not None
     assert entity.get("symbol") == "__OP_EXPjmptab"
     assert entity.get("size") == 0x10
@@ -137,7 +137,7 @@ def test_no_entity_for_section_contributions_only(binfile: PEImage):
     cvdump_analysis = CvdumpAnalysis(parser)
     load_cvdump(cvdump_analysis, db, binfile)
 
-    assert db.get_by_recomp(0x1010292A) is None
+    assert db.get(ImageId.RECOMP, 0x1010292A) is None
 
 
 def test_symbol_overwrite(binfile: PEImage):
@@ -157,7 +157,7 @@ def test_symbol_overwrite(binfile: PEImage):
     cvdump_analysis = CvdumpAnalysis(parser)
     load_cvdump(cvdump_analysis, db, binfile)
 
-    entity = db.get_by_recomp(0x1008C410)
+    entity = db.get(ImageId.RECOMP, 0x1008C410)
     assert entity is not None
     assert entity.get("symbol") == "_strlwr"
 
@@ -175,7 +175,7 @@ def test_string_without_section_contrib(binfile: PEImage):
     cvdump_analysis = CvdumpAnalysis(parser)
     load_cvdump(cvdump_analysis, db, binfile)
 
-    entity = db.get_by_recomp(0x100DB57C)
+    entity = db.get(ImageId.RECOMP, 0x100DB57C)
     assert entity is not None
     assert entity.get("type") == EntityType.STRING
     assert entity.get("symbol") == "??_C@_08LIDF@December?$AA@"
@@ -205,7 +205,7 @@ def test_string_with_section_contrib(binfile: PEImage):
     cvdump_analysis = CvdumpAnalysis(parser)
     load_cvdump(cvdump_analysis, db, binfile)
 
-    entity = db.get_by_recomp(0x100DB57C)
+    entity = db.get(ImageId.RECOMP, 0x100DB57C)
     assert entity is not None
     assert entity.get("type") == EntityType.STRING
     assert entity.get("symbol") == "??_C@_08LIDF@December?$AA@"
@@ -230,7 +230,7 @@ def test_utf16_without_section_contrib(binfile: PEImage):
     cvdump_analysis = CvdumpAnalysis(parser)
     load_cvdump(cvdump_analysis, db, binfile)
 
-    entity = db.get_by_recomp(0x100DAAA0)
+    entity = db.get(ImageId.RECOMP, 0x100DAAA0)
     assert entity is not None
     assert entity.get("type") == EntityType.WIDECHAR
     assert (
@@ -261,7 +261,7 @@ def test_utf16_with_section_contrib(binfile: PEImage):
     cvdump_analysis = CvdumpAnalysis(parser)
     load_cvdump(cvdump_analysis, db, binfile)
 
-    entity = db.get_by_recomp(0x100DAAA0)
+    entity = db.get(ImageId.RECOMP, 0x100DAAA0)
     assert entity is not None
     assert entity.get("type") == EntityType.WIDECHAR
     assert (
@@ -288,7 +288,7 @@ def test_vtable(binfile: PEImage):
     cvdump_analysis = CvdumpAnalysis(parser)
     load_cvdump(cvdump_analysis, db, binfile)
 
-    entity = db.get_by_recomp(0x100D4018)
+    entity = db.get(ImageId.RECOMP, 0x100D4018)
     assert entity is not None
     assert entity.get("type") == EntityType.VTABLE
     assert entity.get("name") == "Score::`vftable'"
@@ -307,7 +307,7 @@ def test_vtable_with_vbclass(binfile: PEImage):
     cvdump_analysis = CvdumpAnalysis(parser)
     load_cvdump(cvdump_analysis, db, binfile)
 
-    entity = db.get_by_recomp(0x100D6860)
+    entity = db.get(ImageId.RECOMP, 0x100D6860)
     assert entity is not None
     assert entity.get("type") == EntityType.VTABLE
     assert entity.get("name") == "BumpBouy::`vftable'{for `OgelAnimActor'}"
@@ -326,7 +326,7 @@ def test_vbtable(binfile: PEImage):
     cvdump_analysis = CvdumpAnalysis(parser)
     load_cvdump(cvdump_analysis, db, binfile)
 
-    entity = db.get_by_recomp(0x100D6788)
+    entity = db.get(ImageId.RECOMP, 0x100D6788)
     assert entity is not None
     assert entity.get("type") == EntityType.DATA
     assert entity.get("name") == "BumpBouy::`vbtable'"
@@ -350,7 +350,7 @@ def test_gdata32(binfile: PEImage):
     cvdump_analysis = CvdumpAnalysis(parser)
     load_cvdump(cvdump_analysis, db, binfile)
 
-    entity = db.get_by_recomp(0x100D94F8)
+    entity = db.get(ImageId.RECOMP, 0x100D94F8)
     assert entity is not None
     assert entity.get("type") == EntityType.DATA
     assert entity.get("name") == "g_pizzaHitSounds"
@@ -368,7 +368,7 @@ def test_ldata32(binfile: PEImage):
     cvdump_analysis = CvdumpAnalysis(parser)
     load_cvdump(cvdump_analysis, db, binfile)
 
-    entity = db.get_by_recomp(0x100D4000)
+    entity = db.get(ImageId.RECOMP, 0x100D4000)
     assert entity is not None
     assert entity.get("type") == EntityType.DATA
     assert entity.get("name") == "Pi"
@@ -392,7 +392,7 @@ def test_variable_size_scalar_type(binfile: PEImage):
     cvdump_analysis = CvdumpAnalysis(parser)
     load_cvdump(cvdump_analysis, db, binfile)
 
-    entity = db.get_by_recomp(0x10102B24)
+    entity = db.get(ImageId.RECOMP, 0x10102B24)
     assert entity is not None
     assert entity.get("size") == 4
     assert entity.get("name") == "g_nextInterruptWavIndex"
@@ -413,7 +413,7 @@ def test_variable_size_without_type_info(binfile: PEImage):
     cvdump_analysis = CvdumpAnalysis(parser)
     load_cvdump(cvdump_analysis, db, binfile)
 
-    entity = db.get_by_recomp(0x101015B8)
+    entity = db.get(ImageId.RECOMP, 0x101015B8)
     assert entity is not None
     assert entity.get("name") == "g_hdPath"
 
@@ -447,7 +447,7 @@ def test_variable_size_with_type_info(binfile: PEImage):
     cvdump_analysis = CvdumpAnalysis(parser)
     load_cvdump(cvdump_analysis, db, binfile)
 
-    entity = db.get_by_recomp(0x101015B8)
+    entity = db.get(ImageId.RECOMP, 0x101015B8)
     assert entity is not None
     assert entity.get("size") == 1024
     assert entity.get("data_type") == 0x1424
@@ -474,7 +474,7 @@ def test_gproc32(binfile: PEImage):
     cvdump_analysis = CvdumpAnalysis(parser)
     load_cvdump(cvdump_analysis, db, binfile)
 
-    entity = db.get_by_recomp(0x10038220)
+    entity = db.get(ImageId.RECOMP, 0x10038220)
     assert entity is not None
     assert entity.get("type") == EntityType.FUNCTION
     assert entity.get("size") == 0x8B
@@ -498,7 +498,7 @@ def test_lproc32(binfile: PEImage):
     load_cvdump(cvdump_analysis, db, binfile)
 
     # This is one of the ___xc_a functions.
-    entity = db.get_by_recomp(0x10092350)
+    entity = db.get(ImageId.RECOMP, 0x10092350)
     assert entity is not None
     assert entity.get("type") == EntityType.FUNCTION
     assert entity.get("size") == 5
@@ -548,7 +548,7 @@ def test_gproc_with_static_var(binfile: PEImage):
     cvdump_analysis = CvdumpAnalysis(parser)
     load_cvdump(cvdump_analysis, db, binfile)
 
-    entity = db.get_by_recomp(0x10109594)
+    entity = db.get(ImageId.RECOMP, 0x10109594)
     assert entity is not None
     assert entity.get("type") == EntityType.DATA
     assert entity.get("name") == "g_dwStyle"
@@ -579,7 +579,7 @@ def test_floats(binfile: PEImage):
     load_cvdump(cvdump_analysis, db, binfile)
 
     # Zero in single precision
-    entity = db.get_by_recomp(0x100D5740)
+    entity = db.get(ImageId.RECOMP, 0x100D5740)
     assert entity is not None
     assert entity.get("symbol") == "__real@4@00000000000000000000"
     assert entity.get("type") == EntityType.FLOAT
@@ -589,7 +589,7 @@ def test_floats(binfile: PEImage):
     assert entity.get("name") is None
 
     # Zero in double precision
-    entity = db.get_by_recomp(0x100D5748)
+    entity = db.get(ImageId.RECOMP, 0x100D5748)
     assert entity is not None
     assert entity.get("symbol") == "__real@8@00000000000000000000"
     assert entity.get("type") == EntityType.FLOAT
@@ -618,7 +618,7 @@ def test_skip_global_without_matching_public(binfile: PEImage):
     load_cvdump(cvdump_analysis, db, binfile)
 
     # Should skip the entry at 0004:0000C718
-    assert db.get_by_recomp(0x101DF718) is None
+    assert db.get(ImageId.RECOMP, 0x101DF718) is None
 
     # Should create an entry at 0004:0002F6BC
-    assert db.get_by_recomp(0x1013A6BC) is not None
+    assert db.get(ImageId.RECOMP, 0x1013A6BC) is not None
