@@ -251,7 +251,7 @@ class CvdumpTypesParser:
     LF_ENUM_NAME_RE = re.compile(r"^\s*enum name = (?P<name>.+)$")
 
     LF_ENUM_TYPES = re.compile(
-        r"^\s*type = (?P<underlying_type>\S+) field list type (?P<field_type>0x\w{4})$"
+        r"^\s*type = (?P<underlying_type>\S+) field list type (?P<field_type>0x\w+)$"
     )
     LF_ENUM_UDT = re.compile(r"^\s*UDT\((?P<udt>0x\w+)\)$")
     LF_UNION_LINE = re.compile(
