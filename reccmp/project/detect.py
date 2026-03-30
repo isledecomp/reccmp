@@ -3,7 +3,7 @@ import enum
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Sequence
+from typing import Iterable, Iterator, Sequence
 
 from .config import (
     BuildFile,
@@ -503,6 +503,19 @@ class DetectWhat(enum.Enum):
         return self.value
 
 
+def search_path_append_file(
+    search_paths: Iterable[Path], filename: str
+) -> Iterator[Path]:
+    """Search paths can point to directories or files.
+    If the path is a directory, combine it with the given filename.
+    If the path is a file, return it unchanged."""
+    for path in search_paths:
+        if path.is_dir():
+            yield path / filename
+        else:
+            yield path
+
+
 def detect_project(
     project_directory: Path,
     search_path: list[Path],
@@ -521,8 +534,7 @@ def detect_project(
 
         for target_id, target_data in project_data.targets.items():
             filename = target_data.filename
-            for search_path_folder in search_path:
-                p = search_path_folder / filename
+            for p in search_path_append_file(search_path, filename):
                 if not p.is_file():
                     continue
 
@@ -541,9 +553,7 @@ def detect_project(
                 logger.info("Found %s -> %s", target_id, p)
                 break
             else:
-                logger.warning(
-                    "Could not find %s under %s", filename, search_path_folder
-                )
+                logger.warning("Could not find %s under %s", filename, p)
 
         logger.info("Updating %s", user_config_path)
         user_data.write_file(user_config_path)
@@ -557,8 +567,7 @@ def detect_project(
         build_data = BuildFile(project=project_directory.resolve(), targets={})
 
         def detect_recompiled(filename: str):
-            for search_path_folder in search_path:
-                binary = search_path_folder / filename
+            for binary in search_path_append_file(search_path, filename):
                 pdb = binary.with_suffix(".pdb")
                 if binary.is_file():
                     if pdb.is_file():

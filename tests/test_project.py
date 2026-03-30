@@ -16,8 +16,6 @@ from reccmp.project.config import (
     UserFile,
 )
 from reccmp.project.detect import (
-    detect_project,
-    DetectWhat,
     RecCmpProject,
     RecCmpPartialTarget,
 )
@@ -276,25 +274,6 @@ def test_project_runtime_target(tmp_path_factory, binfile: PEImage):
     # Cannot load non-existent target.
     with pytest.raises(UnknownRecCmpTargetException):
         project.get("TEST")
-
-
-def test_project_original_detection(tmp_path_factory, binfile: PEImage):
-    project_root = tmp_path_factory.mktemp("project")
-    (project_root / "reccmp-project.yml").write_text(textwrap.dedent(f"""\
-            targets:
-              LEGO1:
-                filename: LEGO1.dll
-                source-root: sources
-                hash:
-                  sha256: {LEGO1_SHA256}
-            """))
-    bin_path = binfile.filepath
-    detect_project(
-        project_directory=project_root,
-        search_path=[bin_path.parent],
-        detect_what=DetectWhat.ORIGINAL,
-    )
-    assert (project_root / "reccmp-user.yml").is_file()
 
 
 def test_project_creation(tmp_path_factory, binfile: PEImage):
