@@ -1,5 +1,6 @@
 """For collating the results from parsing cvdump.exe into a more directly useful format."""
 
+import string
 from dataclasses import dataclass
 from pathlib import PureWindowsPath
 from reccmp.types import EntityType
@@ -18,6 +19,7 @@ def get_size_from_float_symbol(symbol: str) -> int | None:
     """Get the size for the floating point constant from its symbol that resembles:
     1. __real@X@... where X being 4 or 8 indicates the length in bytes.
     2. __real@..... using the length of the hex string following the prefix.
+    See GH #328 for more context.
     """
     prefix, delim, suffix = symbol.partition("__real@")
 
@@ -25,6 +27,7 @@ def get_size_from_float_symbol(symbol: str) -> int | None:
     if prefix or not delim:
         return None
 
+    # Pattern #1.
     # We have only seen __real@4@ and __real@8@. This is probably overkill, but
     # we should protect against typos in symbols imported from user metadata.
     if "@" in suffix:
@@ -36,9 +39,10 @@ def get_size_from_float_symbol(symbol: str) -> int | None:
 
         return None
 
-    size = len(suffix) // 2
-    if size > 0:
-        return size
+    # Pattern #2.
+    # Make sure the hex string is valid and has the expected size.
+    if len(suffix) in (8, 16) and set(suffix).issubset(set(string.hexdigits)):
+        return len(suffix) // 2
 
     return None
 
@@ -99,8 +103,13 @@ class CvdumpNode:
             self.node_type = EntityType.WIDECHAR
 
         elif self.decorated_name.startswith("__real@"):
-            self.node_type = EntityType.FLOAT
-            self.confirmed_size = get_size_from_float_symbol(self.decorated_name)
+            # Set the type and size for this float constant only if it
+            # matches the expected patterns.
+            size = get_size_from_float_symbol(self.decorated_name)
+
+            if size is not None:
+                self.node_type = EntityType.FLOAT
+                self.confirmed_size = size
 
         elif not self.decorated_name.startswith("?") and "@" in self.decorated_name:
             # C mangled symbol. The trailing at-sign with number tells the number of bytes
