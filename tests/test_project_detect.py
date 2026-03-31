@@ -34,7 +34,7 @@ def helper_create_project(target_name: str, filename: str, sha256: str) -> str:
 
 def test_project_original_detection_miss(tmp_path_factory):
     """Test `reccmp-project detect --what original --search-path <dir>` without success"""
-    project_text = helper_create_project("LEGO1", "LEGO1.dll", LEGO1_SHA256)
+    project_text = helper_create_project("LEGO1", "LEGO1.DLL", LEGO1_SHA256)
     project_root = tmp_path_factory.mktemp("project")
     (project_root / RECCMP_PROJECT_CONFIG).write_text(project_text)
     detect_project(
@@ -51,7 +51,7 @@ def test_project_original_detection_miss(tmp_path_factory):
 
 def test_project_original_detection_using_path(tmp_path_factory, binfile: PEImage):
     """Test `reccmp-project detect --what original --search-path <dir>`"""
-    project_text = helper_create_project("LEGO1", "LEGO1.dll", LEGO1_SHA256)
+    project_text = helper_create_project("LEGO1", "LEGO1.DLL", LEGO1_SHA256)
     project_root = tmp_path_factory.mktemp("project")
     (project_root / RECCMP_PROJECT_CONFIG).write_text(project_text)
     bin_path = binfile.filepath
@@ -68,7 +68,7 @@ def test_project_original_detection_using_path(tmp_path_factory, binfile: PEImag
 
 def test_project_original_detection_using_file(tmp_path_factory, binfile: PEImage):
     """Test `reccmp-project detect --what original --search-path <file>`"""
-    project_text = helper_create_project("LEGO1", "LEGO1.dll", LEGO1_SHA256)
+    project_text = helper_create_project("LEGO1", "LEGO1.DLL", LEGO1_SHA256)
     project_root = tmp_path_factory.mktemp("project")
     (project_root / RECCMP_PROJECT_CONFIG).write_text(project_text)
     bin_path = binfile.filepath
@@ -107,7 +107,7 @@ def test_project_original_detection_using_alternate_filename(
 
 def test_project_recompiled_detection_miss(tmp_path_factory):
     """Test `reccmp-project detect --what recompiled --search-path <dir>` without success"""
-    project_text = helper_create_project("LEGO1", "LEGO1.dll", LEGO1_SHA256)
+    project_text = helper_create_project("LEGO1", "LEGO1.DLL", LEGO1_SHA256)
     project_root = tmp_path_factory.mktemp("project")
     (project_root / RECCMP_PROJECT_CONFIG).write_text(project_text)
 
@@ -127,14 +127,14 @@ def test_project_recompiled_detection_miss(tmp_path_factory):
 def test_project_recompiled_detection_incomplete(tmp_path_factory):
     """Test `reccmp-project detect --what recompiled --search-path <dir>`
     Fail if we do not find a pdb in the same location with the same base name."""
-    project_text = helper_create_project("LEGO1", "LEGO1.dll", LEGO1_SHA256)
+    project_text = helper_create_project("LEGO1", "LEGO1.DLL", LEGO1_SHA256)
     project_root = tmp_path_factory.mktemp("project")
     (project_root / RECCMP_PROJECT_CONFIG).write_text(project_text)
 
     build_dir = project_root / "build"
     build_dir.mkdir()
 
-    build_file = build_dir / "LEGO1.dll"
+    build_file = build_dir / "LEGO1.DLL"
     build_file.write_text("")
 
     detect_project(
@@ -152,14 +152,14 @@ def test_project_recompiled_detection_incomplete(tmp_path_factory):
 
 def test_project_recompiled_detection_using_path(tmp_path_factory):
     """Test `reccmp-project detect --what recompiled --search-path <dir>`"""
-    project_text = helper_create_project("LEGO1", "LEGO1.dll", LEGO1_SHA256)
+    project_text = helper_create_project("LEGO1", "LEGO1.DLL", LEGO1_SHA256)
     project_root = tmp_path_factory.mktemp("project")
     (project_root / RECCMP_PROJECT_CONFIG).write_text(project_text)
 
     build_dir = project_root / "build"
     build_dir.mkdir()
 
-    build_file = build_dir / "LEGO1.dll"
+    build_file = build_dir / "LEGO1.DLL"
     build_file.write_text("")
 
     pdb_file = build_file.with_suffix(".pdb")
@@ -180,14 +180,14 @@ def test_project_recompiled_detection_using_path(tmp_path_factory):
 
 def test_project_recompiled_detection_using_file(tmp_path_factory):
     """Test `reccmp-project detect --what recompiled --search-path <file>`"""
-    project_text = helper_create_project("LEGO1", "LEGO1.dll", LEGO1_SHA256)
+    project_text = helper_create_project("LEGO1", "LEGO1.DLL", LEGO1_SHA256)
     project_root = tmp_path_factory.mktemp("project")
     (project_root / RECCMP_PROJECT_CONFIG).write_text(project_text)
 
     build_dir = project_root / "build"
     build_dir.mkdir()
 
-    build_file = build_dir / "LEGO1.dll"
+    build_file = build_dir / "LEGO1.DLL"
     build_file.write_text("")
 
     pdb_file = build_file.with_suffix(".pdb")
@@ -210,14 +210,14 @@ def test_project_recompiled_detection_using_alternate_filename(tmp_path_factory)
     """Test `reccmp-project detect --what recompiled --search-path <file>`
     The project filename does not match the input search path filename.
     We do not have a checksum to match against, so use the first file that exists."""
-    project_text = helper_create_project("LEGO1", "HELLO.dll", LEGO1_SHA256)
+    project_text = helper_create_project("LEGO1", "HELLO.DLL", LEGO1_SHA256)
     project_root = tmp_path_factory.mktemp("project")
     (project_root / RECCMP_PROJECT_CONFIG).write_text(project_text)
 
     build_dir = project_root / "build"
     build_dir.mkdir()
 
-    build_file = build_dir / "LEGO1.dll"
+    build_file = build_dir / "LEGO1.DLL"
     build_file.write_text("")
 
     pdb_file = build_file.with_suffix(".pdb")
