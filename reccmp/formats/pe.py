@@ -621,7 +621,7 @@ class PEImage(Image):
             # If the entry read in is zero, we are at the end of this section and
             # these are padding bytes.
             while True:
-                (page_base, block_size) = struct.unpack("<2I", reloc[ofs : ofs + 8])
+                page_base, block_size = struct.unpack("<2I", reloc[ofs : ofs + 8])
                 if block_size == 0:
                     break
 
@@ -673,7 +673,7 @@ class PEImage(Image):
             if all(x == 0 for x in image_import_descriptor):
                 break
 
-            (rva_ilt, _, __, dll_name, rva_iat) = image_import_descriptor
+            rva_ilt, _, __, dll_name, rva_iat = image_import_descriptor
             # Convert relative virtual addresses into absolute
             yield (
                 self.imagebase + rva_ilt,
@@ -733,7 +733,7 @@ class PEImage(Image):
         if self.is_debug:
             ofs = 0
             while True:
-                (opcode, operand) = struct.unpack("<Bi", text_sect.view[ofs : ofs + 5])
+                opcode, operand = struct.unpack("<Bi", text_sect.view[ofs : ofs + 5])
                 if opcode != 0xE9:
                     break
 

@@ -38,7 +38,7 @@ def test_funcinfo_handlers(binfile: PEImage):
 
     assert len(matching_handlers) == 1
 
-    (_, funcinfo) = matching_handlers[0]
+    _, funcinfo = matching_handlers[0]
 
     # Order does not seem to be relevant
     assert sorted(funcinfo.unwinds) == [

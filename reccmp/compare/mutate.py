@@ -13,7 +13,6 @@ from reccmp.types import EntityType
 from .db import EntityDb
 from .queries import get_overloaded_functions, get_named_thunks
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -34,6 +33,7 @@ def match_array_elements(db: EntityDb, types: CvdumpTypesParser):
         return type_.size
 
     # Helper function
+    # pylint: disable=too-many-positional-arguments
     def _add_match_in_array(
         name: str,
         size: int,

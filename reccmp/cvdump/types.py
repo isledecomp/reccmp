@@ -10,7 +10,6 @@ from .cvinfo import (
     CvdumpTypeMap,
 )
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -476,7 +475,7 @@ class CvdumpTypesParser:
             if (match := self.INDEX_RE.match(leaf)) is None:
                 continue
 
-            (leaf_id_str, leaf_type) = match.groups()
+            leaf_id_str, leaf_type = match.groups()
             leaf_id = CvdumpTypeKey.from_str(leaf_id_str)
             if leaf_type not in self.MODES_OF_INTEREST:
                 continue

@@ -3,7 +3,7 @@
 from pathlib import PurePath, PureWindowsPath
 from textwrap import dedent
 import pytest
-from reccmp.types import EntityType
+from reccmp.types import EntityType, ImageId
 from reccmp.formats import PEImage, TextFile
 from reccmp.compare.ingest import load_markers
 from reccmp.compare.db import EntityDb
@@ -25,18 +25,16 @@ def test_load_code_invalid_addr(db: EntityDb, lines_db: LinesDb, binfile: PEImag
     files = (
         TextFile(
             PurePath("test.cpp"),
-            dedent(
-                """\
+            dedent("""\
                 // FUNCTION: TEST 0x11001000"
                 void test() { }
-            """
-            ),
+            """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
 
     # No exception raised
-    assert db.get_by_orig(0x11001000) is None
+    assert db.get(ImageId.ORIG, 0x11001000) is None
 
 
 def test_load_code_duplicate_addr(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
@@ -46,27 +44,23 @@ def test_load_code_duplicate_addr(db: EntityDb, lines_db: LinesDb, binfile: PEIm
     files = (
         TextFile(
             PurePath("test.h"),
-            dedent(
-                """\
+            dedent("""\
                 // FUNCTION: TEST 0x1001dde0
                 // _Lockit::~_Lockit
-                """
-            ),
+                """),
         ),
         TextFile(
             PurePath("zzz.h"),
-            dedent(
-                """\
+            dedent("""\
                 // FUNCTION: TEST 0x1001dde0
                 // Hello
-                """
-            ),
+                """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
 
     # Should use the name from the first file (alphabetical, by path)
-    entity = db.get_by_orig(0x1001DDE0)
+    entity = db.get(ImageId.ORIG, 0x1001DDE0)
     assert entity is not None
     assert entity.get("name") == "_Lockit::~_Lockit"
 
@@ -78,16 +72,14 @@ def test_load_code_cpp_symbol_function(
     files = (
         TextFile(
             PurePath("test.h"),
-            dedent(
-                """\
+            dedent("""\
                 // LIBRARY: TEST 0x10086240
-                // ??2@YAPAXI@Z"""
-            ),
+                // ??2@YAPAXI@Z"""),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
 
-    entity = db.get_by_orig(0x10086240)
+    entity = db.get(ImageId.ORIG, 0x10086240)
     assert entity is not None
     assert entity.get("symbol") == "??2@YAPAXI@Z"
     assert entity.get("name") is None
@@ -99,17 +91,15 @@ def test_load_code_cpp_symbol_global(db: EntityDb, lines_db: LinesDb, binfile: P
     files = (
         TextFile(
             PurePath("test.h"),
-            dedent(
-                """\
+            dedent("""\
                 // GLOBAL: TEST 0x100fd624
                 // ?__pInconsistency@@3P6AXXZA
-                """
-            ),
+                """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
 
-    entity = db.get_by_orig(0x100FD624)
+    entity = db.get(ImageId.ORIG, 0x100FD624)
     assert entity is not None
     assert entity.get("symbol") == "?__pInconsistency@@3P6AXXZA"
     assert entity.get("name") is None
@@ -121,17 +111,15 @@ def test_load_code_c_symbol_implicit(db: EntityDb, lines_db: LinesDb, binfile: P
     files = (
         TextFile(
             PurePath("test.h"),
-            dedent(
-                """\
+            dedent("""\
                 // LIBRARY: TEST 0x1008c410
                 // _strlwr
-                """
-            ),
+                """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
 
-    entity = db.get_by_orig(0x1008C410)
+    entity = db.get(ImageId.ORIG, 0x1008C410)
     assert entity is not None
     assert entity.get("symbol") is None
     assert entity.get("name") == "_strlwr"
@@ -142,17 +130,15 @@ def test_load_code_c_symbol_explicit(db: EntityDb, lines_db: LinesDb, binfile: P
     files = (
         TextFile(
             PurePath("test.h"),
-            dedent(
-                """\
+            dedent("""\
                 // LIBRARY: TEST 0x1008c410 SYMBOL
                 // _strlwr
-                """
-            ),
+                """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
 
-    entity = db.get_by_orig(0x1008C410)
+    entity = db.get(ImageId.ORIG, 0x1008C410)
     assert entity is not None
     assert entity.get("symbol") == "_strlwr"
     assert entity.get("name") is None
@@ -165,8 +151,7 @@ def test_load_code_function_nameref_variants(
     files = (
         TextFile(
             PurePath("test.h"),
-            dedent(
-                """\
+            dedent("""\
                 // FUNCTION: TEST 0x1001dde0
                 // _Lockit::~_Lockit
 
@@ -181,8 +166,7 @@ def test_load_code_function_nameref_variants(
 
                 // SYNTHETIC: TEST 0x100380e0
                 // Pizza::`scalar deleting destructor'
-                """
-            ),
+                """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
@@ -191,7 +175,7 @@ def test_load_code_function_nameref_variants(
     # We don't need to protect against None by using: entity.get("stub", False)
 
     # FUNCTION
-    entity = db.get_by_orig(0x1001DDE0)
+    entity = db.get(ImageId.ORIG, 0x1001DDE0)
     assert entity is not None
     assert entity.get("type") == EntityType.FUNCTION
     assert entity.get("library") is False
@@ -199,7 +183,7 @@ def test_load_code_function_nameref_variants(
     assert entity.get("name") == "_Lockit::~_Lockit"
 
     # TEMPLATE
-    entity = db.get_by_orig(0x1001C050)
+    entity = db.get(ImageId.ORIG, 0x1001C050)
     assert entity is not None
     assert entity.get("type") == EntityType.FUNCTION
     assert entity.get("library") is False
@@ -207,7 +191,7 @@ def test_load_code_function_nameref_variants(
     assert entity.get("name") == "Vector<unsigned char *>::~Vector<unsigned char *>"
 
     # LIBRARY
-    entity = db.get_by_orig(0x1008B400)
+    entity = db.get(ImageId.ORIG, 0x1008B400)
     assert entity is not None
     assert entity.get("type") == EntityType.FUNCTION
     assert entity.get("library") is True
@@ -215,7 +199,7 @@ def test_load_code_function_nameref_variants(
     assert entity.get("name") == "_atol"
 
     # STUB
-    entity = db.get_by_orig(0x1008B4B0)
+    entity = db.get(ImageId.ORIG, 0x1008B4B0)
     assert entity is not None
     assert entity.get("type") == EntityType.FUNCTION
     assert entity.get("library") is False
@@ -223,7 +207,7 @@ def test_load_code_function_nameref_variants(
     assert entity.get("name") == "_atoi"
 
     # SYNTHETIC
-    entity = db.get_by_orig(0x100380E0)
+    entity = db.get(ImageId.ORIG, 0x100380E0)
     assert entity is not None
     assert entity.get("type") == EntityType.FUNCTION
     assert entity.get("library") is False
@@ -236,19 +220,17 @@ def test_load_code_lineref(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     files = (
         TextFile(
             PurePath("test.cpp"),
-            dedent(
-                """\
+            dedent("""\
                 // FUNCTION: TEST 0x10038220
                 void Pizza::Start()
                 {
                 }
-                """
-            ),
+                """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
 
-    entity = db.get_by_orig(0x10038220)
+    entity = db.get(ImageId.ORIG, 0x10038220)
     assert entity is not None
 
     # Nothing in the lines database. No match.
@@ -261,14 +243,12 @@ def test_load_code_match_line(db: EntityDb, lines_db: LinesDb, binfile: PEImage)
     files = (
         TextFile(
             PurePath("test.cpp"),
-            dedent(
-                """\
+            dedent("""\
                 // FUNCTION: TEST 0x10038220
                 void Pizza::Start()
                 {
                 }
-                """
-            ),
+                """),
         ),
     )
 
@@ -278,10 +258,10 @@ def test_load_code_match_line(db: EntityDb, lines_db: LinesDb, binfile: PEImage)
 
     # TODO: For a successful match, the recomp entity must already exist.
     with db.batch() as batch:
-        batch.set_recomp(0x1234)
+        batch.set(ImageId.RECOMP, 0x1234)
     load_markers(files, lines_db, binfile, "TEST", db)
 
-    entity = db.get_by_orig(0x10038220)
+    entity = db.get(ImageId.ORIG, 0x10038220)
     assert entity is not None
     assert entity.recomp_addr == 0x1234
 
@@ -295,14 +275,12 @@ def test_load_code_no_match_line(db: EntityDb, lines_db: LinesDb, binfile: PEIma
     files = (
         TextFile(
             PurePath("test.cpp"),
-            dedent(
-                """\
+            dedent("""\
                 // FUNCTION: TEST 0x10038220
                 void Pizza::Start()
                 {
                 }
-                """
-            ),
+                """),
         ),
     )
 
@@ -312,10 +290,10 @@ def test_load_code_no_match_line(db: EntityDb, lines_db: LinesDb, binfile: PEIma
 
     # TODO: For a successful match, the recomp entity must already exist.
     with db.batch() as batch:
-        batch.set_recomp(0x1234)
+        batch.set(ImageId.RECOMP, 0x1234)
     load_markers(files, lines_db, binfile, "TEST", db)
 
-    entity = db.get_by_orig(0x10038220)
+    entity = db.get(ImageId.ORIG, 0x10038220)
     assert entity is not None
     assert entity.recomp_addr is None
     assert entity.get("type") == EntityType.FUNCTION
@@ -326,17 +304,15 @@ def test_load_code_string(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     files = (
         TextFile(
             PurePath("test.cpp"),
-            dedent(
-                """\
+            dedent("""\
                 // STRING: TEST 0x100f038c
                 char* pizza = "Pizza";
-                """
-            ),
+                """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
 
-    entity = db.get_by_orig(0x100F038C)
+    entity = db.get(ImageId.ORIG, 0x100F038C)
     assert entity is not None
     assert entity.get("type") == EntityType.STRING
     assert entity.get("size") == 6
@@ -348,17 +324,15 @@ def test_load_code_string_no_match(db: EntityDb, lines_db: LinesDb, binfile: PEI
     files = (
         TextFile(
             PurePath("test.cpp"),
-            dedent(
-                """\
+            dedent("""\
                 // STRING: TEST 0x100f038c
                 char* jetski = "Jetski";
-                """
-            ),
+                """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
 
-    entity = db.get_by_orig(0x100F038C)
+    entity = db.get(ImageId.ORIG, 0x100F038C)
     assert entity is None
 
 
@@ -367,17 +341,15 @@ def test_load_code_widechar(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     files = (
         TextFile(
             PurePath("test.cpp"),
-            dedent(
-                """\
+            dedent("""\
                 // STRING: TEST 0x100daaa0
                 char* nullstr = L"(null)";
-                """
-            ),
+                """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
 
-    entity = db.get_by_orig(0x100DAAA0)
+    entity = db.get(ImageId.ORIG, 0x100DAAA0)
     assert entity is not None
     assert entity.get("type") == EntityType.STRING
     assert entity.get("size") == 14
@@ -390,17 +362,15 @@ def test_load_code_string_with_nulls(db: EntityDb, lines_db: LinesDb, binfile: P
     files = (
         TextFile(
             PurePath("test.cpp"),
-            dedent(
-                """\
+            dedent("""\
                 // STRING: TEST 0x100daaa0
                 char* nullstr = "(\\x00n\\x00u\\x00l\\x00l\\x00)";
-                """
-            ),
+                """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
 
-    entity = db.get_by_orig(0x100DAAA0)
+    entity = db.get(ImageId.ORIG, 0x100DAAA0)
     assert entity is not None
     assert entity.get("type") == EntityType.STRING
     assert entity.get("size") == 12
@@ -413,17 +383,15 @@ def test_load_code_widechar_invalid(db: EntityDb, lines_db: LinesDb, binfile: PE
     files = (
         TextFile(
             PurePath("test.cpp"),
-            dedent(
-                """\
+            dedent("""\
                 // STRING: TEST 0x100dda7b
                 char* test = L"test";
-                """
-            ),
+                """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
 
-    entity = db.get_by_orig(0x100DDA7B)
+    entity = db.get(ImageId.ORIG, 0x100DDA7B)
     assert entity is None
 
 
@@ -431,18 +399,16 @@ def test_load_code_vtable(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     files = (
         TextFile(
             PurePath("test.h"),
-            dedent(
-                """\
+            dedent("""\
                 // VTABLE: TEST 0x100d7380
                 class Pizza {
                 };
-                """
-            ),
+                """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
 
-    entity = db.get_by_orig(0x100D7380)
+    entity = db.get(ImageId.ORIG, 0x100D7380)
     assert entity is not None
     assert entity.get("type") == EntityType.VTABLE
 
@@ -456,26 +422,24 @@ def test_load_code_vtable_vbase(db: EntityDb, lines_db: LinesDb, binfile: PEImag
     files = (
         TextFile(
             PurePath("test.h"),
-            dedent(
-                """\
+            dedent("""\
                 // VTABLE: TEST 0x100d9ec8 Lunch
                 // VTABLE: TEST 0x100d7380 Pizza
                 class Pizza : public Lunch {
                 };
-                """
-            ),
+                """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
 
-    entity = db.get_by_orig(0x100D9EC8)
+    entity = db.get(ImageId.ORIG, 0x100D9EC8)
     assert entity is not None
     assert entity.get("type") == EntityType.VTABLE
     assert entity.get("name") == "Pizza"
     assert entity.get("base_class") == "Lunch"
 
     # Should assign the base class even if it is the same as the main class.
-    entity = db.get_by_orig(0x100D7380)
+    entity = db.get(ImageId.ORIG, 0x100D7380)
     assert entity is not None
     assert entity.get("type") == EntityType.VTABLE
     assert entity.get("name") == "Pizza"
@@ -486,17 +450,15 @@ def test_load_code_variable(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     files = (
         TextFile(
             PurePath("test.cpp"),
-            dedent(
-                """\
+            dedent("""\
                 // GLOBAL: TEST 0x10102048
                 const char* g_strACTION = "ACTION";
-                """
-            ),
+                """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
 
-    entity = db.get_by_orig(0x10102048)
+    entity = db.get(ImageId.ORIG, 0x10102048)
     assert entity is not None
     assert entity.get("type") == EntityType.DATA
     assert entity.get("name") == "g_strACTION"
@@ -507,21 +469,19 @@ def test_load_code_static_variable(db: EntityDb, lines_db: LinesDb, binfile: PEI
     files = (
         TextFile(
             PurePath("test.cpp"),
-            dedent(
-                """\
+            dedent("""\
                 // FUNCTION: TEST 0x1009da20
                 void EnableResizing()
                 {
                     // GLOBAL: TEST 0x10109594
                     static DWORD g_dwStyle;
                 }
-                """
-            ),
+                """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
 
-    entity = db.get_by_orig(0x10109594)
+    entity = db.get(ImageId.ORIG, 0x10109594)
     assert entity is not None
     assert entity.get("type") == EntityType.DATA
     assert entity.get("name") == "g_dwStyle"
@@ -537,20 +497,18 @@ def test_load_code_static_variable_no_function(
     files = (
         TextFile(
             PurePath("test.cpp"),
-            dedent(
-                """\
+            dedent("""\
                 void EnableResizing()
                 {
                     // GLOBAL: TEST 0x10109594
                     static DWORD g_dwStyle;
                 }
-                """
-            ),
+                """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
 
-    entity = db.get_by_orig(0x10109594)
+    entity = db.get(ImageId.ORIG, 0x10109594)
     assert entity is not None
     assert entity.get("type") == EntityType.DATA
     assert entity.get("name") == "g_dwStyle"
@@ -562,19 +520,17 @@ def test_load_code_line_marker(db: EntityDb, lines_db: LinesDb, binfile: PEImage
     files = (
         TextFile(
             PurePath("test.cpp"),
-            dedent(
-                """\
+            dedent("""\
                 void Test()
                 {
                     // LINE: TEST 0x10001038
                 }
-                """
-            ),
+                """),
         ),
     )
     load_markers(files, lines_db, binfile, "TEST", db)
 
-    entity = db.get_by_orig(0x10001038)
+    entity = db.get(ImageId.ORIG, 0x10001038)
     assert entity is not None
     assert entity.get("type") == EntityType.LINE
     assert entity.get("filename") == "test.cpp"

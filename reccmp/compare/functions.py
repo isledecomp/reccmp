@@ -3,9 +3,8 @@ from dataclasses import dataclass
 from functools import cache
 import struct
 from itertools import pairwise
-from typing import Callable, Iterator, NamedTuple
+from typing import Callable, Iterator
 from reccmp.compare.lines import LinesDb
-from reccmp.difflib import DiffOpcode
 from reccmp.compare.pinned_sequences import SequenceMatcherWithPins
 from reccmp.compare.asm.fixes import assert_fixup, find_effective_match
 from reccmp.compare.asm.parse import AsmExcerpt, ParseAsm
@@ -14,20 +13,13 @@ from reccmp.compare.asm.replacement import (
     create_name_lookup,
 )
 from reccmp.compare.db import EntityDb, ReccmpMatch
+from reccmp.compare.diff import EntityCompareResult, RawDiffOutput
 from reccmp.compare.event import ReccmpEvent, ReccmpReportProtocol
 from reccmp.formats.exceptions import (
     InvalidVirtualAddressError,
     InvalidVirtualReadError,
 )
 from reccmp.formats import Image, PEImage
-
-
-class FunctionCompareResult(NamedTuple):
-    codes: list[DiffOpcode]
-    orig_inst: list[tuple[str, str]]
-    recomp_inst: list[tuple[str, str]]
-    is_effective_match: bool
-    match_ratio: float
 
 
 def timestamp_string() -> str:
@@ -143,7 +135,7 @@ class FunctionComparator:
             return None
         return f"{path_line_pair[0].name}:{path_line_pair[1]}"
 
-    def compare_function(self, match: ReccmpMatch) -> FunctionCompareResult:
+    def compare_function(self, match: ReccmpMatch) -> EntityCompareResult:
         # Detect when the recomp function size would cause us to read
         # enough bytes from the original function that we cross into
         # the next annotated function.
@@ -215,7 +207,7 @@ class FunctionComparator:
         orig: AsmExcerpt,
         recomp: AsmExcerpt,
         split_points: list[tuple[int, int]],
-    ) -> FunctionCompareResult:
+    ) -> EntityCompareResult:
         # Detach addresses from asm lines for the text diff.
         orig_asm = [x[1] for x in orig]
         recomp_asm = [x[1] for x in recomp]
@@ -250,10 +242,12 @@ class FunctionComparator:
             for line_index, (addr, instruction) in enumerate(recomp)
         ]
 
-        return FunctionCompareResult(
-            codes=diff.get_opcodes(),
-            orig_inst=orig_for_printing,
-            recomp_inst=recomp_for_printing,
+        return EntityCompareResult(
+            diff=RawDiffOutput(
+                codes=diff.get_opcodes(),
+                orig_inst=orig_for_printing,
+                recomp_inst=recomp_for_printing,
+            ),
             is_effective_match=is_effective,
             match_ratio=diff.ratio(),
         )

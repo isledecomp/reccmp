@@ -46,7 +46,7 @@ class CvInfoType(NamedTuple):
 # The original description for each type is on the right, after the tuple.
 
 # fmt: off
-_CVINFO_TYPES = (
+_CVINFO_TYPES: tuple[CvInfoType, ...] = (
     # Special Types
     CvInfoType(key=CvdumpTypeKey(0x0000),  name="T_NOTYPE",       fmt="",     size=0,   pointer=None,                   verified=True ), # uncharacterized type (no type)
     CvInfoType(key=CvdumpTypeKey(0x0001),  name="T_ABS",          fmt="",     size=0,   pointer=None,                   verified=False), # absolute symbol

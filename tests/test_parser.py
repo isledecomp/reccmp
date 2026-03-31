@@ -15,16 +15,12 @@ def fixture_parser():
 def test_missing_sig(parser):
     """In the hopefully rare scenario that the function signature and marker
     are swapped, we still have enough to match witch reccmp"""
-    parser.read(
-        dedent(
-            """\
+    parser.read(dedent("""\
         void my_function()
         // FUNCTION: TEST 0x1234
         {
         }
-        """
-        )
-    )
+        """))
     assert parser.state == ReaderState.SEARCH
     assert len(parser.functions) == 1
     assert parser.functions[0].line_number == 3
@@ -52,12 +48,10 @@ def test_invalid_marker(parser):
 
 def test_incompatible_marker(parser):
     """The marker we just read cannot be handled in the current parser state"""
-    parser.read(
-        """\
+    parser.read("""\
         // FUNCTION: TEST 0x1234
         // GLOBAL: TEST 0x5000
-        """
-    )
+        """)
     assert parser.state == ReaderState.SEARCH
     assert len(parser.alerts) == 1
     assert parser.alerts[0].code == ParserError.INCOMPATIBLE_MARKER
@@ -65,24 +59,20 @@ def test_incompatible_marker(parser):
 
 def test_variable(parser):
     """Should identify a global variable"""
-    parser.read(
-        """\
+    parser.read("""\
         // GLOBAL: HELLO 0x1234
         int g_value = 5;
-        """
-    )
+        """)
     assert len(parser.variables) == 1
 
 
 def test_synthetic_plus_marker(parser):
     """Marker tracking preempts synthetic name detection.
     Should fail with error and not log the synthetic"""
-    parser.read(
-        """\
+    parser.read("""\
         // SYNTHETIC: HEY 0x555
         // FUNCTION: HOWDY 0x1234
-        """
-    )
+        """)
     assert len(parser.functions) == 0
     assert len(parser.alerts) == 1
     assert parser.alerts[0].code == ParserError.INCOMPATIBLE_MARKER
@@ -91,16 +81,12 @@ def test_synthetic_plus_marker(parser):
 def test_different_markers_different_module(parser):
     """Does it make any sense for a function to be a stub in one module,
     but not in another? I don't know. But it's no problem for us."""
-    parser.read(
-        dedent(
-            """\
+    parser.read(dedent("""\
         // FUNCTION: HOWDY 0x1234
         // STUB: SUP 0x5555
         void interesting_function() {
         }
-        """
-        )
-    )
+        """))
 
     assert len(parser.alerts) == 0
     assert len(parser.functions) == 2
@@ -109,16 +95,12 @@ def test_different_markers_different_module(parser):
 def test_different_markers_same_module(parser):
     """Now, if something is a regular function but then a stub,
     what do we say about that?"""
-    parser.read(
-        dedent(
-            """\
+    parser.read(dedent("""\
         // FUNCTION: HOWDY 0x1234
         // STUB: HOWDY 0x5555
         void interesting_function() {
         }
-        """
-        )
-    )
+        """))
 
     # Use first marker declaration, don't replace
     assert len(parser.functions) == 1
@@ -131,14 +113,12 @@ def test_different_markers_same_module(parser):
 
 def test_unexpected_synthetic(parser):
     """FUNCTION then SYNTHETIC should fail to report either one"""
-    parser.read(
-        """\
+    parser.read("""\
         // FUNCTION: HOWDY 0x1234
         // SYNTHETIC: HOWDY 0x5555
         void interesting_function() {
         }
-        """
-    )
+        """)
 
     assert parser.state == ReaderState.SEARCH
     assert len(parser.functions) == 0
@@ -149,14 +129,12 @@ def test_unexpected_synthetic(parser):
 @pytest.mark.skip(reason="not implemented yet")
 def test_duplicate_offset(parser):
     """Repeating the same module/offset in the same file is probably a typo"""
-    parser.read(
-        """\
+    parser.read("""\
         // GLOBAL: HELLO 0x1234
         int x = 1;
         // GLOBAL: HELLO 0x1234
         int y = 2;
-        """
-    )
+        """)
 
     assert len(parser.alerts) == 1
     assert parser.alerts[0].code == ParserError.DUPLICATE_OFFSET
@@ -164,26 +142,22 @@ def test_duplicate_offset(parser):
 
 def test_multiple_variables(parser):
     """Theoretically the same global variable can appear in multiple modules"""
-    parser.read(
-        """\
+    parser.read("""\
         // GLOBAL: HELLO 0x1234
         // GLOBAL: WUZZUP 0x555
         const char *g_greeting;
-        """
-    )
+        """)
     assert len(parser.alerts) == 0
     assert len(parser.variables) == 2
 
 
 def test_multiple_variables_same_module(parser):
     """Should not overwrite offset"""
-    parser.read(
-        """\
+    parser.read("""\
         // GLOBAL: HELLO 0x1234
         // GLOBAL: HELLO 0x555
         const char *g_greeting;
-        """
-    )
+        """)
     assert len(parser.alerts) == 1
     assert parser.alerts[0].code == ParserError.DUPLICATE_MODULE
     assert len(parser.variables) == 1
@@ -191,13 +165,11 @@ def test_multiple_variables_same_module(parser):
 
 
 def test_multiple_vtables(parser):
-    parser.read(
-        """\
+    parser.read("""\
         // VTABLE: HELLO 0x1234
         // VTABLE: TEST 0x5432
         class MxString : public MxCore {
-        """
-    )
+        """)
     assert len(parser.alerts) == 0
     assert len(parser.vtables) == 2
     assert parser.vtables[0].name == "MxString"
@@ -205,13 +177,11 @@ def test_multiple_vtables(parser):
 
 def test_multiple_vtables_same_module(parser):
     """Should not overwrite offset"""
-    parser.read(
-        """\
+    parser.read("""\
         // VTABLE: HELLO 0x1234
         // VTABLE: HELLO 0x5432
         class MxString : public MxCore {
-        """
-    )
+        """)
     assert len(parser.alerts) == 1
     assert parser.alerts[0].code == ParserError.DUPLICATE_MODULE
     assert len(parser.vtables) == 1
@@ -219,25 +189,21 @@ def test_multiple_vtables_same_module(parser):
 
 
 def test_synthetic(parser):
-    parser.read(
-        """\
+    parser.read("""\
         // SYNTHETIC: TEST 0x1234
         // TestClass::TestMethod
-        """
-    )
+        """)
     assert len(parser.functions) == 1
     assert parser.functions[0].lookup_by_name is True
     assert parser.functions[0].name == "TestClass::TestMethod"
 
 
 def test_synthetic_same_module(parser):
-    parser.read(
-        """\
+    parser.read("""\
         // SYNTHETIC: TEST 0x1234
         // SYNTHETIC: TEST 0x555
         // TestClass::TestMethod
-        """
-    )
+        """)
     assert len(parser.alerts) == 1
     assert parser.alerts[0].code == ParserError.DUPLICATE_MODULE
     assert len(parser.functions) == 1
@@ -246,12 +212,10 @@ def test_synthetic_same_module(parser):
 
 def test_synthetic_no_comment(parser):
     """Synthetic marker followed by a code line (i.e. non-comment)"""
-    parser.read(
-        """\
+    parser.read("""\
         // SYNTHETIC: TEST 0x1234
         int x = 123;
-        """
-    )
+        """)
     assert len(parser.functions) == 0
     assert len(parser.alerts) == 1
     assert parser.alerts[0].code == ParserError.BAD_NAMEREF
@@ -261,15 +225,11 @@ def test_synthetic_no_comment(parser):
 @pytest.mark.xfail(reason="Gap in state machine logic where we do not raise an error.")
 def test_function_unexpected_end(parser: DecompParser):
     """Should throw an error if we hit the closing bracket before the starting bracket."""
-    parser.read(
-        dedent(
-            """\
+    parser.read(dedent("""\
         // FUNCTION: TEST 0x1234
         void test()
         }
-        """
-        )
-    )
+        """))
     assert len(parser.alerts) != 0
     assert len(parser.functions) == 0
 
@@ -278,12 +238,10 @@ def test_implicit_lookup_by_name(parser):
     """FUNCTION (or STUB) offsets must directly precede the function signature.
     If we detect a comment instead, we assume that this is a lookup-by-name
     function and end here."""
-    parser.read(
-        """\
+    parser.read("""\
         // FUNCTION: TEST 0x1234
         // TestClass::TestMethod()
-        """
-    )
+        """)
     assert parser.state == ReaderState.SEARCH
     assert len(parser.functions) == 1
     assert parser.functions[0].lookup_by_name is True
@@ -294,13 +252,11 @@ def test_function_with_spaces(parser):
     """There should not be any spaces between the end of FUNCTION markers
     and the start or name of the function. If it's a blank line, we can safely
     ignore but should alert to this."""
-    parser.read(
-        """\
+    parser.read("""\
         // FUNCTION: TEST 0x1234
            
         inline void test_function() { };
-        """
-    )
+        """)
     assert len(parser.functions) == 1
     assert len(parser.alerts) == 1
     assert parser.alerts[0].code == ParserError.UNEXPECTED_BLANK_LINE
@@ -308,13 +264,11 @@ def test_function_with_spaces(parser):
 
 def test_function_with_spaces_implicit(parser):
     """Same as above, but for implicit lookup-by-name"""
-    parser.read(
-        """\
+    parser.read("""\
         // FUNCTION: TEST 0x1234
            
         // Implicit::Method
-        """
-    )
+        """)
     assert len(parser.functions) == 1
     assert len(parser.alerts) == 1
     assert parser.alerts[0].code == ParserError.UNEXPECTED_BLANK_LINE
@@ -325,15 +279,13 @@ def test_function_is_commented(parser):
     """In an ideal world, we would recognize that there is no code here.
     Some editors (or users) might comment the function on each line like this
     but hopefully it is rare."""
-    parser.read(
-        """\
+    parser.read("""\
         // FUNCTION: TEST 0x1234
         // int my_function()
         // {
         //     return 5;
         // }
-        """
-    )
+        """)
 
     assert len(parser.functions) == 0
 
@@ -341,12 +293,10 @@ def test_function_is_commented(parser):
 def test_unexpected_eof(parser):
     """If a decomp marker finds its way to the last line of the file,
     report that we could not get anything from it."""
-    parser.read(
-        """\
+    parser.read("""\
         // FUNCTION: TEST 0x1234
         // Cls::Method
-        // FUNCTION: TEST 0x5555"""
-    )
+        // FUNCTION: TEST 0x5555""")
     parser.finish()
 
     assert len(parser.functions) == 1
@@ -358,12 +308,10 @@ def test_global_nomatch(parser):
     """We do our best to grab the variable name, even without the g_ prefix
     but this (by design) will not match everything."""
 
-    parser.read(
-        """\
+    parser.read("""\
         // GLOBAL: TEST 0x1234
         FunctionCall();
-        """
-    )
+        """)
     assert len(parser.variables) == 0
     assert len(parser.alerts) == 1
     assert parser.alerts[0].code == ParserError.NO_SUITABLE_NAME
@@ -375,24 +323,20 @@ def test_static_variable(parser):
     Checking for the word `static` alone is not a good test.
     Static class variables are filed as S_GDATA32, same as regular globals."""
 
-    parser.read(
-        """\
+    parser.read("""\
         // GLOBAL: TEST 0x1234
         int g_test = 1234;
-        """
-    )
+        """)
     assert len(parser.variables) == 1
     assert parser.variables[0].is_static is False
 
-    parser.read(
-        """\
+    parser.read("""\
         // FUNCTION: TEST 0x5555
         void test_function() {
             // GLOBAL: TEST 0x8888
             static int g_internal = 0;
         }
-        """
-    )
+        """)
     assert len(parser.variables) == 2
     assert parser.variables[1].is_static is True
 
@@ -402,15 +346,13 @@ def test_reject_global_return(parser):
     For example: if a function returned a string. We now want these to be
     annotated with the STRING marker."""
 
-    parser.read(
-        """\
+    parser.read("""\
         // FUNCTION: TEST 0x5555
         void test_function() {
             // GLOBAL: TEST 0x8888
             return "test";
         }
-        """
-    )
+        """)
     assert len(parser.variables) == 0
     assert len(parser.alerts) == 1
     assert parser.alerts[0].code == ParserError.GLOBAL_NOT_VARIABLE
@@ -419,13 +361,11 @@ def test_reject_global_return(parser):
 def test_global_string(parser):
     """We now allow GLOBAL and STRING markers for the same item."""
 
-    parser.read(
-        """\
+    parser.read("""\
         // GLOBAL: TEST 0x1234
         // STRING: TEXT 0x5555
         char* g_test = "hello";
-        """
-    )
+        """)
     assert len(parser.variables) == 1
     assert len(parser.strings) == 1
     assert len(parser.alerts) == 0
@@ -437,12 +377,10 @@ def test_global_string(parser):
 def test_comment_variables(parser):
     """Match on hidden variables from libraries."""
 
-    parser.read(
-        """\
+    parser.read("""\
         // GLOBAL: TEST 0x1234
         // g_test
-        """
-    )
+        """)
     assert len(parser.variables) == 1
     assert parser.variables[0].name == "g_test"
 
@@ -451,12 +389,10 @@ def test_flexible_variable_prefix(parser):
     """Don't alert to library variables that lack the g_ prefix.
     This is out of our control."""
 
-    parser.read(
-        """\
+    parser.read("""\
         // GLOBAL: TEST 0x1234
         // some_other_variable
-        """
-    )
+        """)
     assert len(parser.variables) == 1
     assert len(parser.alerts) == 0
     assert parser.variables[0].name == "some_other_variable"
@@ -466,12 +402,10 @@ def test_string_ignore_g_prefix(parser):
     """String annotations above a regular variable should not alert to
     the missing g_ prefix. This is only required for GLOBAL markers."""
 
-    parser.read(
-        """\
+    parser.read("""\
         // STRING: TEST 0x1234
         const char* value = "";
-        """
-    )
+        """)
     assert len(parser.strings) == 1
     assert len(parser.alerts) == 0
 
@@ -479,15 +413,13 @@ def test_string_ignore_g_prefix(parser):
 def test_class_variable(parser):
     """We should accurately name static variables that are class members."""
 
-    parser.read(
-        """\
+    parser.read("""\
         class Test {
         protected:
           // GLOBAL: TEST 0x1234
           static int g_test;
         };
-        """
-    )
+        """)
 
     assert len(parser.variables) == 1
     assert parser.variables[0].name == "Test::g_test"
@@ -496,16 +428,14 @@ def test_class_variable(parser):
 def test_namespace_variable(parser):
     """We should identify a namespace surrounding any global variables"""
 
-    parser.read(
-        """\
+    parser.read("""\
         namespace Test {
         // GLOBAL: TEST 0x1234
         int g_test = 1234;
         }
         // GLOBAL: TEST 0x5555
         int g_second = 2;
-        """
-    )
+        """)
 
     assert len(parser.variables) == 2
     assert parser.variables[0].name == "Test::g_test"
@@ -513,8 +443,7 @@ def test_namespace_variable(parser):
 
 
 def test_namespace_vtable(parser):
-    parser.read(
-        """\
+    parser.read("""\
         namespace Tgl {
         // VTABLE: TEST 0x1234
         class Renderer {
@@ -522,8 +451,7 @@ def test_namespace_vtable(parser):
         }
         // VTABLE: TEST 0x5555
         class Hello { };
-        """
-    )
+        """)
 
     assert len(parser.vtables) == 2
     assert parser.vtables[0].name == "Tgl::Renderer"
@@ -531,16 +459,14 @@ def test_namespace_vtable(parser):
 
 
 def test_nested_namespace(parser):
-    parser.read(
-        """\
+    parser.read("""\
         namespace Tgl {
         class Renderer {
           // GLOBAL: TEST 0x1234
           static int g_count = 0;
         };
         };
-        """
-    )
+        """)
 
     assert len(parser.variables) == 1
     assert parser.variables[0].name == "Tgl::Renderer::g_count"
@@ -550,12 +476,10 @@ def test_match_qualified_variable(parser):
     """If a variable belongs to a scope and we use a fully qualified reference
     below a GLOBAL marker, make sure we capture the full name."""
 
-    parser.read(
-        """\
+    parser.read("""\
         // GLOBAL: TEST 0x1234
         int MxTest::g_count = 0;
-        """
-    )
+        """)
 
     assert len(parser.variables) == 1
     assert parser.variables[0].name == "MxTest::g_count"
@@ -565,16 +489,14 @@ def test_match_qualified_variable(parser):
 def test_static_variable_parent(parser):
     """Report the address of the parent function that contains a static variable."""
 
-    parser.read(
-        """\
+    parser.read("""\
         // FUNCTION: TEST 0x1234
         void test()
         {
            // GLOBAL: TEST 0x5555
            static int g_count = 0;
         }
-        """
-    )
+        """)
 
     assert len(parser.variables) == 1
     assert parser.variables[0].is_static is True
@@ -589,15 +511,13 @@ def test_static_variable_no_parent(parser):
     """If the function that contains a static variable is not marked, we
     cannot match it with cvdump so we should skip it and report an error."""
 
-    parser.read(
-        """\
+    parser.read("""\
         void test()
         {
            // GLOBAL: TEST 0x5555
            static int g_count = 0;
         }
-        """
-    )
+        """)
 
     # No way to match this variable so don't report it
     assert len(parser.variables) == 0
@@ -609,8 +529,7 @@ def test_static_variable_incomplete_coverage(parser):
     """If the function that contains a static variable is marked, but
     not for each module used for the variable itself, this is an error."""
 
-    parser.read(
-        """\
+    parser.read("""\
         // FUNCTION: HELLO 0x1234
         void test()
         {
@@ -618,8 +537,7 @@ def test_static_variable_incomplete_coverage(parser):
            // GLOBAL: TEST 0x5555
            static int g_count = 0;
         }
-        """
-    )
+        """)
 
     # Match for HELLO module
     assert len(parser.variables) == 1
@@ -634,12 +552,10 @@ def test_header_function_declaration(parser):
     Meaning: The implementation is not here. This is not the correct place
     for the FUNCTION marker and it will probably not match anything."""
 
-    parser.read(
-        """\
+    parser.read("""\
         // FUNCTION: HELLO 0x1234
         void sample_function(int);
-        """
-    )
+        """)
 
     assert len(parser.alerts) == 1
     assert parser.alerts[0].code == ParserError.NO_IMPLEMENTATION
@@ -652,16 +568,14 @@ def test_extra(parser):
 
     # Intentionally using non-vtable markers here.
     # We might want to emit a parser warning for unnecessary extra info.
-    parser.read(
-        """\
+    parser.read("""\
         // GLOBAL: TEST 0x5555 Haha
         int g_variable = 0;
         // FUNCTION: TEST 0x1234 Something
         void Test() { g_variable++; }
         // LIBRARY: TEST 0x8080 Printf
         // _printf
-        """
-    )
+        """)
 
     # We don't use this information (yet) but this is all fine.
     assert len(parser.alerts) == 0
@@ -670,15 +584,13 @@ def test_extra(parser):
 def test_virtual_inheritance(parser):
     """Indicate the base class for a vtable where the class uses
     virtual inheritance."""
-    parser.read(
-        """\
+    parser.read("""\
         // VTABLE: HELLO 0x1234
         // VTABLE: HELLO 0x1238 Greetings
         // VTABLE: HELLO 0x123c Howdy
         class HiThere : public virtual Greetings {
         };
-        """
-    )
+        """)
 
     assert len(parser.alerts) == 0
     assert len(parser.vtables) == 3
@@ -689,14 +601,12 @@ def test_virtual_inheritance(parser):
 
 
 def test_namespace_in_comment(parser):
-    parser.read(
-        """\
+    parser.read("""\
         // VTABLE: HELLO 0x1234
         // class Tgl::Object
         // VTABLE: HELLO 0x5555
         // class TglImpl::RendererImpl<D3DRMImpl::D3DRM>
-        """
-    )
+        """)
 
     assert len(parser.vtables) == 2
     assert parser.vtables[0].name == "Tgl::Object"
@@ -705,8 +615,7 @@ def test_namespace_in_comment(parser):
 
 def test_function_symbol_option(parser):
     """Indicate that the name for this name-based function marker is the function's symbol (linker name)."""
-    parser.read(
-        """\
+    parser.read("""\
         // LIBRARY: HELLO 0x1234 SYMBOL
         // _strcmp
 
@@ -715,8 +624,7 @@ def test_function_symbol_option(parser):
 
         // LIBRARY: TEST 0x5555 SYMB
         // _strcmp
-        """
-    )
+        """)
 
     assert len(parser.functions) == 3
     assert all(fun.name == "_strcmp" for fun in parser.functions)
@@ -732,13 +640,11 @@ def test_function_symbol_option_multiple(parser):
     I don't know if there's a reason to do things differently for different modules but *shrug*.
     We already allow STUB and FUNCTION to be used on the same annotation.
     """
-    parser.read(
-        """\
+    parser.read("""\
         // LIBRARY: HELLO 0x1234 SYMBOL
         // LIBRARY: TEST 0x1234
         // _strcmp
-        """
-    )
+        """)
 
     assert len(parser.functions) == 2
     assert parser.functions[0].module == "HELLO"
@@ -749,12 +655,10 @@ def test_function_symbol_option_multiple(parser):
 
 def test_function_symbol_option_warning(parser):
     """Marking a line-based function with SYMBOL should be ignored."""
-    parser.read(
-        """\
+    parser.read("""\
         // FUNCTION: HELLO 0x1234 SYMBOL
         int test() { return 5; }
-        """
-    )
+        """)
 
     assert len(parser.functions) == 1
     assert parser.functions[0].name_is_symbol is False
@@ -766,16 +670,14 @@ def test_unexpected_marker(parser):
     1. We read 1-to-N line-based function annotations (// FUNCTION or // STUB)
     2. We begin our search for the opening curly bracket { of the function
     3. We are interrupted by another annotation of any type"""
-    parser.read(
-        """\
+    parser.read("""\
         // FUNCTION: HELLO 0x1234
         int test()
         // STUB: TEST 0x5555
         {
             return 5;
         }
-        """
-    )
+        """)
 
     assert len(parser.functions) == 0
     assert len(parser.alerts) == 1
@@ -784,13 +686,11 @@ def test_unexpected_marker(parser):
 
 def test_issue_137(parser):
     """GH issue #137: unexpected_marker error displayed as decomp_error_start"""
-    parser.read(
-        """\
+    parser.read("""\
         // FUNCTION: HELLO 0x1234
         int test()
         // STUB: TEST 0x5555
-        """
-    )
+        """)
 
     assert len(parser.alerts) == 1
     assert parser.alerts[0].code == ParserError.UNEXPECTED_MARKER
@@ -799,17 +699,37 @@ def test_issue_137(parser):
 
 def test_widechar_string(parser):
     """Should detect a widechar string with the L prefix."""
-    parser.read(
-        """\
+    parser.read("""\
         // STRING: HELLO 0x1234
         char* test = L"test";
 
         // STRING: HELLO 0x5555
         char* test = "test";
-        """
-    )
+        """)
 
     assert parser.strings[0].is_widechar is True
     assert parser.strings[0].name == "test"
     assert parser.strings[1].is_widechar is False
     assert parser.strings[1].name == "test"
+
+
+def test_mixed_case_module_name(parser):
+    """By convention, we expect module/target names to be upper-case.
+    As such, the parser converts mixed-case module names to upper-case
+    so that annotations with a typo are still read. If the house style
+    of the project requires upper-case modules, decomplint will alert
+    to the inconsistency.
+    This documents the current behavior though it may change. (GH #336)"""
+    parser.read(dedent("""\
+        // FUNCTION: Hello 0x1234
+        void interesting_function() {
+        }
+        """))
+
+    # Module name converted to the (expected) upper-case.
+    assert len(parser.functions) == 1
+    assert parser.functions[0].module == "HELLO"
+
+    # Syntax warning for mixed-case module name.
+    assert len(parser.alerts) == 1
+    assert parser.alerts[0].code == ParserError.BAD_DECOMP_MARKER

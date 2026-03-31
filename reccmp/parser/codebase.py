@@ -22,7 +22,7 @@ class DecompCodebase:
             parser.reset_and_set_filename(f.path)
             parser.read(f.text)
 
-            self._symbols += parser.iter_symbols(module)
+            self._symbols += parser.iter_symbols(module.upper())
 
     def prune_invalid_addrs(
         self, is_valid: Callable[[int], bool]

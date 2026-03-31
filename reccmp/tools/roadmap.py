@@ -75,14 +75,14 @@ class ModuleMap:
         # We don't want the insertion point given by bisect, but the
         # section contribution that contains the address.
 
-        (potential_start, _, __) = self.section_contrib[i]
+        potential_start, _, __ = self.section_contrib[i]
         if potential_start != addr:
             i -= 1
 
         # Safety catch: clamp to range of indices from section_contrib.
         i = max(0, min(i, len(self.section_contrib) - 1))
 
-        (start, size, module_id) = self.section_contrib[i]
+        start, size, module_id = self.section_contrib[i]
         if start <= addr < start + size:
             if (module := self.module_lookup.get(module_id)) is not None:
                 return module
@@ -425,18 +425,18 @@ def main() -> int:
             match.recomp_addr
         ):
             if (module_ref := module_map.get_module(match.recomp_addr)) is not None:
-                (_, module_name) = module_ref
+                _, module_name = module_ref
 
         row_type = match_type_abbreviation(match.entity_type)
 
         if match.orig_addr is not None:
             orig_addr = match.orig_addr
-            (orig_sect, orig_ofs) = orig_bin.get_relative_addr(match.orig_addr)
+            orig_sect, orig_ofs = orig_bin.get_relative_addr(match.orig_addr)
             orig_sect_ofs = f"{orig_sect:04}:{orig_ofs:08x}"
 
         if match.recomp_addr is not None:
             recomp_addr = match.recomp_addr
-            (recomp_sect, recomp_ofs) = recomp_bin.get_relative_addr(match.recomp_addr)
+            recomp_sect, recomp_ofs = recomp_bin.get_relative_addr(match.recomp_addr)
             recomp_sect_ofs = f"{recomp_sect:04}:{recomp_ofs:08x}"
 
         if (

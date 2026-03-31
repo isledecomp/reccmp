@@ -10,7 +10,6 @@ from typing import Iterable, Iterator
 from typing_extensions import NotRequired, TypedDict
 from reccmp.types import EntityType
 
-
 # Fatal errors:
 
 
