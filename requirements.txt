@@ -1,8 +1,7 @@
 capstone
 colorama>=0.4.6
 pystache
-pydantic==2.12.5  ; python_version <  "3.14"
-pydantic==2.12.5 ; python_version == "3.14"
+pydantic==2.12.5
 ruamel.yaml
 pydemumble==0.0.1
 # requirement of capstone due to python dropping distutils.
