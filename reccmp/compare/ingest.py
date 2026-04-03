@@ -137,6 +137,7 @@ def load_cvdump_lines(
     lines_db.mark_function_starts(tuple(seen_addrs))
 
 
+# pylint: disable=too-many-positional-arguments
 def load_markers(
     code_files: Sequence[TextFile],
     lines_db: LinesDb,

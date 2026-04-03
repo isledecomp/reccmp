@@ -171,6 +171,11 @@ def create_project(
         if not original_path.is_file():
             raise FileNotFoundError(f"Original binary ({original_path}) is not a file")
 
+    cmakelists_path = project_directory / "CMakeLists.txt"
+
+    if cmake and cmakelists_path.exists():
+        raise RecCmpProjectException("CMakeLists.txt already exists")
+
     # reccmp-user.yml location
     user_config_path = project_directory / RECCMP_USER_CONFIG
 
@@ -196,7 +201,7 @@ def create_project(
 
         project_config_data.targets[target_id] = ProjectFileTarget(
             filename=target_filename,
-            source_root=Path("."),
+            source_root=(Path("."),),
             hash=Hash(sha256=hash_sha256),
         )
 
@@ -204,7 +209,7 @@ def create_project(
             target_id=target_id,
             filename=target_filename,
             sha256=hash_sha256,
-            source_root=Path("."),
+            source_paths=(Path("."),),
             ghidra_config=GhidraConfig(),
             report_config=ReportConfig(),
         )
@@ -243,13 +248,14 @@ def create_project(
     if cmake:
         # Generate tempalte files so you can start building each target with CMake.
         project_cmake_dir = project_directory / "cmake"
+        reccmp_cmake_path = project_cmake_dir / "reccmp.cmake"
         project_cmake_dir.mkdir(exist_ok=True)
 
         # Copy template CMake script that generates reccmp-build.yml
         logger.debug("Copying %s...", "cmake/reccmp.cmake")
         shutil.copy(
             get_asset_file("cmake/reccmp.cmake"),
-            project_directory / "cmake/reccmp.cmake",
+            reccmp_cmake_path,
         )
 
         # Use first target ID as cmake project name
@@ -259,7 +265,6 @@ def create_project(
         )
 
         # Create CMakeLists.txt
-        cmakelists_path = project_directory / "CMakeLists.txt"
         logger.debug("Creating %s...", cmakelists_path)
         with cmakelists_path.open("w") as f:
             f.write(cmakelists_txt)
