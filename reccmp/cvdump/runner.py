@@ -53,39 +53,39 @@ def iter_cvdump_sections(stream: Iterable[str]) -> Iterator[tuple[str, str]]:
 class Cvdump:
     def __init__(self, pdb: str) -> None:
         self._pdb: str = pdb
-        self._options: set[DumpOpt] = set()
+        self.options: set[DumpOpt] = set()
 
     def lines(self):
-        self._options.add(DumpOpt.LINES)
+        self.options.add(DumpOpt.LINES)
         return self
 
     def symbols(self):
-        self._options.add(DumpOpt.SYMBOLS)
+        self.options.add(DumpOpt.SYMBOLS)
         return self
 
     def globals(self):
-        self._options.add(DumpOpt.GLOBALS)
+        self.options.add(DumpOpt.GLOBALS)
         return self
 
     def publics(self):
-        self._options.add(DumpOpt.PUBLICS)
+        self.options.add(DumpOpt.PUBLICS)
         return self
 
     def section_contributions(self):
-        self._options.add(DumpOpt.SECTION_CONTRIB)
+        self.options.add(DumpOpt.SECTION_CONTRIB)
         return self
 
     def modules(self):
-        self._options.add(DumpOpt.MODULES)
+        self.options.add(DumpOpt.MODULES)
         return self
 
     def types(self):
-        self._options.add(DumpOpt.TYPES)
+        self.options.add(DumpOpt.TYPES)
         return self
 
     def cmd_line(self) -> list[str]:
         cvdump_exe = lib_path_join("cvdump.exe")
-        flags = [cvdump_opt_map[opt] for opt in self._options]
+        flags = [cvdump_opt_map[opt] for opt in self.options if opt in cvdump_opt_map]
 
         if os_name == "nt":
             return [cvdump_exe, *flags, self._pdb]
