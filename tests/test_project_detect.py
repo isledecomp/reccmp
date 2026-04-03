@@ -16,8 +16,7 @@ from reccmp.project.detect import (
     DetectWhat,
 )
 from reccmp.formats import PEImage
-
-LEGO1_SHA256 = "14645225bbe81212e9bc1919cd8a692b81b8622abb6561280d99b0fc4151ce17"
+from .constants import LEGO1_SHA256
 
 
 def helper_create_project(target_name: str, filename: str, sha256: str) -> str:
