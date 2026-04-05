@@ -31,7 +31,6 @@ class CppRegisterSymbol(CppStackOrRegisterSymbol):
 
 @dataclass
 class FunctionSignature:
-    original_function_symbol: SymbolsEntry
     call_type: str
     arglist: list[CvdumpTypeKey]
     return_type: CvdumpTypeKey
@@ -119,7 +118,6 @@ class PdbFunctionExtractor:
         this_adjust = function_type.get("this_adjust", 0)
 
         return FunctionSignature(
-            original_function_symbol=fn,
             call_type=call_type,
             arglist=arg_list_pdb_types,
             return_type=function_type["return_type"],
