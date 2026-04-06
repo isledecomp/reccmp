@@ -14,6 +14,7 @@ from reccmp.cvdump.types import (
     CvdumpKeyError,
     CvdumpIntegrityError,
 )
+from reccmp.types import ImageId
 
 logger = logging.getLogger(__name__)
 
@@ -192,12 +193,12 @@ def create_comparison_item(
     )
 
 
-def pointer_display(db: EntityDb, addr: int, is_orig: bool) -> str:
+def pointer_display(db: EntityDb, img: ImageId, addr: int) -> str:
     """Helper to streamline pointer textual display."""
     if addr == 0:
         return "nullptr"
 
-    ptr_match = db.get_by_orig(addr) if is_orig else db.get_by_recomp(addr)
+    ptr_match = db.get(img, addr)
 
     if ptr_match is not None:
         return f"Pointer to {ptr_match.match_name()}"
@@ -221,11 +222,7 @@ class VariableComparator:
         if orig_addr == 0 and recomp_addr == 0:
             return True
 
-        match = self.db.get_by_orig(orig_addr)
-        if match is None:
-            return False
-
-        return match.recomp_addr == recomp_addr
+        return self.db.is_match(orig_addr, recomp_addr)
 
     def compare_variable(self, var: ReccmpMatch) -> ComparisonItem:
         # pylint: disable=too-many-locals
@@ -302,8 +299,8 @@ class VariableComparator:
             if member.pointer:
                 match = self.is_pointer_match(orig_val, recomp_val)
 
-                value_a = pointer_display(self.db, orig_val, True)
-                value_b = pointer_display(self.db, recomp_val, False)
+                value_a = pointer_display(self.db, ImageId.ORIG, orig_val)
+                value_b = pointer_display(self.db, ImageId.RECOMP, recomp_val)
             else:
                 match = orig_val == recomp_val
                 value_a = str(orig_val)

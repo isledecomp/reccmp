@@ -214,18 +214,12 @@ class EntityBatch:
         self._recomp_addr.clear()
         self._refs.clear()
 
-    def set_orig(self, addr: int, **kwargs):
-        self._orig.setdefault(addr, {}).update(kwargs)
-
-    def set_recomp(self, addr: int, **kwargs):
-        self._recomp.setdefault(addr, {}).update(kwargs)
-
     def set(self, img: ImageId, addr: int, **kwargs):
         if img == ImageId.ORIG:
-            self.set_orig(addr, **kwargs)
+            self._orig.setdefault(addr, {}).update(kwargs)
 
         elif img == ImageId.RECOMP:
-            self.set_recomp(addr, **kwargs)
+            self._recomp.setdefault(addr, {}).update(kwargs)
 
         else:
             assert False, "Invalid image id"
@@ -314,12 +308,6 @@ class EntityDb:
     def count(self) -> int:
         (count,) = self._sql.execute("SELECT count(1) from entities").fetchone()
         return count
-
-    def set_orig_symbol(self, addr: int, **kwargs):
-        self.bulk_orig_insert(iter([(addr, kwargs)]))
-
-    def set_recomp_symbol(self, addr: int, **kwargs):
-        self.bulk_recomp_insert(iter([(addr, kwargs)]))
 
     def bulk_orig_insert(
         self, rows: Iterable[tuple[int, dict[str, Any]]], upsert: bool = False
@@ -419,44 +407,25 @@ class EntityDb:
         cur.row_factory = matched_entity_factory
         return cur.fetchone()
 
-    def get_by_orig(self, addr: int, *, exact: bool = True) -> ReccmpEntity | None:
-        """Return the ReccmpEntity at the given orig address.
-        If there is no entry for the address and exact=True (default), return None.
-        Otherwise, return the entity at the preceding orig address if it exists.
-        The caller should check the entity's size to make sure it covers the address."""
-        if exact:
-            query = "SELECT * FROM entity_factory WHERE orig_addr = ?"
-        else:
-            query = "SELECT * FROM entity_factory WHERE ? >= orig_addr ORDER BY orig_addr desc LIMIT 1"
-
-        cur = self._sql.execute(query, (addr,))
-        cur.row_factory = entity_factory
-        return cur.fetchone()
-
-    def get_by_recomp(self, addr: int, *, exact: bool = True) -> ReccmpEntity | None:
-        """Return the ReccmpEntity at the given recomp address.
-        If there is no entry for the address and exact=True (default), return None.
-        Otherwise, return the entity at the preceding recomp address if it exists.
-        The caller should check the entity's size to make sure it covers the address."""
-        if exact:
-            query = "SELECT * FROM entity_factory WHERE recomp_addr = ?"
-        else:
-            query = "SELECT * FROM entity_factory WHERE ? >= recomp_addr ORDER BY recomp_addr desc LIMIT 1"
-
-        cur = self._sql.execute(query, (addr,))
-        cur.row_factory = entity_factory
-        return cur.fetchone()
-
     def get(
         self, img: ImageId, addr: int, *, exact: bool = True
     ) -> ReccmpEntity | None:
-        if img == ImageId.ORIG:
-            return self.get_by_orig(addr, exact=exact)
+        """Return the ReccmpEntity at the given address.
+        If there is no entry for the address and exact=True (default), return None.
+        Otherwise, return the entity at the preceding recomp address if it exists.
+        The caller should check the entity's size to make sure it covers the address."""
+        assert img in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
 
-        if img == ImageId.RECOMP:
-            return self.get_by_recomp(addr, exact=exact)
+        column = "orig_addr" if img == ImageId.ORIG else "recomp_addr"
 
-        assert False, "Invalid image id"
+        if exact:
+            query = f"SELECT * FROM entity_factory WHERE {column} = ?"
+        else:
+            query = f"SELECT * FROM entity_factory WHERE ? >= {column} ORDER BY {column} desc LIMIT 1"
+
+        cur = self._sql.execute(query, (addr,))
+        cur.row_factory = entity_factory
+        return cur.fetchone()
 
     def get_functions(self) -> Iterator[ReccmpMatch]:
         """Return all function-like matched entities. Previously, all functions
@@ -502,36 +471,27 @@ class EntityDb:
         cur.row_factory = matched_entity_factory
         yield from cur
 
-    def orig_used(self, addr: int) -> bool:
-        cur = self._sql.execute("SELECT 1 FROM entities WHERE orig_addr = ?", (addr,))
-        return cur.fetchone() is not None
-
-    def recomp_used(self, addr: int) -> bool:
-        cur = self._sql.execute("SELECT 1 FROM entities WHERE recomp_addr = ?", (addr,))
-        return cur.fetchone() is not None
-
     def used(self, img: ImageId, addr: int) -> bool:
         if img == ImageId.ORIG:
-            return self.orig_used(addr)
+            query = "SELECT 1 FROM entities WHERE orig_addr = ?"
 
-        if img == ImageId.RECOMP:
-            return self.recomp_used(addr)
+        elif img == ImageId.RECOMP:
+            query = "SELECT 1 FROM entities WHERE recomp_addr = ?"
 
-        assert False, "Invalid image id"
+        else:
+            assert False, "Invalid image id"
 
-    def set_pair(
-        self, orig: int, recomp: int, entity_type: EntityType | None = None
-    ) -> bool:
-        if self.orig_used(orig):
-            logger.debug("Original address %s not unique!", hex(orig))
-            return False
+        cur = self._sql.execute(query, (addr,))
+        return cur.fetchone() is not None
 
-        cur = self._sql.execute(
-            "UPDATE entities SET orig_addr = ?, kvstore=json_set(kvstore,'$.type',?) WHERE recomp_addr = ?",
-            (orig, entity_type, recomp),
+    def is_match(self, orig_addr: int, recomp_addr: int) -> bool:
+        return (
+            self._sql.execute(
+                "SELECT 1 FROM entities WHERE orig_addr = ? AND recomp_addr = ?",
+                (orig_addr, recomp_addr),
+            ).fetchone()
+            is not None
         )
-
-        return cur.rowcount > 0
 
     def get_next_orig_addr(self, addr: int) -> int | None:
         """Return the original address (matched or not) that follows

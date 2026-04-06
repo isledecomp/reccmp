@@ -1,6 +1,6 @@
 from datetime import datetime
 from dataclasses import dataclass
-from functools import cache
+from functools import cache, partial
 import struct
 from itertools import pairwise
 from typing import Callable, Iterator
@@ -20,6 +20,7 @@ from reccmp.formats.exceptions import (
     InvalidVirtualReadError,
 )
 from reccmp.formats import Image, PEImage
+from reccmp.types import ImageId
 
 
 def timestamp_string() -> str:
@@ -92,19 +93,21 @@ class FunctionComparator:
     def __post_init__(self):
         self.orig_sanitize = ParseAsm(
             addr_test=create_valid_addr_lookup(
-                self.db.get_by_orig, False, self.orig_bin
+                partial(self.db.get, ImageId.ORIG), False, self.orig_bin
             ),
             name_lookup=create_name_lookup(
-                self.db.get_by_orig, create_bin_lookup(self.orig_bin), "orig_addr"
+                partial(self.db.get, ImageId.ORIG),
+                create_bin_lookup(self.orig_bin),
+                "orig_addr",
             ),
             is_32bit=self.is_32bit,
         )
         self.recomp_sanitize = ParseAsm(
             addr_test=create_valid_addr_lookup(
-                self.db.get_by_recomp, True, self.recomp_bin
+                partial(self.db.get, ImageId.RECOMP), True, self.recomp_bin
             ),
             name_lookup=create_name_lookup(
-                self.db.get_by_recomp,
+                partial(self.db.get, ImageId.RECOMP),
                 create_bin_lookup(self.recomp_bin),
                 "recomp_addr",
             ),
