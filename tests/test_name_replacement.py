@@ -1,4 +1,3 @@
-from functools import partial
 import pytest
 from reccmp.types import EntityType, ImageId
 from reccmp.compare.db import EntityDb
@@ -23,13 +22,9 @@ def create_lookup(
         return addrs.get(addr)
 
     if is_orig:
-        return create_name_lookup(
-            partial(db.get, ImageId.ORIG), bin_lookup, "orig_addr"
-        )
+        return create_name_lookup(db, ImageId.ORIG, bin_lookup)
 
-    return create_name_lookup(
-        partial(db.get, ImageId.RECOMP), bin_lookup, "recomp_addr"
-    )
+    return create_name_lookup(db, ImageId.RECOMP, bin_lookup)
 
 
 ####

@@ -93,6 +93,15 @@ class ReccmpEntity:
         self._recomp_addr = recomp
         self._kvstore = kvstore
 
+    def addr(self, image_id: ImageId) -> int | None:
+        if image_id == ImageId.ORIG:
+            return self._orig_addr
+
+        if image_id == ImageId.RECOMP:
+            return self._recomp_addr
+
+        assert False, "Invalid image id"
+
     @cached_property
     def options(self) -> dict[str, Any]:
         return json.loads(self._kvstore)
