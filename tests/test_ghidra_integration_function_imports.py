@@ -10,10 +10,13 @@ from unittest.mock import Mock
 
 import pytest
 from reccmp.compare.core import Compare
-from reccmp.cvdump.cvinfo import CVInfoTypeEnum
-from reccmp.compare.db import ReccmpMatch  # todo move global
+from reccmp.cvdump.cvinfo import CVInfoTypeEnum, CvdumpTypeKey
+from reccmp.compare.db import ReccmpMatch
 
+from reccmp.cvdump.types import CvdumpParsedType, FieldListItem
 from reccmp.ghidra.importer.pdb_extraction import (
+    CppRegisterSymbol,
+    CppStackSymbol,
     FunctionSignature,
     PdbFunctionExtractor,
 )
@@ -22,6 +25,13 @@ from tests.test_image_raw import RawImage
 if TYPE_CHECKING:
     from ghidra.program.flatapi import FlatProgramAPI
     from reccmp.ghidra.importer.type_importer import PdbTypeImporter
+
+
+class_field_list_key = CvdumpTypeKey.from_str("0x1002")
+class_key = CvdumpTypeKey.from_str("0x1003")
+anim_actor_entry_key = CvdumpTypeKey.from_str("0x1004")
+anim_actor_entry_pointer_key = CvdumpTypeKey.from_str("0x1005")
+anim_actor_entry_field_list_key = CvdumpTypeKey.from_str("0x1006")
 
 
 # TODO: Fix code duplication with other Ghidra test file
@@ -74,6 +84,9 @@ class GhidraFunctionTestHelper:
         # The line endings returned by the API differ between Windows and Linux
         decompiled_c_code = res.getDecompiledFunction().getC().replace("\r\n", "\n")
 
+        # This print statement is suppressed when the test passes, but is helpful if the test fails
+        print(decompiled_c_code)
+
         assert decompiled_c_code == code
 
 
@@ -121,6 +134,95 @@ void MyTestFn(void)
 
 {
   return;
+}
+
+""")
+
+
+def test_record_array_access(
+    ghidra: "FlatProgramAPI",
+    function_helper: GhidraFunctionTestHelper,
+    type_importer: "PdbTypeImporter",
+):
+    from reccmp.ghidra.importer.function_importer import (
+        PdbFunctionImporter,
+        PdbFunction,
+    )
+
+    compare = type_importer.extraction.compare
+    # LegoAnimActorEntry
+    compare.types.keys[anim_actor_entry_field_list_key] = CvdumpParsedType(
+        type="LF_FIELDLIST",
+        members=[
+            FieldListItem(offset=0, name="m_name", type=CVInfoTypeEnum.T_32PCHAR),
+            FieldListItem(offset=4, name="m_type", type=CVInfoTypeEnum.T_INT4),
+        ],
+    )
+    compare.types.keys[anim_actor_entry_key] = CvdumpParsedType(
+        type="LF_CLASS",
+        name="LegoAnimActorEntry",
+        field_list_type=anim_actor_entry_field_list_key,
+        size=8,
+    )
+    compare.types.keys[anim_actor_entry_pointer_key] = CvdumpParsedType(
+        type="LF_POINTER", element_type=anim_actor_entry_key
+    )
+    # LegoAnim (shortened)
+    compare.types.keys[class_field_list_key] = CvdumpParsedType(
+        type="LF_FIELDLIST",
+        members=[
+            FieldListItem(offset=0, name="id", type=CVInfoTypeEnum.T_INT4),
+            FieldListItem(offset=4, name="name", type=CVInfoTypeEnum.T_32PCHAR),
+            FieldListItem(
+                offset=0xC, name="m_modelList", type=anim_actor_entry_pointer_key
+            ),
+        ],
+    )
+    compare.types.keys[class_key] = CvdumpParsedType(
+        type="LF_CLASS",
+        name="LegoAnim",
+        field_list_type=class_field_list_key,
+        size=0x10,
+    )
+
+    # shortened version of LEGO1 0x100a0f20
+    function_helper.overwrite_example_function(
+        b"\x8b\x54\x24\x04"  # MOV EDX, dword ptr [ESP + p_index]
+        b"\x8b\x41\x0c"  # MOV EAX, dword ptr [ECX + this->m_modelList]
+        b"\x8b\x04\xd0"  # MOV EAX, dword ptr [EAX + EDX*0x8]
+        b"\xc2\x04\x00"  # RET 0x4
+    )
+
+    func_signature = FunctionSignature(
+        call_type="__thiscall",
+        arglist=[CVInfoTypeEnum.T_INT4],
+        return_type=CVInfoTypeEnum.T_32PCHAR,
+        class_type=class_key,
+        stack_symbols=[
+            CppRegisterSymbol("this", class_key, "ecx"),
+            CppStackSymbol("p_index", CVInfoTypeEnum.T_INT4, 4),
+        ],
+        this_adjust=0,
+    )
+    pdb_function = PdbFunction(
+        ReccmpMatch(
+            function_helper.orig_address,
+            1234,
+            json.dumps({"name": "LegoAnim::GetActorName"}),
+        ),
+        func_signature,
+        is_stub=False,
+    )
+
+    PdbFunctionImporter.build(
+        ghidra, pdb_function, type_importer, []
+    ).overwrite_ghidra_function(function_helper.ghidra_function)
+
+    function_helper.assert_c_code("""
+char * __thiscall LegoAnim::GetActorName(LegoAnim *this,int p_index)
+
+{
+  return this->m_modelList[p_index].m_name;
 }
 
 """)
