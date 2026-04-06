@@ -148,7 +148,7 @@ def set_ghidra_label(api: FlatProgramAPI, address: int, label_with_namespace: st
             and existing_label_name == name
         ):
             logger.debug(
-                "Label '%s' at 0x%s already exists", label_with_namespace, address_hex
+                "Label '%s' at %s already exists", label_with_namespace, address_hex
             )
         else:
             logger.debug(
