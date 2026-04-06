@@ -4,7 +4,6 @@
 # pylint: disable=import-outside-toplevel
 # pyright: reportMissingModuleSource=false
 
-import json
 from typing import TYPE_CHECKING
 from unittest.mock import Mock
 
@@ -19,10 +18,7 @@ from reccmp.cvdump.types import (
     VirtualBasePointer,
 )
 from reccmp.ghidra.importer.exceptions import TypeNotFoundError, TypeNotImplementedError
-from reccmp.ghidra.importer.pdb_extraction import (
-    FunctionSignature,
-    PdbFunctionExtractor,
-)
+from reccmp.ghidra.importer.pdb_extraction import PdbFunctionExtractor
 from tests.helpers import assert_instance
 from tests.test_image_raw import RawImage
 

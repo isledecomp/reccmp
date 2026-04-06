@@ -38,12 +38,17 @@ class GhidraFunctionTestHelper:
     def __init__(self, ghidra: "FlatProgramAPI"):
         self.ghidra = ghidra
         self.orig_address = 0x00402880  # readIntFromRegistry()
-        self.address_ghidra = ghidra.getAddressFactory().getAddress(hex(self.orig_address))
+        self.address_ghidra = ghidra.getAddressFactory().getAddress(
+            hex(self.orig_address)
+        )
         self.ghidra_function = self.ghidra.getFunctionContaining(self.address_ghidra)
-        assert self.ghidra_function is not None, f"No Ghidra function at address {self.address_ghidra}"
+        assert (
+            self.ghidra_function is not None
+        ), f"No Ghidra function at address {self.address_ghidra}"
 
     def overwrite_example_function(self, data: bytes):
         from jpype import JArray, JByte  # type: ignore[import-untyped]
+
         assert len(data) > 0
 
         # Clear the existing decompiled code so we can overwrite it
@@ -52,11 +57,14 @@ class GhidraFunctionTestHelper:
         listing.clearCodeUnits(self.address_ghidra, end_addr, False)
 
         # Overwrite the memory
-        self.ghidra.getCurrentProgram().getMemory().setBytes(self.address_ghidra, JArray.of(data, JByte))
+        self.ghidra.getCurrentProgram().getMemory().setBytes(
+            self.address_ghidra, JArray.of(data, JByte)
+        )
 
     def assert_c_code(self, code: str):
         from ghidra.app.decompiler import DecompInterface
         from ghidra.util.task import TaskMonitor
+
         iface = DecompInterface()
         iface.openProgram(self.ghidra.getCurrentProgram())
 
@@ -70,11 +78,17 @@ class GhidraFunctionTestHelper:
 
 
 @pytest.fixture(name="function_helper", scope="function")
-def ghidra_function_helper_fixture(ghidra: "FlatProgramAPI") -> Generator[GhidraFunctionTestHelper]:
+def ghidra_function_helper_fixture(
+    ghidra: "FlatProgramAPI",
+) -> Generator[GhidraFunctionTestHelper]:
     yield GhidraFunctionTestHelper(ghidra)
 
 
-def test_import_trivial_function(ghidra: "FlatProgramAPI", function_helper: GhidraFunctionTestHelper, type_importer: "PdbTypeImporter"):
+def test_import_trivial_function(
+    ghidra: "FlatProgramAPI",
+    function_helper: GhidraFunctionTestHelper,
+    type_importer: "PdbTypeImporter",
+):
     from reccmp.ghidra.importer.function_importer import (
         PdbFunctionImporter,
         PdbFunction,
@@ -91,7 +105,9 @@ def test_import_trivial_function(ghidra: "FlatProgramAPI", function_helper: Ghid
         this_adjust=0,
     )
     pdb_function = PdbFunction(
-        ReccmpMatch(function_helper.orig_address, 1234, json.dumps({"name": "MyTestFn"})),
+        ReccmpMatch(
+            function_helper.orig_address, 1234, json.dumps({"name": "MyTestFn"})
+        ),
         func_signature,
         is_stub=False,
     )
@@ -107,5 +123,4 @@ void MyTestFn(void)
   return;
 }
 
-"""
-    )
+""")
