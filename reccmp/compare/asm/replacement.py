@@ -4,10 +4,6 @@ from reccmp.compare.db import EntityDb, ReccmpEntity
 from reccmp.types import EntityType, ImageId
 
 
-class AddrLookupProtocol(Protocol):
-    def __call__(self, addr: int, *, exact: bool) -> ReccmpEntity | None: ...
-
-
 class AddrTestProtocol(Protocol):
     def __call__(self, addr: int, /) -> bool: ...
 

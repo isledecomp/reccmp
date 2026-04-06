@@ -419,9 +419,9 @@ class EntityDb:
     def get(
         self, img: ImageId, addr: int, *, exact: bool = True
     ) -> ReccmpEntity | None:
-        """Return the ReccmpEntity at the given address.
+        """Return the ReccmpEntity at the given address and address space (ImageId).
         If there is no entry for the address and exact=True (default), return None.
-        Otherwise, return the entity at the preceding recomp address if it exists.
+        Otherwise, return the preceding (by address, in this image) entity if it exists.
         The caller should check the entity's size to make sure it covers the address."""
         assert img in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
 
