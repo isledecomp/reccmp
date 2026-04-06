@@ -269,8 +269,8 @@ class Compare:
 
         # Now compare each pointer from the two vtables.
         for i, (raw_orig, raw_recomp) in enumerate(raw_addrs):
-            orig = self._db.get_by_orig(raw_orig)
-            recomp = self._db.get_by_recomp(raw_recomp)
+            orig = self._db.get(ImageId.ORIG, raw_orig)
+            recomp = self._db.get(ImageId.RECOMP, raw_recomp)
 
             if (
                 orig is not None
@@ -348,12 +348,6 @@ class Compare:
         )
 
     ## Public API
-
-    def get_by_orig(self, addr: int) -> ReccmpEntity | None:
-        return self._db.get_by_orig(addr)
-
-    def get_by_recomp(self, addr: int) -> ReccmpEntity | None:
-        return self._db.get_by_recomp(addr)
 
     def get_all(self) -> Iterator[ReccmpEntity]:
         return self._db.get_all()

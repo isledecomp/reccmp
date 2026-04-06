@@ -9,7 +9,6 @@ from reccmp.compare.pinned_sequences import SequenceMatcherWithPins
 from reccmp.compare.asm.fixes import assert_fixup, find_effective_match
 from reccmp.compare.asm.parse import AsmExcerpt, ParseAsm
 from reccmp.compare.asm.replacement import (
-    AddrLookupProtocol,
     create_name_lookup,
 )
 from reccmp.compare.db import EntityDb, ReccmpMatch
@@ -20,6 +19,7 @@ from reccmp.formats.exceptions import (
     InvalidVirtualReadError,
 )
 from reccmp.formats import Image, PEImage
+from reccmp.types import ImageId
 
 
 def timestamp_string() -> str:
@@ -34,14 +34,15 @@ def has_asserts(image: Image) -> bool:
 
 
 def create_valid_addr_lookup(
-    db_getter: AddrLookupProtocol,
-    is_recomp: bool,
+    db: EntityDb,
+    image_id: ImageId,
     bin_file: Image,
 ) -> Callable[[int], bool]:
     """
     Function generator for a lookup whether an address from a call is valid
     (either a relocation or pointing to something else we know, like a global variable)
     """
+    assert image_id in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
 
     @cache
     def lookup(addr: int) -> bool:
@@ -50,10 +51,10 @@ def create_valid_addr_lookup(
             return True
 
         # Check whether the address points to valid data
-        entity = db_getter(addr, exact=False)
+        entity = db.get(image_id, addr, exact=False)
         if entity is None:
             return False
-        base_addr = entity.recomp_addr if is_recomp else entity.orig_addr
+        base_addr = entity.addr(image_id)
         if base_addr is None:
             # should never happen
             return False
@@ -91,22 +92,22 @@ class FunctionComparator:
 
     def __post_init__(self):
         self.orig_sanitize = ParseAsm(
-            addr_test=create_valid_addr_lookup(
-                self.db.get_by_orig, False, self.orig_bin
-            ),
+            addr_test=create_valid_addr_lookup(self.db, ImageId.ORIG, self.orig_bin),
             name_lookup=create_name_lookup(
-                self.db.get_by_orig, create_bin_lookup(self.orig_bin), "orig_addr"
+                self.db,
+                ImageId.ORIG,
+                create_bin_lookup(self.orig_bin),
             ),
             is_32bit=self.is_32bit,
         )
         self.recomp_sanitize = ParseAsm(
             addr_test=create_valid_addr_lookup(
-                self.db.get_by_recomp, True, self.recomp_bin
+                self.db, ImageId.RECOMP, self.recomp_bin
             ),
             name_lookup=create_name_lookup(
-                self.db.get_by_recomp,
+                self.db,
+                ImageId.RECOMP,
                 create_bin_lookup(self.recomp_bin),
-                "recomp_addr",
             ),
             is_32bit=self.is_32bit,
         )

@@ -14,15 +14,21 @@ def fixture_db():
 
 def test_ignore_recomp_collision(db):
     """Duplicate recomp addresses are ignored"""
-    db.set_recomp_symbol(0x1234, name="hello", size=100)
-    db.set_recomp_symbol(0x1234, name="alias_for_hello", size=100)
+    with db.batch() as batch:
+        batch.set(ImageId.RECOMP, 0x1234, name="hello", size=100)
+
+    with db.batch() as batch:
+        batch.set(ImageId.RECOMP, 0x1234, name="alias_for_hello", size=100)
+
     syms = [*db.get_all()]
     assert len(syms) == 1
 
 
 def test_dynamic_metadata(db):
     """Using the API we have now"""
-    db.set_recomp_symbol(1234, hello="abcdef", option=True)
+    with db.batch() as batch:
+        batch.set(ImageId.RECOMP, 1234, hello="abcdef", option=True)
+
     obj = db.get(ImageId.RECOMP, 1234)
     assert obj.get("hello") == "abcdef"
 
@@ -146,8 +152,9 @@ def test_batch(db):
 
 def test_batch_upsert(db):
     """The 'set' methods overwrite existing values"""
-    db.set_orig_symbol(100, name="Hello")
-    db.set_recomp_symbol(200, name="Test")
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, name="Hello")
+        batch.set(ImageId.RECOMP, 200, name="Test")
 
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 100, name="abc")

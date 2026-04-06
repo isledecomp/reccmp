@@ -9,7 +9,7 @@ from reccmp.compare.functions import (
     EntityCompareResult,
 )
 from reccmp.compare.lines import LinesDb
-from reccmp.types import EntityType
+from reccmp.types import EntityType, ImageId
 
 MOCK_PATH = PureWindowsPath("some/path/test.cpp")
 ORIG_GLOBAL_OFFSET = 0x200
@@ -78,10 +78,16 @@ def add_line_annotation(
 
     orig_addr = ORIG_GLOBAL_OFFSET + offset_from_function_start_orig
     recomp_addr = RECOMP_GLOBAL_OFFSET + offset_from_function_start_recomp
-    db.set_recomp_symbol(
-        recomp_addr, name="cppfile.cpp:384", filename="src\\cppfile.cpp", line=384
-    )
-    db.set_pair(orig_addr, recomp_addr, EntityType.LINE)
+    with db.batch() as batch:
+        batch.set(
+            ImageId.RECOMP,
+            recomp_addr,
+            name="cppfile.cpp:384",
+            filename="src\\cppfile.cpp",
+            line=384,
+            type=EntityType.LINE,
+        )
+        batch.match(orig_addr, recomp_addr)
 
 
 def test_simple_identical_diff(
@@ -391,8 +397,9 @@ def test_displacement_with_match(
 
     orig_addr = 0xC815A8
     recomp_addr = 0xD015A8
-    db.set_recomp_symbol(recomp_addr, name="some_global")
-    db.set_pair(orig_addr, recomp_addr, EntityType.DATA)
+    with db.batch() as batch:
+        batch.set(ImageId.RECOMP, recomp_addr, name="some_global", type=EntityType.DATA)
+        batch.match(orig_addr, recomp_addr)
 
     diffreport = compare_functions(db, lines_db, orig, recm, report)
 
