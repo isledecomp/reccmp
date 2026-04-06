@@ -5,7 +5,7 @@
 # pyright: reportMissingModuleSource=false
 
 import json
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING
 from unittest.mock import Mock
 
 import pytest
@@ -23,6 +23,7 @@ from reccmp.ghidra.importer.pdb_extraction import (
     FunctionSignature,
     PdbFunctionExtractor,
 )
+from tests.helpers import assert_instance
 from tests.test_image_raw import RawImage
 
 if TYPE_CHECKING:
@@ -35,17 +36,6 @@ verified_types = (
     for t in CVInfoTypeEnum
     if CvdumpTypeMap[t].verified and t != CVInfoTypeEnum.T_NOTYPE
 )
-
-
-# TODO: Move to a general helper file
-
-T = TypeVar("T")
-
-
-def assert_instance(value: object, expected_class: type[T]) -> T:
-    """Type narrowing does not work well in the IDE for some reason, this makes it explicit"""
-    assert isinstance(value, expected_class)
-    return value
 
 
 @pytest.fixture(name="type_importer", scope="function")
@@ -493,7 +483,11 @@ def test_experiment_decomp_output(ghidra: "FlatProgramAPI"):
         stack_symbols=[],
         this_adjust=0,
     )
-    pdb_function = PdbFunction(ReccmpMatch(orig_address, 1234, json.dumps({"name": "MyTestFn"})), func_signature, is_stub=False)
+    pdb_function = PdbFunction(
+        ReccmpMatch(orig_address, 1234, json.dumps({"name": "MyTestFn"})),
+        func_signature,
+        is_stub=False,
+    )
 
     function_importer = PdbFunctionImporter.build(
         ghidra, pdb_function, type_importer, []

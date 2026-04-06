@@ -45,6 +45,7 @@ def ghidra_integration_test_program(
         # Gets rid of spurious stack traces from a misunderstanding between pytest and jpype.
         # See https://jpype.readthedocs.io/en/latest/userguide.html#errors-reported-by-python-fault-handler
         import faulthandler
+
         faulthandler.enable()
         faulthandler.disable()
     # pylint: disable-next=broad-exception-caught # This is fine to fail, we don't need to handle it
