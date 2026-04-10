@@ -70,6 +70,24 @@ Names that begin with `?` are assumed to be [MSVC-like symbols](https://en.wikiv
 // __strlwr
 ```
 
+### Code folding
+
+The compiler may combine redundant functions that produce the same instructions. If this occurs, the functions will share the same address. In MSVC, this is controlled by the [`/OPT:ICF`](https://learn.microsoft.com/en-us/cpp/build/reference/opt-optimizations?view=msvc-170) option.
+
+To annotate this properly in `reccmp`, use the `FOLDED` option after the `FUNCTION` marker. For example:
+
+```c++
+// FUNCTION: HELLO 0x4513d0 FOLDED
+void NeonCactus7532::VTable0x1c(undefined4)
+{
+}
+
+// FUNCTION: HELLO 0x4513d0 FOLDED
+void NeonCactus7532::VTable0x20(undefined4)
+{
+}
+```
+
 ### Annotation types
 
 #### `FUNCTION`

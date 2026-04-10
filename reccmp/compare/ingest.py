@@ -188,7 +188,7 @@ def load_markers(
 
             assert fun.filename is not None
             recomp_addr = lines_db.find_function(
-                fun.filename, fun.line_number, fun.end_line
+                fun.filename, fun.line_number, fun.end_line, folded=fun.is_folded
             )
 
             if recomp_addr is not None:
