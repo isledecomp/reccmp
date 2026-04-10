@@ -44,6 +44,9 @@ class ParserFunction(ParserSymbol):
     # True if the annotation name is the linker name (symbol) for this entity.
     name_is_symbol: bool = False
 
+    # True if this address is used by many identical functions.
+    is_folded: bool = False
+
     def should_skip(self) -> bool:
         return self.type == MarkerType.STUB
 
