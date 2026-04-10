@@ -175,3 +175,59 @@ def test_duplicate_strings(linter: DecompLinter):
 
     # This will fail like any other offset reuse.
     assert linter.read(same_addr_reused, PurePath("other.h"), "TEST") is False
+
+
+def test_ignore_folded_duplicate(linter: DecompLinter):
+    """Do not alert to folded functions that reuse an address."""
+    folded_lines = """\
+    // FUNCTION: TEST 0x1000 FOLDED
+    void folded() {}
+
+    // FUNCTION: TEST 0x1000 FOLDED
+    void first() {}
+    """
+
+    assert linter.read(folded_lines, PurePath("test.cpp"), "TEST") is True
+
+
+def test_ignore_folded_and_regular_duplicate(linter: DecompLinter):
+    """Should alert when folded and non-folded functions reuse an address."""
+    folded_lines = """\
+    // FUNCTION: TEST 0x1000 FOLDED
+    void folded() {}
+
+    // FUNCTION: TEST 0x1000
+    void first() {}
+    """
+
+    assert linter.read(folded_lines, PurePath("test.cpp"), "TEST") is False
+
+
+def test_ignore_folded_order(linter: DecompLinter):
+    """Skip folded functions and do not check their order."""
+    folded_lines = """\
+    // FUNCTION: TEST 0x2000 FOLDED
+    void folded() {}
+
+    // FUNCTION: TEST 0x1000
+    void first() {}
+    """
+
+    assert linter.read(folded_lines, PurePath("test.cpp"), "TEST") is True
+
+
+def test_folded_with_real_order_error(linter: DecompLinter):
+    """Folded functions should not prevent us from reporting
+    that regular functions are out of order."""
+    folded_lines = """\
+    // FUNCTION: TEST 0x3000
+    void third() {}
+
+    // FUNCTION: TEST 0x2000 FOLDED
+    void folded() {}
+
+    // FUNCTION: TEST 0x1000
+    void first() {}
+    """
+
+    assert linter.read(folded_lines, PurePath("test.cpp"), "TEST") is False

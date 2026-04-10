@@ -22,9 +22,9 @@ def create_lookup(
         return addrs.get(addr)
 
     if is_orig:
-        return create_name_lookup(db.get_by_orig, bin_lookup, "orig_addr")
+        return create_name_lookup(db, ImageId.ORIG, bin_lookup)
 
-    return create_name_lookup(db.get_by_recomp, bin_lookup, "recomp_addr")
+    return create_name_lookup(db, ImageId.RECOMP, bin_lookup)
 
 
 ####

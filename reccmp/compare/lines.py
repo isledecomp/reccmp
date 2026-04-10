@@ -106,6 +106,8 @@ class LinesDb:
         local_path: str | Path | PurePath,
         line_start: int,
         line_end: int | None = None,
+        *,
+        folded: bool = False,
     ) -> int | None:
         """The database contains the first line of each function, as verified by
         reducing the starting list of line-offset pairs using other information from the pdb.
@@ -128,12 +130,16 @@ class LinesDb:
             )
             return None
 
-        logger.error(
-            "Failed to find function symbol with filename and line: %s:%d. "
-            + "If this issue persists after a recompile, the compiler has probably inlined this function.",
-            local_path,
-            line_start,
-        )
+        # Do not alert for folded functions.
+        # We expect only one match from many line annotations on the same address.
+        if not folded:
+            logger.error(
+                "Failed to find function symbol with filename and line: %s:%d. "
+                + "If this issue persists after a recompile, the compiler has probably inlined this function.",
+                local_path,
+                line_start,
+            )
+
         return None
 
     def find_line_of_recomp_address(self, address: int) -> tuple[PurePath, int] | None:

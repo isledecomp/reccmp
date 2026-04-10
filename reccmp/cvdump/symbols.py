@@ -123,6 +123,7 @@ class CvdumpSymbolsParser:
         # This is so we do not end the proc early by reading an S_END
         # that indicates the end of the block.
         self.block_level: int = 0
+        self.alerted_types: set[str] = set()
 
     def read_line(self, line: str):
         if len(line) == 0:
@@ -214,4 +215,6 @@ class CvdumpSymbolsParser:
         elif symbol_type in self._unhandled_symbols:
             return
         else:
-            logger.error("Unhandled symbol type: %s", line)
+            if symbol_type not in self.alerted_types:
+                self.alerted_types.add(symbol_type)
+                logger.info("Unhandled symbol type: %s", symbol_type)

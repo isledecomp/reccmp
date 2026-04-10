@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 def match_entry(db: EntityDb, orig_bin: PEImage, recomp_bin: PEImage):
     # The _entry symbol is referenced in the PE header so we get this match for free.
     with db.batch() as batch:
-        batch.set_recomp(recomp_bin.entry, type=EntityType.FUNCTION)
+        batch.set(ImageId.RECOMP, recomp_bin.entry, type=EntityType.FUNCTION)
         batch.match(orig_bin.entry, recomp_bin.entry)
 
 

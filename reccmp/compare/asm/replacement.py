@@ -1,11 +1,7 @@
 from functools import cache
 from typing import Callable, Protocol
-from reccmp.compare.db import ReccmpEntity
-from reccmp.types import EntityType
-
-
-class AddrLookupProtocol(Protocol):
-    def __call__(self, addr: int, *, exact: bool) -> ReccmpEntity | None: ...
+from reccmp.compare.db import EntityDb, ReccmpEntity
+from reccmp.types import EntityType, ImageId
 
 
 class AddrTestProtocol(Protocol):
@@ -19,17 +15,18 @@ class NameReplacementProtocol(Protocol):
 
 
 def create_name_lookup(
-    db_getter: AddrLookupProtocol,
+    db: EntityDb,
+    image_id: ImageId,
     bin_read: Callable[[int], int | None],
-    addr_attribute: str,
 ) -> NameReplacementProtocol:
     """Function generator for name replacement"""
+    assert image_id in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
 
     def follow_indirect(pointer: int) -> ReccmpEntity | None:
         """Read the pointer address and open the entity (if it exists) at the indirect location."""
         addr = bin_read(pointer)
         if addr is not None:
-            return db_getter(addr, exact=True)
+            return db.get(image_id, addr, exact=True)
 
         return None
 
@@ -55,7 +52,7 @@ def create_name_lookup(
         """Same as regular lookup but aware of the fact that the address is a pointer.
         Indirect implies exact search, so we drop both parameters from the lookup entry point.
         """
-        entity = db_getter(addr, exact=True)
+        entity = db.get(image_id, addr, exact=True)
         if entity is not None:
             # If the indirect call points at a variable initialized to a function,
             # prefer the variable name as this is more useful.
@@ -97,12 +94,14 @@ def create_name_lookup(
         if indirect:
             return indirect_lookup(addr)
 
-        entity = db_getter(addr, exact=exact)
+        entity = db.get(image_id, addr, exact=exact)
 
         if entity is None:
             return None
 
-        offset = addr - getattr(entity, addr_attribute)
+        base_addr = entity.addr(image_id)
+        assert base_addr is not None
+        offset = addr - base_addr
         return get_name(entity, offset)
 
     return lookup

@@ -256,7 +256,7 @@ def test_load_code_match_line(db: EntityDb, lines_db: LinesDb, binfile: PEImage)
     lines_db.add_line(PureWindowsPath("test.cpp"), 3, 0x1234)
     lines_db.mark_function_starts([0x1234])
 
-    # TODO: For a successful match, the recomp entity must already exist.
+    # Establish recomp entities as if we read the PDB first.
     with db.batch() as batch:
         batch.set(ImageId.RECOMP, 0x1234)
     load_markers(files, lines_db, binfile, "TEST", db)
@@ -288,7 +288,7 @@ def test_load_code_no_match_line(db: EntityDb, lines_db: LinesDb, binfile: PEIma
     lines_db.add_line(PureWindowsPath("test.cpp"), 8, 0x1234)
     lines_db.mark_function_starts([0x1234])
 
-    # TODO: For a successful match, the recomp entity must already exist.
+    # Establish recomp entities as if we read the PDB first.
     with db.batch() as batch:
         batch.set(ImageId.RECOMP, 0x1234)
     load_markers(files, lines_db, binfile, "TEST", db)
@@ -535,3 +535,61 @@ def test_load_code_line_marker(db: EntityDb, lines_db: LinesDb, binfile: PEImage
     assert entity.get("type") == EntityType.LINE
     assert entity.get("filename") == "test.cpp"
     assert entity.get("line") == 3
+
+
+def test_load_code_folded(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
+    """Should match functions with code folding where all occurrences are marked.
+    The LINES section in the PDB appears to choose only one copy of the function.
+    Make sure we can match whether the line corresponds to the first annotation
+    or a later one."""
+    files = (
+        TextFile(
+            PurePath("test.cpp"),
+            dedent("""\
+                // FUNCTION: TEST 0x10001000 FOLDED
+                void Pizza::Start()
+                {
+                }
+
+                // FUNCTION: TEST 0x10001000 FOLDED
+                void Pizza::End()
+                {
+                }
+                """),
+        ),
+        TextFile(
+            PurePath("test.h"),
+            dedent("""\
+                class Hello {
+                public:
+                    // FUNCTION: TEST 0x10002000 FOLDED
+                    virtual void vtable0x00() {}
+
+                    // FUNCTION: TEST 0x10002000 FOLDED
+                    virtual void vtable0x04() {}
+                }
+                """),
+        ),
+    )
+
+    # Here the first occurrence of the folded function gets the line reference.
+    lines_db.add_line(PureWindowsPath("test.cpp"), 3, 0x1234)
+    # But here the second (or nth) occurrence gets the line.
+    lines_db.add_line(PureWindowsPath("test.h"), 7, 0x5555)
+    lines_db.mark_function_starts([0x1234, 0x5555])
+
+    # Establish recomp entities as if we read the PDB first.
+    with db.batch() as batch:
+        batch.set(ImageId.RECOMP, 0x1234)
+        batch.set(ImageId.RECOMP, 0x5555)
+    load_markers(files, lines_db, binfile, "TEST", db)
+
+    entity = db.get(ImageId.ORIG, 0x10001000)
+    assert entity is not None
+    assert entity.recomp_addr == 0x1234
+    assert entity.get("type") == EntityType.FUNCTION
+
+    entity = db.get(ImageId.ORIG, 0x10002000)
+    assert entity is not None
+    assert entity.recomp_addr == 0x5555
+    assert entity.get("type") == EntityType.FUNCTION
