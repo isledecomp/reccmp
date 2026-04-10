@@ -1,5 +1,6 @@
 """For collating the results from parsing cvdump.exe into a more directly useful format."""
 
+import string
 from dataclasses import dataclass
 from pathlib import PureWindowsPath
 from reccmp.types import EntityType
@@ -12,6 +13,38 @@ from .types import (
     CvdumpTypesParser,
     TypeInfo,
 )
+
+
+def get_size_from_float_symbol(symbol: str) -> int | None:
+    """Get the size for the floating point constant from its symbol that resembles:
+    1. __real@X@... where X being 4 or 8 indicates the length in bytes.
+    2. __real@..... using the length of the hex string following the prefix.
+    See GH #328 for more context.
+    """
+    prefix, delim, suffix = symbol.partition("__real@")
+
+    # Make sure the string was split as we expect.
+    if prefix or not delim:
+        return None
+
+    # Pattern #1.
+    # We have only seen __real@4@ and __real@8@. This is probably overkill, but
+    # we should protect against typos in symbols imported from user metadata.
+    if "@" in suffix:
+        if suffix.startswith("4@"):
+            return 4
+
+        if suffix.startswith("8@"):
+            return 8
+
+        return None
+
+    # Pattern #2.
+    # Make sure the hex string is valid and has the expected size.
+    if len(suffix) in (8, 16) and set(suffix).issubset(set(string.hexdigits)):
+        return len(suffix) // 2
+
+    return None
 
 
 @dataclass
@@ -69,15 +102,14 @@ class CvdumpNode:
         elif self.decorated_name.startswith("??_C@_1"):
             self.node_type = EntityType.WIDECHAR
 
-        elif self.decorated_name.startswith("__real@4"):
-            # Single precision float
-            self.node_type = EntityType.FLOAT
-            self.confirmed_size = 4
+        elif self.decorated_name.startswith("__real@"):
+            # Set the type and size for this float constant only if it
+            # matches the expected patterns.
+            size = get_size_from_float_symbol(self.decorated_name)
 
-        elif self.decorated_name.startswith("__real@8"):
-            # Double precision float
-            self.node_type = EntityType.FLOAT
-            self.confirmed_size = 8
+            if size is not None:
+                self.node_type = EntityType.FLOAT
+                self.confirmed_size = size
 
         elif not self.decorated_name.startswith("?") and "@" in self.decorated_name:
             # C mangled symbol. The trailing at-sign with number tells the number of bytes
