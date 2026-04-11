@@ -89,7 +89,7 @@ class Compare:
         recomp_bin: Image,
         pdb_file: CvdumpAnalysis,
         target_id: str,
-        encoding: str = "latin1",
+        encoding: str = "utf-8",
         code_files: list[TextFile] | None = None,
         data_sources: list[TextFile] | None = None,
     ):

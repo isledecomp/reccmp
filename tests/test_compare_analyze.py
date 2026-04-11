@@ -269,7 +269,7 @@ def test_complete_partial_strings_custom_encoding(db: EntityDb):
     e = db.get(ImageId.ORIG, 100)
     assert e is not None
     assert e.get("size") == 11
-    assert e.name.encode() == '"你吃饭了吗"'.encode("unicode_escape")
+    assert e.name == '"你吃饭了吗"'.encode("unicode_escape").decode()
 
 
 PARTIAL_STRING_EXCEPTIONS = (

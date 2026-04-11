@@ -76,7 +76,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--encoding",
-        default="latin1",
+        default="utf-8",
         type=str,
         help="The encoding of the checked files.",
     )

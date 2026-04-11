@@ -147,7 +147,7 @@ class RecCmpPartialTarget:
     sha256: str
 
     # Encoding of the source code files for this target.
-    encoding: str = "latin1"
+    encoding: str = "utf-8"
 
     # Relative (to project root) directory of source code files for this target.
     source_paths: tuple[Path, ...] = tuple()
@@ -439,7 +439,7 @@ class RecCmpPathsAction(argparse.Action):
             original_path=original,
             recompiled_path=recompiled,
             recompiled_pdb=pdb,
-            encoding="latin1",
+            encoding="utf-8",
             source_paths=(source_paths,),
             ghidra_config=GhidraConfig(),
             report_config=ReportConfig(),
