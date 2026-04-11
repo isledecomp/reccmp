@@ -468,3 +468,77 @@ def test_get_next_orig_addr_function_passenger_type(db: EntityDb):
     assert db.get_next_orig_addr(100) == 200
     assert db.get_next_orig_addr(150) == 200
     assert db.get_next_orig_addr(160) == 200
+
+
+@pytest.mark.parametrize(
+    "image_id, other_id",
+    [(ImageId.ORIG, ImageId.RECOMP), (ImageId.RECOMP, ImageId.ORIG)],
+)
+def test_size_functions(db: EntityDb, image_id: ImageId, other_id: ImageId):
+    """Demonstrate the behavior of size() and any_size() for unmatched entities."""
+    with db.batch() as batch:
+        batch.set(image_id, 100, size=1)
+        batch.set(image_id, 200)
+
+    # Entity with size set
+    entity = db.get(image_id, 100)
+    assert entity is not None
+    assert entity.size(image_id) == 1
+    assert entity.size(other_id) is None
+    assert entity.any_size() == 1
+    assert entity.any_size(image_id) == 1
+    assert entity.any_size(other_id) == 1
+
+    # Entity with null size
+    entity = db.get(image_id, 200)
+    assert entity is not None
+    assert entity.size(image_id) is None
+    assert entity.size(other_id) is None
+    assert entity.any_size() == 0
+    assert entity.any_size(image_id) == 0
+    assert entity.any_size(other_id) == 0
+
+
+def test_size_functions_matched_both_have_size(db: EntityDb):
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, size=1)
+        batch.set(ImageId.RECOMP, 100, size=5)
+        batch.match(100, 100)
+
+    entity = db.get(ImageId.ORIG, 100)
+    assert entity is not None
+    assert entity.size(ImageId.ORIG) == 1
+    assert entity.size(ImageId.RECOMP) == 5
+    assert entity.any_size() == 5
+    assert entity.any_size(ImageId.ORIG) == 1
+    assert entity.any_size(ImageId.RECOMP) == 5
+
+
+def test_size_functions_matched_orig_null(db: EntityDb):
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100)
+        batch.set(ImageId.RECOMP, 100, size=5)
+        batch.match(100, 100)
+
+    entity = db.get(ImageId.ORIG, 100)
+    assert entity is not None
+    assert entity.size(ImageId.ORIG) is None
+    assert entity.size(ImageId.RECOMP) == 5
+    assert entity.any_size() == 5
+    assert entity.any_size(ImageId.ORIG) == 5
+    assert entity.any_size(ImageId.RECOMP) == 5
+
+
+def test_size_functions_matched_recomp_null(db: EntityDb):
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, size=1)
+        batch.set(ImageId.RECOMP, 100)
+        batch.match(100, 100)
+
+    entity = db.get(ImageId.ORIG, 100)
+    assert entity is not None
+    assert entity.size(ImageId.ORIG) == 1
+    assert entity.size(ImageId.RECOMP) is None
+    assert entity.any_size() == 1
+    assert entity.any_size(ImageId.ORIG) == 1
+    assert entity.any_size(ImageId.RECOMP) == 1

@@ -64,7 +64,7 @@ def compare_functions(
         ReccmpMatch(
             ORIG_GLOBAL_OFFSET,
             RECOMP_GLOBAL_OFFSET,
-            f'{{"type":1,"stub":false,"name":"unittest","symbol":"?Unittest","size":{len(recomp)}}}',
+            f'{{"type":1,"stub":false,"name":"unittest","symbol":"?Unittest","recomp_size":{len(recomp)}}}',
         )
     )
 

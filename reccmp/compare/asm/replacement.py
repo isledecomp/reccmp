@@ -40,10 +40,10 @@ def create_name_lookup(
 
         # We will not return an offset name if this is not a variable
         # or if the offset is outside the range of the entity.
-        if (
-            entity.entity_type not in (EntityType.DATA, EntityType.OFFSET)
-            or offset >= entity.size
-        ):
+        if entity.entity_type not in (
+            EntityType.DATA,
+            EntityType.OFFSET,
+        ) or offset >= entity.any_size(image_id):
             return None
 
         return entity.offset_name(offset)

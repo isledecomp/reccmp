@@ -455,7 +455,7 @@ def main() -> int:
             recomp_addr,
             displacement,
             row_type,
-            match.size,
+            match.any_size(),
             match.name,
             module_name,
         )

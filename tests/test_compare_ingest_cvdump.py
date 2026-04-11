@@ -44,13 +44,13 @@ def test_size_estimate(binfile: PEImage):
     entity = db.get(ImageId.RECOMP, 0x1010292A)
     assert entity is not None
     assert entity.get("symbol") == "__OP_LOG10jmptab"
-    assert entity.get("size") == 0x20
+    assert entity.any_size() == 0x20
 
     # Calculate the distance to the end of the .data section.
     entity = db.get(ImageId.RECOMP, 0x1010294A)
     assert entity is not None
     assert entity.get("symbol") == "__OP_LOGjmptab"
-    assert entity.get("size") == 0x100F0000 + 0x1A734 - 0x1010294A
+    assert entity.any_size() == 0x100F0000 + 0x1A734 - 0x1010294A
 
 
 def test_size_estimate_different_sections(binfile: PEImage):
@@ -73,12 +73,12 @@ def test_size_estimate_different_sections(binfile: PEImage):
     # so it is used instead of the smaller virtual size.
     entity = db.get(ImageId.RECOMP, 0x100D4018)
     assert entity is not None
-    assert entity.get("size") == 0x100D4000 + 0x1B600 - 0x100D4018
+    assert entity.any_size() == 0x100D4000 + 0x1B600 - 0x100D4018
 
     # Calculate the distance to the end of the .data section.
     entity = db.get(ImageId.RECOMP, 0x1010292A)
     assert entity is not None
-    assert entity.get("size") == 0x100F0000 + 0x1A734 - 0x1010292A
+    assert entity.any_size() == 0x100F0000 + 0x1A734 - 0x1010292A
 
 
 def test_size_estimate_section_contrib(binfile: PEImage):
@@ -110,19 +110,19 @@ def test_size_estimate_section_contrib(binfile: PEImage):
     entity = db.get(ImageId.RECOMP, 0x1010292A)
     assert entity is not None
     assert entity.get("symbol") == "__OP_LOG10jmptab"
-    assert entity.get("size") == 0x20
+    assert entity.any_size() == 0x20
 
     # Section contribution size is smaller than distance to next entity.
     entity = db.get(ImageId.RECOMP, 0x1010294A)
     assert entity is not None
     assert entity.get("symbol") == "__OP_LOGjmptab"
-    assert entity.get("size") == 0x10
+    assert entity.any_size() == 0x10
 
     # Prefer section contribution size over distance to end of section.
     entity = db.get(ImageId.RECOMP, 0x1010296A)
     assert entity is not None
     assert entity.get("symbol") == "__OP_EXPjmptab"
-    assert entity.get("size") == 0x10
+    assert entity.any_size() == 0x10
 
 
 def test_no_entity_for_section_contributions_only(binfile: PEImage):
@@ -184,7 +184,7 @@ def test_string_without_section_contrib(binfile: PEImage):
     assert entity.get("name") is None
 
     # Size will be determined after reading from the binary.
-    assert entity.get("size") is None
+    assert entity.size(ImageId.RECOMP) is None
 
 
 def test_string_with_section_contrib(binfile: PEImage):
@@ -214,7 +214,7 @@ def test_string_with_section_contrib(binfile: PEImage):
     assert entity.get("name") is None
 
     # Size includes null-terminator
-    assert entity.get("size") == 9
+    assert entity.any_size() == 9
 
 
 def test_utf16_without_section_contrib(binfile: PEImage):
@@ -242,7 +242,7 @@ def test_utf16_without_section_contrib(binfile: PEImage):
     assert entity.get("name") is None
 
     # Size will be determined after reading from the binary.
-    assert entity.get("size") is None
+    assert entity.size(ImageId.RECOMP) is None
 
 
 def test_utf16_with_section_contrib(binfile: PEImage):
@@ -273,7 +273,7 @@ def test_utf16_with_section_contrib(binfile: PEImage):
     assert entity.get("name") is None
 
     # Size includes two-byte null-terminator
-    assert entity.get("size") == 14
+    assert entity.any_size() == 14
 
 
 def test_vtable(binfile: PEImage):
@@ -394,7 +394,7 @@ def test_variable_size_scalar_type(binfile: PEImage):
 
     entity = db.get(ImageId.RECOMP, 0x10102B24)
     assert entity is not None
-    assert entity.get("size") == 4
+    assert entity.any_size() == 4
     assert entity.get("name") == "g_nextInterruptWavIndex"
 
 
@@ -419,7 +419,7 @@ def test_variable_size_without_type_info(binfile: PEImage):
 
     # Asserting it this way because the current behavior is to estimate the entity size
     # using the distance between the address and the end of the section.
-    assert entity.get("size") != 1024
+    assert entity.any_size() != 1024
 
 
 def test_variable_size_with_type_info(binfile: PEImage):
@@ -449,7 +449,7 @@ def test_variable_size_with_type_info(binfile: PEImage):
 
     entity = db.get(ImageId.RECOMP, 0x101015B8)
     assert entity is not None
-    assert entity.get("size") == 1024
+    assert entity.any_size() == 1024
     assert entity.get("data_type") == 0x1424
 
 
@@ -477,7 +477,7 @@ def test_gproc32(binfile: PEImage):
     entity = db.get(ImageId.RECOMP, 0x10038220)
     assert entity is not None
     assert entity.get("type") == EntityType.FUNCTION
-    assert entity.get("size") == 0x8B
+    assert entity.any_size() == 0x8B
     assert entity.get("name") == "Pizza::Start"
 
 
@@ -501,7 +501,7 @@ def test_lproc32(binfile: PEImage):
     entity = db.get(ImageId.RECOMP, 0x10092350)
     assert entity is not None
     assert entity.get("type") == EntityType.FUNCTION
-    assert entity.get("size") == 5
+    assert entity.any_size() == 5
     assert entity.get("name") == "$E28"
 
 
@@ -555,7 +555,7 @@ def test_gproc_with_static_var(binfile: PEImage):
 
     # We can get the size from just the scalar type for now.
     # We may need to preload the types db with MSVC-specific data later. TODO: #106
-    assert entity.get("size") == 4
+    assert entity.any_size() == 4
 
     # TODO: #102. The parent function's address should be set instead.
     symbol = entity.get("symbol")
@@ -583,7 +583,7 @@ def test_float_symbols_with_size(binfile: PEImage):
     assert entity is not None
     assert entity.get("symbol") == "__real@4@00000000000000000000"
     assert entity.get("type") == EntityType.FLOAT
-    assert entity.get("size") == 4
+    assert entity.any_size() == 4
 
     # The name will be blank until we read from the binary in a later step.
     assert entity.get("name") is None
@@ -593,7 +593,7 @@ def test_float_symbols_with_size(binfile: PEImage):
     assert entity is not None
     assert entity.get("symbol") == "__real@8@00000000000000000000"
     assert entity.get("type") == EntityType.FLOAT
-    assert entity.get("size") == 8
+    assert entity.any_size() == 8
     assert entity.get("name") is None
 
 
@@ -615,7 +615,7 @@ def test_float_symbols_without_size(binfile: PEImage):
     assert entity is not None
     assert entity.get("symbol") == "__real@3b95a025"
     assert entity.get("type") == EntityType.FLOAT
-    assert entity.get("size") == 4
+    assert entity.size(ImageId.RECOMP) == 4
 
     # The name will be blank until we read from the binary in a later step.
     assert entity.get("name") is None
@@ -624,7 +624,7 @@ def test_float_symbols_without_size(binfile: PEImage):
     assert entity is not None
     assert entity.get("symbol") == "__real@0000000000000000"
     assert entity.get("type") == EntityType.FLOAT
-    assert entity.get("size") == 8
+    assert entity.size(ImageId.RECOMP) == 8
     assert entity.get("name") is None
 
 

@@ -62,7 +62,7 @@ def test_create_analysis_strings(db: EntityDb):
     e = db.get(ImageId.ORIG, 100)
     assert e is not None
     assert e.get("type") == EntityType.STRING
-    assert e.get("size") == 6
+    assert e.any_size() == 6
 
 
 def test_create_analysis_strings_do_not_replace(db: EntityDb):
@@ -115,7 +115,7 @@ def test_create_thunks(db: EntityDb):
     e = db.get(ImageId.ORIG, 100)
     assert e is not None
     assert e.get("type") == EntityType.THUNK
-    assert e.get("size") == 5
+    assert e.any_size() == 5
 
 
 def test_create_thunks_do_not_replace(db: EntityDb):
@@ -131,7 +131,7 @@ def test_create_thunks_do_not_replace(db: EntityDb):
     e = db.get(ImageId.ORIG, 100)
     assert e is not None
     assert e.get("type") == EntityType.FUNCTION
-    assert e.get("size") != 5
+    assert e.any_size() != 5
     assert e.get("ref_orig") is None
 
 
@@ -147,7 +147,7 @@ def test_create_analysis_floats(db: EntityDb):
     e = db.get(ImageId.ORIG, 100)
     assert e is not None
     assert e.get("type") == EntityType.FLOAT
-    assert e.get("size") == 4
+    assert e.any_size() == 4
     assert e.get("name") == "0.5"
 
 
@@ -177,7 +177,7 @@ def test_create_analysis_vtordisps(db: EntityDb, binfile: PEImage):
     e = db.get(ImageId.ORIG, 0x1000FB50)
     assert e is not None
     assert e.get("type") == EntityType.VTORDISP
-    assert e.get("size") == 8
+    assert e.any_size() == 8
     assert get_ref_addr(db, ImageId.ORIG, 0x1000FB50) == 0x1000FB60
     assert get_ref_displacement(db, ImageId.ORIG, 0x1000FB50) == (-4, 0)
 
@@ -216,7 +216,7 @@ def test_complete_partial_strings(db: EntityDb):
     # Entity size set according to string length plus null-terminator.
     e = db.get(ImageId.ORIG, 100)
     assert e is not None
-    assert e.get("size") == 6
+    assert e.any_size() == 6
     assert e.name == '"Hello"'
 
     # Do not report a failed match if this string does not exist in both binaries.
@@ -251,7 +251,7 @@ def test_complete_partial_strings_widechar(db: EntityDb):
     # Entity size set according to string length plus null-terminator.
     e = db.get(ImageId.ORIG, 100)
     assert e is not None
-    assert e.get("size") == 12
+    assert e.any_size() == 12
     assert e.name == 'L"Hello"'
 
 

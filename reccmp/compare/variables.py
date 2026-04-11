@@ -230,7 +230,7 @@ class VariableComparator:
         type_key = CvdumpTypeKey(var.get("data_type")) if var.get("data_type") else None
 
         # Start by assuming we can only compare the raw bytes
-        data_size = var.size
+        data_size = var.any_size()
         raw_only = True
 
         if type_key is not None:

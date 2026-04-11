@@ -315,7 +315,7 @@ def test_load_code_string(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     entity = db.get(ImageId.ORIG, 0x100F038C)
     assert entity is not None
     assert entity.get("type") == EntityType.STRING
-    assert entity.get("size") == 6
+    assert entity.any_size() == 6
     assert entity.get("name") == '"Pizza"'
 
 
@@ -352,7 +352,7 @@ def test_load_code_widechar(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     entity = db.get(ImageId.ORIG, 0x100DAAA0)
     assert entity is not None
     assert entity.get("type") == EntityType.STRING
-    assert entity.get("size") == 14
+    assert entity.any_size() == 14
     assert entity.get("name") == 'L"(null)"'
 
 
@@ -373,7 +373,7 @@ def test_load_code_string_with_nulls(db: EntityDb, lines_db: LinesDb, binfile: P
     entity = db.get(ImageId.ORIG, 0x100DAAA0)
     assert entity is not None
     assert entity.get("type") == EntityType.STRING
-    assert entity.get("size") == 12
+    assert entity.any_size() == 12
     assert entity.get("name") == '"(\\x00n\\x00u\\x00l\\x00l\\x00)"'
 
 
