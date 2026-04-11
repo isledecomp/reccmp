@@ -31,6 +31,7 @@ def test_nested_paths(source_dir: Path):
         target_id="TEST",
         filename="TEST.exe",
         sha256="",
+        encoding="latin1",
         source_paths=nested_paths,
         original_path=Path("TEST.exe"),
         recompiled_path=Path("build/TEST.exe"),

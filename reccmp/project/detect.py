@@ -146,6 +146,9 @@ class RecCmpPartialTarget:
     # SHA-256 checksum of the original binary.
     sha256: str
 
+    # Encoding of the source code files for this target.
+    encoding: str = "latin1"
+
     # Relative (to project root) directory of source code files for this target.
     source_paths: tuple[Path, ...] = tuple()
 
@@ -181,6 +184,9 @@ class RecCmpTarget:
 
     # SHA-256 checksum of the original binary.
     sha256: str
+
+    # Encoding of the source code files for this target.
+    encoding: str
 
     # Relative (to project root) directory of source code files for this target.
     source_paths: tuple[Path, ...]
@@ -267,6 +273,7 @@ class RecCmpProject:
             original_path=target.original_path,
             recompiled_path=target.recompiled_path,
             recompiled_pdb=target.recompiled_pdb,
+            encoding=target.encoding,
             source_paths=target.source_paths,
             ghidra_config=ghidra,
             data_sources=data_sources,
@@ -378,6 +385,7 @@ class RecCmpProject:
                 target_id=target_id,
                 filename=target.filename,
                 sha256=target.hash.sha256,
+                encoding=target.encoding,
                 source_paths=source_paths,
                 ghidra_config=ghidra,
                 data_sources=data_sources,
@@ -431,6 +439,7 @@ class RecCmpPathsAction(argparse.Action):
             original_path=original,
             recompiled_path=recompiled,
             recompiled_pdb=pdb,
+            encoding="latin1",
             source_paths=(source_paths,),
             ghidra_config=GhidraConfig(),
             report_config=ReportConfig(),

@@ -255,6 +255,23 @@ def test_complete_partial_strings_widechar(db: EntityDb):
     assert e.name == 'L"Hello"'
 
 
+def test_complete_partial_strings_custom_encoding(db: EntityDb):
+    """Should read data for a custom encoded string entity."""
+    binfile = Mock(spec=[])
+    binfile.read_string = Mock(return_value="你吃饭了吗".encode("gb2312"))
+
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, type=EntityType.STRING)
+
+    complete_partial_strings(db, ImageId.ORIG, binfile, "gb2312")
+
+    # Entity size set according to string length in bytes plus null-terminator.
+    e = db.get(ImageId.ORIG, 100)
+    assert e is not None
+    assert e.get("size") == 11
+    assert e.name.encode() == '"你吃饭了吗"'.encode("unicode_escape")
+
+
 PARTIAL_STRING_EXCEPTIONS = (
     InvalidVirtualAddressError,
     InvalidVirtualReadError,

@@ -31,13 +31,15 @@ def match_entry(db: EntityDb, orig_bin: PEImage, recomp_bin: PEImage):
         batch.match(orig_bin.entry, recomp_bin.entry)
 
 
-def create_analysis_strings(db: EntityDb, img_id: ImageId, binfile: PEImage):
+def create_analysis_strings(
+    db: EntityDb, img_id: ImageId, binfile: PEImage, encoding: str = "latin1"
+):
     """Search both binaries for Latin1 strings.
     We use the insert_() method so that thse strings will not overwrite
     an existing entity. It's possible that some variables or pointers
     will be mistakenly identified as short strings."""
     with db.batch() as batch:
-        for addr, string in binfile.iter_string("latin1"):
+        for addr, string in binfile.iter_string(encoding):
             # If the address is the site of a relocation, this is a pointer, not a string.
             if addr in binfile.relocations:
                 continue
@@ -222,7 +224,9 @@ def complete_partial_floats(db: EntityDb, image_id: ImageId, binfile: PEImage):
                 )
 
 
-def complete_partial_strings(db: EntityDb, image_id: ImageId, binfile: PEImage):
+def complete_partial_strings(
+    db: EntityDb, image_id: ImageId, binfile: PEImage, encoding: str = "latin1"
+):
     """For each string/widechar entity without any data,
     read the value from the binary and set the entity name.
     If the entity has no size, read until we hit a null-terminator."""
@@ -248,7 +252,7 @@ def complete_partial_strings(db: EntityDb, image_id: ImageId, binfile: PEImage):
                         raw = binfile.read_string(addr)
                         string_size = len(raw) + 1
 
-                    decoded_string = raw.decode("latin1")
+                    decoded_string = raw.decode(encoding)
 
                 batch.set(
                     image_id,
