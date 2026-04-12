@@ -2,6 +2,7 @@
 
 from pathlib import PurePath, PureWindowsPath
 from textwrap import dedent
+from unittest.mock import Mock
 import pytest
 from reccmp.types import EntityType, ImageId
 from reccmp.formats import PEImage, TextFile
@@ -160,7 +161,7 @@ def test_load_code_function_nameref_variants(
 
                 // LIBRARY: TEST 0x1008b400
                 // _atol
-                
+
                 // STUB: TEST 0x1008b4b0
                 // _atoi
 
@@ -354,6 +355,36 @@ def test_load_code_widechar(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     assert entity.get("type") == EntityType.STRING
     assert entity.get("size") == 14
     assert entity.get("name") == 'L"(null)"'
+
+
+def test_read_gb2312_string(db: EntityDb, lines_db: LinesDb):
+    """Make sure we read the full length of the string in GB 2312 encoding and create the entity. GH #364"""
+    string_text = "你吃饭了吗"
+    string_bytes = string_text.encode("gb2312") + b"\x00"
+
+    # Can't use RawImage here; it is missing some functions from PEImage.
+    orig_bin = Mock(spec=[])
+    orig_bin.read = lambda _, size: string_bytes[:size]
+    orig_bin.imagebase = 0
+    orig_bin.is_valid_vaddr = Mock(return_value=True)
+
+    files = (
+        TextFile(
+            PurePath("test.cpp"),
+            dedent(f"""\
+                // STRING: TEST 0x1000
+                const char* test = "{string_text}";
+                """),
+        ),
+    )
+
+    load_markers(files, lines_db, orig_bin, "TEST", db, "gb2312")
+
+    entity = db.get(ImageId.ORIG, 0x1000)
+    assert entity is not None
+    assert entity.get("type") == EntityType.STRING
+    assert entity.get("size") == len(string_bytes)
+    assert entity.name == f'"{string_text}"'.encode("unicode_escape").decode()
 
 
 def test_load_code_string_with_nulls(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
