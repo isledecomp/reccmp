@@ -137,7 +137,9 @@ class PdbTypeImporter:
 
         if cvtype.pointer is None:
             # TODO: Check if this type addition needs to be done for more types, or if we can centralise it
-            return add_data_type_or_reuse_existing(self.api, get_scalar_ghidra_type(type_key))
+            return add_data_type_or_reuse_existing(
+                self.api, get_scalar_ghidra_type(type_key)
+            )
 
         points_to = get_scalar_ghidra_type(cvtype.pointer)
         return get_or_add_pointer_type(self.api, points_to)

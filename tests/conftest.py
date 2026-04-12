@@ -1,11 +1,14 @@
 import hashlib
 from pathlib import Path
 from typing import Callable, Iterator, TYPE_CHECKING
+from unittest.mock import Mock
 import pytest
 from _pytest.config import Config
 from _pytest.config.argparsing import Parser
 
+from reccmp.compare.core import Compare
 from reccmp.formats import NEImage, PEImage, detect_image
+from tests.raw_image import RawImage
 
 from .binfiles_test_setup import BINFILE_ISLE, BINFILE_LEGO1, BINFILE_SKI, TestBinfile
 from .ghidra_integration_test_setup import ghidra_integration_test_program
@@ -19,6 +22,7 @@ from .ghidra_integration_test_setup import ghidra_integration_test_program
 if TYPE_CHECKING:
     from ghidra.program.flatapi import FlatProgramAPI
     from ghidra.program.model.listing import Program
+    from reccmp.ghidra.importer.type_importer import PdbTypeImporter
 
 
 REQUIRE_BINFILES_OPTION = "--require-binfiles"
@@ -143,3 +147,15 @@ def fixture_ghidra_program(ghidra_program: "Program") -> "Iterator[FlatProgramAP
     finally:
         # Revert all side effects of the test that just ran
         transaction.abort()
+
+
+@pytest.fixture(name="type_importer", scope="function")
+def pdb_type_importer_fixture(ghidra: "FlatProgramAPI") -> "Iterator[PdbTypeImporter]":
+    from reccmp.ghidra.importer.type_importer import (
+        PdbTypeImporter,
+        PdbFunctionExtractor,
+    )
+
+    compare = Compare(RawImage.from_memory(), RawImage.from_memory(), Mock(), "TEST")
+    type_importer = PdbTypeImporter(ghidra, PdbFunctionExtractor(compare), set())
+    yield type_importer

@@ -364,11 +364,7 @@ class CvdumpTypesParser:
             element_type_key = obj.get("element_type")
             assert element_type_key is not None
             pointee_type = self.get(element_type_key)
-            return TypeInfo(
-                key=type_key,
-                size=4,
-                name=f"{pointee_type.name} *"
-            )
+            return TypeInfo(key=type_key, size=4, name=f"{pointee_type.name} *")
 
         if obj.get("is_forward_ref", False):
             # Get the forward reference to follow.

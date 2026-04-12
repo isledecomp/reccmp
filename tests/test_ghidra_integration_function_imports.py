@@ -6,10 +6,8 @@
 
 import json
 from typing import TYPE_CHECKING, Generator
-from unittest.mock import Mock
 
 import pytest
-from reccmp.compare.core import Compare
 from reccmp.cvdump.cvinfo import CVInfoTypeEnum, CvdumpTypeKey
 from reccmp.compare.db import ReccmpMatch
 
@@ -18,13 +16,15 @@ from reccmp.ghidra.importer.pdb_extraction import (
     CppRegisterSymbol,
     CppStackSymbol,
     FunctionSignature,
-    PdbFunctionExtractor,
 )
-from tests.test_image_raw import RawImage
 
 if TYPE_CHECKING:
     from ghidra.program.flatapi import FlatProgramAPI
     from reccmp.ghidra.importer.type_importer import PdbTypeImporter
+
+
+ORIG_FN_TO_OVERWRITE_PRIMARY = 0x00402880  # readIntFromRegistry()
+ORIG_FN_TO_OVERWRITE_SECONDARY = 0x00402C20  # IsleApp::Tick()
 
 
 class_field_list_key = CvdumpTypeKey.from_str("0x1002")
@@ -34,20 +34,10 @@ anim_actor_entry_pointer_key = CvdumpTypeKey.from_str("0x1005")
 anim_actor_entry_field_list_key = CvdumpTypeKey.from_str("0x1006")
 
 
-# TODO: Fix code duplication with other Ghidra test file
-@pytest.fixture(name="type_importer", scope="function")
-def pdb_type_importer_fixture(ghidra: "FlatProgramAPI") -> "Generator[PdbTypeImporter]":
-    from reccmp.ghidra.importer.type_importer import PdbTypeImporter
-
-    compare = Compare(RawImage.from_memory(), RawImage.from_memory(), Mock(), "TEST")
-    type_importer = PdbTypeImporter(ghidra, PdbFunctionExtractor(compare), set())
-    yield type_importer
-
-
 class GhidraFunctionTestHelper:
     def __init__(self, ghidra: "FlatProgramAPI"):
         self.ghidra = ghidra
-        self.orig_address = 0x00402880  # readIntFromRegistry()
+        self.orig_address = ORIG_FN_TO_OVERWRITE_PRIMARY
         self.address_ghidra = ghidra.getAddressFactory().getAddress(
             hex(self.orig_address)
         )
