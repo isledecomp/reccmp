@@ -1,5 +1,5 @@
 import logging
-from typing import Callable, Iterator, NamedTuple, TypeVar
+from typing import Callable, Iterator, NamedTuple, TypeVar, cast
 
 # Disable spurious warnings in vscode / pylance
 # pyright: reportMissingModuleSource=false
@@ -380,7 +380,7 @@ class PdbTypeImporter:
             type_name = vbase_ghidra_type.getName()
 
             vbase_ghidra_pointer = get_or_add_pointer_type(self.api, vbase_ghidra_type)
-            vbase_ghidra_pointer_typedef = TypedefDataType(
+            vbase_ghidra_pointer_typedef: DataType = TypedefDataType(
                 vbase_ghidra_pointer.getCategoryPath(),
                 f"{type_name}PtrOffset",
                 vbase_ghidra_pointer,
@@ -467,7 +467,7 @@ class PdbTypeImporter:
                     component.type,
                     -1,  # set to -1 for fixed-size components
                     component.name,  # name
-                    None,  # comment
+                    cast(str, None),  # comment (the headers are lacking nullability information)
                 )
             except Exception as e:
                 raise StructModificationError(sanitized_name) from e
@@ -566,7 +566,7 @@ class PdbTypeImporter:
             .getDataTypeManager()
             .remove(existing_data_type, ConsoleTaskMonitor())
         ), f"Failed to delete and re-create data type {sanitized_name}"
-        data_type = StructureDataType(category_path, sanitized_name, class_size)
+        data_type: DataType = StructureDataType(category_path, str(sanitized_name), class_size)
         data_type = (
             self.api.getCurrentProgram()
             .getDataTypeManager()
