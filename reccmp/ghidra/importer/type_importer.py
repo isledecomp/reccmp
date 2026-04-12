@@ -467,7 +467,9 @@ class PdbTypeImporter:
                     component.type,
                     -1,  # set to -1 for fixed-size components
                     component.name,  # name
-                    cast(str, None),  # comment (the headers are lacking nullability information)
+                    cast(
+                        str, None
+                    ),  # comment (the headers are lacking nullability information)
                 )
             except Exception as e:
                 raise StructModificationError(sanitized_name) from e
@@ -566,7 +568,9 @@ class PdbTypeImporter:
             .getDataTypeManager()
             .remove(existing_data_type, ConsoleTaskMonitor())
         ), f"Failed to delete and re-create data type {sanitized_name}"
-        data_type: DataType = StructureDataType(category_path, str(sanitized_name), class_size)
+        data_type: DataType = StructureDataType(
+            category_path, str(sanitized_name), class_size
+        )
         data_type = (
             self.api.getCurrentProgram()
             .getDataTypeManager()

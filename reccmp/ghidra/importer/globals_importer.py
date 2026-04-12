@@ -59,7 +59,9 @@ def import_global_into_ghidra(
             # `MemBuffer` declares `getAddress()`, `CodeUnit extends MemBuffer` declares `getAddress(opIndex: int)`,
             # and the headers don't understand that you can still call `MemBuffer.getAddress()` on an instance.
             assert isinstance(next_data_entry, MemBuffer)
-            next_data_address = int(cast(MemBuffer, next_data_entry).getAddress().getOffset())
+            next_data_address = int(
+                cast(MemBuffer, next_data_entry).getAddress().getOffset()
+            )
             if next_data_address >= data_end:
                 break
             logger.debug("Clearing conflicting data at %s", hex(next_data_address))
