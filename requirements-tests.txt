@@ -6,4 +6,4 @@ types-colorama>=0.4.6
 # Note: This version should be kept in sync with the docker image in /.github/workflows/unittest-ghidra.yml
 ghidra-stubs==12.0.4
 # recommended by pyghidra
-java-stubs-converted-strings==0.1.0
+java-stubs-converted-strings==0.1.0 ; python_version >= "3.11"
