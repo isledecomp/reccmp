@@ -5,7 +5,7 @@
 # pyright: reportMissingModuleSource=false
 
 import json
-from typing import TYPE_CHECKING, Generator
+from typing import TYPE_CHECKING, Iterator
 
 import pytest
 from reccmp.cvdump.cvinfo import CVInfoTypeEnum, CvdumpTypeKey
@@ -83,7 +83,7 @@ class GhidraFunctionTestHelper:
 @pytest.fixture(name="function_helper", scope="function")
 def ghidra_function_helper_fixture(
     ghidra: "FlatProgramAPI",
-) -> Generator[GhidraFunctionTestHelper]:
+) -> Iterator[GhidraFunctionTestHelper]:
     yield GhidraFunctionTestHelper(ghidra)
 
 
