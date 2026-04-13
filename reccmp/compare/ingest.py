@@ -140,13 +140,14 @@ def load_cvdump_lines(
     lines_db.mark_function_starts(tuple(seen_addrs))
 
 
-# pylint: disable=too-many-positional-arguments
+# pylint: disable=too-many-positional-arguments, too-many-arguments
 def load_markers(
     code_files: Sequence[TextFile],
     lines_db: LinesDb,
     orig_bin: PEImage,
     target_id: str,
     db: EntityDb,
+    encoding: str = "latin1",
     report: ReccmpReportProtocol = reccmp_report_nop,
 ):
     lines_db.add_local_paths((f.path for f in code_files))
@@ -236,9 +237,9 @@ def load_markers(
                     raw = orig_bin.read(string.offset, string_size)
                     orig = raw.decode("utf-16-le")
                 else:
-                    string_size = len(string.name) + 1
+                    string_size = len(string.name.encode(encoding)) + 1
                     raw = orig_bin.read(string.offset, string_size)
-                    orig = raw.decode("latin1")
+                    orig = raw.decode(encoding)
 
                 string_correct = orig[-1] == "\0" and string.name == orig[:-1]
 
