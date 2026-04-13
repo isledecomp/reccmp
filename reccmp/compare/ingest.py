@@ -147,7 +147,7 @@ def load_markers(
     orig_bin: PEImage,
     target_id: str,
     db: EntityDb,
-    encoding: str = "utf-8",
+    encoding: str = "latin1",
     report: ReccmpReportProtocol = reccmp_report_nop,
 ):
     lines_db.add_local_paths((f.path for f in code_files))

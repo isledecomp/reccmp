@@ -144,7 +144,7 @@ class Compare:
             self.orig_bin,
             self.target_id,
             self._db,
-            self.src_encoding,
+            self.bin_encoding,
             self.report,
         )
 
