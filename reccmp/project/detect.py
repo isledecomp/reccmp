@@ -147,7 +147,7 @@ class RecCmpPartialTarget:
     sha256: str
 
     # Encoding of the source code files for this target.
-    encoding: str = "utf-8"
+    encoding: str | None = None
 
     # Relative (to project root) directory of source code files for this target.
     source_paths: tuple[Path, ...] = tuple()
@@ -186,7 +186,7 @@ class RecCmpTarget:
     sha256: str
 
     # Encoding of the source code files for this target.
-    encoding: str
+    encoding: str | None
 
     # Relative (to project root) directory of source code files for this target.
     source_paths: tuple[Path, ...]

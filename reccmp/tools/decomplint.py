@@ -130,7 +130,9 @@ def main():
             reduced_file_list = source_code_search(target.source_paths)
             codefiles.extend(
                 TextFile.from_files(
-                    reduced_file_list, allow_error=True, encoding=target.encoding
+                    reduced_file_list,
+                    allow_error=True,
+                    encoding=target.encoding or "utf-8",
                 )
             )
     else:

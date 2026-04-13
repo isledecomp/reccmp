@@ -82,7 +82,7 @@ class ProjectFileTarget(BaseModel):
         validation_alias=AliasChoices("data-sources", "data_sources"),
         default_factory=list,
     )
-    encoding: str = Field(default="utf-8")
+    encoding: str | None = Field(default=None)
     ghidra: YmlGhidraConfig = Field(default_factory=YmlGhidraConfig.default)
     report: YmlReportConfig = Field(default_factory=YmlReportConfig.default)
 

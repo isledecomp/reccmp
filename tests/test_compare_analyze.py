@@ -272,6 +272,26 @@ def test_complete_partial_strings_custom_encoding(db: EntityDb):
     assert e.name == '"你吃饭了吗"'.encode("unicode_escape").decode()
 
 
+def test_complete_partial_strings_extended_ascii(db: EntityDb):
+    """Should assume extended ASCII for non-widechar strings unless directed otherwise."""
+    text = "8½"
+
+    # UTF-8 and Latin1 only overlap up to 0x7f.
+    assert len(text.encode("utf-8")) != len(text.encode("latin1"))
+
+    binfile = Mock(spec=[])
+    binfile.read_string = Mock(return_value=text.encode("latin1"))
+
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, type=EntityType.STRING)
+
+    complete_partial_strings(db, ImageId.ORIG, binfile)
+
+    e = db.get(ImageId.ORIG, 100)
+    assert e is not None
+    assert e.size == len(text) + 1
+
+
 PARTIAL_STRING_EXCEPTIONS = (
     InvalidVirtualAddressError,
     InvalidVirtualReadError,

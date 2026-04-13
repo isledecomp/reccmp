@@ -225,7 +225,7 @@ def complete_partial_floats(db: EntityDb, image_id: ImageId, binfile: PEImage):
 
 
 def complete_partial_strings(
-    db: EntityDb, image_id: ImageId, binfile: PEImage, encoding: str = "utf-8"
+    db: EntityDb, image_id: ImageId, binfile: PEImage, encoding: str = "latin1"
 ):
     """For each string/widechar entity without any data,
     read the value from the binary and set the entity name.

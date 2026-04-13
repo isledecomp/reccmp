@@ -76,7 +76,8 @@ class Compare:
     recomp_bin: Image
     report: ReccmpReportProtocol
     target_id: str
-    encoding: str
+    src_encoding: str
+    bin_encoding: str
     types: CvdumpTypesParser
     function_comparator: FunctionComparator
     data_sources: list[TextFile]
@@ -89,7 +90,7 @@ class Compare:
         recomp_bin: Image,
         pdb_file: CvdumpAnalysis,
         target_id: str,
-        encoding: str = "utf-8",
+        encoding: str | None = None,
         code_files: list[TextFile] | None = None,
         data_sources: list[TextFile] | None = None,
     ):
@@ -97,7 +98,8 @@ class Compare:
         self.recomp_bin = recomp_bin
         self.cvdump_analysis = pdb_file
         self.target_id = target_id
-        self.encoding = encoding
+        self.src_encoding = encoding or "utf-8"
+        self.bin_encoding = encoding or "latin1"
 
         if isinstance(code_files, list):
             self.code_files = code_files
@@ -142,7 +144,7 @@ class Compare:
             self.orig_bin,
             self.target_id,
             self._db,
-            self.encoding,
+            self.src_encoding,
             self.report,
         )
 
@@ -165,12 +167,12 @@ class Compare:
             create_imports(self._db, img_id, binfile)
             create_import_thunks(self._db, img_id, binfile)
             create_analysis_floats(self._db, img_id, binfile)
-            create_analysis_strings(self._db, img_id, binfile, self.encoding)
+            create_analysis_strings(self._db, img_id, binfile, self.bin_encoding)
             create_seh_entities(self._db, img_id, binfile)
             create_thunks(self._db, img_id, binfile)
             create_analysis_vtordisps(self._db, img_id, binfile)
             complete_partial_floats(self._db, img_id, binfile)
-            complete_partial_strings(self._db, img_id, binfile, self.encoding)
+            complete_partial_strings(self._db, img_id, binfile, self.bin_encoding)
 
         match_imports(self._db)
         match_exports(self._db, self.orig_bin, self.recomp_bin)
@@ -201,12 +203,16 @@ class Compare:
 
         code_paths = source_code_search(target.source_paths)
         code_files = list(
-            TextFile.from_files(code_paths, allow_error=True, encoding=target.encoding)
+            TextFile.from_files(
+                code_paths, allow_error=True, encoding=target.encoding or "utf-8"
+            )
         )
 
         data_sources = list(
             TextFile.from_files(
-                target.data_sources, allow_error=True, encoding=target.encoding
+                target.data_sources,
+                allow_error=True,
+                encoding=target.encoding or "utf-8",
             )
         )
 
