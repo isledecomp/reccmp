@@ -89,7 +89,7 @@ def match_array_elements(db: EntityDb, types: CvdumpTypesParser):
         # Check whether another orig variable appears before the end of the array in recomp.
         # If this happens we can still add all the recomp offsets, but do not attach the orig address
         # where it would extend into the next variable.
-        upper_bound = match.orig_addr + match.size
+        upper_bound = match.orig_addr + match.any_size()
         if (
             next_orig := db.get_next_orig_addr(match.orig_addr)
         ) is not None and next_orig < upper_bound:

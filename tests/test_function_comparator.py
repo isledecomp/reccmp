@@ -10,6 +10,7 @@ from reccmp.compare.functions import (
 )
 from reccmp.compare.lines import LinesDb
 from reccmp.types import EntityType, ImageId
+from .raw_image import RawImage
 
 MOCK_PATH = PureWindowsPath("some/path/test.cpp")
 ORIG_GLOBAL_OFFSET = 0x200
@@ -64,7 +65,7 @@ def compare_functions(
         ReccmpMatch(
             ORIG_GLOBAL_OFFSET,
             RECOMP_GLOBAL_OFFSET,
-            f'{{"type":1,"stub":false,"name":"unittest","symbol":"?Unittest","size":{len(recomp)}}}',
+            f'{{"type":1,"stub":false,"name":"unittest","symbol":"?Unittest","recomp_size":{len(recomp)}}}',
         )
     )
 
@@ -556,4 +557,88 @@ def test_source_reference_without_line_annotation(
     ]
     assert diffreport.diff.recomp_inst == [
         ("0x400", "mov dword ptr [eax*4 + 0xd015a8], edi \t(test.cpp:42)"),
+    ]
+
+
+def test_compare_without_distinct_size(
+    db: EntityDb, lines_db: LinesDb, report: ReccmpReportProtocol
+):
+    """In this example, the recomp function is not implemented enough to match.
+    However: if we only read 1 byte (recomp_size) from the orig binary, it will appear to match.
+    This is the existing behavior: always use recomp size when present."""
+
+    # Contrived example
+    orig_code = b"\x90\x90\x90\xc3"
+    recomp_code = b"\x90"
+
+    with db.batch() as batch:
+        # Do not set orig size.
+        batch.set(ImageId.ORIG, 0, type=EntityType.FUNCTION, name="test")
+        batch.set(
+            ImageId.RECOMP,
+            0,
+            type=EntityType.FUNCTION,
+            name="test",
+            size=len(recomp_code),
+        )
+        batch.match(0, 0)
+
+    orig_bin = RawImage.from_memory(orig_code)
+    recomp_bin = RawImage.from_memory(recomp_code)
+
+    comp = FunctionComparator(db, lines_db, orig_bin, recomp_bin, report, "unittest")
+    (entity,) = list(db.get_functions())
+    diffreport = comp.compare_function(entity)
+
+    assert diffreport.match_ratio == 1.0
+    assert diffreport.diff.codes == [("equal", 0, 1, 0, 1)]
+    assert diffreport.diff.orig_inst == [("0x0", "nop ")]
+    assert diffreport.diff.recomp_inst == [("0x0", "nop ")]
+
+
+def test_compare_with_distinct_size(
+    db: EntityDb, lines_db: LinesDb, report: ReccmpReportProtocol
+):
+    """In this example, the recomp function is not implemented enough to match.
+    However: if we only read 1 byte (recomp_size) from the orig binary, it will appear to match.
+    The function should not match if we read the full data size from both binaries."""
+
+    # Contrived example
+    orig_code = b"\x90\x90\x90\xc3"
+    recomp_code = b"\x90"
+
+    with db.batch() as batch:
+        batch.set(
+            ImageId.ORIG, 0, type=EntityType.FUNCTION, name="test", size=len(orig_code)
+        )
+        batch.set(
+            ImageId.RECOMP,
+            0,
+            type=EntityType.FUNCTION,
+            name="test",
+            size=len(recomp_code),
+        )
+        batch.match(0, 0)
+
+    orig_bin = RawImage.from_memory(orig_code)
+    recomp_bin = RawImage.from_memory(recomp_code)
+
+    comp = FunctionComparator(db, lines_db, orig_bin, recomp_bin, report, "unittest")
+    (entity,) = list(db.get_functions())
+    diffreport = comp.compare_function(entity)
+
+    assert diffreport.match_ratio != 1.0
+
+    assert diffreport.diff.codes == [
+        ("equal", 0, 1, 0, 1),
+        ("delete", 1, 4, 1, 1),
+    ]
+    assert diffreport.diff.orig_inst == [
+        ("0x0", "nop "),
+        ("0x1", "nop "),
+        ("0x2", "nop "),
+        ("0x3", "ret "),
+    ]
+    assert diffreport.diff.recomp_inst == [
+        ("0x0", "nop "),
     ]

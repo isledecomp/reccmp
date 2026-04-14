@@ -59,7 +59,7 @@ def create_valid_addr_lookup(
             # should never happen
             return False
 
-        address_is_contained_in_entity = addr <= base_addr + entity.size
+        address_is_contained_in_entity = addr <= base_addr + entity.any_size(image_id)
         return address_is_contained_in_entity
 
     return lookup
@@ -140,14 +140,21 @@ class FunctionComparator:
         # Detect when the recomp function size would cause us to read
         # enough bytes from the original function that we cross into
         # the next annotated function.
-        next_orig = self.db.get_next_orig_addr(match.orig_addr)
-        if next_orig is not None:
-            orig_size = min(next_orig - match.orig_addr, match.size)
-        else:
-            orig_size = match.size
+        orig_size = match.size(ImageId.ORIG)
+        recomp_size = match.size(ImageId.RECOMP)
+
+        if orig_size is None:
+            assert recomp_size is not None
+            next_orig = self.db.get_next_orig_addr(match.orig_addr)
+            if next_orig is not None:
+                orig_size = min(next_orig - match.orig_addr, recomp_size)
+            else:
+                orig_size = recomp_size
+
+        assert orig_size is not None and recomp_size is not None
 
         orig_raw = self.orig_bin.read(match.orig_addr, orig_size)
-        recomp_raw = self.recomp_bin.read(match.recomp_addr, match.size)
+        recomp_raw = self.recomp_bin.read(match.recomp_addr, recomp_size)
 
         # It's unlikely that a function other than an adjuster thunk would
         # start with a SUB instruction, so alert to a possible wrong

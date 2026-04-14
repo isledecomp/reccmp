@@ -238,7 +238,7 @@ class Compare:
         self.function_comparator.debug = debug
 
     def _compare_vtable(self, match: ReccmpMatch) -> EntityCompareResult:
-        vtable_size = match.size
+        vtable_size = match.any_size()
 
         # The vtable size should always be a multiple of 4 because that
         # is the pointer size. If it is not (for whatever reason)
@@ -321,7 +321,7 @@ class Compare:
     def _compare_match(self, match: ReccmpMatch) -> DiffReport | None:
         """Router for comparison type"""
 
-        if match.size is None or match.size == 0:
+        if match.size is None or match.any_size() == 0:
             return None
 
         if match.get("skip", False):
