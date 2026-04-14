@@ -268,7 +268,7 @@ def test_complete_partial_strings_custom_encoding(db: EntityDb):
     # Entity size set according to string length in bytes plus null-terminator.
     e = db.get(ImageId.ORIG, 100)
     assert e is not None
-    assert e.get("size") == 11
+    assert e.size(ImageId.ORIG) == 11
     assert e.name == '"你吃饭了吗"'.encode("unicode_escape").decode()
 
 
@@ -289,7 +289,7 @@ def test_complete_partial_strings_extended_ascii(db: EntityDb):
 
     e = db.get(ImageId.ORIG, 100)
     assert e is not None
-    assert e.size == len(text) + 1
+    assert e.size(ImageId.ORIG) == len(text) + 1
 
 
 PARTIAL_STRING_EXCEPTIONS = (

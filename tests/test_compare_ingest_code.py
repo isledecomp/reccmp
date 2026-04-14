@@ -383,7 +383,7 @@ def test_read_gb2312_string(db: EntityDb, lines_db: LinesDb):
     entity = db.get(ImageId.ORIG, 0x1000)
     assert entity is not None
     assert entity.get("type") == EntityType.STRING
-    assert entity.get("size") == len(string_bytes)
+    assert entity.size(ImageId.ORIG) == len(string_bytes)
     assert entity.name == f'"{string_text}"'.encode("unicode_escape").decode()
 
 
