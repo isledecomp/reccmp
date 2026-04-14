@@ -70,7 +70,7 @@ def test_ghidra_type_class(ghidra: "FlatProgramAPI"):
     )
     type_importer = PdbTypeImporter(ghidra, PdbFunctionExtractor(compare), set())
 
-    x: Structure = type_importer.import_pdb_type_into_ghidra(class_key)
+    x = type_importer.import_pdb_type_into_ghidra(class_key)
 
     assert isinstance(x, Structure)
     assert x.length == 8

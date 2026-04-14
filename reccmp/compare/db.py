@@ -122,10 +122,28 @@ class ReccmpEntity:
     def name(self) -> str | None:
         return self.options.get("name")
 
-    @property
-    def size(self) -> int:
-        """Assume null size means size is zero: there are no bytes to read for this entity."""
-        return self.options.get("size", 0)
+    def any_size(self, image_id: ImageId = ImageId.RECOMP) -> int:
+        """Returns any size for this entity: the returned value cannot be null.
+        Prefer to return the size attribute for the provided ImageId if it exists.
+        With no ImageId, prefer recomp_size first, then orig_size, default to zero.
+        (This matches the previous behavior.)"""
+        if image_id == ImageId.RECOMP:
+            return self.options.get("recomp_size") or self.options.get("orig_size") or 0
+
+        if image_id == ImageId.ORIG:
+            return self.options.get("orig_size") or self.options.get("recomp_size") or 0
+
+        return 0
+
+    def size(self, image_id: ImageId) -> int | None:
+        """Return the size attribute for the provided ImageId."""
+        if image_id == ImageId.ORIG:
+            return self.options.get("orig_size")
+
+        if image_id == ImageId.RECOMP:
+            return self.options.get("recomp_size")
+
+        assert False, "Invalid image id"
 
     @property
     def matched(self) -> bool:
@@ -223,15 +241,17 @@ class EntityBatch:
         self._recomp_addr.clear()
         self._refs.clear()
 
-    def set(self, img: ImageId, addr: int, **kwargs):
+    def set(self, img: ImageId, addr: int, size: int | None = None, **kwargs):
+        assert img in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
+
+        if size is not None:
+            kwargs["orig_size" if img == ImageId.ORIG else "recomp_size"] = size
+
         if img == ImageId.ORIG:
             self._orig.setdefault(addr, {}).update(kwargs)
 
         elif img == ImageId.RECOMP:
             self._recomp.setdefault(addr, {}).update(kwargs)
-
-        else:
-            assert False, "Invalid image id"
 
     def set_ref(
         self,

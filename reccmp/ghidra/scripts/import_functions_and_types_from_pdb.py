@@ -177,7 +177,7 @@ def reload_module(module: str):
 
 
 def main():
-    api = FlatProgramAPI(currentProgram(), getMonitor())
+    api = FlatProgramAPI(getCurrentProgram(), getMonitor())
 
     target = find_target(api)
 

@@ -62,7 +62,7 @@ def test_create_analysis_strings(db: EntityDb):
     e = db.get(ImageId.ORIG, 100)
     assert e is not None
     assert e.get("type") == EntityType.STRING
-    assert e.get("size") == 6
+    assert e.any_size() == 6
 
 
 def test_create_analysis_strings_do_not_replace(db: EntityDb):
@@ -115,7 +115,7 @@ def test_create_thunks(db: EntityDb):
     e = db.get(ImageId.ORIG, 100)
     assert e is not None
     assert e.get("type") == EntityType.THUNK
-    assert e.get("size") == 5
+    assert e.any_size() == 5
 
 
 def test_create_thunks_do_not_replace(db: EntityDb):
@@ -131,7 +131,7 @@ def test_create_thunks_do_not_replace(db: EntityDb):
     e = db.get(ImageId.ORIG, 100)
     assert e is not None
     assert e.get("type") == EntityType.FUNCTION
-    assert e.get("size") != 5
+    assert e.any_size() != 5
     assert e.get("ref_orig") is None
 
 
@@ -147,7 +147,7 @@ def test_create_analysis_floats(db: EntityDb):
     e = db.get(ImageId.ORIG, 100)
     assert e is not None
     assert e.get("type") == EntityType.FLOAT
-    assert e.get("size") == 4
+    assert e.any_size() == 4
     assert e.get("name") == "0.5"
 
 
@@ -177,7 +177,7 @@ def test_create_analysis_vtordisps(db: EntityDb, binfile: PEImage):
     e = db.get(ImageId.ORIG, 0x1000FB50)
     assert e is not None
     assert e.get("type") == EntityType.VTORDISP
-    assert e.get("size") == 8
+    assert e.any_size() == 8
     assert get_ref_addr(db, ImageId.ORIG, 0x1000FB50) == 0x1000FB60
     assert get_ref_displacement(db, ImageId.ORIG, 0x1000FB50) == (-4, 0)
 
@@ -216,7 +216,7 @@ def test_complete_partial_strings(db: EntityDb):
     # Entity size set according to string length plus null-terminator.
     e = db.get(ImageId.ORIG, 100)
     assert e is not None
-    assert e.get("size") == 6
+    assert e.any_size() == 6
     assert e.name == '"Hello"'
 
     # Do not report a failed match if this string does not exist in both binaries.
@@ -251,8 +251,45 @@ def test_complete_partial_strings_widechar(db: EntityDb):
     # Entity size set according to string length plus null-terminator.
     e = db.get(ImageId.ORIG, 100)
     assert e is not None
-    assert e.get("size") == 12
+    assert e.any_size() == 12
     assert e.name == 'L"Hello"'
+
+
+def test_complete_partial_strings_custom_encoding(db: EntityDb):
+    """Should read data for a custom encoded string entity."""
+    binfile = Mock(spec=[])
+    binfile.read_string = Mock(return_value="你吃饭了吗".encode("gb2312"))
+
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, type=EntityType.STRING)
+
+    complete_partial_strings(db, ImageId.ORIG, binfile, "gb2312")
+
+    # Entity size set according to string length in bytes plus null-terminator.
+    e = db.get(ImageId.ORIG, 100)
+    assert e is not None
+    assert e.size(ImageId.ORIG) == 11
+    assert e.name == '"你吃饭了吗"'.encode("unicode_escape").decode()
+
+
+def test_complete_partial_strings_extended_ascii(db: EntityDb):
+    """Should assume extended ASCII for non-widechar strings unless directed otherwise."""
+    text = "8½"
+
+    # UTF-8 and Latin1 only overlap up to 0x7f.
+    assert len(text.encode("utf-8")) != len(text.encode("latin1"))
+
+    binfile = Mock(spec=[])
+    binfile.read_string = Mock(return_value=text.encode("latin1"))
+
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, type=EntityType.STRING)
+
+    complete_partial_strings(db, ImageId.ORIG, binfile)
+
+    e = db.get(ImageId.ORIG, 100)
+    assert e is not None
+    assert e.size(ImageId.ORIG) == len(text) + 1
 
 
 PARTIAL_STRING_EXCEPTIONS = (
