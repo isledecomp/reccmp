@@ -2,7 +2,7 @@
 
 from pathlib import Path
 from dataclasses import dataclass
-
+from io import StringIO, TextIOBase
 from pydantic import AliasChoices, BaseModel, Field
 import ruamel.yaml
 from .yml_extensions import PathSequence
@@ -20,9 +20,18 @@ class YmlFileModel(BaseModel):
     def from_str(cls, yaml: str):
         return cls.model_validate(_yaml.load(yaml))
 
+    def _write_buf(self, buf: TextIOBase):
+        data = self.model_dump(mode="json", exclude_defaults=True)
+        _yaml.dump(data=data, stream=buf)
+
     def write_file(self, filename: Path):
         with filename.open("w") as f:
-            _yaml.dump(data=self.model_dump(mode="json"), stream=f)
+            self._write_buf(f)
+
+    def to_str(self) -> str:
+        with StringIO() as buf:
+            self._write_buf(buf)
+            return buf.getvalue()
 
 
 class YmlGhidraConfig(BaseModel):

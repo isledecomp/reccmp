@@ -1,7 +1,24 @@
-"""Testing items specific to YML parsing/pydantic validation"""
+"""Testing items specific to YML serialization/deserialization"""
 
 from pathlib import Path
 from reccmp.project.config import ProjectFile
+
+
+def test_project_defaults():
+    """Make sure the project file contains the minimum settings. (No defaults or empty arrays.)"""
+    p = ProjectFile.from_str("""\
+        targets:
+            TEST:
+                source-root: test
+                hash:
+                    sha256: test
+                filename: test.exe
+        """)
+
+    yml = p.to_str()
+    assert "[]" not in yml
+    assert "data-sources" not in yml
+    assert "data_sources" not in yml
 
 
 def test_project_without_csv():
