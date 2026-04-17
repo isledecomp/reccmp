@@ -11,10 +11,13 @@ import ResultCount from './components/resultCount';
 import SearchBar from './components/searchbar';
 import SearchOptions from './components/searchOptions';
 import ShowRecomp from './components/showRecomp';
+import { global_reccmp_metadata } from './globals';
 import { ReccmpProvider } from './provider';
 
 // reccmp-pack-begin
 window.onload = () => {
+  document.title = `reccmp: ${global_reccmp_metadata.file}`;
+
   window.customElements.define('reccmp-provider', ReccmpProvider);
   window.customElements.define('click-to-copy', ClickToCopy); // used by listing-table
   window.customElements.define('listing-table', ListingTable);

@@ -76,6 +76,8 @@ class Compare:
     recomp_bin: Image
     report: ReccmpReportProtocol
     target_id: str
+    src_encoding: str
+    bin_encoding: str
     types: CvdumpTypesParser
     function_comparator: FunctionComparator
     data_sources: list[TextFile]
@@ -88,6 +90,7 @@ class Compare:
         recomp_bin: Image,
         pdb_file: CvdumpAnalysis,
         target_id: str,
+        encoding: str | None = None,
         code_files: list[TextFile] | None = None,
         data_sources: list[TextFile] | None = None,
     ):
@@ -95,6 +98,8 @@ class Compare:
         self.recomp_bin = recomp_bin
         self.cvdump_analysis = pdb_file
         self.target_id = target_id
+        self.src_encoding = encoding or "utf-8"
+        self.bin_encoding = encoding or "latin1"
 
         if isinstance(code_files, list):
             self.code_files = code_files
@@ -139,6 +144,7 @@ class Compare:
             self.orig_bin,
             self.target_id,
             self._db,
+            self.bin_encoding,
             self.report,
         )
 
@@ -161,12 +167,12 @@ class Compare:
             create_imports(self._db, img_id, binfile)
             create_import_thunks(self._db, img_id, binfile)
             create_analysis_floats(self._db, img_id, binfile)
-            create_analysis_strings(self._db, img_id, binfile)
+            create_analysis_strings(self._db, img_id, binfile, self.bin_encoding)
             create_seh_entities(self._db, img_id, binfile)
             create_thunks(self._db, img_id, binfile)
             create_analysis_vtordisps(self._db, img_id, binfile)
             complete_partial_floats(self._db, img_id, binfile)
-            complete_partial_strings(self._db, img_id, binfile)
+            complete_partial_strings(self._db, img_id, binfile, self.bin_encoding)
 
         match_imports(self._db)
         match_exports(self._db, self.orig_bin, self.recomp_bin)
@@ -196,15 +202,26 @@ class Compare:
         pdb_file = CvdumpAnalysis(cvdump)
 
         code_paths = source_code_search(target.source_paths)
-        code_files = list(TextFile.from_files(code_paths, allow_error=True))
+        code_files = list(
+            TextFile.from_files(
+                code_paths, allow_error=True, encoding=target.encoding or "utf-8"
+            )
+        )
 
-        data_sources = list(TextFile.from_files(target.data_sources, allow_error=True))
+        data_sources = list(
+            TextFile.from_files(
+                target.data_sources,
+                allow_error=True,
+                encoding=target.encoding or "utf-8",
+            )
+        )
 
         compare = cls(
             origfile,
             recompfile,
             pdb_file,
             target_id=target.target_id,
+            encoding=target.encoding,
             data_sources=data_sources,
             code_files=code_files,
         )
@@ -221,7 +238,7 @@ class Compare:
         self.function_comparator.debug = debug
 
     def _compare_vtable(self, match: ReccmpMatch) -> EntityCompareResult:
-        vtable_size = match.size
+        vtable_size = match.any_size()
 
         # The vtable size should always be a multiple of 4 because that
         # is the pointer size. If it is not (for whatever reason)
@@ -269,8 +286,8 @@ class Compare:
 
         # Now compare each pointer from the two vtables.
         for i, (raw_orig, raw_recomp) in enumerate(raw_addrs):
-            orig = self._db.get_by_orig(raw_orig)
-            recomp = self._db.get_by_recomp(raw_recomp)
+            orig = self._db.get(ImageId.ORIG, raw_orig)
+            recomp = self._db.get(ImageId.RECOMP, raw_recomp)
 
             if (
                 orig is not None
@@ -304,7 +321,7 @@ class Compare:
     def _compare_match(self, match: ReccmpMatch) -> DiffReport | None:
         """Router for comparison type"""
 
-        if match.size is None or match.size == 0:
+        if match.size is None or match.any_size() == 0:
             return None
 
         if match.get("skip", False):
@@ -348,12 +365,6 @@ class Compare:
         )
 
     ## Public API
-
-    def get_by_orig(self, addr: int) -> ReccmpEntity | None:
-        return self._db.get_by_orig(addr)
-
-    def get_by_recomp(self, addr: int) -> ReccmpEntity | None:
-        return self._db.get_by_recomp(addr)
 
     def get_all(self) -> Iterator[ReccmpEntity]:
         return self._db.get_all()

@@ -54,26 +54,26 @@ def test_match_array(db: EntityDb, types_db: CvdumpTypesParser):
     assert e is not None
     assert e.name == "test[0]"
     assert e.get("type") == EntityType.DATA
-    assert e.get("size") == 8
+    assert e.any_size() == 8
 
     e = db.get(ImageId.ORIG, 104)
     assert e is not None
     assert e.name == "test[1]"
     assert e.get("type") == EntityType.OFFSET
-    assert e.get("size") == 4
+    assert e.any_size() == 4
     assert e.recomp_addr == 104  # Should create new match
 
     e = db.get(ImageId.RECOMP, 100)
     assert e is not None
     assert e.name == "test[0]"
     assert e.get("type") == EntityType.DATA
-    assert e.get("size") == 8
+    assert e.any_size() == 8
 
     e = db.get(ImageId.RECOMP, 104)
     assert e is not None
     assert e.name == "test[1]"
     assert e.get("type") == EntityType.OFFSET
-    assert e.get("size") == 4
+    assert e.any_size() == 4
     assert e.orig_addr == 104  # Should create new match
 
 
@@ -293,7 +293,7 @@ def test_match_array_array_of_structs(db: EntityDb, types_db: CvdumpTypesParser)
 
     # Should create offset entities but not alter the parent variable entity.
     orig_types = [e.get("type") for e in orig_entities if e]
-    orig_sizes = [e.get("size") for e in orig_entities if e]
+    orig_sizes = [e.any_size() for e in orig_entities if e]
     assert orig_types == [
         EntityType.DATA,
         EntityType.OFFSET,
@@ -303,7 +303,7 @@ def test_match_array_array_of_structs(db: EntityDb, types_db: CvdumpTypesParser)
     assert orig_sizes == [16, 4, 4, 4]
 
     recomp_types = [e.get("type") for e in recomp_entities if e]
-    recomp_sizes = [e.get("size") for e in recomp_entities if e]
+    recomp_sizes = [e.any_size() for e in recomp_entities if e]
     assert recomp_types == [
         EntityType.DATA,
         EntityType.OFFSET,
@@ -363,7 +363,7 @@ def test_match_array_array_of_arrays(db: EntityDb, types_db: CvdumpTypesParser):
 
     # Should create offset entities but not alter the parent variable entity.
     orig_types = [e.get("type") for e in orig_entities if e]
-    orig_sizes = [e.get("size") for e in orig_entities if e]
+    orig_sizes = [e.any_size() for e in orig_entities if e]
     assert orig_types == [
         EntityType.DATA,
         EntityType.OFFSET,
@@ -373,7 +373,7 @@ def test_match_array_array_of_arrays(db: EntityDb, types_db: CvdumpTypesParser):
     assert orig_sizes == [16, 4, 4, 4]
 
     recomp_types = [e.get("type") for e in recomp_entities if e]
-    recomp_sizes = [e.get("size") for e in recomp_entities if e]
+    recomp_sizes = [e.any_size() for e in recomp_entities if e]
     assert recomp_types == [
         EntityType.DATA,
         EntityType.OFFSET,
@@ -458,7 +458,7 @@ def test_match_array_array_of_structs_limit(db: EntityDb, types_db: CvdumpTypesP
 
     # Should create offset entities but not alter the parent variable entity.
     orig_types = [e.get("type") for e in orig_entities if e]
-    orig_sizes = [e.get("size") for e in orig_entities if e]
+    orig_sizes = [e.any_size() for e in orig_entities if e]
     assert orig_types == [
         EntityType.DATA,
         EntityType.OFFSET,
@@ -468,7 +468,7 @@ def test_match_array_array_of_structs_limit(db: EntityDb, types_db: CvdumpTypesP
     assert orig_sizes == [16, 4, 4, 4]
 
     recomp_types = [e.get("type") for e in recomp_entities if e]
-    recomp_sizes = [e.get("size") for e in recomp_entities if e]
+    recomp_sizes = [e.any_size() for e in recomp_entities if e]
     assert recomp_types == [
         EntityType.DATA,
         EntityType.OFFSET,
@@ -535,25 +535,25 @@ def test_match_array_array_of_union_structs(db: EntityDb, types_db: CvdumpTypesP
     assert e is not None
     assert e.name == "test[0].hello"
     assert e.get("type") == EntityType.DATA
-    assert e.get("size") == 8
+    assert e.any_size() == 8
 
     e = db.get(ImageId.ORIG, 104)
     assert e is not None
     assert e.name == "test[1].hello"
     assert e.get("type") == EntityType.OFFSET
-    assert e.get("size") == 4
+    assert e.any_size() == 4
 
     e = db.get(ImageId.RECOMP, 100)
     assert e is not None
     assert e.name == "test[0].hello"
     assert e.get("type") == EntityType.DATA
-    assert e.get("size") == 8
+    assert e.any_size() == 8
 
     e = db.get(ImageId.RECOMP, 104)
     assert e is not None
     assert e.name == "test[1].hello"
     assert e.get("type") == EntityType.OFFSET
-    assert e.get("size") == 4
+    assert e.any_size() == 4
 
     # Should NOT create entities for the union offsets
     assert not any(

@@ -339,6 +339,19 @@ class PEImageSectionHeader:
         )
         return items, offset + count * struct.calcsize(struct_fmt)
 
+    def test_flags(
+        self,
+        *,
+        include: PESectionFlags | None = None,
+        exclude: PESectionFlags | None = None,
+    ):
+        """Helper for bit mask operations to target specific sections.
+        If `include` is defined, we must match all its flags.
+        If `exclude` is defined, we must match none of its flags."""
+        include_ok = (include is None) or (self.characteristics & include == include)
+        exclude_ok = (exclude is None) or (self.characteristics & exclude == 0)
+        return include_ok and exclude_ok
+
 
 @dataclasses.dataclass
 class CodeViewHeaderNB10:
@@ -723,22 +736,22 @@ class PEImage(Image):
         instruction in the function is a jmp to the address in .idata.
         Search .text to find these functions."""
 
-        text_sect = self.get_section_by_name(".text")
-        text_start = text_sect.virtual_address
-        thunks = []
+        if not self.is_debug:
+            return []
 
+        thunks = []
         # If this is a debug build, read the thunks at the start of .text
         # Terminated by a big block of 0xcc padding bytes before the first
         # real function in the section.
-        if self.is_debug:
+        for sect in self.get_code_regions():
             ofs = 0
             while True:
-                opcode, operand = struct.unpack("<Bi", text_sect.view[ofs : ofs + 5])
+                opcode, operand = struct.unpack("<Bi", sect.data[ofs : ofs + 5])
                 if opcode != 0xE9:
                     break
 
-                thunk_ofs = text_start + ofs
-                jmp_ofs = text_start + ofs + 5 + operand
+                thunk_ofs = sect.addr + ofs
+                jmp_ofs = thunk_ofs + 5 + operand
                 thunks.append((thunk_ofs, jmp_ofs))
                 ofs += 5
 
@@ -785,12 +798,9 @@ class PEImage(Image):
 
     def iter_string(self, encoding: str = "ascii") -> Iterator[tuple[int, str]]:
         """Search for possible strings at each verified address in .data."""
-        for section in (
-            self.get_section_by_name(".data"),
-            self.get_section_by_name(".rdata"),
-        ):
+        for section in self.get_data_regions():
             for addr in self._relocated_addrs:
-                if section.contains_vaddr(addr):
+                if addr in section.range:
                     raw = self.read_string(addr)
                     if raw is None:
                         continue
@@ -876,22 +886,36 @@ class PEImage(Image):
         return self.imagebase <= vaddr < last_range.stop
 
     def get_code_regions(self) -> Iterator[ImageRegion]:
-        # TODO: Don't depend on section names. (#72)
-        for sect in (self.get_section_by_name(".text"),):
-            yield ImageRegion(sect.virtual_address, sect.view, sect.extent)
+        for sect, header in zip(self.sections, self.section_headers):
+            if header.test_flags(include=PESectionFlags.IMAGE_SCN_MEM_EXECUTE):
+                yield ImageRegion(sect.virtual_address, sect.view, sect.extent)
 
     def get_data_regions(self) -> Iterator[ImageRegion]:
-        # TODO: Don't depend on section names. (#72)
-        for sect in (
-            self.get_section_by_name(".rdata"),
-            self.get_section_by_name(".data"),
-        ):
-            yield ImageRegion(sect.virtual_address, sect.view, sect.extent)
+        for sect, header in zip(self.sections, self.section_headers):
+            # Exclude special sections that have data but are handled separately.
+            if header.name in (".idata", ".rsrc"):
+                continue
+
+            if header.test_flags(
+                include=PESectionFlags.IMAGE_SCN_MEM_READ,
+                exclude=PESectionFlags.IMAGE_SCN_MEM_EXECUTE
+                | PESectionFlags.IMAGE_SCN_MEM_DISCARDABLE,
+            ):
+                yield ImageRegion(sect.virtual_address, sect.view, sect.extent)
 
     def get_const_regions(self) -> Iterator[ImageRegion]:
-        # TODO: Don't depend on section names. (#72)
-        for sect in (self.get_section_by_name(".rdata"),):
-            yield ImageRegion(sect.virtual_address, sect.view, sect.extent)
+        for sect, header in zip(self.sections, self.section_headers):
+            # Exclude special sections that have data but are handled separately.
+            if header.name in (".idata", ".rsrc"):
+                continue
+
+            if header.test_flags(
+                include=PESectionFlags.IMAGE_SCN_MEM_READ,
+                exclude=PESectionFlags.IMAGE_SCN_MEM_WRITE
+                | PESectionFlags.IMAGE_SCN_MEM_EXECUTE
+                | PESectionFlags.IMAGE_SCN_MEM_DISCARDABLE,
+            ):
+                yield ImageRegion(sect.virtual_address, sect.view, sect.extent)
 
     @cached_property
     def uninitialized_ranges(self) -> list[range]:

@@ -9,7 +9,7 @@ from reccmp.cvdump.demangler import (
 )
 from reccmp.cvdump import CvdumpTypesParser
 from reccmp.cvdump.types import CvdumpTypeKey
-from reccmp.types import EntityType
+from reccmp.types import EntityType, ImageId
 from .db import EntityDb
 from .queries import get_overloaded_functions, get_named_thunks
 
@@ -49,9 +49,15 @@ def match_array_elements(db: EntityDb, types: CvdumpTypesParser):
 
         if is_main_variable:
             # Don't replace the type or size of the main variable entity.
-            batch.set_recomp(recomp_addr, name=name)
+            batch.set(ImageId.RECOMP, recomp_addr, name=name)
         else:
-            batch.set_recomp(recomp_addr, name=name, size=size, type=EntityType.OFFSET)
+            batch.set(
+                ImageId.RECOMP,
+                recomp_addr,
+                name=name,
+                size=size,
+                type=EntityType.OFFSET,
+            )
 
         if orig_addr < max_orig:
             batch.match(orig_addr, recomp_addr)
@@ -83,7 +89,7 @@ def match_array_elements(db: EntityDb, types: CvdumpTypesParser):
         # Check whether another orig variable appears before the end of the array in recomp.
         # If this happens we can still add all the recomp offsets, but do not attach the orig address
         # where it would extend into the next variable.
-        upper_bound = match.orig_addr + match.size
+        upper_bound = match.orig_addr + match.any_size()
         if (
             next_orig := db.get_next_orig_addr(match.orig_addr)
         ) is not None and next_orig < upper_bound:
@@ -169,6 +175,6 @@ def unique_names_for_overloaded_functions(db: EntityDb):
                     new_name = f"{func.name}{dm_args}"
 
             if func.orig_addr is not None:
-                batch.set_orig(func.orig_addr, computed_name=new_name)
+                batch.set(ImageId.ORIG, func.orig_addr, computed_name=new_name)
             elif func.recomp_addr is not None:
-                batch.set_recomp(func.recomp_addr, computed_name=new_name)
+                batch.set(ImageId.RECOMP, func.recomp_addr, computed_name=new_name)
