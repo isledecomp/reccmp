@@ -43,7 +43,7 @@ def executable_or_library(path: Path) -> TargetType:
 def get_default_cmakelists_txt(project_name: str, targets: dict[str, Path]) -> str:
     """Generate template CMakeLists.txt file contents to build each target."""
     result = textwrap.dedent(f"""\
-        cmake_minimum_required(VERSION 3.20)
+        cmake_minimum_required(VERSION 3.20...4.3)
         project({project_name})
 
         include("${{CMAKE_CURRENT_SOURCE_DIR}}/cmake/reccmp.cmake")
@@ -246,7 +246,7 @@ def create_project(
                 f.write(f"{RECCMP_BUILD_CONFIG}\n")
 
     if cmake:
-        # Generate tempalte files so you can start building each target with CMake.
+        # Generate template files so you can start building each target with CMake.
         project_cmake_dir = project_directory / "cmake"
         reccmp_cmake_path = project_cmake_dir / "reccmp.cmake"
         project_cmake_dir.mkdir(exist_ok=True)
