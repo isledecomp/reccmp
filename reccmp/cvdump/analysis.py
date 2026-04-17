@@ -59,8 +59,6 @@ class CvdumpNode:
     friendly_name: str | None = None
     # To be determined by context after inserting data, unless the decorated
     # name makes this obvious. (i.e. string constants or vtables)
-    # We choose not to assume that section 1 (probably ".text") contains only
-    # functions. Smacker functions are linked to their own section "_UNSTEXT"
     node_type: EntityType | None = None
     # Function size can be read from the LINES section so use this over any
     # other value if we have it.
