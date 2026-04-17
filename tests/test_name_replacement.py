@@ -102,7 +102,7 @@ def test_offset_name_non_variables(db):
 
 
 def test_offset_name_no_size(db):
-    """An enity with no size attribute is considered to have size=0.
+    """An entity with no size attribute is considered to have size=0.
     Meaning: match only against the address value."""
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 100, name="Hello", type=EntityType.DATA)
@@ -164,7 +164,7 @@ def test_indirect_function_variable(db):
 
 
 def test_indirect_import(db):
-    """If we are indirectly calling an imported funtion, we should see the import_name
+    """If we are indirectly calling an imported function, we should see the import_name
     attribute used in the result. This will probably contain the DLL and function name.
     """
     with db.batch() as batch:

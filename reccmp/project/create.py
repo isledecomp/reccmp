@@ -246,7 +246,7 @@ def create_project(
                 f.write(f"{RECCMP_BUILD_CONFIG}\n")
 
     if cmake:
-        # Generate tempalte files so you can start building each target with CMake.
+        # Generate template files so you can start building each target with CMake.
         project_cmake_dir = project_directory / "cmake"
         reccmp_cmake_path = project_cmake_dir / "reccmp.cmake"
         project_cmake_dir.mkdir(exist_ok=True)

@@ -51,7 +51,7 @@ def to_report(compare: Compare) -> ReccmpStatusReport:
 
 
 def get_udiff(entity: ReccmpComparedEntity) -> CombinedDiffOutput | None:
-    """This is here for mypy type coersion and to protect against
+    """This is here for mypy type coercion and to protect against
     changes to the ReccmpStatusReport structure."""
     return entity.udiff
 
