@@ -2,6 +2,7 @@
 
 from pathlib import PurePath, PureWindowsPath
 from textwrap import dedent
+from unittest.mock import Mock
 import pytest
 from reccmp.types import EntityType, ImageId
 from reccmp.formats import PEImage, TextFile
@@ -160,7 +161,7 @@ def test_load_code_function_nameref_variants(
 
                 // LIBRARY: TEST 0x1008b400
                 // _atol
-                
+
                 // STUB: TEST 0x1008b4b0
                 // _atoi
 
@@ -256,7 +257,7 @@ def test_load_code_match_line(db: EntityDb, lines_db: LinesDb, binfile: PEImage)
     lines_db.add_line(PureWindowsPath("test.cpp"), 3, 0x1234)
     lines_db.mark_function_starts([0x1234])
 
-    # TODO: For a successful match, the recomp entity must already exist.
+    # Establish recomp entities as if we read the PDB first.
     with db.batch() as batch:
         batch.set(ImageId.RECOMP, 0x1234)
     load_markers(files, lines_db, binfile, "TEST", db)
@@ -288,7 +289,7 @@ def test_load_code_no_match_line(db: EntityDb, lines_db: LinesDb, binfile: PEIma
     lines_db.add_line(PureWindowsPath("test.cpp"), 8, 0x1234)
     lines_db.mark_function_starts([0x1234])
 
-    # TODO: For a successful match, the recomp entity must already exist.
+    # Establish recomp entities as if we read the PDB first.
     with db.batch() as batch:
         batch.set(ImageId.RECOMP, 0x1234)
     load_markers(files, lines_db, binfile, "TEST", db)
@@ -315,7 +316,7 @@ def test_load_code_string(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     entity = db.get(ImageId.ORIG, 0x100F038C)
     assert entity is not None
     assert entity.get("type") == EntityType.STRING
-    assert entity.get("size") == 6
+    assert entity.any_size() == 6
     assert entity.get("name") == '"Pizza"'
 
 
@@ -352,8 +353,38 @@ def test_load_code_widechar(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     entity = db.get(ImageId.ORIG, 0x100DAAA0)
     assert entity is not None
     assert entity.get("type") == EntityType.STRING
-    assert entity.get("size") == 14
+    assert entity.any_size() == 14
     assert entity.get("name") == 'L"(null)"'
+
+
+def test_read_gb2312_string(db: EntityDb, lines_db: LinesDb):
+    """Make sure we read the full length of the string in GB 2312 encoding and create the entity. GH #364"""
+    string_text = "你吃饭了吗"
+    string_bytes = string_text.encode("gb2312") + b"\x00"
+
+    # Can't use RawImage here; it is missing some functions from PEImage.
+    orig_bin = Mock(spec=[])
+    orig_bin.read = lambda _, size: string_bytes[:size]
+    orig_bin.imagebase = 0
+    orig_bin.is_valid_vaddr = Mock(return_value=True)
+
+    files = (
+        TextFile(
+            PurePath("test.cpp"),
+            dedent(f"""\
+                // STRING: TEST 0x1000
+                const char* test = "{string_text}";
+                """),
+        ),
+    )
+
+    load_markers(files, lines_db, orig_bin, "TEST", db, "gb2312")
+
+    entity = db.get(ImageId.ORIG, 0x1000)
+    assert entity is not None
+    assert entity.get("type") == EntityType.STRING
+    assert entity.size(ImageId.ORIG) == len(string_bytes)
+    assert entity.name == f'"{string_text}"'.encode("unicode_escape").decode()
 
 
 def test_load_code_string_with_nulls(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
@@ -373,7 +404,7 @@ def test_load_code_string_with_nulls(db: EntityDb, lines_db: LinesDb, binfile: P
     entity = db.get(ImageId.ORIG, 0x100DAAA0)
     assert entity is not None
     assert entity.get("type") == EntityType.STRING
-    assert entity.get("size") == 12
+    assert entity.any_size() == 12
     assert entity.get("name") == '"(\\x00n\\x00u\\x00l\\x00l\\x00)"'
 
 
@@ -535,3 +566,61 @@ def test_load_code_line_marker(db: EntityDb, lines_db: LinesDb, binfile: PEImage
     assert entity.get("type") == EntityType.LINE
     assert entity.get("filename") == "test.cpp"
     assert entity.get("line") == 3
+
+
+def test_load_code_folded(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
+    """Should match functions with code folding where all occurrences are marked.
+    The LINES section in the PDB appears to choose only one copy of the function.
+    Make sure we can match whether the line corresponds to the first annotation
+    or a later one."""
+    files = (
+        TextFile(
+            PurePath("test.cpp"),
+            dedent("""\
+                // FUNCTION: TEST 0x10001000 FOLDED
+                void Pizza::Start()
+                {
+                }
+
+                // FUNCTION: TEST 0x10001000 FOLDED
+                void Pizza::End()
+                {
+                }
+                """),
+        ),
+        TextFile(
+            PurePath("test.h"),
+            dedent("""\
+                class Hello {
+                public:
+                    // FUNCTION: TEST 0x10002000 FOLDED
+                    virtual void vtable0x00() {}
+
+                    // FUNCTION: TEST 0x10002000 FOLDED
+                    virtual void vtable0x04() {}
+                }
+                """),
+        ),
+    )
+
+    # Here the first occurrence of the folded function gets the line reference.
+    lines_db.add_line(PureWindowsPath("test.cpp"), 3, 0x1234)
+    # But here the second (or nth) occurrence gets the line.
+    lines_db.add_line(PureWindowsPath("test.h"), 7, 0x5555)
+    lines_db.mark_function_starts([0x1234, 0x5555])
+
+    # Establish recomp entities as if we read the PDB first.
+    with db.batch() as batch:
+        batch.set(ImageId.RECOMP, 0x1234)
+        batch.set(ImageId.RECOMP, 0x5555)
+    load_markers(files, lines_db, binfile, "TEST", db)
+
+    entity = db.get(ImageId.ORIG, 0x10001000)
+    assert entity is not None
+    assert entity.recomp_addr == 0x1234
+    assert entity.get("type") == EntityType.FUNCTION
+
+    entity = db.get(ImageId.ORIG, 0x10002000)
+    assert entity is not None
+    assert entity.recomp_addr == 0x5555
+    assert entity.get("type") == EntityType.FUNCTION

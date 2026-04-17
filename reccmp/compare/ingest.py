@@ -11,7 +11,7 @@ from reccmp.formats.exceptions import (
 from reccmp.formats import PEImage, TextFile
 from reccmp.cvdump import CvdumpTypesParser, CvdumpAnalysis
 from reccmp.parser import DecompCodebase
-from reccmp.types import EntityType
+from reccmp.types import EntityType, ImageId
 from reccmp.compare.event import (
     ReccmpEvent,
     ReccmpReportProtocol,
@@ -83,7 +83,8 @@ def load_cvdump(cvdump_analysis: CvdumpAnalysis, db: EntityDb, recomp_bin: PEIma
                 # If section contribution is null, and no other data source sets the size,
                 # the string reading function will read until it hits the null-terminator.
 
-                batch.set_recomp(
+                batch.set(
+                    ImageId.RECOMP,
                     addr,
                     type=sym.node_type,
                     symbol=sym.decorated_name,
@@ -93,7 +94,8 @@ def load_cvdump(cvdump_analysis: CvdumpAnalysis, db: EntityDb, recomp_bin: PEIma
             elif sym.node_type == EntityType.FLOAT:
                 # Leave the entity name blank to start. (Don't use the symbol.)
                 # We will read the float's value from the binary.
-                batch.set_recomp(
+                batch.set(
+                    ImageId.RECOMP,
                     addr,
                     type=sym.node_type,
                     symbol=sym.decorated_name,
@@ -101,7 +103,8 @@ def load_cvdump(cvdump_analysis: CvdumpAnalysis, db: EntityDb, recomp_bin: PEIma
                 )
             else:
                 # Non-string entities.
-                batch.set_recomp(
+                batch.set(
+                    ImageId.RECOMP,
                     addr,
                     type=sym.node_type,
                     name=sym.name(),
@@ -112,7 +115,7 @@ def load_cvdump(cvdump_analysis: CvdumpAnalysis, db: EntityDb, recomp_bin: PEIma
                 # Set the cvdump type key so it can be referenced later.
                 if sym.node_type == EntityType.DATA and sym.data_type is not None:
                     assert isinstance(sym.data_type.key, int)
-                    batch.set_recomp(addr, data_type=sym.data_type.key)
+                    batch.set(ImageId.RECOMP, addr, data_type=sym.data_type.key)
 
 
 def load_cvdump_lines(
@@ -137,13 +140,14 @@ def load_cvdump_lines(
     lines_db.mark_function_starts(tuple(seen_addrs))
 
 
-# pylint: disable=too-many-positional-arguments
+# pylint: disable=too-many-positional-arguments, too-many-arguments
 def load_markers(
     code_files: Sequence[TextFile],
     lines_db: LinesDb,
     orig_bin: PEImage,
     target_id: str,
     db: EntityDb,
+    encoding: str = "latin1",
     report: ReccmpReportProtocol = reccmp_report_nop,
 ):
     lines_db.add_local_paths((f.path for f in code_files))
@@ -176,18 +180,24 @@ def load_markers(
     # was already removed from consideration.
     with db.batch() as batch:
         for fun in codebase.iter_line_functions():
-            batch.set_orig(fun.offset, type=EntityType.FUNCTION, stub=fun.should_skip())
+            batch.set(
+                ImageId.ORIG,
+                fun.offset,
+                type=EntityType.FUNCTION,
+                stub=fun.should_skip(),
+            )
 
             assert fun.filename is not None
             recomp_addr = lines_db.find_function(
-                fun.filename, fun.line_number, fun.end_line
+                fun.filename, fun.line_number, fun.end_line, folded=fun.is_folded
             )
 
             if recomp_addr is not None:
                 batch.match(fun.offset, recomp_addr)
 
         for fun in codebase.iter_name_functions():
-            batch.set_orig(
+            batch.set(
+                ImageId.ORIG,
                 fun.offset,
                 type=EntityType.FUNCTION,
                 stub=fun.should_skip(),
@@ -195,19 +205,23 @@ def load_markers(
             )
 
             if fun.name.startswith("?") or fun.name_is_symbol:
-                batch.set_orig(fun.offset, symbol=fun.name)
+                batch.set(ImageId.ORIG, fun.offset, symbol=fun.name)
             else:
-                batch.set_orig(fun.offset, name=fun.name)
+                batch.set(ImageId.ORIG, fun.offset, name=fun.name)
 
         for var in codebase.iter_variables():
-            batch.set_orig(var.offset, name=var.name, type=EntityType.DATA)
+            batch.set(ImageId.ORIG, var.offset, name=var.name, type=EntityType.DATA)
             if var.is_static and var.parent_function is not None:
-                batch.set_orig(
-                    var.offset, static_var=True, parent_function=var.parent_function
+                batch.set(
+                    ImageId.ORIG,
+                    var.offset,
+                    static_var=True,
+                    parent_function=var.parent_function,
                 )
 
         for tbl in codebase.iter_vtables():
-            batch.set_orig(
+            batch.set(
+                ImageId.ORIG,
                 tbl.offset,
                 name=tbl.name,
                 base_class=tbl.base_class,
@@ -223,9 +237,9 @@ def load_markers(
                     raw = orig_bin.read(string.offset, string_size)
                     orig = raw.decode("utf-16-le")
                 else:
-                    string_size = len(string.name) + 1
+                    string_size = len(string.name.encode(encoding)) + 1
                     raw = orig_bin.read(string.offset, string_size)
-                    orig = raw.decode("latin1")
+                    orig = raw.decode(encoding)
 
                 string_correct = orig[-1] == "\0" and string.name == orig[:-1]
 
@@ -253,7 +267,8 @@ def load_markers(
                 )
                 continue
 
-            batch.set_orig(
+            batch.set(
+                ImageId.ORIG,
                 string.offset,
                 name=entity_name_from_string(string.name, wide=string.is_widechar),
                 type=EntityType.STRING,
@@ -262,7 +277,8 @@ def load_markers(
             )
 
         for line in codebase.iter_line_symbols():
-            batch.set_orig(
+            batch.set(
+                ImageId.ORIG,
                 line.offset,
                 name=line.name,
                 filename=str(line.filename),
@@ -310,4 +326,4 @@ def load_csv(db: EntityDb, csv_file: TextFile):
 
     with db.batch() as batch:
         for addr, values in rows:
-            batch.set_orig(addr, **values)
+            batch.set(ImageId.ORIG, addr, **values)

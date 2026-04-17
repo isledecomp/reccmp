@@ -257,6 +257,8 @@ class DecompParser:
                 self._syntax_warning(ParserError.SYMBOL_OPTION_IGNORED)
                 name_is_symbol = False
 
+            is_folded = marker.extra is not None and marker.extra.lower() == "folded"
+
             self._symbols.append(
                 ParserFunction(
                     type=marker.type,
@@ -268,6 +270,7 @@ class DecompParser:
                     lookup_by_name=lookup_by_name,
                     name_is_symbol=name_is_symbol,
                     end_line=end_line,
+                    is_folded=is_folded,
                 )
             )
 

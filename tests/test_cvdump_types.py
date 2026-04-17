@@ -1051,6 +1051,21 @@ def test_type_keys_over_ffff(empty_parser: CvdumpTypesParser):
     assert empty_parser.keys[TK(0x11738)]["field_list_type"] == TK(0x11737)
 
 
+BIG_ENUM_KEY_SAMPLE = """
+0x000105da : Length = 38, Leaf = 0x1507 LF_ENUM
+    # members = 68,  type = T_INT4(0074) field list type 0x105d9
+    enum name = e_STATE_t, UDT(0x000105da)
+"""
+
+
+def test_enum_keys_over_ffff(empty_parser: CvdumpTypesParser):
+    """Make sure we can read an LF_ENUM if its field list type key is over 0xffff. (GH #318)"""
+    empty_parser.read_all(BIG_ENUM_KEY_SAMPLE)
+    assert empty_parser.keys[TK(0x105DA)]["field_list_type"] == TK(0x105D9)
+    assert empty_parser.keys[TK(0x105DA)]["underlying_type"] == CVInfoTypeEnum.T_INT4
+    assert empty_parser.keys[TK(0x105DA)]["name"] == "e_STATE_t"
+
+
 ARRAY_WITH_UNKNOWN_ELEMENT = """
 0x1000 : Length = 14, Leaf = 0x1503 LF_ARRAY
     Element type = ???(0555)

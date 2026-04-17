@@ -231,3 +231,14 @@ def test_section_flags(binfile: PEImage):
 
     writable = [s.name for s in binfile.sections if s.flags & ImageSectionFlags.WRITE]
     assert writable == [".data", ".idata"]
+
+
+def test_section_iter(binfile: PEImage):
+    # .text only
+    assert [s.addr for s in binfile.get_code_regions()] == [0x10001000]
+
+    # .rdata and .data
+    assert [s.addr for s in binfile.get_data_regions()] == [0x100D4000, 0x100F0000]
+
+    # .rdata only
+    assert [s.addr for s in binfile.get_const_regions()] == [0x100D4000]
