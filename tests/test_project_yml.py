@@ -17,8 +17,31 @@ def test_project_defaults():
 
     yml = p.to_str()
     assert "[]" not in yml
+    assert "ghidra" not in yml
+    # Check both formats just in case. (#334)
     assert "data-sources" not in yml
     assert "data_sources" not in yml
+
+
+def test_project_defaults_nested():
+    """Should create the parent element if we set any of its properties. (Using Ghidra config as an example)"""
+    p = ProjectFile.from_str("""\
+        targets:
+            TEST:
+                source-root: test
+                hash:
+                    sha256: test
+                filename: test.exe
+                ghidra:
+                    ignore-types: ['test']
+        """)
+
+    yml = p.to_str()
+    assert "ghidra" in yml
+    # Check both formats just in case. (#334)
+    assert "ignore-types" in yml or "ignore_types" in yml
+    assert "name-substitutions" not in yml
+    assert "name_substitutions" not in yml
 
 
 def test_project_without_csv():
