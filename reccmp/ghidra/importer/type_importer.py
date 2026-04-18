@@ -136,7 +136,8 @@ class PdbTypeImporter:
         cvtype = CvdumpTypeMap[type_key]
 
         if cvtype.pointer is None:
-            # TODO: Check if this type addition needs to be done for more types, or if we can centralise it
+            # Scalars need to be added to the database explicitly since there can be multiple
+            # non-identical instances of the same scalar. See the failing unit tests if you remove the wrapper.
             return add_data_type_or_reuse_existing(
                 self.api, get_scalar_ghidra_type(type_key)
             )

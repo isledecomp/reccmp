@@ -19,6 +19,10 @@ if TYPE_CHECKING:
 
 # Shortened version of a BETA10 recompilation
 CVDUMP_TYPES = """
+0x1199 : Length = 10, Leaf = 0x1002 LF_POINTER
+	const Pointer (NEAR32), Size: 0
+	Element type : T_RCHAR(0070)
+
 0x12c8 : Length = 42, Leaf = 0x1505 LF_STRUCTURE
 	# members = 0,  field list type 0x0000, FORWARD REF,
 	Derivation list type 0x0000, VT shape type 0x0000
@@ -108,10 +112,11 @@ NESTED, 	enum name = LegoCarBuild::Unknown0xf8, UDT(0x00005696)
 NESTED, 	enum name = LegoPathActor::ActorState, UDT(0x0000608f)
 """
 
-hwnd_key = CvdumpTypeKey(0x3159)
+pointer_to_char_key = CvdumpTypeKey(0x1199)
 legoanimactor_forward_ref_key = CvdumpTypeKey(0x12C8)
 legoanimactor_pointer_key = CvdumpTypeKey(0x12C9)
 union_key = CvdumpTypeKey(0x1480)
+hwnd_key = CvdumpTypeKey(0x3159)
 array_key = CvdumpTypeKey(0x31BB)
 procedure_key = CvdumpTypeKey(0x4EF2)
 enum_with_negative_value_key = CvdumpTypeKey(0x5696)
@@ -155,6 +160,9 @@ def test_ghidra_scalar_types(
     if cv_type_info.pointer is not None:
         assert isinstance(ghidra_type, Pointer)
 
+    second_import = type_helper.type_importer.import_pdb_type_into_ghidra(scalar_type)
+    assert second_import == ghidra_type
+
 
 def test_ghidra_type_not_found(type_helper: GhidraTypeTestHelper):
     with pytest.raises(TypeNotFoundError, match="Failed to find referenced type"):
@@ -168,9 +176,14 @@ def test_ghidra_type_class(type_helper: GhidraTypeTestHelper):
     )
     _assert_legoanimactorentry(imported_structure)
 
+    second_import = type_helper.type_importer.import_pdb_type_into_ghidra(
+        legoanimactor_class_key
+    )
+    assert second_import == imported_structure
+
 
 def test_ghidra_verify_test_isolation(ghidra: "FlatProgramAPI"):
-    """Make sure that the `TestClass` created above was rolled back."""
+    """Make sure that the `LegoAnimActorEntry` created above was rolled back."""
     assert not list(ghidra.getDataTypes("LegoAnimActorEntry"))
 
 
@@ -180,6 +193,11 @@ def test_ghidra_forward_ref_to_pdb_type(type_helper: GhidraTypeTestHelper):
         legoanimactor_forward_ref_key
     )
     _assert_legoanimactorentry(imported_structure)
+
+    second_import = type_helper.type_importer.import_pdb_type_into_ghidra(
+        legoanimactor_forward_ref_key
+    )
+    assert second_import == imported_structure
 
 
 def test_forward_ref_to_missing_type(type_helper: GhidraTypeTestHelper):
@@ -224,6 +242,30 @@ def test_ghidra_pointer_to_class(type_helper: GhidraTypeTestHelper):
     )
     _assert_legoanimactorentry(imported_pointer.dataType)
 
+    second_import = type_helper.type_importer.import_pdb_type_into_ghidra(
+        legoanimactor_pointer_key
+    )
+    assert second_import == imported_pointer
+
+
+def test_pointer_to_scalar(type_helper: GhidraTypeTestHelper):
+    from ghidra.program.model.data import Pointer
+
+    type_helper.set_up_cvdump_types(CVDUMP_TYPES)
+    imported_pointer = assert_instance(
+        type_helper.type_importer.import_pdb_type_into_ghidra(pointer_to_char_key),
+        Pointer,
+    )
+    assert (
+        imported_pointer.dataType
+        == type_helper.type_importer.import_pdb_type_into_ghidra(CVInfoTypeEnum.T_CHAR)
+    )
+
+    second_import = type_helper.type_importer.import_pdb_type_into_ghidra(
+        pointer_to_char_key
+    )
+    assert second_import == imported_pointer
+
 
 def test_array(type_helper: GhidraTypeTestHelper):
     from ghidra.program.model.data import Array
@@ -240,6 +282,9 @@ def test_array(type_helper: GhidraTypeTestHelper):
         imported_array.getDataType()
         == type_helper.type_importer.import_pdb_type_into_ghidra(CVInfoTypeEnum.T_ULONG)
     )
+
+    second_import = type_helper.type_importer.import_pdb_type_into_ghidra(array_key)
+    assert second_import == imported_array
 
 
 def test_enum(type_helper: GhidraTypeTestHelper):
@@ -271,6 +316,9 @@ def test_enum(type_helper: GhidraTypeTestHelper):
         256,
     ]
 
+    second_import = type_helper.type_importer.import_pdb_type_into_ghidra(enum_key)
+    assert second_import == imported_enum
+
 
 @pytest.mark.xfail(reason="Bug, see issue #380")
 def test_enum_with_negative_value(type_helper: GhidraTypeTestHelper):
@@ -289,6 +337,11 @@ def test_enum_with_negative_value(type_helper: GhidraTypeTestHelper):
     assert list(imported_enum.getNames()) == ["c_unknownminusone", "c_unknown8"]
     assert list(imported_enum.getValues()) == [-1, 8]
 
+    second_import = type_helper.type_importer.import_pdb_type_into_ghidra(
+        enum_with_negative_value_key
+    )
+    assert second_import == imported_enum
+
 
 def test_fallback_procedure_import(type_helper: GhidraTypeTestHelper):
     """The feature is not fully implemented. This test asserts on the fallback behaviour."""
@@ -300,6 +353,9 @@ def test_fallback_procedure_import(type_helper: GhidraTypeTestHelper):
     assert imported_type == type_helper.type_importer.import_pdb_type_into_ghidra(
         CVInfoTypeEnum.T_VOID
     )
+
+    second_import = type_helper.type_importer.import_pdb_type_into_ghidra(procedure_key)
+    assert second_import == imported_type
 
 
 @pytest.mark.xfail(reason="Union import not yet implemented")
