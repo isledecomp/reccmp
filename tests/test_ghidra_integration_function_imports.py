@@ -5,9 +5,8 @@
 # pyright: reportMissingModuleSource=false
 
 import json
-from typing import TYPE_CHECKING, Iterator
+from typing import TYPE_CHECKING
 
-import pytest
 from reccmp.compare.ingest import load_cvdump_types
 from reccmp.cvdump.analysis import CvdumpAnalysis
 from reccmp.cvdump.cvinfo import CVInfoTypeEnum, CvdumpTypeKey
@@ -19,73 +18,19 @@ from reccmp.ghidra.importer.pdb_extraction import (
     CppStackSymbol,
     FunctionSignature,
 )
+from .ghidra_integration_test_setup import (
+    GhidraFunctionTestHelper,
+    GhidraTypeTestHelper,
+)
 
 if TYPE_CHECKING:
     from ghidra.program.flatapi import FlatProgramAPI
-    from reccmp.ghidra.importer.type_importer import PdbTypeImporter
-
-
-ORIG_FN_TO_OVERWRITE_PRIMARY = 0x00402880  # readIntFromRegistry()
-ORIG_FN_TO_OVERWRITE_SECONDARY = 0x00402C20  # IsleApp::Tick()
-
-
-class GhidraFunctionTestHelper:
-    def __init__(self, ghidra: "FlatProgramAPI"):
-        self.ghidra = ghidra
-        self.orig_address = ORIG_FN_TO_OVERWRITE_PRIMARY
-        self.address_ghidra = ghidra.getAddressFactory().getAddress(
-            hex(self.orig_address)
-        )
-        self.ghidra_function = self.ghidra.getFunctionContaining(self.address_ghidra)
-        assert (
-            self.ghidra_function is not None
-        ), f"No Ghidra function at address {self.address_ghidra}"
-
-    def overwrite_example_function(self, data: bytes):
-        from jpype import JArray, JByte  # type: ignore[import-untyped]
-
-        assert len(data) > 0
-
-        # Clear the existing decompiled code so we can overwrite it
-        listing = self.ghidra.getCurrentProgram().getListing()
-        end_addr = self.address_ghidra.add(len(data) - 1)
-        listing.clearCodeUnits(self.address_ghidra, end_addr, False)
-
-        # Overwrite the memory
-        self.ghidra.getCurrentProgram().getMemory().setBytes(
-            self.address_ghidra, JArray.of(data, JByte)
-        )
-
-    def assert_c_code(self, code: str):
-        from ghidra.app.decompiler import DecompInterface
-        from ghidra.util.task import TaskMonitor
-
-        iface = DecompInterface()
-        iface.openProgram(self.ghidra.getCurrentProgram())
-
-        res = iface.decompileFunction(self.ghidra_function, 5, TaskMonitor.DUMMY)
-        assert res.decompileCompleted(), "Decompilation failed"
-
-        # The line endings returned by the API differ between Windows and Linux
-        decompiled_c_code = res.getDecompiledFunction().getC().replace("\r\n", "\n")
-
-        # This print statement is suppressed when the test passes, but is helpful if the test fails
-        print(decompiled_c_code)
-
-        assert decompiled_c_code == code
-
-
-@pytest.fixture(name="function_helper", scope="function")
-def ghidra_function_helper_fixture(
-    ghidra: "FlatProgramAPI",
-) -> Iterator[GhidraFunctionTestHelper]:
-    yield GhidraFunctionTestHelper(ghidra)
 
 
 def test_import_trivial_function(
     ghidra: "FlatProgramAPI",
     function_helper: GhidraFunctionTestHelper,
-    type_importer: "PdbTypeImporter",
+    type_helper: GhidraTypeTestHelper,
 ):
     from reccmp.ghidra.importer.function_importer import (
         PdbFunctionImporter,
@@ -111,7 +56,7 @@ def test_import_trivial_function(
     )
 
     PdbFunctionImporter.build(
-        ghidra, pdb_function, type_importer, []
+        ghidra, pdb_function, type_helper.type_importer, []
     ).overwrite_ghidra_function(function_helper.ghidra_function)
 
     function_helper.assert_c_code("""
@@ -127,7 +72,7 @@ void MyTestFn(void)
 def test_record_array_access(
     ghidra: "FlatProgramAPI",
     function_helper: GhidraFunctionTestHelper,
-    type_importer: "PdbTypeImporter",
+    type_helper: GhidraTypeTestHelper,
 ):
     from reccmp.ghidra.importer.function_importer import (
         PdbFunctionImporter,
@@ -172,7 +117,7 @@ def test_record_array_access(
 
     legoanim_class_key = CvdumpTypeKey(0x12CF)
 
-    compare = type_importer.extraction.compare
+    compare = type_helper.type_importer.extraction.compare
 
     parser = CvdumpParser()
     parser.read_section("TYPES", cvdump_types)
@@ -209,7 +154,7 @@ def test_record_array_access(
     )
 
     PdbFunctionImporter.build(
-        ghidra, pdb_function, type_importer, []
+        ghidra, pdb_function, type_helper.type_importer, []
     ).overwrite_ghidra_function(function_helper.ghidra_function)
 
     function_helper.assert_c_code("""
