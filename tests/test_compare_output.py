@@ -38,13 +38,12 @@ def to_report(compare: Compare) -> ReccmpStatusReport:
         report.entities[orig_addr] = ReccmpComparedEntity(
             orig_addr=orig_addr,
             name=match.name,
-            # type=match.match_type,
+            type=match.match_type,
             accuracy=match.effective_ratio,
             recomp_addr=recomp_addr,
             is_effective_match=match.is_effective_match,
             is_stub=match.is_stub,
-            # rdiff=match.result.diff,
-            diff=match.udiff,
+            rdiff=match.result.diff,
         )
 
     json_text = serialize_reccmp_report(report, diff_included=True)
@@ -52,9 +51,9 @@ def to_report(compare: Compare) -> ReccmpStatusReport:
 
 
 def get_udiff(entity: ReccmpComparedEntity) -> CombinedDiffOutput | None:
-    """This is here for mypy type coersion and to protect against
+    """This is here for mypy type coercion and to protect against
     changes to the ReccmpStatusReport structure."""
-    return entity.diff
+    return entity.udiff
 
 
 def test_empty():
@@ -419,3 +418,30 @@ def test_compare_vtable_diff():
     assert diff_groups[1].keys() == {"both"}
     assert len(diff_groups[1]["both"]) > 10
     assert diff_groups[2].keys() == {"orig", "recomp"}
+
+
+def test_aggregate_workflow():
+    """Example of serializing a report, deserializing it, then serializing again.
+    `reccmp-aggregate` manages report-only entities not derived from the EntityDb."""
+    orig_bin = RawImage.from_memory(b"\x90")  # nop
+    recomp_bin = RawImage.from_memory(b"\x90")
+
+    # Same example as test_compare_function.
+    pdb = Mock(spec=CvdumpAnalysis)
+    compare = Compare(orig_bin, recomp_bin, pdb, "HELLO")
+
+    with get_db(compare).batch() as batch:
+        batch.set(ImageId.RECOMP, 0, type=EntityType.FUNCTION, name="test", size=1)
+        batch.match(0, 0)
+
+    report = to_report(compare)
+    assert len(report.entities) == 1
+    entity = report.entities["0x0"]
+
+    # The function matches, it has no diff data.
+    assert entity.udiff is None
+    assert entity.rdiff is None
+
+    # We should be able to serialize with and without diff data.
+    serialize_reccmp_report(report, diff_included=False)
+    serialize_reccmp_report(report, diff_included=True)

@@ -1,5 +1,5 @@
 import pytest
-from reccmp.types import EntityType
+from reccmp.types import EntityType, ImageId
 from reccmp.compare.db import EntityDb
 from reccmp.compare.asm.replacement import (
     create_name_lookup,
@@ -22,9 +22,9 @@ def create_lookup(
         return addrs.get(addr)
 
     if is_orig:
-        return create_name_lookup(db.get_by_orig, bin_lookup, "orig_addr")
+        return create_name_lookup(db, ImageId.ORIG, bin_lookup)
 
-    return create_name_lookup(db.get_by_recomp, bin_lookup, "recomp_addr")
+    return create_name_lookup(db, ImageId.RECOMP, bin_lookup)
 
 
 ####
@@ -34,9 +34,9 @@ def test_name_replacement(db):
     """Should return a name for an entity that has one.
     Return None if there are no name attributes set or the entity does not exist."""
     with db.batch() as batch:
-        batch.set_orig(100, name="Test")
-        batch.set_orig(200, computed_name="Hello")
-        batch.set_orig(300)  # No name
+        batch.set(ImageId.ORIG, 100, name="Test")
+        batch.set(ImageId.ORIG, 200, computed_name="Hello")
+        batch.set(ImageId.ORIG, 300)  # No name
 
     lookup = create_lookup(db)
     entity_100 = lookup(100)
@@ -57,7 +57,7 @@ def test_name_hierarchy(db):
     """Use the "best" entity name. Currently there are only two.
     'computed_name' is preferred over just 'name'."""
     with db.batch() as batch:
-        batch.set_orig(100, name="Test", computed_name="Hello")
+        batch.set(ImageId.ORIG, 100, name="Test", computed_name="Hello")
 
     lookup = create_lookup(db)
     entity = lookup(100)
@@ -75,7 +75,7 @@ def test_offset_name(db: EntityDb, entity_type: EntityType):
     is inside the address range of the entity. This is determined by the size attribute.
     """
     with db.batch() as batch:
-        batch.set_orig(100, name="Hello", type=entity_type, size=10)
+        batch.set(ImageId.ORIG, 100, name="Hello", type=entity_type, size=10)
 
     lookup = create_lookup(db)
 
@@ -89,8 +89,8 @@ def test_offset_name(db: EntityDb, entity_type: EntityType):
 def test_offset_name_non_variables(db):
     """Do not return an offset name for non-variable entities. (e.g. functions)."""
     with db.batch() as batch:
-        batch.set_orig(100, name="Hello", type=EntityType.FUNCTION, size=10)
-        batch.set_orig(200, name="Hello", size=10)  # No type
+        batch.set(ImageId.ORIG, 100, name="Hello", type=EntityType.FUNCTION, size=10)
+        batch.set(ImageId.ORIG, 200, name="Hello", size=10)  # No type
 
     lookup = create_lookup(db)
 
@@ -102,10 +102,10 @@ def test_offset_name_non_variables(db):
 
 
 def test_offset_name_no_size(db):
-    """An enity with no size attribute is considered to have size=0.
+    """An entity with no size attribute is considered to have size=0.
     Meaning: match only against the address value."""
     with db.batch() as batch:
-        batch.set_orig(100, name="Hello", type=EntityType.DATA)
+        batch.set(ImageId.ORIG, 100, name="Hello", type=EntityType.DATA)
 
     lookup = create_lookup(db)
 
@@ -117,7 +117,7 @@ def test_exact_restriction(db):
     """If exact=True, return a name only if the entity's address matches the search address.
     Otherwise we might return a name if the entity contains the search address."""
     with db.batch() as batch:
-        batch.set_orig(100, name="Hello", type=EntityType.DATA, size=10)
+        batch.set(ImageId.ORIG, 100, name="Hello", type=EntityType.DATA, size=10)
 
     lookup = create_lookup(db)
 
@@ -132,7 +132,7 @@ def test_indirect_function(db):
     """An instruction like `call dword ptr [0x1234]` means that we call the function
     whose address is at address 0x1234. This is an indirect lookup."""
     with db.batch() as batch:
-        batch.set_orig(100, name="Hello", type=EntityType.FUNCTION)
+        batch.set(ImageId.ORIG, 100, name="Hello", type=EntityType.FUNCTION)
 
     # Mock lookup so we will read 100 from address 200.
     lookup = create_lookup(db, {200: 100})
@@ -150,8 +150,8 @@ def test_indirect_function_variable(db):
     """If the indirect call instruction has the address of a variable in our database,
     prefer the variable name rather than reading the pointer."""
     with db.batch() as batch:
-        batch.set_orig(100, name="Hello", type=EntityType.FUNCTION)
-        batch.set_orig(200, name="Test", type=EntityType.DATA)
+        batch.set(ImageId.ORIG, 100, name="Hello", type=EntityType.FUNCTION)
+        batch.set(ImageId.ORIG, 200, name="Test", type=EntityType.DATA)
 
     # Mock lookup so we will read 100 from address 200.
     lookup = create_lookup(db, {200: 100})
@@ -164,11 +164,11 @@ def test_indirect_function_variable(db):
 
 
 def test_indirect_import(db):
-    """If we are indirectly calling an imported funtion, we should see the import_name
+    """If we are indirectly calling an imported function, we should see the import_name
     attribute used in the result. This will probably contain the DLL and function name.
     """
     with db.batch() as batch:
-        batch.set_orig(100, name="Hello", type=EntityType.IMPORT)
+        batch.set(ImageId.ORIG, 100, name="Hello", type=EntityType.IMPORT)
 
     # No mock needed here because we will not need to read any data.
     lookup = create_lookup(db)
@@ -189,7 +189,7 @@ def test_indirect_import(db):
 def test_import_without_name(db):
     """If the import entity doesn't have a name, the lookup should return None."""
     with db.batch() as batch:
-        batch.set_orig(100, type=EntityType.IMPORT)  # No name
+        batch.set(ImageId.ORIG, 100, type=EntityType.IMPORT)  # No name
 
     lookup = create_lookup(db)
 
@@ -202,7 +202,7 @@ def test_indirect_failed_lookup(db):
     """In the general case (i.e. we do not use the base entity to get the name)
     if there is no entity at the pointer location, return None."""
     with db.batch() as batch:
-        batch.set_orig(200, name="Hello", type=EntityType.FUNCTION)
+        batch.set(ImageId.ORIG, 200, name="Hello", type=EntityType.FUNCTION)
 
     # Mock lookup so we will read 100 from address 200.
     lookup = create_lookup(db, {200: 100})

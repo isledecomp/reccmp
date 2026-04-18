@@ -2,7 +2,7 @@ from pathlib import PurePath
 from typing import Sequence
 from .parser import DecompParser
 from .error import ParserAlert, ParserError
-from .node import ParserSymbol, ParserString
+from .node import ParserFunction, ParserSymbol, ParserString
 
 
 def get_checkorder_filter(module):
@@ -46,6 +46,7 @@ class DecompLinter:
                 continue
 
             is_string = isinstance(marker, ParserString)
+            is_folded = isinstance(marker, ParserFunction) and marker.is_folded
 
             value = (marker.module, marker.offset)
             if value in self._offsets_used:
@@ -58,7 +59,7 @@ class DecompLinter:
                                 line=f"0x{marker.offset:08x}, {repr(self._strings[value])} vs. {repr(marker.name)}",
                             )
                         )
-                else:
+                elif not is_folded:
                     self.alerts.append(
                         ParserAlert(
                             code=ParserError.DUPLICATE_OFFSET,
@@ -82,6 +83,9 @@ class DecompLinter:
         markers for a single function (i.e. for LEGO1 functions linked statically to
         ISLE) then the virtual address space will be very different. If we don't check
         for one module only, we would incorrectly report that the file is out of order.
+
+        3. Functions marked FOLDED are ignored. The ordering is not well understood
+        and you may not have much (any?) control over which footprint is used.
         """
 
         if self._module is None:
@@ -90,6 +94,11 @@ class DecompLinter:
         checkorder_filter = get_checkorder_filter(self._module)
         last_offset = None
         for fun in filter(checkorder_filter, self._parser.functions):
+            # Skip folded functions altogether.
+            # Don't use the address to check the order of any upcoming functions.
+            if fun.is_folded:
+                continue
+
             if last_offset is not None:
                 if fun.offset < last_offset:
                     self.alerts.append(

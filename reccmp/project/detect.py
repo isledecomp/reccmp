@@ -3,7 +3,7 @@ import enum
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Sequence
+from typing import Iterable, Iterator, Sequence
 
 from .config import (
     BuildFile,
@@ -146,14 +146,18 @@ class RecCmpPartialTarget:
     # SHA-256 checksum of the original binary.
     sha256: str
 
+    # Encoding of the source code files for this target.
+    encoding: str | None = None
+
+    # Relative (to project root) directory of source code files for this target.
+    source_paths: tuple[Path, ...] = tuple()
+
     # Ghidra-specific options for this target.
     ghidra_config: GhidraConfig | None = None
 
     # Report options for this target
     report_config: ReportConfig | None = None
 
-    # Relative (to project root) directory of source code files for this target.
-    source_root: Path | None = None
     original_path: Path | None = None
     recompiled_path: Path | None = None
     recompiled_pdb: Path | None = None
@@ -181,8 +185,11 @@ class RecCmpTarget:
     # SHA-256 checksum of the original binary.
     sha256: str
 
+    # Encoding of the source code files for this target.
+    encoding: str | None
+
     # Relative (to project root) directory of source code files for this target.
-    source_root: Path
+    source_paths: tuple[Path, ...]
 
     # Ghidra-specific options for this target.
     ghidra_config: GhidraConfig
@@ -229,22 +236,20 @@ class RecCmpProject:
         # The error message should display the full list of missing attributes
         # so we check it here instead of waiting for a single assert to fail.
         required_attrs = (
-            "source_root",
+            "source_paths",
             "original_path",
             "recompiled_path",
             "recompiled_pdb",
         )
 
-        missing_attrs = [
-            attr for attr in required_attrs if getattr(target, attr) is None
-        ]
+        missing_attrs = [attr for attr in required_attrs if not getattr(target, attr)]
         if missing_attrs:
             raise IncompleteReccmpTargetError(
                 f"Target {target_id} is missing data: {','.join(missing_attrs)}"
             )
 
         # This list should match the one above. These asserts are for mypy.
-        assert target.source_root is not None
+        assert target.source_paths  # Must have at least one
         assert target.original_path is not None
         assert target.recompiled_path is not None
         assert target.recompiled_pdb is not None
@@ -268,7 +273,8 @@ class RecCmpProject:
             original_path=target.original_path,
             recompiled_path=target.recompiled_path,
             recompiled_pdb=target.recompiled_pdb,
-            source_root=target.source_root,
+            encoding=target.encoding,
+            source_paths=target.source_paths,
             ghidra_config=ghidra,
             data_sources=data_sources,
             report_config=report,
@@ -368,7 +374,9 @@ class RecCmpProject:
 
             # Assumes these are relative paths. If they are not, the second path
             # will replace the first instead of adding onto it.
-            source_root = project_directory / target.source_root
+            source_paths = tuple(
+                project_directory / target_dir for target_dir in target.source_root
+            )
             data_sources = [
                 project_directory / ds_path for ds_path in target.data_sources
             ]
@@ -377,7 +385,8 @@ class RecCmpProject:
                 target_id=target_id,
                 filename=target.filename,
                 sha256=target.hash.sha256,
-                source_root=source_root,
+                encoding=target.encoding,
+                source_paths=source_paths,
                 ghidra_config=ghidra,
                 data_sources=data_sources,
                 report_config=report,
@@ -416,7 +425,7 @@ class RecCmpPathsAction(argparse.Action):
         self, parser, namespace, values: Sequence[str] | None, option_string=None
     ):
         assert isinstance(values, Sequence)
-        original, recompiled, pdb, source_root = list(Path(o) for o in values)
+        original, recompiled, pdb, source_paths = list(Path(o) for o in values)
 
         # Assumes base filename of the original binary is the module name.
         target_id = original.stem.upper()
@@ -430,7 +439,8 @@ class RecCmpPathsAction(argparse.Action):
             original_path=original,
             recompiled_path=recompiled,
             recompiled_pdb=pdb,
-            source_root=source_root,
+            encoding="utf-8",
+            source_paths=(source_paths,),
             ghidra_config=GhidraConfig(),
             report_config=ReportConfig(),
         )
@@ -486,10 +496,11 @@ def argparse_parse_project_target(
             f"Symbols PDB {target.recompiled_pdb} does not exist"
         )
 
-    if not target.source_root.is_dir():
-        raise RecCmpProjectException(
-            f"Source directory {target.source_root} does not exist"
-        )
+    for source_path in target.source_paths:
+        if not source_path.exists():
+            raise RecCmpProjectException(
+                f"Source code search path '{source_path}' does not exist"
+            )
     return target
 
 
@@ -499,6 +510,19 @@ class DetectWhat(enum.Enum):
 
     def __str__(self):
         return self.value
+
+
+def search_path_append_file(
+    search_paths: Iterable[Path], filename: str
+) -> Iterator[Path]:
+    """Search paths can point to directories or files.
+    If the path is a directory, combine it with the given filename.
+    If the path is a file, return it unchanged."""
+    for path in search_paths:
+        if path.is_dir():
+            yield path / filename
+        else:
+            yield path
 
 
 def detect_project(
@@ -519,8 +543,7 @@ def detect_project(
 
         for target_id, target_data in project_data.targets.items():
             filename = target_data.filename
-            for search_path_folder in search_path:
-                p = search_path_folder / filename
+            for p in search_path_append_file(search_path, filename):
                 if not p.is_file():
                     continue
 
@@ -539,9 +562,7 @@ def detect_project(
                 logger.info("Found %s -> %s", target_id, p)
                 break
             else:
-                logger.warning(
-                    "Could not find %s under %s", filename, search_path_folder
-                )
+                logger.warning("Could not find %s under %s", filename, p)
 
         logger.info("Updating %s", user_config_path)
         user_data.write_file(user_config_path)
@@ -555,8 +576,7 @@ def detect_project(
         build_data = BuildFile(project=project_directory.resolve(), targets={})
 
         def detect_recompiled(filename: str):
-            for search_path_folder in search_path:
-                binary = search_path_folder / filename
+            for binary in search_path_append_file(search_path, filename):
                 pdb = binary.with_suffix(".pdb")
                 if binary.is_file():
                     if pdb.is_file():

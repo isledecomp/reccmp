@@ -72,4 +72,4 @@ typedef unsigned short undefined2;
 typedef unsigned int undefined4;
 ```
 
-Note that the behaviour of signed and unsigned integers can be different even when no arithmetics is involved. If changing e.g. from `undefined4` to `int` improves the match, this is a strong indicator that the original variable was signed as well.
+Note that the behaviour of signed and unsigned integers can be different even when no arithmetic is involved. If changing e.g. from `undefined4` to `int` improves the match, this is a strong indicator that the original variable was signed as well.

@@ -733,3 +733,50 @@ def test_mixed_case_module_name(parser):
     # Syntax warning for mixed-case module name.
     assert len(parser.alerts) == 1
     assert parser.alerts[0].code == ParserError.BAD_DECOMP_MARKER
+
+
+def test_folded_option(parser):
+    """Read FOLDED option from nameref and lineref annotations."""
+    parser.read("""\
+        // FUNCTION: HELLO 0x1234 FOLDED
+        int test() { return 5; }
+
+        // STUB: HELLO 0x4321
+        int test() { return 5; }
+
+        // LIBRARY: HELLO 0x5555 FOLDED
+        // SomeLibraryFunction
+        """)
+
+    # Lineref annotation
+    assert parser.functions[0].offset == 0x1234
+    assert parser.functions[0].is_folded is True
+
+    # Regular annotation without FOLDED
+    assert parser.functions[1].offset == 0x4321
+    assert parser.functions[1].is_folded is False
+
+    # Nameref annotation
+    assert parser.functions[2].offset == 0x5555
+    assert parser.functions[2].is_folded is True
+
+    assert len(parser.alerts) == 0
+
+
+def test_folded_mixed_by_module(parser):
+    """Same function, different settings for FOLDED in each module."""
+    parser.read("""\
+        // FUNCTION: HELLO 0x1234 FOLDED
+        // FUNCTION: HOWDY 0x4321
+        int test() { return 5; }
+        """)
+
+    assert parser.functions[0].offset == 0x1234
+    assert parser.functions[0].module == "HELLO"
+    assert parser.functions[0].is_folded is True
+
+    assert parser.functions[1].offset == 0x4321
+    assert parser.functions[1].module == "HOWDY"
+    assert parser.functions[1].is_folded is False
+
+    assert len(parser.alerts) == 0

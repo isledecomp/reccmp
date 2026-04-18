@@ -12,6 +12,7 @@ from ghidra.program.flatapi import FlatProgramAPI
 from ghidra.program.model.listing import ParameterImpl
 from ghidra.program.model.symbol import SourceType
 from ghidra.program.model.data import (
+    DataType,
     TypeDef,
     TypedefDataType,
     Pointer,
@@ -398,7 +399,7 @@ class FullPdbFunctionImporter(PdbFunctionImporter):
         the auto-generated `this` parameter.
         """
 
-        # Necessary in order to overwite the auto-generated `this`
+        # Necessary in order to overwrite the auto-generated `this`
         ghidra_function.setCustomVariableStorage(True)
 
         this_parameter = next(
@@ -421,7 +422,7 @@ class FullPdbFunctionImporter(PdbFunctionImporter):
             class_name = current_ghidra_type.getDataType().getName()
             typedef_name = f"{class_name}PtrOffset0x{self.signature.this_adjust:x}"
 
-            typedef_ghidra_type = TypedefDataType(
+            typedef_ghidra_type: DataType = TypedefDataType(
                 current_ghidra_type.getCategoryPath(),
                 typedef_name,
                 current_ghidra_type,

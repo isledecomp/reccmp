@@ -74,6 +74,12 @@ def parse_args() -> argparse.Namespace:
         default=False,
         help="Fail if syntax warnings are found.",
     )
+    parser.add_argument(
+        "--encoding",
+        default="utf-8",
+        type=str,
+        help="The encoding of the checked files.",
+    )
     argparse_add_logging_args(parser)
 
     args = parser.parse_args()
@@ -109,6 +115,7 @@ def process_files(
 def main():
     args = parse_args()
     search_paths: list[Path] = []
+    codefiles: list[TextFile] = []
 
     if not args.paths:
         # No path specified. Try to find the project file.
@@ -120,19 +127,26 @@ def main():
         # Read each target from the reccmp-project file
         # then get all filenames from each code directory.
         for target in project.targets.values():
-            if target.source_root:
-                search_paths.append(target.source_root)
+            reduced_file_list = source_code_search(target.source_paths)
+            codefiles.extend(
+                TextFile.from_files(
+                    reduced_file_list,
+                    allow_error=True,
+                    encoding=target.encoding or "utf-8",
+                )
+            )
     else:
         for path in args.paths:
             if path.is_dir() or path.is_file():
                 search_paths.append(path)
             else:
                 logger.error("Invalid path: %s", path)
-
-    # Use set() so we check each file only once.
-    reduced_file_list = source_code_search(search_paths)
-
-    codefiles = list(TextFile.from_files(reduced_file_list, allow_error=True))
+        reduced_file_list = source_code_search(search_paths)
+        codefiles = list(
+            TextFile.from_files(
+                reduced_file_list, allow_error=True, encoding=args.encoding
+            )
+        )
 
     warning_count, error_count = process_files(codefiles, module=args.module)
 

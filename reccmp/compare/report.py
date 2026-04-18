@@ -3,7 +3,8 @@ from dataclasses import dataclass
 from typing import Literal, Iterable, Iterator
 from pydantic import BaseModel, ValidationError
 from pydantic_core import from_json
-from .diff import CombinedDiffOutput
+from reccmp.types import EntityType
+from .diff import CombinedDiffOutput, RawDiffOutput, raw_diff_to_udiff
 
 
 class ReccmpReportDeserializeError(Exception):
@@ -16,13 +17,19 @@ class ReccmpReportSameSourceError(Exception):
 
 @dataclass
 class ReccmpComparedEntity:
+    # pylint:disable=too-many-instance-attributes
     orig_addr: str
     name: str
     accuracy: float
+    # Version 1 files have no type, so it is optional.
+    type: EntityType | None = None
     recomp_addr: str | None = None
     is_effective_match: bool = False
     is_stub: bool = False
-    diff: CombinedDiffOutput | None = None
+    rdiff: RawDiffOutput | None = None
+
+    # Legacy field for importing version 1 files (aggregate).
+    udiff: CombinedDiffOutput | None = None
 
 
 class ReccmpStatusReport:
@@ -37,8 +44,17 @@ class ReccmpStatusReport:
     # Using orig addr as the key.
     entities: dict[str, ReccmpComparedEntity]
 
-    def __init__(self, filename: str, timestamp: datetime | None = None) -> None:
+    # Only set during deserialize.
+    from_version: int | None
+
+    def __init__(
+        self,
+        filename: str,
+        timestamp: datetime | None = None,
+        from_version: int | None = None,
+    ) -> None:
         self.filename = filename
+        self.from_version = from_version
         if timestamp is not None:
             self.timestamp = timestamp
         else:
@@ -107,6 +123,39 @@ def combine_reports(samples: list[ReccmpStatusReport]) -> ReccmpStatusReport:
     return output
 
 
+def get_udiff_for_entity(entity: ReccmpComparedEntity) -> CombinedDiffOutput | None:
+    """Create a unified diff for this entity to add to a version 1 report.
+
+    If the entity was imported from a version 1 report and we already have a unified diff, use it.
+    This can occur with `reccmp-aggregate` where we copy the entity with the highest accuracy score.
+
+    If there is no unified diff, create a new one using the entity's raw diff, if it exists.
+
+    If we return None, no diff is possible because the entity matches 100%, is a stub,
+    or was created from a deserialized report without diff data."""
+    if entity.udiff is not None:
+        # An aggregate report may already have a deserialized udiff.
+        return entity.udiff
+
+    if entity.rdiff is None:
+        # We need data to create the unified diff.
+        return None
+
+    if entity.is_stub:
+        return None
+
+    if entity.type == EntityType.VTABLE:
+        # Complete diff is always shown for vtables, even if they match.
+        return raw_diff_to_udiff(entity.rdiff, grouped=False)
+
+    if entity.is_effective_match or entity.accuracy != 1.0:
+        # Show grouped diff for effective match.
+        return raw_diff_to_udiff(entity.rdiff, grouped=True)
+
+    # Display nothing for matching functions.
+    return None
+
+
 #### JSON schemas and conversion functions ####
 
 
@@ -132,7 +181,7 @@ class JSONReportVersion1(BaseModel):
 def _serialize_version_1(
     report: ReccmpStatusReport, diff_included: bool = False
 ) -> JSONReportVersion1:
-    """The HTML file needs the diff data, but it is omitted from the JSON report."""
+    """The JSON report can exclude the diff to make deserialization faster."""
     entities = [
         JSONEntityVersion1(
             address=addr,  # prefer dict key over redundant value in entity
@@ -141,7 +190,7 @@ def _serialize_version_1(
             recomp=e.recomp_addr,
             stub=e.is_stub,
             effective=e.is_effective_match,
-            diff=e.diff if diff_included else None,
+            diff=get_udiff_for_entity(e) if diff_included else None,
         )
         for addr, e in report.entities.items()
     ]
@@ -156,7 +205,9 @@ def _serialize_version_1(
 
 def _deserialize_version_1(obj: JSONReportVersion1) -> ReccmpStatusReport:
     report = ReccmpStatusReport(
-        filename=obj.file, timestamp=datetime.fromtimestamp(obj.timestamp)
+        filename=obj.file,
+        timestamp=datetime.fromtimestamp(obj.timestamp),
+        from_version=1,
     )
 
     for e in obj.data:
@@ -167,7 +218,7 @@ def _deserialize_version_1(obj: JSONReportVersion1) -> ReccmpStatusReport:
             recomp_addr=e.recomp,
             is_stub=e.stub,
             is_effective_match=e.effective,
-            diff=e.diff,
+            udiff=e.diff,
         )
 
     return report

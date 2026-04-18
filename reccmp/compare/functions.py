@@ -3,31 +3,23 @@ from dataclasses import dataclass
 from functools import cache
 import struct
 from itertools import pairwise
-from typing import Callable, Iterator, NamedTuple
+from typing import Callable, Iterator
 from reccmp.compare.lines import LinesDb
-from reccmp.difflib import DiffOpcode
 from reccmp.compare.pinned_sequences import SequenceMatcherWithPins
 from reccmp.compare.asm.fixes import assert_fixup, find_effective_match
 from reccmp.compare.asm.parse import AsmExcerpt, ParseAsm
 from reccmp.compare.asm.replacement import (
-    AddrLookupProtocol,
     create_name_lookup,
 )
 from reccmp.compare.db import EntityDb, ReccmpMatch
+from reccmp.compare.diff import EntityCompareResult, RawDiffOutput
 from reccmp.compare.event import ReccmpEvent, ReccmpReportProtocol
 from reccmp.formats.exceptions import (
     InvalidVirtualAddressError,
     InvalidVirtualReadError,
 )
 from reccmp.formats import Image, PEImage
-
-
-class FunctionCompareResult(NamedTuple):
-    codes: list[DiffOpcode]
-    orig_inst: list[tuple[str, str]]
-    recomp_inst: list[tuple[str, str]]
-    is_effective_match: bool
-    match_ratio: float
+from reccmp.types import ImageId
 
 
 def timestamp_string() -> str:
@@ -42,14 +34,15 @@ def has_asserts(image: Image) -> bool:
 
 
 def create_valid_addr_lookup(
-    db_getter: AddrLookupProtocol,
-    is_recomp: bool,
+    db: EntityDb,
+    image_id: ImageId,
     bin_file: Image,
 ) -> Callable[[int], bool]:
     """
     Function generator for a lookup whether an address from a call is valid
     (either a relocation or pointing to something else we know, like a global variable)
     """
+    assert image_id in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
 
     @cache
     def lookup(addr: int) -> bool:
@@ -58,15 +51,15 @@ def create_valid_addr_lookup(
             return True
 
         # Check whether the address points to valid data
-        entity = db_getter(addr, exact=False)
+        entity = db.get(image_id, addr, exact=False)
         if entity is None:
             return False
-        base_addr = entity.recomp_addr if is_recomp else entity.orig_addr
+        base_addr = entity.addr(image_id)
         if base_addr is None:
             # should never happen
             return False
 
-        address_is_contained_in_entity = addr <= base_addr + entity.size
+        address_is_contained_in_entity = addr <= base_addr + entity.any_size(image_id)
         return address_is_contained_in_entity
 
     return lookup
@@ -99,22 +92,22 @@ class FunctionComparator:
 
     def __post_init__(self):
         self.orig_sanitize = ParseAsm(
-            addr_test=create_valid_addr_lookup(
-                self.db.get_by_orig, False, self.orig_bin
-            ),
+            addr_test=create_valid_addr_lookup(self.db, ImageId.ORIG, self.orig_bin),
             name_lookup=create_name_lookup(
-                self.db.get_by_orig, create_bin_lookup(self.orig_bin), "orig_addr"
+                self.db,
+                ImageId.ORIG,
+                create_bin_lookup(self.orig_bin),
             ),
             is_32bit=self.is_32bit,
         )
         self.recomp_sanitize = ParseAsm(
             addr_test=create_valid_addr_lookup(
-                self.db.get_by_recomp, True, self.recomp_bin
+                self.db, ImageId.RECOMP, self.recomp_bin
             ),
             name_lookup=create_name_lookup(
-                self.db.get_by_recomp,
+                self.db,
+                ImageId.RECOMP,
                 create_bin_lookup(self.recomp_bin),
-                "recomp_addr",
             ),
             is_32bit=self.is_32bit,
         )
@@ -143,18 +136,25 @@ class FunctionComparator:
             return None
         return f"{path_line_pair[0].name}:{path_line_pair[1]}"
 
-    def compare_function(self, match: ReccmpMatch) -> FunctionCompareResult:
+    def compare_function(self, match: ReccmpMatch) -> EntityCompareResult:
         # Detect when the recomp function size would cause us to read
         # enough bytes from the original function that we cross into
         # the next annotated function.
-        next_orig = self.db.get_next_orig_addr(match.orig_addr)
-        if next_orig is not None:
-            orig_size = min(next_orig - match.orig_addr, match.size)
-        else:
-            orig_size = match.size
+        orig_size = match.size(ImageId.ORIG)
+        recomp_size = match.size(ImageId.RECOMP)
+
+        if orig_size is None:
+            assert recomp_size is not None
+            next_orig = self.db.get_next_orig_addr(match.orig_addr)
+            if next_orig is not None:
+                orig_size = min(next_orig - match.orig_addr, recomp_size)
+            else:
+                orig_size = recomp_size
+
+        assert orig_size is not None and recomp_size is not None
 
         orig_raw = self.orig_bin.read(match.orig_addr, orig_size)
-        recomp_raw = self.recomp_bin.read(match.recomp_addr, match.size)
+        recomp_raw = self.recomp_bin.read(match.recomp_addr, recomp_size)
 
         # It's unlikely that a function other than an adjuster thunk would
         # start with a SUB instruction, so alert to a possible wrong
@@ -215,7 +215,7 @@ class FunctionComparator:
         orig: AsmExcerpt,
         recomp: AsmExcerpt,
         split_points: list[tuple[int, int]],
-    ) -> FunctionCompareResult:
+    ) -> EntityCompareResult:
         # Detach addresses from asm lines for the text diff.
         orig_asm = [x[1] for x in orig]
         recomp_asm = [x[1] for x in recomp]
@@ -250,10 +250,12 @@ class FunctionComparator:
             for line_index, (addr, instruction) in enumerate(recomp)
         ]
 
-        return FunctionCompareResult(
-            codes=diff.get_opcodes(),
-            orig_inst=orig_for_printing,
-            recomp_inst=recomp_for_printing,
+        return EntityCompareResult(
+            diff=RawDiffOutput(
+                codes=diff.get_opcodes(),
+                orig_inst=orig_for_printing,
+                recomp_inst=recomp_for_printing,
+            ),
             is_effective_match=is_effective,
             match_ratio=diff.ratio(),
         )

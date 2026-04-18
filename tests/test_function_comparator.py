@@ -6,10 +6,11 @@ from reccmp.compare.db import EntityDb, ReccmpMatch
 from reccmp.compare.event import ReccmpEvent, ReccmpReportProtocol
 from reccmp.compare.functions import (
     FunctionComparator,
-    FunctionCompareResult,
+    EntityCompareResult,
 )
 from reccmp.compare.lines import LinesDb
-from reccmp.types import EntityType
+from reccmp.types import EntityType, ImageId
+from .raw_image import RawImage
 
 MOCK_PATH = PureWindowsPath("some/path/test.cpp")
 ORIG_GLOBAL_OFFSET = 0x200
@@ -41,7 +42,7 @@ def compare_functions(
     recomp: bytes,
     report: ReccmpReportProtocol,
     is_relocated_addr: Callable[[int], bool] | None = None,
-) -> FunctionCompareResult:
+) -> EntityCompareResult:
     """Executes `FunctionComparator.compare_function` on the provided binary code."""
 
     # Do not use `spec=PEImage`. It may have default implementations that don't do what you expect
@@ -64,7 +65,7 @@ def compare_functions(
         ReccmpMatch(
             ORIG_GLOBAL_OFFSET,
             RECOMP_GLOBAL_OFFSET,
-            f'{{"type":1,"stub":false,"name":"unittest","symbol":"?Unittest","size":{len(recomp)}}}',
+            f'{{"type":1,"stub":false,"name":"unittest","symbol":"?Unittest","recomp_size":{len(recomp)}}}',
         )
     )
 
@@ -78,10 +79,16 @@ def add_line_annotation(
 
     orig_addr = ORIG_GLOBAL_OFFSET + offset_from_function_start_orig
     recomp_addr = RECOMP_GLOBAL_OFFSET + offset_from_function_start_recomp
-    db.set_recomp_symbol(
-        recomp_addr, name="cppfile.cpp:384", filename="src\\cppfile.cpp", line=384
-    )
-    db.set_pair(orig_addr, recomp_addr, EntityType.LINE)
+    with db.batch() as batch:
+        batch.set(
+            ImageId.RECOMP,
+            recomp_addr,
+            name="cppfile.cpp:384",
+            filename="src\\cppfile.cpp",
+            line=384,
+            type=EntityType.LINE,
+        )
+        batch.match(orig_addr, recomp_addr)
 
 
 def test_simple_identical_diff(
@@ -95,9 +102,9 @@ def test_simple_identical_diff(
     assert diffreport.match_ratio == 1.0
 
     # Should still return asm and opcodes even though this function is a match.
-    assert diffreport.codes == [("equal", 0, 9, 0, 9)]
+    assert diffreport.diff.codes == [("equal", 0, 9, 0, 9)]
 
-    assert diffreport.orig_inst == [
+    assert diffreport.diff.orig_inst == [
         ("0x200", "push ebp"),
         ("0x201", "mov ebp, esp"),
         ("0x203", "sub esp, 0x2c"),
@@ -109,7 +116,7 @@ def test_simple_identical_diff(
         ("0x215", "mov eax, dword ptr [ebp + 0x14]"),
     ]
 
-    assert diffreport.recomp_inst == [
+    assert diffreport.diff.recomp_inst == [
         ("0x400", "push ebp"),
         ("0x401", "mov ebp, esp"),
         ("0x403", "sub esp, 0x2c"),
@@ -133,18 +140,18 @@ def test_simple_nontrivial_diff(
 
     assert diffreport.match_ratio < 1.0
 
-    assert diffreport.codes == [
+    assert diffreport.diff.codes == [
         ("equal", 0, 2, 0, 2),
         ("replace", 2, 3, 2, 3),
     ]
 
-    assert diffreport.orig_inst == [
+    assert diffreport.diff.orig_inst == [
         ("0x200", "mov word ptr [ebp - 8], 0"),
         ("0x206", "mov word ptr [ebp - 0x10], 0"),
         ("0x20c", "mov eax, dword ptr [ebp + 0x14]"),
     ]
 
-    assert diffreport.recomp_inst == [
+    assert diffreport.diff.recomp_inst == [
         ("0x400", "mov word ptr [ebp - 8], 0"),
         ("0x406", "mov word ptr [ebp - 0x10], 0"),
         ("0x40c", "mov edx, dword ptr [ecx + 0x14]"),
@@ -173,14 +180,14 @@ def test_example_where_diff_mismatches_lines(
 
     assert diffreport.match_ratio < 1.0
 
-    assert diffreport.codes == [
+    assert diffreport.diff.codes == [
         ("equal", 0, 2, 0, 2),
         ("replace", 2, 7, 2, 15),
         ("equal", 7, 8, 15, 16),
         ("replace", 8, 19, 16, 22),
     ]
 
-    assert diffreport.orig_inst == [
+    assert diffreport.diff.orig_inst == [
         ("0x200", "sub ecx, eax"),
         ("0x202", "dec ecx"),
         ("0x203", "mov word ptr [ebp - 0x28], cx"),
@@ -202,7 +209,7 @@ def test_example_where_diff_mismatches_lines(
         ("0x243", "test byte ptr [ebp - 0x17], 0x40"),
     ]
 
-    assert diffreport.recomp_inst == [
+    assert diffreport.diff.recomp_inst == [
         ("0x400", "sub ecx, eax"),
         ("0x402", "dec ecx"),
         ("0x403", "mov word ptr [ebp - 4], cx"),
@@ -240,7 +247,7 @@ def test_impact_of_line_annotation(
         db, lines_db, LINE_MISMATCH_EXAMPLE_ORIG, LINE_MISMATCH_EXAMPLE_RECOMP, report
     )
 
-    assert diffreport.codes == [
+    assert diffreport.diff.codes == [
         ("equal", 0, 2, 0, 2),
         ("replace", 2, 9, 2, 3),
         # Pinned line is in this "replace" section:
@@ -254,7 +261,7 @@ def test_impact_of_line_annotation(
     # The asm is the same as the previous function "test_example_where_diff_mismatches_lines"
     # except for two instructions shown below:
 
-    assert diffreport.orig_inst == [
+    assert diffreport.diff.orig_inst == [
         ("0x200", "sub ecx, eax"),
         ("0x202", "dec ecx"),
         ("0x203", "mov word ptr [ebp - 0x28], cx"),
@@ -277,7 +284,7 @@ def test_impact_of_line_annotation(
         ("0x243", "test byte ptr [ebp - 0x17], 0x40"),
     ]
 
-    assert diffreport.recomp_inst == [
+    assert diffreport.diff.recomp_inst == [
         ("0x400", "sub ecx, eax"),
         ("0x402", "dec ecx"),
         ("0x403", "mov word ptr [ebp - 4], cx"),
@@ -371,13 +378,13 @@ def test_displacement_without_match(
 
     assert diffreport.match_ratio < 1.0
 
-    assert diffreport.codes == [("replace", 0, 1, 0, 1)]
+    assert diffreport.diff.codes == [("replace", 0, 1, 0, 1)]
 
-    assert diffreport.orig_inst == [
+    assert diffreport.diff.orig_inst == [
         ("0x200", "mov dword ptr [eax*4 + 0xc815a8], edi"),
     ]
 
-    assert diffreport.recomp_inst == [
+    assert diffreport.diff.recomp_inst == [
         ("0x400", "mov dword ptr [eax*4 + 0xd015a8], edi"),
     ]
 
@@ -391,8 +398,9 @@ def test_displacement_with_match(
 
     orig_addr = 0xC815A8
     recomp_addr = 0xD015A8
-    db.set_recomp_symbol(recomp_addr, name="some_global")
-    db.set_pair(orig_addr, recomp_addr, EntityType.DATA)
+    with db.batch() as batch:
+        batch.set(ImageId.RECOMP, recomp_addr, name="some_global", type=EntityType.DATA)
+        batch.match(orig_addr, recomp_addr)
 
     diffreport = compare_functions(db, lines_db, orig, recm, report)
 
@@ -436,21 +444,21 @@ def test_jump_table_wrong_order(
     assert diffreport.match_ratio < 1.0
     assert diffreport.is_effective_match is False
 
-    assert diffreport.codes == [
+    assert diffreport.diff.codes == [
         ("equal", 0, 2, 0, 2),
         ("insert", 2, 2, 2, 3),
         ("equal", 2, 3, 3, 4),
         ("delete", 3, 4, 4, 4),
     ]
 
-    assert diffreport.orig_inst == [
+    assert diffreport.diff.orig_inst == [
         ("0x200", "jmp dword ptr [eax*4 + <OFFSET1>]"),
         ("", "Jump table:"),
         ("0x207", "start + 0x233"),
         ("0x20b", "start + 0x243"),
     ]
 
-    assert diffreport.recomp_inst == [
+    assert diffreport.diff.recomp_inst == [
         ("0x400", "jmp dword ptr [eax*4 + <OFFSET1>]"),
         ("", "Jump table:"),
         ("0x407", "start + 0x243"),
@@ -490,7 +498,7 @@ def test_data_table_wrong_order(
     assert diffreport.match_ratio < 1.0
     assert diffreport.is_effective_match is False
 
-    assert diffreport.codes == [
+    assert diffreport.diff.codes == [
         ("equal", 0, 6, 0, 6),
         ("insert", 6, 6, 6, 8),
         ("equal", 6, 7, 8, 9),
@@ -498,7 +506,7 @@ def test_data_table_wrong_order(
         ("equal", 9, 11, 9, 11),
     ]
 
-    assert diffreport.orig_inst == [
+    assert diffreport.diff.orig_inst == [
         ("0x200", "mov al, byte ptr [ecx + <OFFSET1>]"),
         ("0x206", "jmp dword ptr [eax*4 + <OFFSET2>]"),
         ("", "Jump table:"),
@@ -515,7 +523,7 @@ def test_data_table_wrong_order(
         ("0x219", "0x3"),
     ]
 
-    assert diffreport.recomp_inst == [
+    assert diffreport.diff.recomp_inst == [
         ("0x400", "mov al, byte ptr [ecx + <OFFSET1>]"),
         ("0x406", "jmp dword ptr [eax*4 + <OFFSET2>]"),
         ("", "Jump table:"),
@@ -541,12 +549,96 @@ def test_source_reference_without_line_annotation(
 
     assert diffreport.match_ratio < 1.0
 
-    assert diffreport.codes == [
+    assert diffreport.diff.codes == [
         ("replace", 0, 1, 0, 1),
     ]
-    assert diffreport.orig_inst == [
+    assert diffreport.diff.orig_inst == [
         ("0x200", "mov dword ptr [eax*4 + 0xc815a8], edi"),
     ]
-    assert diffreport.recomp_inst == [
+    assert diffreport.diff.recomp_inst == [
         ("0x400", "mov dword ptr [eax*4 + 0xd015a8], edi \t(test.cpp:42)"),
+    ]
+
+
+def test_compare_without_distinct_size(
+    db: EntityDb, lines_db: LinesDb, report: ReccmpReportProtocol
+):
+    """In this example, the recomp function is not implemented enough to match.
+    However: if we only read 1 byte (recomp_size) from the orig binary, it will appear to match.
+    This is the existing behavior: always use recomp size when present."""
+
+    # Contrived example
+    orig_code = b"\x90\x90\x90\xc3"
+    recomp_code = b"\x90"
+
+    with db.batch() as batch:
+        # Do not set orig size.
+        batch.set(ImageId.ORIG, 0, type=EntityType.FUNCTION, name="test")
+        batch.set(
+            ImageId.RECOMP,
+            0,
+            type=EntityType.FUNCTION,
+            name="test",
+            size=len(recomp_code),
+        )
+        batch.match(0, 0)
+
+    orig_bin = RawImage.from_memory(orig_code)
+    recomp_bin = RawImage.from_memory(recomp_code)
+
+    comp = FunctionComparator(db, lines_db, orig_bin, recomp_bin, report, "unittest")
+    (entity,) = list(db.get_functions())
+    diffreport = comp.compare_function(entity)
+
+    assert diffreport.match_ratio == 1.0
+    assert diffreport.diff.codes == [("equal", 0, 1, 0, 1)]
+    assert diffreport.diff.orig_inst == [("0x0", "nop ")]
+    assert diffreport.diff.recomp_inst == [("0x0", "nop ")]
+
+
+def test_compare_with_distinct_size(
+    db: EntityDb, lines_db: LinesDb, report: ReccmpReportProtocol
+):
+    """In this example, the recomp function is not implemented enough to match.
+    However: if we only read 1 byte (recomp_size) from the orig binary, it will appear to match.
+    The function should not match if we read the full data size from both binaries."""
+
+    # Contrived example
+    orig_code = b"\x90\x90\x90\xc3"
+    recomp_code = b"\x90"
+
+    with db.batch() as batch:
+        batch.set(
+            ImageId.ORIG, 0, type=EntityType.FUNCTION, name="test", size=len(orig_code)
+        )
+        batch.set(
+            ImageId.RECOMP,
+            0,
+            type=EntityType.FUNCTION,
+            name="test",
+            size=len(recomp_code),
+        )
+        batch.match(0, 0)
+
+    orig_bin = RawImage.from_memory(orig_code)
+    recomp_bin = RawImage.from_memory(recomp_code)
+
+    comp = FunctionComparator(db, lines_db, orig_bin, recomp_bin, report, "unittest")
+    (entity,) = list(db.get_functions())
+    diffreport = comp.compare_function(entity)
+
+    assert diffreport.match_ratio != 1.0
+
+    assert diffreport.diff.codes == [
+        ("equal", 0, 1, 0, 1),
+        ("delete", 1, 4, 1, 1),
+    ]
+    assert diffreport.diff.orig_inst == [
+        ("0x0", "nop "),
+        ("0x1", "nop "),
+        ("0x2", "nop "),
+        ("0x3", "ret "),
+    ]
+    assert diffreport.diff.recomp_inst == [
+        ("0x0", "nop "),
     ]
