@@ -35,6 +35,17 @@ jobs:
       shell: bash
       run: mypy ./reccmp ./tests
 
+    - name: Run codespell
+      if: ${{ always() && steps.install.outcome == 'success' }}
+      shell: bash
+      run: |
+        codespell \
+          --ignore-multiline-regex \
+            '# codespell:ignore-begin.*?codespell:ignore-end *\n' \
+          --ignore-regex remote-checkin-comment \
+          -L SEH \
+          ./reccmp ./tests
+
   js-format:
     name: 'Javascript Format'
     runs-on: ubuntu-latest
