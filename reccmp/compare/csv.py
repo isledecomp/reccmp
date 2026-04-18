@@ -137,7 +137,7 @@ def _convert_attrs(values: Iterable[tuple[str, str]]) -> CsvValuesType:
             output["type"] = _typeify(type_name)
 
             # To imitate the handling for code annotations, set these
-            # extra attribtues based on the FUNCTION alias that was used.
+            # extra attributes based on the FUNCTION alias that was used.
             if type_name == "stub":
                 output["stub"] = True
 

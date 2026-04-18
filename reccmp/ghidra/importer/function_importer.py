@@ -399,7 +399,7 @@ class FullPdbFunctionImporter(PdbFunctionImporter):
         the auto-generated `this` parameter.
         """
 
-        # Necessary in order to overwite the auto-generated `this`
+        # Necessary in order to overwrite the auto-generated `this`
         ghidra_function.setCustomVariableStorage(True)
 
         this_parameter = next(

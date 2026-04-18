@@ -126,7 +126,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
     if not (args.samples or args.diff):
         parser.error(
-            "exepected arguments for --samples or --diff. (No input files specified)"
+            "expected arguments for --samples or --diff. (No input files specified)"
         )
 
     if not (args.output or args.diff or args.html):
