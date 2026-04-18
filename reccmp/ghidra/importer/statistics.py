@@ -48,11 +48,11 @@ class Statistics:
     def log(self):
         logger.info("Statistics:\n~~~~~")
         logger.info(
-            "Missing types (with number of occurences): %s\n~~~~~",
+            "Missing types (with number of occurrences): %s\n~~~~~",
             self.format_statistics(self.known_missing_types),
         )
         logger.info(
-            "Missing classes/namespaces (with number of occurences): %s\n~~~~~",
+            "Missing classes/namespaces (with number of occurrences): %s\n~~~~~",
             self.format_statistics(self.known_missing_namespaces),
         )
         logger.info("Successes: %d", self.successes)

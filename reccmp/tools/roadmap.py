@@ -281,7 +281,7 @@ def suggest_order(results: list[RoadmapRow], module_map: ModuleMap, match_type: 
 
         print()
 
-    # Now display the order of all libaries in the final file.
+    # Now display the order of all libraries in the final file.
     library_order: dict[str, int] = {}
 
     for start, module in computed_order:

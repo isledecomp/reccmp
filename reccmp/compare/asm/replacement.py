@@ -33,7 +33,7 @@ def create_name_lookup(
     def get_name(entity: ReccmpEntity, offset: int = 0) -> str | None:
         """The offset is the difference between the input search address and the entity's
         starting address. Decide whether to return the base name (match_name) or
-        a string wtih the base name plus the offset.
+        a string with the base name plus the offset.
         Returns None if there is no suitable name."""
         if offset == 0:
             return entity.match_name()
@@ -84,7 +84,7 @@ def create_name_lookup(
 
     @cache
     def lookup(addr: int, exact: bool = False, indirect: bool = False) -> str | None:
-        """Returns the name that represents the entity at the given addresss.
+        """Returns the name that represents the entity at the given address.
         If there is no suitable name, return None and let the caller choose one (i.e. placeholder).
         * exact:    If the addr is an offset of an entity (e.g. struct/array) we may return
                     a name like 'variable+8'. If exact is True, return a name only if the entity's addr

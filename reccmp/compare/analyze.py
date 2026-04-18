@@ -35,7 +35,7 @@ def create_analysis_strings(
     db: EntityDb, img_id: ImageId, binfile: PEImage, encoding: str = "latin1"
 ):
     """Search both binaries for Latin1 strings.
-    We use the insert_() method so that thse strings will not overwrite
+    We use the insert_() method so that these strings will not overwrite
     an existing entity. It's possible that some variables or pointers
     will be mistakenly identified as short strings."""
     with db.batch() as batch:
