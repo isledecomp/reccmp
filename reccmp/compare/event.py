@@ -32,7 +32,7 @@ class ReccmpEvent(enum.Enum):
 
 def event_to_severity(event: ReccmpEvent) -> LoggingSeverity:
     return {
-        ReccmpEvent.NO_MATCH: LoggingSeverity.ERROR,
+        ReccmpEvent.NO_MATCH: LoggingSeverity.DEBUG,
         ReccmpEvent.NON_UNIQUE_SYMBOL: LoggingSeverity.WARNING,
         ReccmpEvent.AMBIGUOUS_MATCH: LoggingSeverity.WARNING,
         ReccmpEvent.INVALID_USER_DATA: LoggingSeverity.ERROR,
