@@ -2,7 +2,7 @@
 name = "reccmp"
 description = "Collection of decompilation tools."
 license-files = ["COPYING", "reccmp/bin/LICENSE*.txt"]
-readme = "README.md"
+readme = "docs/intro.md"
 dynamic = ["classifiers", "dependencies", "license", "scripts", "version"]
 requires-python = ">= 3.10"
 
