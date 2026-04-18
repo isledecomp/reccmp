@@ -96,7 +96,7 @@ If you need to escape the _escape character_, use two backslashes, as in:
 
 ```csv
 address,name
-10004000,te\\st
+10004000,de\\mo
 ```
 
 ### Non-standard syntax
