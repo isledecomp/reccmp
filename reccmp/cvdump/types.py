@@ -361,10 +361,7 @@ class CvdumpTypesParser:
         obj_type = obj.get("type")
 
         if obj_type == "LF_POINTER":
-            element_type_key = obj.get("element_type")
-            assert element_type_key is not None
-            pointee_type = self.get(element_type_key)
-            return TypeInfo(key=type_key, size=4, name=f"{pointee_type.name} *")
+            return self.get(CVInfoTypeEnum.T_32PVOID)
 
         if obj.get("is_forward_ref", False):
             # Get the forward reference to follow.
@@ -387,7 +384,7 @@ class CvdumpTypesParser:
         # Else it is not a forward reference, so build out the object here.
         if obj_type == "LF_ARRAY":
             members = self._mock_array_members(obj)
-        elif obj_type in ("LF_CLASS", "LF_STRUCTURE"):
+        elif obj_type in ("LF_CLASS", "LF_STRUCTURE", "LF_UNION", "LF_FIELDLIST"):
             members = self._get_field_list(obj)
         else:
             # e.g. obj_type == "LF_PROCEDURE"
