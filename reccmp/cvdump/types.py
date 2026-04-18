@@ -356,8 +356,6 @@ class CvdumpTypesParser:
         if obj is None:
             raise CvdumpKeyError(type_key)
 
-        # TODO: Validate these changes, test coverage
-
         obj_type = obj.get("type")
 
         if obj_type == "LF_POINTER":
