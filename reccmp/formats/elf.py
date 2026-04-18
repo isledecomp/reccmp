@@ -248,7 +248,7 @@ class ElfFileHeader:
         raise ValueError(self.e_ident[4])
 
     @property
-    def endianess(self) -> Endianness:
+    def endianness(self) -> Endianness:
         if self.e_ident[5] == b"\x01":
             return Endianness.LITTLE
         if self.e_ident[5] == b"\x02":

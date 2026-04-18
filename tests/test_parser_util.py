@@ -22,7 +22,7 @@ blank_or_comment_param = [
     (True, "   /* Block comment beginning"),
     (True, "Block comment ending */   "),
     # TODO: does clang-format have anything to say about these cases?
-    (False, "x++; // Comment folows"),
+    (False, "x++; // Comment follows"),
     (False, "x++; /* Block comment begins"),
 ]
 

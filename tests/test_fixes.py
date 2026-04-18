@@ -258,7 +258,7 @@ def test_fix_mov_imul_swap_valid():
 
 def test_fix_mov_imul_single_operand_imul():
     """Should not crash with IndexError if single operand IMUL is used.
-    The desination is presumed to be EAX/AX/AL, so this example could be considered a match.
+    The destination is presumed to be EAX/AX/AL, so this example could be considered a match.
     """
 
     orig_asm = [
