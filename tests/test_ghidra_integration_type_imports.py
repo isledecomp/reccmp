@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING
 import pytest
 from reccmp.cvdump.cvinfo import CVInfoTypeEnum, CvdumpTypeKey, CvdumpTypeMap
 from reccmp.ghidra.importer.exceptions import TypeNotFoundError, TypeNotImplementedError
-from tests.conftest import GhidraTypeTestHelper
-from tests.helpers import assert_instance
+from .ghidra_integration_test_setup import GhidraTypeTestHelper
+from .helpers import assert_instance
 
 if TYPE_CHECKING:
     from ghidra.program.flatapi import FlatProgramAPI
@@ -93,6 +93,19 @@ NESTED, 	enum name = LegoCarBuild::Unknown0xf8, UDT(0x00005696)
 	# members = 3,  field list type 0x6080,
 	Derivation list type 0x0000, VT shape type 0x0000
 	Size = 8, class name = LegoAnimActorEntry, UDT(0x00006081)
+
+0x608e : Length = 130, Leaf = 0x1203 LF_FIELDLIST
+	list[0] = LF_ENUMERATE, public, value = 0, name = 'c_initial'
+	list[1] = LF_ENUMERATE, public, value = 1, name = 'c_ready'
+	list[2] = LF_ENUMERATE, public, value = 2, name = 'c_hit'
+	list[3] = LF_ENUMERATE, public, value = 3, name = 'c_hitAnimation'
+	list[4] = LF_ENUMERATE, public, value = 4, name = 'c_disabled'
+	list[5] = LF_ENUMERATE, public, value = 255, name = 'c_maxState'
+	list[6] = LF_ENUMERATE, public, value = 256, name = 'c_noCollide'
+
+0x608f : Length = 42, Leaf = 0x1507 LF_ENUM
+	# members = 7,  type = T_INT4(0074) field list type 0x608e
+NESTED, 	enum name = LegoPathActor::ActorState, UDT(0x0000608f)
 """
 
 hwnd_key = CvdumpTypeKey(0x3159)
@@ -101,8 +114,9 @@ legoanimactor_pointer_key = CvdumpTypeKey(0x12C9)
 union_key = CvdumpTypeKey(0x1480)
 array_key = CvdumpTypeKey(0x31BB)
 procedure_key = CvdumpTypeKey(0x4EF2)
-enum_key = CvdumpTypeKey(0x5696)
+enum_with_negative_value_key = CvdumpTypeKey(0x5696)
 legoanimactor_class_key = CvdumpTypeKey(0x6081)
+enum_key = CvdumpTypeKey(0x608F)
 
 
 def _assert_legoanimactorentry(imported_structure: "DataType"):
@@ -228,7 +242,6 @@ def test_array(type_helper: GhidraTypeTestHelper):
     )
 
 
-# FIXME: possible bug
 def test_enum(type_helper: GhidraTypeTestHelper):
     from ghidra.program.model.data import Enum
 
@@ -237,8 +250,42 @@ def test_enum(type_helper: GhidraTypeTestHelper):
     imported_enum = assert_instance(
         type_helper.type_importer.import_pdb_type_into_ghidra(enum_key), Enum
     )
+    assert imported_enum.getDisplayName() == "ActorState"
+    assert imported_enum.getCount() == 7
+    assert list(imported_enum.getNames()) == [
+        "c_initial",
+        "c_ready",
+        "c_hit",
+        "c_hitAnimation",
+        "c_disabled",
+        "c_maxState",
+        "c_noCollide",
+    ]
+    assert list(imported_enum.getValues()) == [
+        0,
+        1,
+        2,
+        3,
+        4,
+        255,
+        256,
+    ]
+
+
+@pytest.mark.xfail(reason="Bug, see issue #380")
+def test_enum_with_negative_value(type_helper: GhidraTypeTestHelper):
+    from ghidra.program.model.data import Enum
+
+    type_helper.set_up_cvdump_types(CVDUMP_TYPES)
+
+    imported_enum = assert_instance(
+        type_helper.type_importer.import_pdb_type_into_ghidra(
+            enum_with_negative_value_key
+        ),
+        Enum,
+    )
     assert imported_enum.getDisplayName() == "Unknown0xf8"
-    # assert imported_enum.getCount() == 2
+    assert imported_enum.getCount() == 2
     assert list(imported_enum.getNames()) == ["c_unknownminusone", "c_unknown8"]
     assert list(imported_enum.getValues()) == [-1, 8]
 

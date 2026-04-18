@@ -1,20 +1,18 @@
 import hashlib
 from pathlib import Path
 from typing import Callable, Iterator, TYPE_CHECKING
-from unittest.mock import Mock
 import pytest
 from _pytest.config import Config
 from _pytest.config.argparsing import Parser
 
-from reccmp.compare.core import Compare
-from reccmp.compare.ingest import load_cvdump_types
-from reccmp.cvdump.analysis import CvdumpAnalysis
-from reccmp.cvdump.parser import CvdumpParser
 from reccmp.formats import NEImage, PEImage, detect_image
-from tests.raw_image import RawImage
 
 from .binfiles_test_setup import BINFILE_ISLE, BINFILE_LEGO1, BINFILE_SKI, TestBinfile
-from .ghidra_integration_test_setup import ghidra_integration_test_program
+from .ghidra_integration_test_setup import (
+    GhidraFunctionTestHelper,
+    GhidraTypeTestHelper,
+    ghidra_integration_test_program,
+)
 
 # Suppress linter warnings related to the fact that the header support for Ghidra is limited
 # and that we cannot import Ghidra classes before Ghidra has been loaded
@@ -152,34 +150,15 @@ def fixture_ghidra_program(ghidra_program: "Program") -> "Iterator[FlatProgramAP
         transaction.abort()
 
 
-# TODO: Consider moving all Ghidra fixtures into a separate file
-
-
-class GhidraTypeTestHelper:
-    def __init__(self, ghidra: "FlatProgramAPI"):
-        from reccmp.ghidra.importer.type_importer import (
-            PdbTypeImporter,
-            PdbFunctionExtractor,
-        )
-
-        self.ghidra = ghidra
-
-        self.compare = Compare(
-            RawImage.from_memory(), RawImage.from_memory(), Mock(), "TEST"
-        )
-        self.type_importer = PdbTypeImporter(
-            ghidra, PdbFunctionExtractor(self.compare), set()
-        )
-
-    def set_up_cvdump_types(self, cvdump_types: str):
-        parser = CvdumpParser()
-        parser.read_section("TYPES", cvdump_types)
-        analysis = CvdumpAnalysis(parser)
-        load_cvdump_types(analysis, self.compare.types)
-
-
 @pytest.fixture(name="type_helper", scope="function")
-def ghidra_function_helper_fixture(
+def ghidra_type_helper_fixture(
     ghidra: "FlatProgramAPI",
 ) -> Iterator[GhidraTypeTestHelper]:
     yield GhidraTypeTestHelper(ghidra)
+
+
+@pytest.fixture(name="function_helper", scope="function")
+def ghidra_function_helper_fixture(
+    ghidra: "FlatProgramAPI",
+) -> Iterator[GhidraFunctionTestHelper]:
+    yield GhidraFunctionTestHelper(ghidra)
