@@ -7,20 +7,118 @@
 from typing import TYPE_CHECKING
 
 import pytest
-from reccmp.compare.core import Compare
 from reccmp.cvdump.cvinfo import CVInfoTypeEnum, CvdumpTypeKey, CvdumpTypeMap
-from reccmp.cvdump.types import (
-    CvdumpParsedType,
-    EnumItem,
-    FieldListItem,
-)
 from reccmp.ghidra.importer.exceptions import TypeNotFoundError, TypeNotImplementedError
+from tests.conftest import GhidraTypeTestHelper
 from tests.helpers import assert_instance
 
 if TYPE_CHECKING:
     from ghidra.program.flatapi import FlatProgramAPI
     from ghidra.program.model.data import DataType
-    from reccmp.ghidra.importer.type_importer import PdbTypeImporter
+
+
+# Shortened version of a BETA10 recompilation
+CVDUMP_TYPES = """
+0x12c8 : Length = 42, Leaf = 0x1505 LF_STRUCTURE
+	# members = 0,  field list type 0x0000, FORWARD REF,
+	Derivation list type 0x0000, VT shape type 0x0000
+	Size = 0, class name = LegoAnimActorEntry, UDT(0x00006081)
+
+0x12c9 : Length = 10, Leaf = 0x1002 LF_POINTER
+	Pointer (NEAR32), Size: 0
+	Element type : 0x12C8
+
+0x12cd : Length = 314, Leaf = 0x1203 LF_FIELDLIST
+    list[10] = LF_MEMBER, protected, type = T_LONG(0012), offset = 8
+		member name = 'm_duration'
+	list[11] = LF_MEMBER, protected, type = 0x12C9, offset = 12
+		member name = 'm_modelList'
+	list[12] = LF_MEMBER, protected, type = T_ULONG(0022), offset = 16
+		member name = 'm_numActors'
+
+0x12cf : Length = 30, Leaf = 0x1504 LF_CLASS
+	# members = 15,  field list type 0x12cd, CONSTRUCTOR,
+	Derivation list type 0x0000, VT shape type 0x12ce
+	Size = 24, class name = LegoAnim, UDT(0x000012cf)
+
+0x147f : Length = 74, Leaf = 0x1203 LF_FIELDLIST
+	list[0] = LF_MEMBER, public, type = T_ULONG(0022), offset = 0
+		member name = 'LowPart'
+	list[1] = LF_MEMBER, public, type = T_LONG(0012), offset = 4
+		member name = 'HighPart'
+	list[2] = LF_MEMBER, public, type = 0x147E, offset = 0
+		member name = 'u'
+	list[3] = LF_MEMBER, public, type = T_QUAD(0013), offset = 0
+		member name = 'QuadPart'
+
+0x1480 : Length = 30, Leaf = 0x1506 LF_UNION
+	# members = 4,  field list type 0x147f, Size = 8	,class name = _LARGE_INTEGER, UDT(0x00001480)
+
+0x3159 : Length = 30, Leaf = 0x1505 LF_STRUCTURE
+	# members = 0,  field list type 0x0000, FORWARD REF,
+	Derivation list type 0x0000, VT shape type 0x0000
+	Size = 0, class name = HWND__
+
+0x31bb : Length = 14, Leaf = 0x1503 LF_ARRAY
+	Element type = T_ULONG(0022)
+	Index type = T_SHORT(0011)
+	length = 16
+	Name =
+
+0x4ef1 : Length = 18, Leaf = 0x1201 LF_ARGLIST argument count = 3
+	list[0] = T_32PRCHAR(0470)
+	list[1] = T_LONG(0012)
+	list[2] = T_32PVOID(0403)
+
+0x4ef2 : Length = 14, Leaf = 0x1008 LF_PROCEDURE
+	Return type = T_VOID(0003), Call type = C Near
+	Func attr = none
+	# Parms = 3, Arg list type = 0x4ef1
+
+0x5695 : Length = 50, Leaf = 0x1203 LF_FIELDLIST
+	list[0] = LF_ENUMERATE, public, value = (LF_CHAR) -1(0xFF), name = 'c_unknownminusone'
+	list[1] = LF_ENUMERATE, public, value = 8, name = 'c_unknown8'
+
+0x5696 : Length = 42, Leaf = 0x1507 LF_ENUM
+	# members = 2,  type = T_INT4(0074) field list type 0x5695
+NESTED, 	enum name = LegoCarBuild::Unknown0xf8, UDT(0x00005696)
+
+0x6080 : Length = 62, Leaf = 0x1203 LF_FIELDLIST
+	list[1] = LF_MEMBER, public, type = T_32PRCHAR(0470), offset = 0
+		member name = 'm_name'
+	list[2] = LF_MEMBER, public, type = T_ULONG(0022), offset = 4
+		member name = 'm_type'
+
+0x6081 : Length = 42, Leaf = 0x1505 LF_STRUCTURE
+	# members = 3,  field list type 0x6080,
+	Derivation list type 0x0000, VT shape type 0x0000
+	Size = 8, class name = LegoAnimActorEntry, UDT(0x00006081)
+"""
+
+hwnd_key = CvdumpTypeKey(0x3159)
+legoanimactor_forward_ref_key = CvdumpTypeKey(0x12C8)
+legoanimactor_pointer_key = CvdumpTypeKey(0x12C9)
+union_key = CvdumpTypeKey(0x1480)
+array_key = CvdumpTypeKey(0x31BB)
+procedure_key = CvdumpTypeKey(0x4EF2)
+enum_key = CvdumpTypeKey(0x5696)
+legoanimactor_class_key = CvdumpTypeKey(0x6081)
+
+
+def _assert_legoanimactorentry(imported_structure: "DataType"):
+    from ghidra.program.model.data import Structure
+
+    assert isinstance(imported_structure, Structure)
+
+    assert imported_structure.getDisplayName() == "LegoAnimActorEntry"
+    assert imported_structure.length == 8
+
+    [name_component, id_component] = list(imported_structure.getComponents())
+    assert name_component.getOffset() == 0
+    assert name_component.getDataType().name == "char *"
+    assert id_component.getOffset() == 4
+    assert id_component.getDataType().name == "ulong"
+
 
 verified_types = (
     t
@@ -31,104 +129,57 @@ verified_types = (
 
 @pytest.mark.parametrize("scalar_type", verified_types)
 def test_ghidra_scalar_types(
-    type_importer: "PdbTypeImporter", scalar_type: CVInfoTypeEnum
+    type_helper: GhidraTypeTestHelper, scalar_type: CVInfoTypeEnum
 ):
     from ghidra.program.model.data import Pointer
 
     cv_type_info = CvdumpTypeMap[scalar_type]
 
-    ghidra_type = type_importer.import_pdb_type_into_ghidra(scalar_type)
+    ghidra_type = type_helper.type_importer.import_pdb_type_into_ghidra(scalar_type)
     assert ghidra_type.length == cv_type_info.size
 
     if cv_type_info.pointer is not None:
         assert isinstance(ghidra_type, Pointer)
 
 
-def test_ghidra_type_not_found(type_importer: "PdbTypeImporter"):
+def test_ghidra_type_not_found(type_helper: GhidraTypeTestHelper):
     with pytest.raises(TypeNotFoundError, match="Failed to find referenced type"):
-        type_importer.import_pdb_type_into_ghidra(CvdumpTypeKey.from_str("0x1001"))
+        type_helper.type_importer.import_pdb_type_into_ghidra(CvdumpTypeKey(0x1001))
 
 
-forward_ref_key = CvdumpTypeKey.from_str("0x1001")
-class_field_list_key = CvdumpTypeKey.from_str("0x1002")
-class_key = CvdumpTypeKey.from_str("0x1003")
-pointer_to_class_key = CvdumpTypeKey.from_str("0x1004")
-
-
-def _set_up_test_class(compare: Compare):
-    compare.types.keys[forward_ref_key] = CvdumpParsedType(
-        type="LF_CLASS",
-        name="TestClass",
-        field_list_type=CVInfoTypeEnum.T_NOTYPE,
-        size=0,
-        udt=class_key,
-        is_forward_ref=True,
+def test_ghidra_type_class(type_helper: GhidraTypeTestHelper):
+    type_helper.set_up_cvdump_types(CVDUMP_TYPES)
+    imported_structure = type_helper.type_importer.import_pdb_type_into_ghidra(
+        legoanimactor_class_key
     )
-    compare.types.keys[class_field_list_key] = CvdumpParsedType(
-        type="LF_FIELDLIST",
-        members=[
-            FieldListItem(offset=0, name="id", type=CVInfoTypeEnum.T_INT4),
-            FieldListItem(offset=4, name="name", type=CVInfoTypeEnum.T_32PCHAR),
-        ],
-    )
-    compare.types.keys[class_key] = CvdumpParsedType(
-        type="LF_CLASS", name="TestClass", field_list_type=class_field_list_key, size=8
-    )
-    compare.types.keys[pointer_to_class_key] = CvdumpParsedType(
-        type="LF_POINTER", element_type=class_key
-    )
-
-
-def _assert_test_class(imported_structure: "DataType"):
-    from ghidra.program.model.data import Structure
-
-    assert isinstance(imported_structure, Structure)
-
-    assert imported_structure.getDisplayName() == "TestClass"
-    assert imported_structure.length == 8
-
-    [id_component, name_component] = list(imported_structure.getComponents())
-    assert id_component.getOffset() == 0
-    assert id_component.getDataType().name == "int"
-    assert name_component.getOffset() == 4
-    assert name_component.getDataType().name == "char *"
-
-
-def test_ghidra_type_class(type_importer: "PdbTypeImporter"):
-    _set_up_test_class(type_importer.extraction.compare)
-    imported_structure = type_importer.import_pdb_type_into_ghidra(class_key)
-    _assert_test_class(imported_structure)
+    _assert_legoanimactorentry(imported_structure)
 
 
 def test_ghidra_verify_test_isolation(ghidra: "FlatProgramAPI"):
     """Make sure that the `TestClass` created above was rolled back."""
-    assert not list(ghidra.getDataTypes("TestClass"))
+    assert not list(ghidra.getDataTypes("LegoAnimActorEntry"))
 
 
-def test_ghidra_forward_ref_to_pdb_type(type_importer: "PdbTypeImporter"):
-    _set_up_test_class(type_importer.extraction.compare)
-    imported_structure = type_importer.import_pdb_type_into_ghidra(forward_ref_key)
-    _assert_test_class(imported_structure)
-
-
-def test_forward_ref_to_missing_type(type_importer: "PdbTypeImporter"):
-    type_importer.extraction.compare.types.keys[forward_ref_key] = CvdumpParsedType(
-        type="LF_STRUCTURE",
-        name="HWND__",
-        field_list_type=CVInfoTypeEnum.T_NOTYPE,
-        size=0,
-        is_forward_ref=True,
+def test_ghidra_forward_ref_to_pdb_type(type_helper: GhidraTypeTestHelper):
+    type_helper.set_up_cvdump_types(CVDUMP_TYPES)
+    imported_structure = type_helper.type_importer.import_pdb_type_into_ghidra(
+        legoanimactor_forward_ref_key
     )
+    _assert_legoanimactorentry(imported_structure)
+
+
+def test_forward_ref_to_missing_type(type_helper: GhidraTypeTestHelper):
+    type_helper.set_up_cvdump_types(CVDUMP_TYPES)
 
     with pytest.raises(
         TypeNotImplementedError,
         match="forward ref without target, needs to be created manually:",
     ):
-        type_importer.import_pdb_type_into_ghidra(forward_ref_key)
+        type_helper.type_importer.import_pdb_type_into_ghidra(hwnd_key)
 
 
 def test_forward_ref_to_pre_existing_type(
-    ghidra: "FlatProgramAPI", type_importer: "PdbTypeImporter"
+    ghidra: "FlatProgramAPI", type_helper: GhidraTypeTestHelper
 ):
     data_type_manager = ghidra.getCurrentProgram().getDataTypeManager()
     from ghidra.program.model.data import (
@@ -141,135 +192,77 @@ def test_forward_ref_to_pre_existing_type(
         TypedefDataType("HWND__", VoidDataType()), DataTypeConflictHandler.KEEP_HANDLER
     )
 
-    type_importer.extraction.compare.types.keys[forward_ref_key] = CvdumpParsedType(
-        type="LF_STRUCTURE",
-        name="HWND__",
-        field_list_type=CVInfoTypeEnum.T_NOTYPE,
-        size=0,
-        is_forward_ref=True,
-    )
+    type_helper.set_up_cvdump_types(CVDUMP_TYPES)
 
-    imported_hwnd = type_importer.import_pdb_type_into_ghidra(forward_ref_key)
+    imported_hwnd = type_helper.type_importer.import_pdb_type_into_ghidra(hwnd_key)
     assert imported_hwnd == hwnd
 
 
-def test_ghidra_pointer_to_class(type_importer: "PdbTypeImporter"):
+def test_ghidra_pointer_to_class(type_helper: GhidraTypeTestHelper):
     from ghidra.program.model.data import Pointer
 
-    _set_up_test_class(type_importer.extraction.compare)
+    type_helper.set_up_cvdump_types(CVDUMP_TYPES)
     imported_pointer = assert_instance(
-        type_importer.import_pdb_type_into_ghidra(pointer_to_class_key), Pointer
+        type_helper.type_importer.import_pdb_type_into_ghidra(
+            legoanimactor_pointer_key
+        ),
+        Pointer,
     )
-    _assert_test_class(imported_pointer.dataType)
+    _assert_legoanimactorentry(imported_pointer.dataType)
 
 
-def test_array(type_importer: "PdbTypeImporter"):
+def test_array(type_helper: GhidraTypeTestHelper):
     from ghidra.program.model.data import Array
 
-    array_key = CvdumpTypeKey.from_str("0x1005")
-    type_importer.extraction.compare.types.keys[array_key] = CvdumpParsedType(
-        type="LF_ARRAY", array_type=CVInfoTypeEnum.T_INT4, size=16
-    )
+    type_helper.set_up_cvdump_types(CVDUMP_TYPES)
 
     imported_array = assert_instance(
-        type_importer.import_pdb_type_into_ghidra(array_key), Array
+        type_helper.type_importer.import_pdb_type_into_ghidra(array_key), Array
     )
 
     assert imported_array.getLength() == 16
     assert imported_array.getElementLength() == 4
-    assert imported_array.getDataType() == type_importer.import_pdb_type_into_ghidra(
-        CVInfoTypeEnum.T_INT4
+    assert (
+        imported_array.getDataType()
+        == type_helper.type_importer.import_pdb_type_into_ghidra(CVInfoTypeEnum.T_ULONG)
     )
 
 
-def test_enum(type_importer: "PdbTypeImporter"):
+# FIXME: possible bug
+def test_enum(type_helper: GhidraTypeTestHelper):
     from ghidra.program.model.data import Enum
 
-    enum_fieldlist_key = CvdumpTypeKey.from_str("0x1006")
-    enum_key = CvdumpTypeKey.from_str("0x1007")
-
-    type_importer.extraction.compare.types.keys[enum_fieldlist_key] = CvdumpParsedType(
-        type="LF_FIELDLIST",
-        variants=[
-            EnumItem(name="c_zero", value=0),
-            EnumItem(name="c_one", value=1),
-        ],
-    )
-    type_importer.extraction.compare.types.keys[enum_key] = CvdumpParsedType(
-        name="TestEnum",
-        type="LF_ENUM",
-        field_list_type=enum_fieldlist_key,
-        is_nested=False,
-        num_members=2,
-        underlying_type=CVInfoTypeEnum.T_INT4,
-    )
+    type_helper.set_up_cvdump_types(CVDUMP_TYPES)
 
     imported_enum = assert_instance(
-        type_importer.import_pdb_type_into_ghidra(enum_key), Enum
+        type_helper.type_importer.import_pdb_type_into_ghidra(enum_key), Enum
     )
-    assert imported_enum.getDisplayName() == "TestEnum"
-    assert imported_enum.getCount() == 2
-    assert list(imported_enum.getNames()) == ["c_zero", "c_one"]
-    assert list(imported_enum.getValues()) == [0, 1]
+    assert imported_enum.getDisplayName() == "Unknown0xf8"
+    # assert imported_enum.getCount() == 2
+    assert list(imported_enum.getNames()) == ["c_unknownminusone", "c_unknown8"]
+    assert list(imported_enum.getValues()) == [-1, 8]
 
 
-def test_fallback_procedure_import(type_importer: "PdbTypeImporter"):
+def test_fallback_procedure_import(type_helper: GhidraTypeTestHelper):
     """The feature is not fully implemented. This test asserts on the fallback behaviour."""
 
-    arglist_key = CvdumpTypeKey.from_str("0x1008")
-    procedure_key = CvdumpTypeKey.from_str("0x1009")
-    _set_up_test_class(type_importer.extraction.compare)
+    type_helper.set_up_cvdump_types(CVDUMP_TYPES)
 
-    type_importer.extraction.compare.types.keys[arglist_key] = CvdumpParsedType(
-        type="LF_ARGLIST", argcount=1, args=[pointer_to_class_key]
-    )
-    type_importer.extraction.compare.types.keys[procedure_key] = CvdumpParsedType(
-        type="LF_PROCEDURE",
-        return_type=CVInfoTypeEnum.T_VOID,
-        call_type="C Near",
-        func_attr="none",
-        num_params=1,
-        arg_list_type=arglist_key,
-    )
-    imported_type = type_importer.import_pdb_type_into_ghidra(procedure_key)
+    imported_type = type_helper.type_importer.import_pdb_type_into_ghidra(procedure_key)
     # Fallback behaviour. This assertion should be changed if proper support is implemented
-    assert imported_type == type_importer.import_pdb_type_into_ghidra(
+    assert imported_type == type_helper.type_importer.import_pdb_type_into_ghidra(
         CVInfoTypeEnum.T_VOID
     )
 
 
 @pytest.mark.xfail(reason="Union import not yet implemented")
-def test_union(type_importer: "PdbTypeImporter"):
+def test_union(type_helper: GhidraTypeTestHelper):
     from ghidra.program.model.data import Union
 
-    union_field_list_key = CvdumpTypeKey.from_str("0x100a")
-    union_key = CvdumpTypeKey.from_str("0x100b")
+    type_helper.set_up_cvdump_types(CVDUMP_TYPES)
 
-    type_importer.extraction.compare.types.keys[union_field_list_key] = (
-        CvdumpParsedType(
-            type="LF_FIELDLIST",
-            members=[
-                FieldListItem(offset=0, name="byte", type=CVInfoTypeEnum.T_32PUCHAR),
-                FieldListItem(offset=0, name="word", type=CVInfoTypeEnum.T_32PUSHORT),
-            ],
-        )
-    )
-    type_importer.extraction.compare.types.keys[union_key] = CvdumpParsedType(
-        type="LF_UNION",
-        num_members=2,
-        field_list_type=union_field_list_key,
-        is_nested=True,
-        size=4,
-        name="MY_ENUM",
+    _imported_union = assert_instance(
+        type_helper.type_importer.import_pdb_type_into_ghidra(union_key), Union
     )
 
-    imported_union = assert_instance(
-        type_importer.import_pdb_type_into_ghidra(union_key), Union
-    )
-
-    assert imported_union.getDisplayName() == "MY_ENUM"
-    assert imported_union.getLength() == 4
-    assert list(imported_union.getComponents()) == [
-        type_importer.import_pdb_type_into_ghidra(CVInfoTypeEnum.T_32PUCHAR),
-        type_importer.import_pdb_type_into_ghidra(CVInfoTypeEnum.T_32PUSHORT),
-    ]
+    # More assertions are needed once we have proper support

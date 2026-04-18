@@ -7,6 +7,9 @@ from _pytest.config import Config
 from _pytest.config.argparsing import Parser
 
 from reccmp.compare.core import Compare
+from reccmp.compare.ingest import load_cvdump_types
+from reccmp.cvdump.analysis import CvdumpAnalysis
+from reccmp.cvdump.parser import CvdumpParser
 from reccmp.formats import NEImage, PEImage, detect_image
 from tests.raw_image import RawImage
 
@@ -149,13 +152,34 @@ def fixture_ghidra_program(ghidra_program: "Program") -> "Iterator[FlatProgramAP
         transaction.abort()
 
 
-@pytest.fixture(name="type_importer", scope="function")
-def pdb_type_importer_fixture(ghidra: "FlatProgramAPI") -> "Iterator[PdbTypeImporter]":
-    from reccmp.ghidra.importer.type_importer import (
-        PdbTypeImporter,
-        PdbFunctionExtractor,
-    )
+# TODO: Consider moving all Ghidra fixtures into a separate file
 
-    compare = Compare(RawImage.from_memory(), RawImage.from_memory(), Mock(), "TEST")
-    type_importer = PdbTypeImporter(ghidra, PdbFunctionExtractor(compare), set())
-    yield type_importer
+
+class GhidraTypeTestHelper:
+    def __init__(self, ghidra: "FlatProgramAPI"):
+        from reccmp.ghidra.importer.type_importer import (
+            PdbTypeImporter,
+            PdbFunctionExtractor,
+        )
+
+        self.ghidra = ghidra
+
+        self.compare = Compare(
+            RawImage.from_memory(), RawImage.from_memory(), Mock(), "TEST"
+        )
+        self.type_importer = PdbTypeImporter(
+            ghidra, PdbFunctionExtractor(self.compare), set()
+        )
+
+    def set_up_cvdump_types(self, cvdump_types: str):
+        parser = CvdumpParser()
+        parser.read_section("TYPES", cvdump_types)
+        analysis = CvdumpAnalysis(parser)
+        load_cvdump_types(analysis, self.compare.types)
+
+
+@pytest.fixture(name="type_helper", scope="function")
+def ghidra_function_helper_fixture(
+    ghidra: "FlatProgramAPI",
+) -> Iterator[GhidraTypeTestHelper]:
+    yield GhidraTypeTestHelper(ghidra)
