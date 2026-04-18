@@ -21,7 +21,6 @@ from .raw_image import RawImage
 if TYPE_CHECKING:
     from ghidra.program.model.listing import Program
     from ghidra.program.flatapi import FlatProgramAPI
-    from ghidra.program.model.listing import Program
     from reccmp.ghidra.importer.type_importer import PdbTypeImporter
 
 GHIDRA_PROJECT_NAME = "ghidra-integration-test"
