@@ -7,12 +7,10 @@
 import json
 from typing import TYPE_CHECKING
 
-from reccmp.compare.ingest import load_cvdump_types
-from reccmp.cvdump.analysis import CvdumpAnalysis
+from reccmp.cvdump.analysis import CvdumpNode
 from reccmp.cvdump.cvinfo import CVInfoTypeEnum, CvdumpTypeKey
 from reccmp.compare.db import ReccmpMatch
-
-from reccmp.cvdump.parser import CvdumpParser
+from reccmp.cvdump.types import TypeInfo
 from reccmp.ghidra.importer.pdb_extraction import (
     CppRegisterSymbol,
     CppStackSymbol,
@@ -140,7 +138,7 @@ def test_record_array_access(
     pdb_function = PdbFunction(
         ReccmpMatch(
             function_helper.orig_address,
-            1234,
+            1234,  # arbitrary
             json.dumps({"name": "LegoAnim::GetActorName"}),
         ),
         func_signature,
@@ -156,6 +154,109 @@ char * __thiscall LegoAnim::GetActorName(LegoAnim *this,int p_index)
 
 {
   return this->m_modelList[p_index].m_name;
+}
+
+""")
+
+
+def test_global_array_access(
+    ghidra: "FlatProgramAPI",
+    function_helper: GhidraFunctionTestHelper,
+    type_helper: GhidraTypeTestHelper,
+):
+    from reccmp.ghidra.importer.function_importer import (
+        PdbFunctionImporter,
+        PdbFunction,
+    )
+    from reccmp.ghidra.importer.globals_importer import import_global_into_ghidra
+
+    # based on a BETA10 recompilation
+    cvdump_types = """
+0x1002 : Length = 34, Leaf = 0x1505 LF_STRUCTURE
+	# members = 0,  field list type 0x0000, FORWARD REF,
+	Derivation list type 0x0000, VT shape type 0x0000
+	Size = 0, class name = LegoActorInfo, UDT(0x000056f5)
+
+0x1003 : Length = 14, Leaf = 0x1503 LF_ARRAY
+	Element type = 0x1002
+	Index type = T_SHORT(0011)
+	length = 264
+	Name =
+
+0x56f4 : Length = 154, Leaf = 0x1203 LF_FIELDLIST
+	list[1] = LF_MEMBER, public, type = T_32PRCHAR(0470), offset = 0
+		member name = 'm_name'
+
+0x56f5 : Length = 34, Leaf = 0x1505 LF_STRUCTURE
+	# members = 8,  field list type 0x56f4,
+	Derivation list type 0x0000, VT shape type 0x0000
+	Size = 264, class name = LegoActorInfo, UDT(0x000056f5)
+    """
+    lego_actor_info_array_key = CvdumpTypeKey(0x1003)
+    recomp_address_of_global = 5678  # arbitrary, but needs to be consistent
+
+    type_helper.set_up_cvdump_types(cvdump_types)
+
+    type_helper.compare.cvdump_analysis.nodes = [
+        CvdumpNode(
+            addr=recomp_address_of_global,
+            section=0,
+            offset=0,
+            decorated_name="g_actorInfo",
+            data_type=TypeInfo(
+                lego_actor_info_array_key,
+                size=174,
+            ),
+        )
+    ]
+
+    import_global_into_ghidra(
+        ghidra,
+        type_helper.compare,
+        type_helper.type_importer,
+        ReccmpMatch(function_helper.ORIG_DATA_TO_OVERWRITE, recomp_address_of_global),
+    )
+
+    # based on BETA10 0x100742eb
+    function_helper.overwrite_example_function(
+        b"\x8b\xec"  # MOV EBP, ESP
+        b"\x8b\x45\x04"  # MOV EAX, dword ptr [EBP + p_index]
+        b"\x8b\xc8"  # MOV this, EAX
+        b"\xc1\xe0\x05"  # SHL EAX, 0x5
+        b"\x03\xc1"  # ADD EAX, this
+        b"\x8b\x04\xc5\x40\x00\x41\x00"  # MOV EAX, dword ptr [EAX *0x8  + g_actorInfo]
+        b"\xc2\x04\x00"  # RET 0x4
+    )
+
+    func_signature = FunctionSignature(
+        call_type="__stdcall",
+        arglist=[CVInfoTypeEnum.T_INT4],
+        return_type=CVInfoTypeEnum.T_32PCHAR,
+        class_type=None,
+        stack_symbols=[
+            CppStackSymbol("p_index", CVInfoTypeEnum.T_INT4, 4),
+        ],
+        this_adjust=0,
+    )
+    pdb_function = PdbFunction(
+        ReccmpMatch(
+            function_helper.orig_address,
+            1234,  # arbitrary
+            json.dumps({"name": "LegoCharacterManager::GetActorName"}),
+        ),
+        func_signature,
+        is_stub=False,
+    )
+
+    PdbFunctionImporter.build(
+        ghidra, pdb_function, type_helper.type_importer, []
+    ).overwrite_ghidra_function(function_helper.ghidra_function)
+
+    function_helper.assert_c_code("""
+char * LegoCharacterManager::GetActorName(int p_index)
+
+{
+  return g_actorInfo[p_index].m_name;
 }
 
 """)
