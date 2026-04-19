@@ -445,6 +445,23 @@ class CvdumpTypesParser:
 
         scalars = self.get_scalars(type_key)
 
+        # Deduplicate overlapping scalars that come from union members.
+        # get_scalars() dedupes union members at the outermost level only:
+        # if a union has branches whose inner members span different
+        # byte offsets (e.g. DEVMODE's union of POINTL vs four shorts),
+        # the flattened scalars from one branch can overlap with the
+        # other branch. Sort by offset, then pick the largest-size scalar
+        # at each offset and skip any subsequent scalar that falls within
+        # the range we've already claimed.
+        scalars = sorted(scalars, key=lambda s: (s.offset, -s.size))
+        deduped: list[ScalarType] = []
+        next_offset = 0
+        for scalar in scalars:
+            if scalar.offset >= next_offset:
+                deduped.append(scalar)
+                next_offset = scalar.offset + scalar.size
+        scalars = deduped
+
         output: list[ScalarType] = []
         last_extent = total_size
 

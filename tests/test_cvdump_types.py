@@ -3,6 +3,7 @@ and type dependency tree walker."""
 
 # pylint:disable=too-many-lines
 
+from struct import calcsize
 from typing import Iterable
 import pytest
 from reccmp.cvdump.types import (
@@ -361,6 +362,38 @@ NESTED,     enum name = JukeBox::JukeBoxScript, UDT(0x00003cc2)
 	# members = 30,  field list type 0x5593, CONSTRUCTOR,
 	Derivation list type 0x0000, VT shape type 0x2d1e
 	Size = 512, class name = LegoRaceCar, UDT(0x000055bb)
+
+0x9000 : Length = 30, Leaf = 0x1203 LF_FIELDLIST
+    list[0] = LF_MEMBER, public, type = T_LONG(0012), offset = 0
+        member name = 'x'
+    list[1] = LF_MEMBER, public, type = T_LONG(0012), offset = 4
+        member name = 'y'
+
+0x9001 : Length = 30, Leaf = 0x1505 LF_STRUCTURE
+	# members = 2,  field list type 0x9000,
+	Derivation list type 0x0000, VT shape type 0x0000
+	Size = 8, class name = MiniPOINTL, UDT(0x00009001)
+
+0x9002 : Length = 106, Leaf = 0x1203 LF_FIELDLIST
+    list[0] = LF_MEMBER, public, type = T_UINT4(0075), offset = 0
+        member name = 'header'
+    list[1] = LF_MEMBER, public, type = T_SHORT(0011), offset = 4
+        member name = 'a'
+    list[2] = LF_MEMBER, public, type = 0x9001, offset = 4
+        member name = 'pos'
+    list[3] = LF_MEMBER, public, type = T_SHORT(0011), offset = 6
+        member name = 'b'
+    list[4] = LF_MEMBER, public, type = T_SHORT(0011), offset = 8
+        member name = 'c'
+    list[5] = LF_MEMBER, public, type = T_SHORT(0011), offset = 10
+        member name = 'd'
+    list[6] = LF_MEMBER, public, type = T_UINT4(0075), offset = 12
+        member name = 'trailer'
+
+0x9003 : Length = 34, Leaf = 0x1505 LF_STRUCTURE
+	# members = 7,  field list type 0x9002,
+	Derivation list type 0x0000, VT shape type 0x0000
+	Size = 16, class name = UnionOverlap, UDT(0x00009003)
 """
 # codespell:ignore-end
 
@@ -514,6 +547,38 @@ def test_struct_format_string(parser: CvdumpTypesParser):
 
     # MxVariable, with two MxString members.
     assert parser.get_format_string(TK(0x22D5)) == "<IIIIHBBIIIHBB"
+
+
+def test_struct_union_overlap(parser: CvdumpTypesParser):
+    """Members from a struct-valued union branch expand into inner
+    scalars at different sub-offsets. Flattened sibling scalars from the
+    other branch can fall inside those sub-offset ranges. The gapless
+    list must not emit overlapping scalars, otherwise the format string
+    claims more bytes than the struct actually occupies (e.g. DEVMODE,
+    where POINTL dmPosition's y-field at union-offset 4 overlaps the
+    short dmPaperLength/dmPaperWidth siblings at the same bytes)."""
+
+    # UnionOverlap layout (size 16):
+    #   header    UINT4 @ 0
+    #   a         SHORT @ 4
+    #   pos       MiniPOINTL { LONG x @ 0; LONG y @ 4; } @ 4   # aliases a,b,c,d
+    #   b         SHORT @ 6    # overlaps pos.x
+    #   c         SHORT @ 8    # overlaps pos.y
+    #   d         SHORT @ 10   # overlaps pos.y
+    #   trailer   UINT4 @ 12
+
+    # After dedup: header, pos.x, pos.y, trailer.
+    scalars = parser.get_scalars_gapless(TK(0x9003))
+    assert [(s.offset, s.size) for s in scalars] == [
+        (0, 4),
+        (4, 4),
+        (8, 4),
+        (12, 4),
+    ]
+
+    # Format string must describe exactly the struct's 16 bytes.
+    fs = parser.get_format_string(TK(0x9003))
+    assert calcsize(fs) == 16
 
 
 def test_array(parser: CvdumpTypesParser):
