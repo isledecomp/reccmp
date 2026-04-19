@@ -198,7 +198,7 @@ class CvdumpTypesParser:
     )
 
     LF_FIELDLIST_ENUMERATE = re.compile(
-        r"list\[\d+\] = LF_ENUMERATE,.*value = (?P<value>\d+), name = '(?P<name>[^']+)'"
+        r"list\[\d+\] = LF_ENUMERATE,.*value = (?:\([\w_]*\)\s)?(?P<value>-?\d+)(?:\([\w_]*\))?, name = '(?P<name>[^']+)'"
     )
 
     LF_ARRAY_RE = re.compile(
@@ -356,7 +356,9 @@ class CvdumpTypesParser:
         if obj is None:
             raise CvdumpKeyError(type_key)
 
-        if obj.get("type") == "LF_POINTER":
+        obj_type = obj.get("type")
+
+        if obj_type == "LF_POINTER":
             return self.get(CVInfoTypeEnum.T_32PVOID)
 
         if obj.get("is_forward_ref", False):
@@ -370,7 +372,7 @@ class CvdumpTypesParser:
             return self.get(forward_ref)
 
         # These type references are just a wrapper around a scalar
-        if obj.get("type") == "LF_ENUM":
+        if obj_type == "LF_ENUM":
             underlying_type = obj.get("underlying_type")
             if underlying_type is None:
                 raise CvdumpKeyError(f"Missing 'underlying_type' in {obj}")
@@ -378,10 +380,13 @@ class CvdumpTypesParser:
             return self.get(underlying_type)
 
         # Else it is not a forward reference, so build out the object here.
-        if obj.get("type") == "LF_ARRAY":
+        if obj_type == "LF_ARRAY":
             members = self._mock_array_members(obj)
-        else:
+        elif obj_type in ("LF_CLASS", "LF_STRUCTURE", "LF_UNION", "LF_FIELDLIST"):
             members = self._get_field_list(obj)
+        else:
+            # e.g. obj_type == "LF_PROCEDURE"
+            members = None
 
         return TypeInfo(
             key=type_key,
