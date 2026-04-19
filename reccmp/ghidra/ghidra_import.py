@@ -221,7 +221,9 @@ def shared_repository_program(args: argparse.Namespace):
                     create_keep_file,
                 )
 
-                dom_file.checkin(checkin_handler, TaskMonitor.DUMMY)
+                dom_file.checkin(  # codespell:ignore checkin
+                    checkin_handler, TaskMonitor.DUMMY
+                )
 
                 logger.debug("DomainFile checked in successfully.")
 

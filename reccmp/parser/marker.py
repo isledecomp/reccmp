@@ -97,7 +97,7 @@ class DecompMarker:
     def is_regular_function(self) -> bool:
         """Regular function, meaning: not an explicit byname lookup. FUNCTION
         markers can be _implicit_ byname.
-        FUNCTION and STUB markers are (currently) the only heterogenous marker types that
+        FUNCTION and STUB markers are (currently) the only heterogeneous marker types that
         can be lumped together, although the reasons for doing so are a little vague."""
         return self._type in (MarkerType.FUNCTION, MarkerType.STUB)
 

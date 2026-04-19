@@ -190,7 +190,7 @@ class ElfMachine(IntEnum):
     EM_CLOUDSHIELD = 192  # CloudShield
     EM_COREA_1ST = 193  # KIPO-KAIST Core-A 1st gen.
     EM_COREA_2ND = 194  # KIPO-KAIST Core-A 2nd gen.
-    EM_ARCV2 = 195  # Synopsys ARCv2 ISA.
+    EM_ARCV2 = 195  # Synopsys ARCv2 ISA.  (codespell:ignore)
     EM_OPEN8 = 196  # Open8 RISC
     EM_RL78 = 197  # Renesas RL78
     EM_VIDEOCORE5 = 198  # Broadcom VideoCore V
@@ -248,7 +248,7 @@ class ElfFileHeader:
         raise ValueError(self.e_ident[4])
 
     @property
-    def endianess(self) -> Endianness:
+    def endianness(self) -> Endianness:
         if self.e_ident[5] == b"\x01":
             return Endianness.LITTLE
         if self.e_ident[5] == b"\x02":

@@ -52,7 +52,7 @@ LOCAL_PROC = """
 
 
 def test_local_proc():
-    """S_LPROC32 blocks should be proccessed as well, since these functions
+    """S_LPROC32 blocks should be processed as well, since these functions
     may use different calling conventions from S_GPROC32 functions."""
     parser = CvdumpSymbolsParser()
     for line in LOCAL_PROC.split("\n"):

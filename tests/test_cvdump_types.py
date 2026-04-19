@@ -18,6 +18,7 @@ from reccmp.cvdump.types import (
     VirtualBasePointer,
 )
 
+# codespell:ignore-begin
 TEST_LINES = """
 0x1018 : Length = 18, Leaf = 0x1201 LF_ARGLIST argument count = 3
 	list[0] = 0x100D
@@ -361,6 +362,7 @@ NESTED,     enum name = JukeBox::JukeBoxScript, UDT(0x00003cc2)
 	Derivation list type 0x0000, VT shape type 0x2d1e
 	Size = 512, class name = LegoRaceCar, UDT(0x000055bb)
 """
+# codespell:ignore-end
 
 
 def simplify_scalars(scalars: Iterable[ScalarType]) -> list[tuple[int, str | None, TK]]:
@@ -790,6 +792,7 @@ def test_arglist_unknown_type(empty_parser: CvdumpTypesParser):
     assert t["args"][5] == TK(0x47C)
 
 
+# codespell:ignore-begin
 FUNC_ATTR_EXAMPLES = """
 0x1216 : Length = 26, Leaf = 0x1009 LF_MFUNCTION
     Return type = 0x1209, Class type = 0x1209, This type = T_NOTYPE(0000),
@@ -806,6 +809,7 @@ FUNC_ATTR_EXAMPLES = """
     Call type = ThisCall, Func attr = ****Warning**** unused field non-zero!
     Parms = 0, Arg list type = 0x1018, This adjust = 0
 """
+# codespell:ignore-end
 
 
 def test_mfunction_func_attr(empty_parser: CvdumpTypesParser):
@@ -834,12 +838,14 @@ def test_union_without_udt(empty_parser: CvdumpTypesParser):
     assert empty_parser.keys[TK(0x3352)]["name"] == "<unnamed-tag>"
 
 
+# codespell:ignore-begin
 MFUNCTION_UNK_RETURN_TYPE = """
 0x11d8 : Length = 26, Leaf = 0x1009 LF_MFUNCTION
     Return type = ???(047C), Class type = 0x1136, This type = T_NOTYPE(0000),
     Call type = C Near, Func attr = none
     Parms = 3, Arg list type = 0x11d7, This adjust = 0
 """
+# codespell:ignore-end
 
 
 def test_mfunction_unk_return_type(empty_parser: CvdumpTypesParser):
@@ -1009,11 +1015,13 @@ def test_enum_with_whitespace_and_comma(
 def test_this_adjust_hex(empty_parser: CvdumpTypesParser):
     """The 'this adjust' attribute is a hex number.
     Make sure we parse it correctly."""
+    # codespell:ignore-begin
     empty_parser.read_all("""\
 0x657a : Length = 26, Leaf = 0x1009 LF_MFUNCTION
     Return type = T_VOID(0003), Class type = 0x15ED, This type = 0x15EE, 
     Call type = ThisCall, Func attr = none
     Parms = 3, Arg list type = 0x6579, This adjust = 24""")
+    # codespell:ignore-end
 
     assert empty_parser.keys[TK(0x657A)]["this_adjust"] == TK(0x24)
 
