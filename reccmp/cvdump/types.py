@@ -359,7 +359,14 @@ class CvdumpTypesParser:
         obj_type = obj.get("type")
 
         if obj_type == "LF_POINTER":
-            return self.get(CVInfoTypeEnum.T_32PVOID)
+            # FIXME: This introduces regressions on datacmp and also fails some unit tests.
+            # Need to reconsider if there is a better approach for preserving full type information.
+            # It may make the most sense to adapt our domain types to our needs.
+
+            element_type_key = obj.get("element_type")
+            assert element_type_key is not None
+            pointee_type = self.get(element_type_key)
+            return TypeInfo(key=type_key, size=4, name=f"{pointee_type.name} *")
 
         if obj.get("is_forward_ref", False):
             # Get the forward reference to follow.
