@@ -114,15 +114,9 @@ def test_record_array_access(
 	Derivation list type 0x0000, VT shape type 0x0000
 	Size = 8, class name = LegoAnimActorEntry, UDT(0x00006081)
     """
-
     legoanim_class_key = CvdumpTypeKey(0x12CF)
 
-    compare = type_helper.type_importer.extraction.compare
-
-    parser = CvdumpParser()
-    parser.read_section("TYPES", cvdump_types)
-    analysis = CvdumpAnalysis(parser)
-    load_cvdump_types(analysis, compare.types)
+    type_helper.set_up_cvdump_types(cvdump_types)
 
     # shortened version of LEGO1 0x100a0f20
     function_helper.overwrite_example_function(
