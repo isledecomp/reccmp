@@ -198,7 +198,7 @@ class CvdumpTypesParser:
     )
 
     LF_FIELDLIST_ENUMERATE = re.compile(
-        r"list\[\d+\] = LF_ENUMERATE,.*value = (?P<value>\d+), name = '(?P<name>[^']+)'"
+        r"list\[\d+\] = LF_ENUMERATE,.*value = (?:\([\w_]*\)\s)?(?P<value>-?\d+)(?:\([\w_]*\))?, name = '(?P<name>[^']+)'"
     )
 
     LF_ARRAY_RE = re.compile(
