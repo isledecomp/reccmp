@@ -1,0 +1,74 @@
+name: Publish
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: 3.14
+
+      - run: |
+          pip install build
+          python -m build
+
+      - uses: actions/upload-artifact@v7
+        with:
+          path: ./dist
+
+  publish:
+    needs: build
+    name: Upload release to PyPI
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/reccmp
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: ./dist
+
+      - name: Publish package distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          working_directory: dist
+          files: |
+            *.whl
+            *.tar.gz
+
+  rollback:
+    if: ${{ always() && needs.build.result == 'success' && needs.publish.result == 'failure' }}
+    needs:
+      - build
+      - publish
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Delete GitHub Release if created
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release delete "${{ github.ref_name }}" --yes --cleanup-tag || true
+      - name: Delete remote tag
+        run: git push origin --delete "${{ github.ref_name }}" || true

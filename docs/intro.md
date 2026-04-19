@@ -13,6 +13,6 @@ MxCore* MxObjectFactory::Create(const char* p_name)
 }
 ```
 
-This allows you to automatically verify the accuracy of re-compiled functions, virtual tables, variable offsets and more.
+This allows you to automatically verify the accuracy of functions, virtual tables, variable offsets and more.
 
 Full documentation available on [our GitHub page](https://github.com/isledecomp/reccmp/).

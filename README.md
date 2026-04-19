@@ -13,7 +13,7 @@ MxCore* MxObjectFactory::Create(const char* p_name)
 }
 ```
 
-This allows you to automatically verify the accuracy of re-compiled functions, virtual tables, variable offsets and more. [Click to see the full syntax](docs/annotations.md).
+This allows you to automatically verify the accuracy of functions, virtual tables, variable offsets and more. [Click to see the full syntax](docs/annotations.md).
 
 You can supplement the code annotations with metadata from CSV files. See the [instructions and syntax](docs/csv.md).
 
@@ -24,7 +24,7 @@ At the moment, C++ compiled to 32-bit x86 with old versions of MSVC (like 4.20) 
 ### Installing / upgrading `reccmp`
 
 1. (Recommended) Set up and activate a virtual Python environment in the directory of your recompilation project (this is different for different operating systems and shells).
-2. Install `reccmp`: `pip install git+https://github.com/isledecomp/reccmp`
+2. Install `reccmp`: `pip install reccmp`
 
 The next steps differ based on what kind of project you have.
 
