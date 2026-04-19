@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 
 
 # Shortened version of a BETA10 recompilation
+# codespell:ignore-begin
 CVDUMP_TYPES = """
 0x1199 : Length = 10, Leaf = 0x1002 LF_POINTER
 	const Pointer (NEAR32), Size: 0
@@ -111,6 +112,7 @@ NESTED, 	enum name = LegoCarBuild::Unknown0xf8, UDT(0x00005696)
 	# members = 7,  type = T_INT4(0074) field list type 0x608e
 NESTED, 	enum name = LegoPathActor::ActorState, UDT(0x0000608f)
 """
+# codespell:ignore-end
 
 pointer_to_char_key = CvdumpTypeKey(0x1199)
 legoanimactor_forward_ref_key = CvdumpTypeKey(0x12C8)
