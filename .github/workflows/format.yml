@@ -8,35 +8,50 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
-    - uses: actions/setup-python@v5
+    - uses: actions/setup-python@v6
       with:
         python-version: '3.14'
 
     - name: Install python libraries
       shell: bash
+      id: install
       run: |
         pip install -r requirements.txt -r requirements-tests.txt
 
     - name: Run black
+      if: ${{ always() && steps.install.outcome == 'success' }}
       shell: bash
       run: black --check .
 
     - name: Run pylint
+      if: ${{ always() && steps.install.outcome == 'success' }}
       shell: bash
       run: pylint reccmp tests
 
     - name: Run mypy
+      if: ${{ always() && steps.install.outcome == 'success' }}
       shell: bash
       run: mypy ./reccmp ./tests
+
+    - name: Run codespell
+      if: ${{ always() && steps.install.outcome == 'success' }}
+      shell: bash
+      run: |
+        codespell \
+          --ignore-multiline-regex \
+            '# codespell:ignore-begin.*?codespell:ignore-end *\n' \
+          --ignore-regex remote-checkin-comment \
+          -L SEH \
+          ./reccmp ./tests
 
   js-format:
     name: 'Javascript Format'
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - name: Install dependencies
       working-directory: ./webui

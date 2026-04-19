@@ -301,6 +301,7 @@ def test_function_type_side_effects():
 
 def test_continuable():
     """Make sure we can continue parsing after handling a non-fatal error."""
+    # codespell:ignore-begin
     text = dedent("""\
         address|type
         5555|libary
@@ -308,8 +309,9 @@ def test_continuable():
         zzzz|function
         4321|template
         """)
+    # codespell:ignore-end
 
-    # Should throw for "libary"
+    # Should throw for "libary"  (codespell:ignore libary)
     with pytest.raises(ReccmpCsvParserError):
         list(csv_parse(text))
 
@@ -334,6 +336,7 @@ def test_continuable():
 def test_exception_details():
     """Should capture the original line number (before removing blank lines)
     and the value that led to the exception and report both."""
+    # codespell:ignore-begin
     text = dedent("""\
         address|type
 
@@ -343,13 +346,14 @@ def test_exception_details():
         zzzz|function
         4321|template
         """)
+    # codespell:ignore-end
 
     reader = csv_parse(text)
 
-    # 5555|libary
+    # 5555|libary (codespell:ignore libary)
     with pytest.raises(CsvInvalidEntityTypeError) as excinfo:
         next(reader)
-        assert excinfo.value.illegal_value == "libary"
+        assert excinfo.value.illegal_value == "libary"  # codespell:ignore libary
         assert excinfo.value.line_number == 3
 
     # 1234|function
@@ -425,10 +429,10 @@ def test_docs_example_escape_escape():
     """Can escape the escape character if this is needed."""
     text = dedent("""\
         address,name
-        10004000,te\\\\st
+        10004000,de\\\\mo
         """)
     assert list(csv_parse(text)) == [
-        (0x10004000, {"name": "te\\st"}),
+        (0x10004000, {"name": "de\\mo"}),
     ]
 
 
