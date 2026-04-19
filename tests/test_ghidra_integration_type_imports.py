@@ -320,7 +320,6 @@ def test_enum(type_helper: GhidraTypeTestHelper):
     assert second_import == imported_enum
 
 
-@pytest.mark.xfail(reason="Bug, see issue #380")
 def test_enum_with_negative_value(type_helper: GhidraTypeTestHelper):
     from ghidra.program.model.data import Enum
 
