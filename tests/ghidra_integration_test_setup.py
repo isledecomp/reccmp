@@ -1,10 +1,16 @@
 from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterator, cast
-
-
+from unittest.mock import Mock
 import pytest
+
 from pyghidra import HeadlessPyGhidraLauncher  # type: ignore[import-untyped]
+
+from reccmp.compare.core import Compare
+from reccmp.compare.ingest import load_cvdump_types
+from reccmp.cvdump.analysis import CvdumpAnalysis
+from reccmp.cvdump.parser import CvdumpParser
+from .raw_image import RawImage
 
 # Suppress linter warnings related to the fact that the header support for Ghidra is limited
 # and that we cannot import Ghidra classes before Ghidra has been loaded
@@ -14,7 +20,8 @@ from pyghidra import HeadlessPyGhidraLauncher  # type: ignore[import-untyped]
 
 if TYPE_CHECKING:
     from ghidra.program.model.listing import Program
-
+    from ghidra.program.flatapi import FlatProgramAPI
+    from reccmp.ghidra.importer.type_importer import PdbTypeImporter
 
 GHIDRA_PROJECT_NAME = "ghidra-integration-test"
 GHIDRA_FOLDER_NAME = "/"
@@ -40,6 +47,17 @@ def ghidra_integration_test_program(
     request: pytest.FixtureRequest, isle_binary_path: Path
 ) -> "Iterator[Program]":
     assert request.config.cache is not None
+
+    try:
+        # Gets rid of spurious stack traces from a misunderstanding between pytest and jpype.
+        # See https://jpype.readthedocs.io/en/latest/userguide.html#errors-reported-by-python-fault-handler
+        import faulthandler
+
+        faulthandler.enable()
+        faulthandler.disable()
+    # pylint: disable-next=broad-exception-caught # This is fine to fail, we don't need to handle it
+    except Exception:
+        pass
 
     HeadlessPyGhidraLauncher().start()
 
@@ -126,3 +144,75 @@ def ghidra_integration_test_program(
 
         finally:
             ghidra_project.getProject().close()
+
+
+class GhidraTypeTestHelper:
+    def __init__(self, ghidra: "FlatProgramAPI"):
+        from reccmp.ghidra.importer.type_importer import (
+            PdbTypeImporter,
+            PdbFunctionExtractor,
+        )
+
+        self.ghidra = ghidra
+        self.compare = Compare(
+            RawImage.from_memory(), RawImage.from_memory(), Mock(), "TEST"
+        )
+        self.type_importer = PdbTypeImporter(
+            ghidra, PdbFunctionExtractor(self.compare), set()
+        )
+
+    def set_up_cvdump_types(self, cvdump_types: str):
+        parser = CvdumpParser()
+        parser.read_section("TYPES", cvdump_types)
+        analysis = CvdumpAnalysis(parser)
+        load_cvdump_types(analysis, self.compare.types)
+
+
+class GhidraFunctionTestHelper:
+    ORIG_FN_TO_OVERWRITE_PRIMARY = 0x00402880  # readIntFromRegistry()
+    ORIG_FN_TO_OVERWRITE_SECONDARY = 0x00402C20  # IsleApp::Tick()
+    ORIG_DATA_TO_OVERWRITE = 0x00410040  # g_windowRect
+
+    def __init__(self, ghidra: "FlatProgramAPI"):
+        self.ghidra = ghidra
+        self.orig_address = self.ORIG_FN_TO_OVERWRITE_PRIMARY
+        self.address_ghidra = ghidra.getAddressFactory().getAddress(
+            hex(self.orig_address)
+        )
+        self.ghidra_function = self.ghidra.getFunctionContaining(self.address_ghidra)
+        assert (
+            self.ghidra_function is not None
+        ), f"No Ghidra function at address {self.address_ghidra}"
+
+    def overwrite_example_function(self, data: bytes):
+        from jpype import JArray, JByte  # type: ignore[import-untyped]
+
+        assert len(data) > 0
+
+        # Clear the existing decompiled code so we can overwrite it
+        listing = self.ghidra.getCurrentProgram().getListing()
+        end_addr = self.address_ghidra.add(len(data) - 1)
+        listing.clearCodeUnits(self.address_ghidra, end_addr, False)
+
+        # Overwrite the memory
+        self.ghidra.getCurrentProgram().getMemory().setBytes(
+            self.address_ghidra, JArray.of(data, JByte)
+        )
+
+    def assert_c_code(self, code: str):
+        from ghidra.app.decompiler import DecompInterface
+        from ghidra.util.task import TaskMonitor
+
+        iface = DecompInterface()
+        iface.openProgram(self.ghidra.getCurrentProgram())
+
+        res = iface.decompileFunction(self.ghidra_function, 5, TaskMonitor.DUMMY)
+        assert res.decompileCompleted(), "Decompilation failed"
+
+        # The line endings returned by the API differ between Windows and Linux
+        decompiled_c_code = res.getDecompiledFunction().getC().replace("\r\n", "\n")
+
+        # This print statement is suppressed when the test passes, but is helpful if the test fails
+        print(decompiled_c_code)
+
+        assert decompiled_c_code == code

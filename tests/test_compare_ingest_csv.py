@@ -115,6 +115,7 @@ def test_load_csv_overwrite(db: EntityDb):
 
 def test_load_csv_with_errors(db: EntityDb):
     """Should skip lines with a syntax error and create entities for the rest."""
+    # codespell:ignore-begin
     csv_file = TextFile(
         PurePath("test.csv"),
         dedent("""\
@@ -125,6 +126,7 @@ def test_load_csv_with_errors(db: EntityDb):
             4321|template
             """),
     )
+    # codespell:ignore-end
 
     load_csv(db, csv_file)
 

@@ -224,12 +224,14 @@ def test_should_skip_regardless_of_register():
         mock.assert_not_called()
 
 
+# codespell:ignore-begin
 def test_no_placeholder_for_jumps():
     """Some JMP instructions point at the start of another function (e.g. destructors
     called in the SEH Unwind section.) These would be candidates for a placeholder
     but doing this would cause the placeholder number to vary with annotation
     coverage. The compromise is to use the name if we have it, but not use a
     placeholder OR bump the placeholder number."""
+    # codespell:ignore-end
     p = ParseAsm()
     _, op_str = p.sanitize(DisasmLiteInst(0x1000, 5, "jmp", "0x2000"))
 
