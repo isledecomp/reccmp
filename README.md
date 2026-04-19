@@ -13,7 +13,7 @@ MxCore* MxObjectFactory::Create(const char* p_name)
 }
 ```
 
-This allows you to automatically verify the accuracy of re-compiled functions, virtual tables, variable offsets and more. [Click to see the full syntax](docs/annotations.md).
+This allows you to automatically verify the accuracy of functions, virtual tables, variable offsets and more. [Click to see the full syntax](docs/annotations.md).
 
 You can supplement the code annotations with metadata from CSV files. See the [instructions and syntax](docs/csv.md).
 
