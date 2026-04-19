@@ -8,7 +8,11 @@ from _pytest.config.argparsing import Parser
 from reccmp.formats import NEImage, PEImage, detect_image
 
 from .binfiles_test_setup import BINFILE_ISLE, BINFILE_LEGO1, BINFILE_SKI, TestBinfile
-from .ghidra_integration_test_setup import ghidra_integration_test_program
+from .ghidra_integration_test_setup import (
+    GhidraFunctionTestHelper,
+    GhidraTypeTestHelper,
+    ghidra_integration_test_program,
+)
 
 # Suppress linter warnings related to the fact that the header support for Ghidra is limited
 # and that we cannot import Ghidra classes before Ghidra has been loaded
@@ -19,6 +23,7 @@ from .ghidra_integration_test_setup import ghidra_integration_test_program
 if TYPE_CHECKING:
     from ghidra.program.flatapi import FlatProgramAPI
     from ghidra.program.model.listing import Program
+    from reccmp.ghidra.importer.type_importer import PdbTypeImporter
 
 
 REQUIRE_BINFILES_OPTION = "--require-binfiles"
@@ -143,3 +148,17 @@ def fixture_ghidra_program(ghidra_program: "Program") -> "Iterator[FlatProgramAP
     finally:
         # Revert all side effects of the test that just ran
         transaction.abort()
+
+
+@pytest.fixture(name="type_helper", scope="function")
+def ghidra_type_helper_fixture(
+    ghidra: "FlatProgramAPI",
+) -> Iterator[GhidraTypeTestHelper]:
+    yield GhidraTypeTestHelper(ghidra)
+
+
+@pytest.fixture(name="function_helper", scope="function")
+def ghidra_function_helper_fixture(
+    ghidra: "FlatProgramAPI",
+) -> Iterator[GhidraFunctionTestHelper]:
+    yield GhidraFunctionTestHelper(ghidra)

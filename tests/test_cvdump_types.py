@@ -1018,7 +1018,7 @@ def test_this_adjust_hex(empty_parser: CvdumpTypesParser):
     # codespell:ignore-begin
     empty_parser.read_all("""\
 0x657a : Length = 26, Leaf = 0x1009 LF_MFUNCTION
-    Return type = T_VOID(0003), Class type = 0x15ED, This type = 0x15EE, 
+    Return type = T_VOID(0003), Class type = 0x15ED, This type = 0x15EE,
     Call type = ThisCall, Func attr = none
     Parms = 3, Arg list type = 0x6579, This adjust = 24""")
     # codespell:ignore-end
@@ -1028,7 +1028,7 @@ def test_this_adjust_hex(empty_parser: CvdumpTypesParser):
 
 BIG_TYPE_KEY_SAMPLE = """
 0x1023 : Length = 70, Leaf = 0x1505 LF_STRUCTURE
-    # members = 0,  field list type 0x0000, FORWARD REF, 
+    # members = 0,  field list type 0x0000, FORWARD REF,
     Derivation list type 0x0000, VT shape type 0x0000
     Size = 0, class name = threadlocaleinfostruct, unique name = Uthreadlocaleinfostruct@@, UDT(0x00011738)
 
@@ -1036,14 +1036,14 @@ BIG_TYPE_KEY_SAMPLE = """
     Element type = 0x00011735
     Index type = T_ULONG(0022)
     length = 96
-    Name = 
+    Name =
 
 0x00011737 : Length = 418, Leaf = 0x1203 LF_FIELDLIST
     list[0] = LF_MEMBER, public, type = 0x00011736, offset = 72
         member name = 'lc_category'
 
 0x00011738 : Length = 70, Leaf = 0x1505 LF_STRUCTURE
-    # members = 18,  field list type 0x11737, 
+    # members = 18,  field list type 0x11737,
     Derivation list type 0x0000, VT shape type 0x0000
     Size = 216, class name = threadlocaleinfostruct, unique name = Uthreadlocaleinfostruct@@, UDT(0x00011738)
 """
@@ -1072,6 +1072,39 @@ def test_enum_keys_over_ffff(empty_parser: CvdumpTypesParser):
     assert empty_parser.keys[TK(0x105DA)]["field_list_type"] == TK(0x105D9)
     assert empty_parser.keys[TK(0x105DA)]["underlying_type"] == CVInfoTypeEnum.T_INT4
     assert empty_parser.keys[TK(0x105DA)]["name"] == "e_STATE_t"
+
+
+ENUM_WITH_DATA_TYPES_SAMPLES = """
+0x4e63 : Length = 102, Leaf = 0x1203 LF_FIELDLIST
+	list[0] = LF_ENUMERATE, public, value = 1, name = 'c_act1'
+	list[1] = LF_ENUMERATE, public, value = 2, name = 'c_imain'
+	list[2] = LF_ENUMERATE, public, value = 16, name = 'c_ielev'
+	list[3] = LF_ENUMERATE, public, value = 32, name = 'c_iisle'
+	list[4] = LF_ENUMERATE, public, value = (LF_USHORT) 32768, name = 'c_act2'
+	list[5] = LF_ENUMERATE, public, value = (LF_ULONG) 65536, name = 'c_act3'
+
+0x5695 : Length = 50, Leaf = 0x1203 LF_FIELDLIST
+	list[0] = LF_ENUMERATE, public, value = (LF_CHAR) -1(0xFF), name = 'c_unknownminusone'
+	list[1] = LF_ENUMERATE, public, value = 8, name = 'c_unknown8'
+"""
+
+
+def test_enum_with_data_types(empty_parser: CvdumpTypesParser):
+    """Make sure we can read an LF_FIELDLIST of an enum with a negative value (GH #380)"""
+    empty_parser.read_all(ENUM_WITH_DATA_TYPES_SAMPLES)
+    assert empty_parser.keys[TK(0x4E63)]["variants"] == [
+        EnumItem(name="c_act1", value=1),
+        EnumItem(name="c_imain", value=2),
+        EnumItem(name="c_ielev", value=16),
+        EnumItem(name="c_iisle", value=32),
+        EnumItem(name="c_act2", value=32768),
+        EnumItem(name="c_act3", value=65536),
+    ]
+
+    assert empty_parser.keys[TK(0x5695)]["variants"] == [
+        EnumItem(name="c_unknownminusone", value=-1),
+        EnumItem(name="c_unknown8", value=8),
+    ]
 
 
 ARRAY_WITH_UNKNOWN_ELEMENT = """
