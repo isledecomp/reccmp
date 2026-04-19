@@ -7,10 +7,11 @@
 import json
 from typing import TYPE_CHECKING
 
+import pytest
+
 from reccmp.cvdump.analysis import CvdumpNode
 from reccmp.cvdump.cvinfo import CVInfoTypeEnum, CvdumpTypeKey
 from reccmp.compare.db import ReccmpMatch
-from reccmp.cvdump.types import TypeInfo
 from reccmp.ghidra.importer.pdb_extraction import (
     CppRegisterSymbol,
     CppStackSymbol,
@@ -203,10 +204,7 @@ def test_global_array_access(
             section=0,
             offset=0,
             decorated_name="g_actorInfo",
-            data_type=TypeInfo(
-                lego_actor_info_array_key,
-                size=174,
-            ),
+            data_type=type_helper.compare.types.get(lego_actor_info_array_key),
         )
     ]
 
@@ -257,6 +255,108 @@ char * LegoCharacterManager::GetActorName(int p_index)
 
 {
   return g_actorInfo[p_index].m_name;
+}
+
+""")
+
+
+@pytest.mark.xfail(reason="See GH #384")
+def test_global_pointer_access(
+    ghidra: "FlatProgramAPI",
+    function_helper: GhidraFunctionTestHelper,
+    type_helper: GhidraTypeTestHelper,
+):
+    from reccmp.ghidra.importer.function_importer import (
+        PdbFunctionImporter,
+        PdbFunction,
+    )
+    from reccmp.ghidra.importer.globals_importer import import_global_into_ghidra
+
+    # inspired by ISLE 0x00410030 and the previous example
+    cvdump_types = """
+0x1002 : Length = 34, Leaf = 0x1505 LF_STRUCTURE
+	# members = 0,  field list type 0x0000, FORWARD REF,
+	Derivation list type 0x0000, VT shape type 0x0000
+	Size = 0, class name = LegoActorInfo, UDT(0x000056f5)
+
+0x102b : Length = 10, Leaf = 0x1002 LF_POINTER
+	Pointer (NEAR32), Size: 0
+	Element type : 0x1002
+
+0x56f4 : Length = 154, Leaf = 0x1203 LF_FIELDLIST
+	list[1] = LF_MEMBER, public, type = T_32PRCHAR(0470), offset = 0
+		member name = 'm_name'
+
+0x56f5 : Length = 34, Leaf = 0x1505 LF_STRUCTURE
+	# members = 8,  field list type 0x56f4,
+	Derivation list type 0x0000, VT shape type 0x0000
+	Size = 264, class name = LegoActorInfo, UDT(0x000056f5)
+    """
+    lego_actor_info_pointer_key = CvdumpTypeKey(0x102B)
+    recomp_address_of_global = 5678  # arbitrary, but needs to be consistent
+
+    type_helper.set_up_cvdump_types(cvdump_types)
+
+    type_helper.compare.cvdump_analysis.nodes = [
+        CvdumpNode(
+            addr=recomp_address_of_global,
+            section=0,
+            offset=0,
+            decorated_name="g_actorInfo",
+            data_type=type_helper.compare.types.get(lego_actor_info_pointer_key),
+        )
+    ]
+
+    import_global_into_ghidra(
+        ghidra,
+        type_helper.compare,
+        type_helper.type_importer,
+        ReccmpMatch(function_helper.ORIG_DATA_TO_OVERWRITE, recomp_address_of_global),
+    )
+
+    ghidra_addr = ghidra.getAddressFactory().getAddress(
+        hex(function_helper.ORIG_DATA_TO_OVERWRITE)
+    )
+    data = ghidra.getDataAt(ghidra_addr)
+
+    print(data)
+
+    # based on ISLE 0x004016f0
+    function_helper.overwrite_example_function(
+        b"\xa1\x40\x00\x41\x00"  # MOV EAX, [g_isle]
+        b"\x8b\x40\x00"  # MOV EAX, dword ptr [EAX]
+        b"\xc2\x04\x00"  # RET 0x4
+    )
+
+    func_signature = FunctionSignature(
+        call_type="__stdcall",
+        arglist=[CVInfoTypeEnum.T_INT4],
+        return_type=CVInfoTypeEnum.T_32PCHAR,
+        class_type=None,
+        stack_symbols=[
+            CppStackSymbol("p_index", CVInfoTypeEnum.T_INT4, 4),
+        ],
+        this_adjust=0,
+    )
+    pdb_function = PdbFunction(
+        ReccmpMatch(
+            function_helper.orig_address,
+            1234,  # arbitrary
+            json.dumps({"name": "LegoCharacterManager::GetActorName"}),
+        ),
+        func_signature,
+        is_stub=False,
+    )
+
+    PdbFunctionImporter.build(
+        ghidra, pdb_function, type_helper.type_importer, []
+    ).overwrite_ghidra_function(function_helper.ghidra_function)
+
+    function_helper.assert_c_code("""
+char * LegoCharacterManager::GetActorName(int p_index)
+
+{
+  return g_actorInfo->m_name;
 }
 
 """)

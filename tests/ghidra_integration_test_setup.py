@@ -171,7 +171,7 @@ class GhidraTypeTestHelper:
 class GhidraFunctionTestHelper:
     ORIG_FN_TO_OVERWRITE_PRIMARY = 0x00402880  # readIntFromRegistry()
     ORIG_FN_TO_OVERWRITE_SECONDARY = 0x00402C20  # IsleApp::Tick()
-    ORIG_DATA_TO_OVERWRITE = 0x00410040 # g_windowRect
+    ORIG_DATA_TO_OVERWRITE = 0x00410040  # g_windowRect
 
     def __init__(self, ghidra: "FlatProgramAPI"):
         self.ghidra = ghidra
