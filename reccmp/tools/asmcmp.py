@@ -219,7 +219,7 @@ def main():
     total_accuracy = 0.0
     total_effective_accuracy = 0.0
 
-    report = ReccmpStatusReport(filename=target.original_path.name.lower())
+    report = ReccmpStatusReport(filename=target.original_path.name)
 
     for match in compare.compare_all():
         # if we are ignoring this function, skip to next one and don't add it to the entities list
