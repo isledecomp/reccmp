@@ -313,7 +313,7 @@ def diff_json(
     """Compare two status report files, determine what items changed, and print the result."""
 
     # Don't try to diff a report generated for a different binary file
-    if saved_data.filename.casefold() != new_data.filename.casefold():
+    if saved_data.filename.lower() != new_data.filename.lower():
         logging.getLogger().error(
             "Diff report for '%s' does not match current file '%s'",
             saved_data.filename,
