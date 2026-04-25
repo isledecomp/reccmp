@@ -5,7 +5,7 @@ import argparse
 import logging
 from typing import Sequence
 from pathlib import Path
-from reccmp.utils import diff_json, write_html_report
+from reccmp.utils import diff_json, gen_svg, progress_stats, write_html_report
 from reccmp.compare.report import (
     ReccmpStatusReport,
     combine_reports,
@@ -119,6 +119,25 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Report files to aggregate.",
     )
     parser.add_argument(
+        "--svg",
+        "-S",
+        type=Path,
+        metavar="<file>",
+        help="Generate SVG graphic of aggregate progress.",
+    )
+    parser.add_argument(
+        "--svg-icon",
+        metavar="icon",
+        help="Icon to use in SVG (PNG)",
+    )
+    parser.add_argument(
+        "--total",
+        "-T",
+        type=int,
+        metavar="<count>",
+        help="Total number of expected functions (improves total accuracy statistic)",
+    )
+    parser.add_argument(
         "--no-color", "-n", action="store_true", help="Do not color the output"
     )
 
@@ -129,10 +148,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
             "expected arguments for --samples or --diff. (No input files specified)"
         )
 
-    if not (args.output or args.diff or args.html):
+    if not (args.output or args.diff or args.html or args.svg):
         parser.error(
-            "expected arguments for --output, --html, or --diff. (No output action specified)"
+            "expected arguments for --output, --html, --svg, or --diff. (No output action specified)"
         )
+
+    if args.svg and not args.samples:
+        parser.error("--svg requires --samples to aggregate from")
 
     if args.diff and len(args.diff) == 1 and not args.samples:
         parser.error("--diff expects two report files")
@@ -167,6 +189,23 @@ def main():
 
         if args.html is not None:
             write_html_report(args.html, agg_report)
+
+        if args.svg is not None:
+            implemented_funcs, raw_accuracy = progress_stats(agg_report)
+            if implemented_funcs == 0:
+                logger.error(
+                    "No comparable functions in aggregate report; skipping SVG."
+                )
+            else:
+                total_funcs = max(implemented_funcs, args.total or 0)
+                gen_svg(
+                    args.svg,
+                    agg_report.filename,
+                    args.svg_icon,
+                    implemented_funcs,
+                    total_funcs,
+                    raw_accuracy,
+                )
 
     # If --diff has at least one file and we aggregated some samples this run, diff the first file and the aggregate.
     # If --diff has two files and we did not aggregate this run, diff the files in the list.

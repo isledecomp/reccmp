@@ -1,3 +1,4 @@
+import base64
 from datetime import datetime
 from typing import Iterable, Iterator
 import logging
@@ -9,6 +10,7 @@ from reccmp.compare.report import (
     ReccmpComparedEntity,
     serialize_reccmp_report,
 )
+from reccmp.types import EntityType
 
 
 def reccmp_pack_generator(lines: Iterable[str]) -> Iterator[str]:
@@ -41,6 +43,56 @@ def read_js_file(filename: str) -> str:
 
     file_header = f"/{'*' * 78}/\n// {filename}\n"
     return file_header + "".join(lines)
+
+
+def progress_stats(report: ReccmpStatusReport) -> tuple[int, float]:
+    """Count comparable functions in the report and sum their effective-match accuracy.
+
+    Returns (implemented_funcs, raw_accuracy). Stubs and non-FUNCTION entities are excluded.
+    Entities with no recorded type (older reports that did not serialize the field) are
+    treated as functions to preserve backward-compatible behavior."""
+    implemented = 0
+    raw_accuracy = 0.0
+    for entity in report.entities.values():
+        if entity.is_stub:
+            continue
+        if entity.type is not None and entity.type != EntityType.FUNCTION:
+            continue
+        implemented += 1
+        raw_accuracy += entity.accuracy
+    return implemented, raw_accuracy
+
+
+# pylint: disable=too-many-positional-arguments
+def gen_svg(
+    svg_file: str,
+    name_svg: str,
+    icon: str | None,
+    svg_implemented_funcs: int,
+    total_funcs: int,
+    raw_accuracy: float,
+):
+    """Render the progress SVG badge from the bundled template."""
+    icon_data = None
+    if icon:
+        with open(icon, "rb") as iconfile:
+            icon_data = base64.b64encode(iconfile.read()).decode("utf-8")
+
+    total_statistic = raw_accuracy / total_funcs
+    full_percentbar_width = 127.18422
+    output_data = Renderer().render_path(
+        get_asset_file("../assets/template.svg"),
+        {
+            "name": name_svg,
+            "icon": icon_data,
+            "implemented": f"{(svg_implemented_funcs / total_funcs * 100):.2f}% ({svg_implemented_funcs}/{total_funcs})",
+            "accuracy": f"{(raw_accuracy / svg_implemented_funcs * 100):.2f}%",
+            "progbar": total_statistic * full_percentbar_width,
+            "percent": f"{(total_statistic * 100):.2f}%",
+        },
+    )
+    with open(svg_file, "w", encoding="utf-8") as svgfile:
+        svgfile.write(output_data)
 
 
 def write_html_report(html_file: str, report: ReccmpStatusReport):
