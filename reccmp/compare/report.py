@@ -62,6 +62,10 @@ class ReccmpStatusReport:
 
         self.entities = {}
 
+    def has_same_source(self, other: "ReccmpStatusReport") -> bool:
+        """Were both reports derived from the same reccmp target?"""
+        return self.filename.lower() == other.filename.lower()
+
 
 def _get_entity_for_addr(
     samples: Iterable[ReccmpStatusReport], addr: str
@@ -96,7 +100,7 @@ def combine_reports(samples: list[ReccmpStatusReport]) -> ReccmpStatusReport:
     accuracy score from any report."""
     assert len(samples) > 0
 
-    if not all(samples[0].filename == s.filename for s in samples):
+    if not all(samples[0].has_same_source(s) for s in samples):
         raise ReccmpReportSameSourceError
 
     output = ReccmpStatusReport(filename=samples[0].filename)

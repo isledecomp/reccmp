@@ -119,6 +119,27 @@ def test_aggregate_different_files():
         combine_reports([x, y])
 
 
+def test_same_source():
+    """Reports contain the filename of the original binary.
+    If these filenames match case-insensitively, the reports
+    came from the same reccmp target."""
+    report_lower = ReccmpStatusReport(filename="test.exe")
+    report_upper = ReccmpStatusReport(filename="TEST.EXE")
+    report_mixed = ReccmpStatusReport(filename="Test.Exe")
+
+    reports = (report_lower, report_upper, report_mixed)
+
+    # Check all case-variant pairs, including identity
+    for x, y in zip(reports, reports):
+        assert x.has_same_source(y)
+
+    # Check with different filename
+    report_hello = ReccmpStatusReport(filename="hello.dll")
+    for x in reports:
+        assert x.has_same_source(report_hello) is False
+        assert report_hello.has_same_source(x) is False
+
+
 def test_aggregate_recomp_addr():
     """We combine the entity data based on the orig addr because this will not change.
     The recomp addr may vary a lot. If it is the same in all samples, use the value.
