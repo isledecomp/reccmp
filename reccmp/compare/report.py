@@ -161,6 +161,7 @@ def get_udiff_for_entity(entity: ReccmpComparedEntity) -> CombinedDiffOutput | N
 
 @dataclass
 class JSONEntityVersion1:
+    # pylint:disable=too-many-instance-attributes
     address: str
     name: str
     matching: float
@@ -169,6 +170,8 @@ class JSONEntityVersion1:
     stub: bool = False
     effective: bool = False
     diff: CombinedDiffOutput | None = None
+    # EntityType as int. Older reports do not include this field.
+    type: int | None = None
 
 
 class JSONReportVersion1(BaseModel):
@@ -191,6 +194,7 @@ def _serialize_version_1(
             stub=e.is_stub,
             effective=e.is_effective_match,
             diff=get_udiff_for_entity(e) if diff_included else None,
+            type=int(e.type) if e.type is not None else None,
         )
         for addr, e in report.entities.items()
     ]
@@ -211,10 +215,16 @@ def _deserialize_version_1(obj: JSONReportVersion1) -> ReccmpStatusReport:
     )
 
     for e in obj.data:
+        try:
+            entity_type = EntityType(e.type) if e.type is not None else None
+        except ValueError:
+            entity_type = None
+
         report.entities[e.address] = ReccmpComparedEntity(
             orig_addr=e.address,
             name=e.name,
             accuracy=e.matching,
+            type=entity_type,
             recomp_addr=e.recomp,
             is_stub=e.stub,
             is_effective_match=e.effective,

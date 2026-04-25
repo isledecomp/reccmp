@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 
 import argparse
-import base64
 import logging
 import os
 
-from pystache import Renderer  # type: ignore[import-untyped]
 import colorama
 import reccmp
 from reccmp.utils import (
+    gen_svg,
     print_combined_diff,
     diff_json,
     percent_string,
@@ -24,7 +23,6 @@ from reccmp.compare.report import (
     serialize_reccmp_report,
 )
 from reccmp.types import EntityType
-from reccmp.assets import get_asset_file
 from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
 from reccmp.project.detect import (
     RecCmpProjectException,
@@ -41,30 +39,6 @@ def gen_json(json_file: str, json_str: str):
 
     with open(json_file, "w", encoding="utf-8") as f:
         f.write(json_str)
-
-
-# pylint: disable=too-many-positional-arguments
-def gen_svg(svg_file, name_svg, icon, svg_implemented_funcs, total_funcs, raw_accuracy):
-    icon_data = None
-    if icon:
-        with open(icon, "rb") as iconfile:
-            icon_data = base64.b64encode(iconfile.read()).decode("utf-8")
-
-    total_statistic = raw_accuracy / total_funcs
-    full_percentbar_width = 127.18422
-    output_data = Renderer().render_path(
-        get_asset_file("../assets/template.svg"),
-        {
-            "name": name_svg,
-            "icon": icon_data,
-            "implemented": f"{(svg_implemented_funcs / total_funcs * 100):.2f}% ({svg_implemented_funcs}/{total_funcs})",
-            "accuracy": f"{(raw_accuracy / svg_implemented_funcs * 100):.2f}%",
-            "progbar": total_statistic * full_percentbar_width,
-            "percent": f"{(total_statistic * 100):.2f}%",
-        },
-    )
-    with open(svg_file, "w", encoding="utf-8") as svgfile:
-        svgfile.write(output_data)
 
 
 def print_match_verbose(
