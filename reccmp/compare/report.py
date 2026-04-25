@@ -96,7 +96,9 @@ def combine_reports(samples: list[ReccmpStatusReport]) -> ReccmpStatusReport:
     accuracy score from any report."""
     assert len(samples) > 0
 
-    if not all(samples[0].filename == s.filename for s in samples):
+    if not all(
+        samples[0].filename.casefold() == s.filename.casefold() for s in samples
+    ):
         raise ReccmpReportSameSourceError
 
     output = ReccmpStatusReport(filename=samples[0].filename)
