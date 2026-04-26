@@ -43,7 +43,7 @@ def executable_or_library(path: Path) -> TargetType:
 def get_default_cmakelists_txt(project_name: str, targets: dict[str, Path]) -> str:
     """Generate template CMakeLists.txt file contents to build each target."""
     result = textwrap.dedent(f"""\
-        cmake_minimum_required(VERSION 3.20)
+        cmake_minimum_required(VERSION 3.20...4.3)
         project({project_name})
 
         include("${{CMAKE_CURRENT_SOURCE_DIR}}/cmake/reccmp.cmake")

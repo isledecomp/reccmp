@@ -6,10 +6,14 @@ from reccmp.project.common import (
     RECCMP_BUILD_CONFIG,
     RECCMP_PROJECT_CONFIG,
     RECCMP_USER_CONFIG,
+    helper_create_project,
 )
 from reccmp.project.create import (
     create_project,
     RecCmpProjectAlreadyExistsError,
+)
+from reccmp.project.update import (
+    update_project,
 )
 from reccmp.project.config import (
     ProjectFile,
@@ -398,3 +402,18 @@ def test_materialize_project_target():
     del project.targets["TEST"].source_paths
     with pytest.raises(IncompleteReccmpTargetError):
         project.get("TEST")
+
+
+def test_project_update_cmake_file(tmp_path_factory):
+    """Test `reccmp-project detect --what original --search-path <file>`"""
+    project_text = helper_create_project("LEGO1", "LEGO1.DLL", LEGO1_SHA256)
+    project_root = tmp_path_factory.mktemp("project")
+    (project_root / RECCMP_PROJECT_CONFIG).write_text(project_text)
+    reccmp_cmake_path = project_root / "cmake/reccmp.cmake"
+    reccmp_cmake_path.parent.mkdir()
+    dummy_reccmp_cmake_contents = """message(STATUS "HELLO WORLD")\n"""
+    reccmp_cmake_path.write_text(dummy_reccmp_cmake_contents)
+    assert reccmp_cmake_path.read_text() == dummy_reccmp_cmake_contents
+
+    update_project(project_root)
+    assert reccmp_cmake_path.read_text() != dummy_reccmp_cmake_contents
