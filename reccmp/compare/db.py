@@ -254,11 +254,23 @@ class EntityBatch:
 
 class EntityDb:
     # pylint: disable=too-many-public-methods
+    _x_orig: dict[int, ReccmpEntity]
+    _y_recomp: dict[int, ReccmpEntity]
+    _x_matches: dict[int, int]
+    _y_matches: dict[int, int]
+    _x_set: set[int]
+    _y_set: set[int]
+    _x_all: list[int]
+    _y_all: list[int]
+
     def __init__(self):
         self._x_orig = {}
         self._y_recomp = {}
         self._x_matches = {}
         self._y_matches = {}
+
+        self._x_set = set()
+        self._y_set = set()
 
         self._x_all = []
         self._y_all = []
@@ -270,17 +282,20 @@ class EntityDb:
         # TODO: if we care
         return len(list(self.get_all()))
 
-    def _new_orig(self, addr: int):
-        if addr not in self._x_orig and addr not in self._x_matches:
-            bisect.insort(self._x_all, addr)
+    def _new_orig(self, addrs: set[int]):
+        self._x_all.extend(addrs - self._x_set)
+        self._x_all.sort()
+        self._x_set |= addrs
 
-    def _new_recomp(self, addr: int):
-        if addr not in self._y_recomp and addr not in self._y_matches:
-            bisect.insort(self._y_all, addr)
+    def _new_recomp(self, addrs: set[int]):
+        self._y_all.extend(addrs - self._y_set)
+        self._y_all.sort()
+        self._y_set |= addrs
 
     def bulk_orig_insert(self, rows: Iterable[tuple[int, dict[str, Any]]]):
+        new_x = set()
         for addr, values in rows:
-            self._new_orig(addr)
+            new_x.add(addr)
 
             if addr not in self._x_orig:
                 self._x_orig[addr] = ReccmpEntity(addr, None)
@@ -289,9 +304,12 @@ class EntityDb:
             denoise = {k: v for k, v in values.items() if v is not None}
             self._x_orig[addr]._kvstore.update(denoise)
 
+        self._new_orig(new_x)
+
     def bulk_recomp_insert(self, rows: Iterable[tuple[int, dict[str, Any]]]):
+        new_y = set()
         for addr, values in rows:
-            self._new_recomp(addr)
+            new_y.add(addr)
 
             if addr not in self._y_recomp:
                 self._y_recomp[addr] = ReccmpEntity(None, addr)
@@ -300,16 +318,21 @@ class EntityDb:
             denoise = {k: v for k, v in values.items() if v is not None}
             self._y_recomp[addr]._kvstore.update(denoise)
 
+        self._new_recomp(new_y)
+
     def bulk_match(self, pairs: Iterable[tuple[int, int]]):
         """Expects iterable of `(orig_addr, recomp_addr)`."""
+
+        new_x = set()
+        new_y = set()
 
         for x, y in pairs:
             # Cannot replace existing match.
             if x in self._x_matches or y in self._y_matches:
                 continue
 
-            self._new_orig(x)
-            self._new_recomp(y)
+            new_x.add(x)
+            new_y.add(y)
 
             self._x_matches[x] = y
             self._y_matches[y] = x
@@ -328,6 +351,9 @@ class EntityDb:
 
             self._x_orig[x] = match
             self._y_recomp[y] = match
+
+        self._new_orig(new_x)
+        self._new_recomp(new_y)
 
     def all(self, img: ImageId) -> Iterator[ReccmpEntity]:
         if img == ImageId.ORIG:
@@ -368,7 +394,9 @@ class EntityDb:
     def get_matches(self) -> Iterator[ReccmpMatch]:
         for orig_addr in self._x_all:
             if orig_addr in self._x_matches:
-                yield self._x_orig[orig_addr]
+                ent = self._x_orig[orig_addr]
+                assert isinstance(ent, ReccmpMatch)
+                yield ent
 
     def get_one_match(self, orig_addr: int) -> ReccmpMatch | None:
         if orig_addr not in self._x_orig:
@@ -378,6 +406,7 @@ class EntityDb:
         if ent.recomp_addr is None:
             return None
 
+        assert isinstance(ent, ReccmpMatch)
         return ent
 
     def nearest(self, img: ImageId, addr: int) -> int | None:
@@ -454,6 +483,7 @@ class EntityDb:
         for orig_addr in sorted(orig_addrs):
             match = self._x_orig[orig_addr]
             if match.get("type") == EntityType.LINE:
+                assert isinstance(match, ReccmpMatch)
                 yield match
 
     def used(self, img: ImageId, addr: int) -> bool:
