@@ -301,8 +301,7 @@ class EntityDb:
                 self._x_orig[addr] = ReccmpEntity(addr, None)
 
             # pylint:disable=protected-access
-            denoise = {k: v for k, v in values.items() if v is not None}
-            self._x_orig[addr]._kvstore.update(denoise)
+            self._x_orig[addr]._kvstore.update(values)
 
         self._new_orig(new_x)
 
@@ -315,8 +314,7 @@ class EntityDb:
                 self._y_recomp[addr] = ReccmpEntity(None, addr)
 
             # pylint:disable=protected-access
-            denoise = {k: v for k, v in values.items() if v is not None}
-            self._y_recomp[addr]._kvstore.update(denoise)
+            self._y_recomp[addr]._kvstore.update(values)
 
         self._new_recomp(new_y)
 
@@ -344,8 +342,12 @@ class EntityDb:
 
             recomp_data = {}
             if y in self._y_recomp:
+                # Remove null values from recomp. If we don't, the merge
+                # will overwrite a value at the same key in orig.
                 # pylint:disable=protected-access
-                recomp_data = self._y_recomp[y]._kvstore
+                recomp_data = {
+                    k: v for k, v in self._y_recomp[y]._kvstore.items() if v is not None
+                }
 
             match = ReccmpMatch(x, y, orig_data | recomp_data)
 
