@@ -4,7 +4,6 @@ addresses/symbols that we want to compare between the original and recompiled bi
 
 import bisect
 import logging
-from functools import cached_property
 from typing import Any, Iterable, Iterator
 from reccmp.types import EntityType, ImageId
 
@@ -52,10 +51,6 @@ class ReccmpEntity:
 
         assert False, "Invalid image id"
 
-    @cached_property
-    def options(self) -> dict[str, Any]:
-        return self._kvstore
-
     @property
     def orig_addr(self) -> int | None:
         return self._orig_addr
@@ -66,11 +61,11 @@ class ReccmpEntity:
 
     @property
     def entity_type(self) -> int | None:
-        return self.options.get("type")
+        return self._kvstore.get("type")
 
     @property
     def name(self) -> str | None:
-        return self.options.get("name")
+        return self._kvstore.get("name")
 
     def any_size(self, image_id: ImageId = ImageId.RECOMP) -> int:
         """Returns any size for this entity: the returned value cannot be null.
@@ -78,20 +73,24 @@ class ReccmpEntity:
         With no ImageId, prefer recomp_size first, then orig_size, default to zero.
         (This matches the previous behavior.)"""
         if image_id == ImageId.RECOMP:
-            return self.options.get("recomp_size") or self.options.get("orig_size") or 0
+            return (
+                self._kvstore.get("recomp_size") or self._kvstore.get("orig_size") or 0
+            )
 
         if image_id == ImageId.ORIG:
-            return self.options.get("orig_size") or self.options.get("recomp_size") or 0
+            return (
+                self._kvstore.get("orig_size") or self._kvstore.get("recomp_size") or 0
+            )
 
         return 0
 
     def size(self, image_id: ImageId) -> int | None:
         """Return the size attribute for the provided ImageId."""
         if image_id == ImageId.ORIG:
-            return self.options.get("orig_size")
+            return self._kvstore.get("orig_size")
 
         if image_id == ImageId.RECOMP:
-            return self.options.get("recomp_size")
+            return self._kvstore.get("recomp_size")
 
         assert False, "Invalid image id"
 
@@ -100,13 +99,13 @@ class ReccmpEntity:
         return self._orig_addr is not None and self._recomp_addr is not None
 
     def get(self, key: str, default: Any = None) -> Any:
-        return self.options.get(key, default)
+        return self._kvstore.get(key, default)
 
     def best_name(self) -> str | None:
         """Return the first name that exists from our
         priority list of name attributes for this entity."""
         for key in ("computed_name", "name"):
-            if (value := self.options.get(key)) is not None:
+            if (value := self._kvstore.get(key)) is not None:
                 return str(value)
 
         return None
@@ -232,10 +231,10 @@ class EntityBatch:
 
     def commit(self):
         if self._orig:
-            self.base.bulk_orig_insert(self._orig.items())
+            self.base.bulk_insert(ImageId.ORIG, self._orig.items())
 
         if self._recomp:
-            self.base.bulk_recomp_insert(self._recomp.items())
+            self.base.bulk_insert(ImageId.RECOMP, self._recomp.items())
 
         if self._matches:
             self.base.bulk_match(self._finalized_matches())
@@ -254,157 +253,140 @@ class EntityBatch:
 
 class EntityDb:
     # pylint: disable=too-many-public-methods
-    _x_orig: dict[int, ReccmpEntity]
-    _y_recomp: dict[int, ReccmpEntity]
-    _x_matches: dict[int, int]
-    _y_matches: dict[int, int]
-    _x_set: set[int]
-    _y_set: set[int]
-    _x_all: list[int]
-    _y_all: list[int]
+    _entities: dict[ImageId, dict[int, ReccmpEntity]]
+    _matches: dict[ImageId, dict[int, int]]
+    _addr_set: dict[ImageId, set[int]]
+    _addr_order: dict[ImageId, list[int]]
 
     def __init__(self):
-        self._x_orig = {}
-        self._y_recomp = {}
-        self._x_matches = {}
-        self._y_matches = {}
+        self._entities = {ImageId.ORIG: {}, ImageId.RECOMP: {}}
+        self._matches = {ImageId.ORIG: {}, ImageId.RECOMP: {}}
 
-        self._x_set = set()
-        self._y_set = set()
-
-        self._x_all = []
-        self._y_all = []
+        self._addr_set = {ImageId.ORIG: set(), ImageId.RECOMP: set()}
+        self._addr_order = {ImageId.ORIG: [], ImageId.RECOMP: []}
 
     def batch(self) -> EntityBatch:
         return EntityBatch(self)
 
     def count(self) -> int:
-        # TODO: if we care
         return len(list(self.get_all()))
 
-    def _new_orig(self, addrs: set[int]):
-        self._x_all.extend(addrs - self._x_set)
-        self._x_all.sort()
-        self._x_set |= addrs
+    def _update_addr_index(self, img: ImageId, addrs: set[int]):
+        """Update the ordered list of addresses in this address space."""
+        extent = self._addr_set[img]
+        order = self._addr_order[img]
+        order.extend(addrs - extent)
+        order.sort()
+        extent |= addrs
 
-    def _new_recomp(self, addrs: set[int]):
-        self._y_all.extend(addrs - self._y_set)
-        self._y_all.sort()
-        self._y_set |= addrs
+    def bulk_insert(self, image: ImageId, rows: Iterable[tuple[int, dict[str, Any]]]):
+        assert image in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
+        new_addrs = set()
+        entities = self._entities[image]
 
-    def bulk_orig_insert(self, rows: Iterable[tuple[int, dict[str, Any]]]):
-        new_x = set()
         for addr, values in rows:
-            new_x.add(addr)
+            new_addrs.add(addr)
 
-            if addr not in self._x_orig:
-                self._x_orig[addr] = ReccmpEntity(addr, None)
+            if addr not in entities:
+                if image == ImageId.ORIG:
+                    entities[addr] = ReccmpEntity(addr, None, values)
+                else:
+                    entities[addr] = ReccmpEntity(None, addr, values)
+            else:
+                entities[addr]._kvstore.update(values) # pylint: disable=protected-access
 
-            # pylint:disable=protected-access
-            self._x_orig[addr]._kvstore.update(values)
-
-        self._new_orig(new_x)
-
-    def bulk_recomp_insert(self, rows: Iterable[tuple[int, dict[str, Any]]]):
-        new_y = set()
-        for addr, values in rows:
-            new_y.add(addr)
-
-            if addr not in self._y_recomp:
-                self._y_recomp[addr] = ReccmpEntity(None, addr)
-
-            # pylint:disable=protected-access
-            self._y_recomp[addr]._kvstore.update(values)
-
-        self._new_recomp(new_y)
+        self._update_addr_index(image, new_addrs)
 
     def bulk_match(self, pairs: Iterable[tuple[int, int]]):
         """Expects iterable of `(orig_addr, recomp_addr)`."""
+
+        orig_entities = self._entities[ImageId.ORIG]
+        recomp_entities = self._entities[ImageId.RECOMP]
 
         new_x = set()
         new_y = set()
 
         for x, y in pairs:
             # Cannot replace existing match.
-            if x in self._x_matches or y in self._y_matches:
+            if x in self._matches[ImageId.ORIG] or y in self._matches[ImageId.RECOMP]:
                 continue
 
             new_x.add(x)
             new_y.add(y)
 
-            self._x_matches[x] = y
-            self._y_matches[y] = x
+            self._matches[ImageId.ORIG][x] = y
+            self._matches[ImageId.RECOMP][y] = x
 
             orig_data = {}
-            if x in self._x_orig:
-                # pylint:disable=protected-access
-                orig_data = self._x_orig[x]._kvstore
+            if x in orig_entities:
+                # pylint: disable=protected-access
+                orig_data = orig_entities[x]._kvstore
 
             recomp_data = {}
-            if y in self._y_recomp:
+            if y in recomp_entities:
                 # Remove null values from recomp. If we don't, the merge
                 # will overwrite a value at the same key in orig.
-                # pylint:disable=protected-access
+                # pylint: disable=protected-access
                 recomp_data = {
-                    k: v for k, v in self._y_recomp[y]._kvstore.items() if v is not None
+                    k: v
+                    for k, v in recomp_entities[y]._kvstore.items()
+                    if v is not None
                 }
 
             match = ReccmpMatch(x, y, orig_data | recomp_data)
 
-            self._x_orig[x] = match
-            self._y_recomp[y] = match
+            orig_entities[x] = match
+            recomp_entities[y] = match
 
-        self._new_orig(new_x)
-        self._new_recomp(new_y)
+        self._update_addr_index(ImageId.ORIG, new_x)
+        self._update_addr_index(ImageId.RECOMP, new_y)
 
     def all(self, img: ImageId) -> Iterator[ReccmpEntity]:
-        if img == ImageId.ORIG:
-            for addr in self._x_all:
-                if addr in self._x_orig:
-                    yield self._x_orig[addr]
+        """Iterate entities in order for the given the address space."""
+        assert img in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
 
-        elif img == ImageId.RECOMP:
-            for addr in self._y_all:
-                if addr in self._y_recomp:
-                    yield self._y_recomp[addr]
+        entities = self._entities[img]
 
-        else:
-            assert False, "Invalid image id"
+        for addr in self._addr_order[img]:
+            if addr in entities:
+                yield entities[addr]
 
     def unmatched(self, img: ImageId) -> Iterator[ReccmpEntity]:
-        if img == ImageId.ORIG:
-            for addr in self._x_all:
-                if addr in self._x_orig and addr not in self._x_matches:
-                    yield self._x_orig[addr]
+        """Iterate unmatched entities only in order for the given the address space."""
+        assert img in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
 
-        elif img == ImageId.RECOMP:
-            for addr in self._y_all:
-                if addr in self._y_recomp and addr not in self._y_matches:
-                    yield self._y_recomp[addr]
+        entities = self._entities[img]
+        matches = self._matches[img]
 
-        else:
-            assert False, "Invalid image id"
+        for addr in self._addr_order[img]:
+            if addr in entities and addr not in matches:
+                yield entities[addr]
 
     def get_all(self) -> Iterator[ReccmpEntity]:
-        for orig_addr in self._x_all:
-            yield self._x_orig[orig_addr]
+        orig_entities = self._entities[ImageId.ORIG]
+        recomp_entities = self._entities[ImageId.RECOMP]
 
-        for recomp_addr in self._y_all:
-            if recomp_addr not in self._y_matches:
-                yield self._y_recomp[recomp_addr]
+        for orig_addr in self._addr_order[ImageId.ORIG]:
+            yield orig_entities[orig_addr]
+
+        for recomp_addr in self._addr_order[ImageId.RECOMP]:
+            if recomp_addr not in self._matches[ImageId.RECOMP]:
+                yield recomp_entities[recomp_addr]
 
     def get_matches(self) -> Iterator[ReccmpMatch]:
-        for orig_addr in self._x_all:
-            if orig_addr in self._x_matches:
-                ent = self._x_orig[orig_addr]
+        matches = self._matches[ImageId.ORIG]
+        entities = self._entities[ImageId.ORIG]
+        for orig_addr in self._addr_order[ImageId.ORIG]:
+            if orig_addr in matches:
+                ent = entities[orig_addr]
                 assert isinstance(ent, ReccmpMatch)
                 yield ent
 
     def get_one_match(self, orig_addr: int) -> ReccmpMatch | None:
-        if orig_addr not in self._x_orig:
+        if orig_addr not in self._entities[ImageId.ORIG]:
             return None
 
-        ent = self._x_orig[orig_addr]
+        ent = self._entities[ImageId.ORIG][orig_addr]
         if ent.recomp_addr is None:
             return None
 
@@ -412,12 +394,8 @@ class EntityDb:
         return ent
 
     def nearest(self, img: ImageId, addr: int) -> int | None:
-        if img == ImageId.ORIG:
-            addrs = self._x_all
-        elif img == ImageId.RECOMP:
-            addrs = self._y_all
-        else:
-            assert False, "Invalid image id"
+        assert img in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
+        addrs = self._addr_order[img]
 
         i = bisect.bisect_right(addrs, addr)
         if i == 0:
@@ -432,27 +410,16 @@ class EntityDb:
         If there is no entry for the address and exact=True (default), return None.
         Otherwise, return the preceding (by address, in this image) entity if it exists.
         The caller should check the entity's size to make sure it covers the address."""
-        if img == ImageId.ORIG:
-            if not exact and addr not in self._x_orig:
-                prev_addr = self.nearest(img, addr)
-                if prev_addr is None:
-                    return None
+        assert img in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
 
-                addr = prev_addr
+        if not exact and addr not in self._entities[img]:
+            prev_addr = self.nearest(img, addr)
+            if prev_addr is None:
+                return None
 
-            return self._x_orig.get(addr)
+            addr = prev_addr
 
-        if img == ImageId.RECOMP:
-            if not exact and addr not in self._y_recomp:
-                prev_addr = self.nearest(img, addr)
-                if prev_addr is None:
-                    return None
-
-                addr = prev_addr
-
-            return self._y_recomp.get(addr)
-
-        assert False, "Invalid image id"
+        return self._entities[img].get(addr)
 
     def get_functions(self) -> Iterator[ReccmpMatch]:
         """Return all function-like matched entities. Previously, all functions
@@ -474,31 +441,28 @@ class EntityDb:
         self, start_recomp_addr: int, end_recomp_addr: int
     ) -> Iterator[ReccmpMatch]:
         """Fetches all matched annotations of the form `// LINE: TARGET 0x1234` in the given recomp address range."""
-        i = bisect.bisect_left(self._y_all, start_recomp_addr)
-        j = bisect.bisect_right(self._y_all, end_recomp_addr)
+        addrs = self._addr_order[ImageId.RECOMP]
+        i = bisect.bisect_left(addrs, start_recomp_addr)
+        j = bisect.bisect_right(addrs, end_recomp_addr)
 
-        candidates = self._y_all[i:j]
+        recomp_matches = self._matches[ImageId.RECOMP]
+        candidates = addrs[i:j]
         orig_addrs = [
-            self._y_matches[addr] for addr in candidates if addr in self._y_matches
+            recomp_matches[addr] for addr in candidates if addr in recomp_matches
         ]
 
         for orig_addr in sorted(orig_addrs):
-            match = self._x_orig[orig_addr]
+            match = self._entities[ImageId.ORIG][orig_addr]
             if match.get("type") == EntityType.LINE:
                 assert isinstance(match, ReccmpMatch)
                 yield match
 
     def used(self, img: ImageId, addr: int) -> bool:
-        if img == ImageId.ORIG:
-            return addr in self._x_orig or addr in self._x_matches
-
-        if img == ImageId.RECOMP:
-            return addr in self._y_recomp or addr in self._y_matches
-
-        assert False, "Invalid image id"
+        assert img in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
+        return addr in self._addr_set[img]
 
     def is_match(self, orig_addr: int, recomp_addr: int) -> bool:
-        return self._x_matches.get(orig_addr) == recomp_addr
+        return self._matches[ImageId.ORIG].get(orig_addr) == recomp_addr
 
     def get_next_orig_addr(self, addr: int) -> int | None:
         """Return the original address (matched or not) that follows
@@ -507,9 +471,10 @@ class EntityDb:
         Skips LINE and LABEL type entities since these these are always contained
         within functions.
         """
-        i = bisect.bisect_left(self._x_all, addr)
-        for next_addr in self._x_all[i:]:
-            ent = self._x_orig[next_addr]
+        addrs = self._addr_order[ImageId.ORIG]
+        i = bisect.bisect_left(addrs, addr)
+        for next_addr in addrs[i:]:
+            ent = self._entities[ImageId.ORIG][next_addr]
 
             if (
                 next_addr > addr
