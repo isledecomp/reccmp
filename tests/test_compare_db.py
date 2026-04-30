@@ -79,8 +79,9 @@ def test_db_all_order(db):
 
 
 def test_get_by_exact(db):
-    """get_by_orig and get_by_recomp have two parameters: the address and the 'exact' option.
-    If exact=False, we return the entity at the address OR one at the preceding address if it exists.
+    """get() has two parameters: the address and the 'exact' option.
+    If exact=False, we return the entity at the address
+    OR one at the preceding address if it exists.
     """
 
     with db.batch() as batch:
@@ -111,7 +112,7 @@ def test_get_by_exact(db):
 
 
 def test_get_by_exact_keyword(db: EntityDb):
-    """For get_by_orig and get_by_recomp, the 'exact' keyword must be used to set its value."""
+    """For get(), the 'exact' keyword must be used to set its value."""
 
     # Should fail if called without the 'exact' keyword.
     # Disable mypy checking for these calls because we've intentionally created a typing error.
@@ -237,12 +238,12 @@ def test_batch_commit_twice(db):
     batch = db.batch()
     batch.set(ImageId.ORIG, 100, name="Test")
 
-    with patch("reccmp.compare.db.EntityDb.bulk_orig_insert") as mock:
+    with patch("reccmp.compare.db.EntityDb.bulk_insert") as mock:
         batch.commit()
         batch.commit()
         mock.assert_called_once()
 
-    with patch("reccmp.compare.db.EntityDb.bulk_orig_insert") as mock:
+    with patch("reccmp.compare.db.EntityDb.bulk_insert") as mock:
         batch.commit()
         mock.assert_not_called()
 
