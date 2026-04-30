@@ -287,15 +287,14 @@ class EntityDb:
         for addr, values in rows:
             new_addrs.add(addr)
 
+            # pylint: disable=protected-access
             if addr not in entities:
                 if image == ImageId.ORIG:
                     entities[addr] = ReccmpEntity(addr, None, values)
                 else:
                     entities[addr] = ReccmpEntity(None, addr, values)
             else:
-                entities[addr]._kvstore.update(
-                    values
-                )  # pylint: disable=protected-access
+                entities[addr]._kvstore.update(values)
 
         self._update_addr_index(image, new_addrs)
 
