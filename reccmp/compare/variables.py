@@ -3,7 +3,7 @@ import logging
 from dataclasses import dataclass
 from enum import Enum
 from typing import NamedTuple
-from struct import unpack
+from struct import unpack, error as StructError
 from typing_extensions import Self
 from reccmp.formats import Image
 from reccmp.formats.exceptions import InvalidVirtualReadError
@@ -291,8 +291,11 @@ class VariableComparator:
             ]
             format_str = self.types.get_format_string(type_key)
 
-            orig_data = unpack(format_str, orig_block.data)
-            recomp_data = unpack(format_str, recomp_block.data)
+            try:
+                orig_data = unpack(format_str, orig_block.data)
+                recomp_data = unpack(format_str, recomp_block.data)
+            except StructError as e:
+                return create_comparison_item(var, error=f"Failed to unpack data: {e}")
 
         compared = []
         for orig_val, recomp_val, member in zip(orig_data, recomp_data, compare_items):
