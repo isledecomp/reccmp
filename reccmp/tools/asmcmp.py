@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 
+from collections.abc import Sequence
+from datetime import datetime
+from typing import Callable
 import argparse
 import logging
 import os
@@ -178,6 +181,62 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
+def calculate_alignment(
+    matches: Sequence[DiffReport], should_include_match: Callable[[DiffReport], bool]
+) -> int:
+    count = 0
+    for match in matches:
+        if (
+            match.match_type == EntityType.FUNCTION
+            and match.orig_addr == match.recomp_addr
+            and should_include_match(match)
+        ):
+            count += 1
+
+    return count
+
+
+def calculate_accuracy(
+    matches: Sequence[DiffReport], should_include_match: Callable[[DiffReport], bool]
+) -> tuple[int, float, float]:
+    function_count = 0
+    total_accuracy = 0.0
+    total_effective_accuracy = 0.0
+
+    for match in matches:
+        if match.match_type == EntityType.FUNCTION and should_include_match(match):
+            if not match.is_stub:
+                function_count += 1
+                total_accuracy += match.ratio
+                total_effective_accuracy += match.effective_ratio
+
+    return (function_count, total_accuracy, total_effective_accuracy)
+
+
+def dump_all_matched_functions(matches: Sequence[DiffReport]):
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    orig_order = sorted(matches, key=lambda m: m.orig_addr)
+    recomp_order = sorted(matches, key=lambda m: m.recomp_addr)
+
+    with open(f"reccmp-{timestamp}-orig.txt", "w+", encoding="utf-8") as f:
+        for match in orig_order:
+            f.write(f"; {match.name}\n")
+            for addr, line in match.result.diff.orig_inst:
+                if addr:
+                    f.write(f"{addr:10}: {line}\n")
+                else:
+                    f.write(f"        : {line}\n")
+
+    with open(f"reccmp-{timestamp}-recomp.txt", "w+", encoding="utf-8") as f:
+        for match in recomp_order:
+            f.write(f"; {match.name}\n")
+            for addr, line in match.result.diff.recomp_inst:
+                if addr:
+                    f.write(f"{addr:10}: {line}\n")
+                else:
+                    f.write(f"        : {line}\n")
+
+
 def main():
     args = parse_args()
 
@@ -190,9 +249,6 @@ def main():
     logging.basicConfig(level=args.loglevel, format="[%(levelname)s] %(message)s")
 
     compare = Compare.from_target(target)
-
-    if args.loglevel == logging.DEBUG:
-        compare.debug = True
 
     print()
 
@@ -211,41 +267,46 @@ def main():
 
     ### Compare everything.
 
-    # Count how many functions have the same virtual address in orig and recomp.
-    functions_aligned_count = 0
+    compared = list(compare.compare_all())
 
-    # Number of functions compared (i.e. excluding stubs)
-    function_count = 0
-    total_accuracy = 0.0
-    total_effective_accuracy = 0.0
-
-    report = ReccmpStatusReport(filename=target.original_path.name)
-
-    for match in compare.compare_all():
-        # if we are ignoring this function, skip to next one and don't add it to the entities list
+    def should_include_match(match: DiffReport) -> bool:
         if (
             match.match_type == EntityType.FUNCTION
             and match.name in target.report_config.ignore_functions
         ):
-            continue
+            return False
+
         if args.nolib and match.is_library:
+            return False
+
+        return True
+
+    # Count how many functions have the same virtual address in orig and recomp.
+    functions_aligned_count = calculate_alignment(compared, should_include_match)
+
+    # Number of functions compared (i.e. excluding stubs)
+    function_count, total_accuracy, total_effective_accuracy = calculate_accuracy(
+        compared, should_include_match
+    )
+
+    # Print diff summary to terminal
+    if not args.silent and args.diff is None:
+        for match in compared:
+            if should_include_match(match):
+                print_match_oneline(
+                    match, show_both_addrs=args.print_rec_addr, is_plain=args.no_color
+                )
+
+    if args.loglevel == logging.DEBUG:
+        dump_all_matched_functions(compared)
+
+    report = ReccmpStatusReport(filename=target.original_path.name)
+
+    # Build report:
+    for match in compared:
+        # if we are ignoring this function, skip to next one and don't add it to the entities list
+        if not should_include_match(match):
             continue
-
-        if not args.silent and args.diff is None:
-            print_match_oneline(
-                match, show_both_addrs=args.print_rec_addr, is_plain=args.no_color
-            )
-
-        if (
-            match.match_type == EntityType.FUNCTION
-            and match.orig_addr == match.recomp_addr
-        ):
-            functions_aligned_count += 1
-
-        if match.match_type == EntityType.FUNCTION and not match.is_stub:
-            function_count += 1
-            total_accuracy += match.ratio
-            total_effective_accuracy += match.effective_ratio
 
         # If html, record the diffs to an HTML file
         orig_addr = f"0x{match.orig_addr:x}"

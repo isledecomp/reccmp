@@ -334,9 +334,6 @@ def main():
 
     compare = Compare.from_target(target)
 
-    if args.loglevel == logging.DEBUG:
-        compare.debug = True
-
     print()
 
     match = compare.compare_address(args.address)
