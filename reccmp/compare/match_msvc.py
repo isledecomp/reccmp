@@ -7,6 +7,7 @@ from reccmp.compare.event import (
     reccmp_report_nop,
 )
 from reccmp.compare.queries import get_referencing_entity_matches
+from reccmp.types import ImageId
 
 
 class EntityIndex:
@@ -47,21 +48,26 @@ def match_symbols(
 
     symbol_index = EntityIndex()
 
-    for recomp_addr, symbol in db.sql.execute(
-        """SELECT recomp_addr, json_extract(kvstore, '$.symbol') as symbol
-        from recomp_unmatched where symbol is not null"""
-    ):
+    for ent in db.unmatched(ImageId.RECOMP):
+        symbol = ent.get("symbol")
+        if not symbol:
+            continue
+
         # Truncate symbol to 255 chars for older MSVC. See also: Warning C4786.
         if truncate:
             symbol = symbol[:255]
 
-        symbol_index.add(symbol, recomp_addr)
+        assert ent.recomp_addr is not None
+        symbol_index.add(symbol, ent.recomp_addr)
 
     with db.batch() as batch:
-        for orig_addr, symbol in db.sql.execute(
-            """SELECT orig_addr, json_extract(kvstore, '$.symbol') as symbol
-            from orig_unmatched where symbol is not null"""
-        ):
+        for ent in db.unmatched(ImageId.ORIG):
+            assert ent.orig_addr is not None
+            symbol = ent.get("symbol")
+
+            if not symbol:
+                continue
+
             # Repeat the truncate for our match search
             if truncate:
                 symbol = symbol[:255]
@@ -73,17 +79,17 @@ def match_symbols(
                 if symbol in symbol_index:
                     report(
                         ReccmpEvent.NON_UNIQUE_SYMBOL,
-                        orig_addr,
-                        msg=f"Matched 0x{orig_addr:x} using non-unique symbol '{symbol}'",
+                        ent.orig_addr,
+                        msg=f"Matched 0x{ent.orig_addr:x} using non-unique symbol '{symbol}'",
                     )
 
-                batch.match(orig_addr, recomp_addr)
+                batch.match(ent.orig_addr, recomp_addr)
 
             else:
                 report(
                     ReccmpEvent.NO_MATCH,
-                    orig_addr,
-                    msg=f"Failed to match at 0x{orig_addr:x} with symbol '{symbol}'",
+                    ent.orig_addr,
+                    msg=f"Failed to match at 0x{ent.orig_addr:x} with symbol '{symbol}'",
                 )
 
 
@@ -101,21 +107,25 @@ def match_functions(
     # TODO: We allow a match if entity_type is null.
     # This can be removed if we can more confidently declare a symbol is a function
     # when adding from the PDB.
-    for recomp_addr, name, symbol in db.sql.execute(
-        """SELECT recomp_addr, json_extract(kvstore, '$.name') as name, json_extract(kvstore, '$.symbol')
-        from recomp_unmatched where name is not null
-        and (json_extract(kvstore, '$.type') = ? or json_extract(kvstore, '$.type') is null)""",
-        (EntityType.FUNCTION,),
-    ):
+    for ent in db.unmatched(ImageId.RECOMP):
+        symbol = ent.get("symbol")
+        name = ent.get("name")
+        if ent.get("type") and ent.get("type") != EntityType.FUNCTION:
+            continue
+
+        if not name:
+            continue
+
         # Truncate function name to 255 chars for older MSVC. See also: Warning C4786.
         if truncate:
             name = name[:255]
 
-        name_index.add(name, recomp_addr)
+        assert ent.recomp_addr is not None
+        name_index.add(name, ent.recomp_addr)
 
         # Get the symbol for the error message later.
         if symbol is not None:
-            recomp_symbols[recomp_addr] = symbol
+            recomp_symbols[ent.recomp_addr] = symbol
 
     # Report if the name used in the match is not unique.
     # If the name list contained multiple addresses at the start,
@@ -123,12 +133,16 @@ def match_functions(
     non_unique_names = set()
 
     with db.batch() as batch:
-        for orig_addr, name in db.sql.execute(
-            """SELECT orig_addr, json_extract(kvstore, '$.name') as name
-            from orig_unmatched where name is not null
-            and json_extract(kvstore, '$.type') = ?""",
-            (EntityType.FUNCTION,),
-        ):
+        for ent in db.unmatched(ImageId.ORIG):
+            name = ent.get("name")
+            if ent.get("type") != EntityType.FUNCTION:
+                continue
+
+            if not name:
+                continue
+
+            assert ent.orig_addr is not None
+
             # Repeat the truncate for our match search
             if truncate:
                 name = name[:255]
@@ -148,19 +162,19 @@ def match_functions(
                     ]
                     report(
                         ReccmpEvent.AMBIGUOUS_MATCH,
-                        orig_addr,
-                        msg=f"Ambiguous match 0x{orig_addr:x} on name '{name}' to\n"
+                        ent.orig_addr,
+                        msg=f"Ambiguous match 0x{ent.orig_addr:x} on name '{name}' to\n"
                         + f"'{matched_symbol}'\n"
                         + "Other candidates:\n"
                         + ",\n".join(f"'{candidate}'" for candidate in other_symbols),
                     )
 
-                batch.match(orig_addr, recomp_addr)
+                batch.match(ent.orig_addr, recomp_addr)
             else:
                 report(
                     ReccmpEvent.NO_MATCH,
-                    orig_addr,
-                    msg=f"Failed to match function at 0x{orig_addr:x} with name '{name}'",
+                    ent.orig_addr,
+                    msg=f"Failed to match function at 0x{ent.orig_addr:x} with name '{name}'",
                 )
 
 
@@ -184,21 +198,24 @@ def match_vtables(db: EntityDb, report: ReccmpReportProtocol = reccmp_report_nop
 
     vtable_name_index = EntityIndex()
 
-    for recomp_addr, name in db.sql.execute(
-        """SELECT recomp_addr, json_extract(kvstore, '$.name') as name
-        from recomp_unmatched where name is not null
-        and json_extract(kvstore, '$.type') = ?""",
-        (EntityType.VTABLE,),
-    ):
-        vtable_name_index.add(name, recomp_addr)
+    for ent in db.unmatched(ImageId.RECOMP):
+        name = ent.get("name")
+        if not name or ent.get("type") != EntityType.VTABLE:
+            continue
+
+        assert ent.recomp_addr is not None
+        vtable_name_index.add(name, ent.recomp_addr)
 
     with db.batch() as batch:
-        for orig_addr, class_name, base_class in db.sql.execute(
-            """SELECT orig_addr, json_extract(kvstore, '$.name') as name, json_extract(kvstore, '$.base_class')
-            from orig_unmatched where name is not null
-            and json_extract(kvstore, '$.type') = ?""",
-            (EntityType.VTABLE,),
-        ):
+        for ent in db.unmatched(ImageId.ORIG):
+            class_name = ent.get("name")
+            if not class_name or ent.get("type") != EntityType.VTABLE:
+                continue
+
+            assert ent.orig_addr is not None
+
+            base_class = ent.get("base_class")
+
             # Most classes will not use multiple inheritance, so try the regular vtable
             # first, unless a base class is provided.
             if base_class is None or base_class == class_name:
@@ -206,7 +223,7 @@ def match_vtables(db: EntityDb, report: ReccmpReportProtocol = reccmp_report_nop
 
                 if bare_vftable in vtable_name_index:
                     recomp_addr = vtable_name_index.pop(bare_vftable)
-                    batch.match(orig_addr, recomp_addr)
+                    batch.match(ent.orig_addr, recomp_addr)
                     continue
 
             # If we didn't find a match above, search for the multiple inheritance vtable.
@@ -215,13 +232,13 @@ def match_vtables(db: EntityDb, report: ReccmpReportProtocol = reccmp_report_nop
 
             if for_vftable in vtable_name_index:
                 recomp_addr = vtable_name_index.pop(for_vftable)
-                batch.match(orig_addr, recomp_addr)
+                batch.match(ent.orig_addr, recomp_addr)
                 continue
 
             report(
                 ReccmpEvent.NO_MATCH,
-                orig_addr,
-                msg=f"Failed to match vtable at 0x{orig_addr:x} for class '{class_name}' (base={base_class or 'None'})",
+                ent.orig_addr,
+                msg=f"Failed to match vtable at 0x{ent.orig_addr:x} for class '{class_name}' (base={base_class or 'None'})",
             )
 
 
@@ -238,19 +255,41 @@ def match_static_variables(
 
     Requirement #1 is most likely to be met by matching the entity with recomp data.
     Therefore, this function should be called after match_symbols or match_functions."""
+    symbols = {}
+
+    for recomp_ent in db.unmatched(ImageId.RECOMP):
+        if recomp_ent.get("type") and recomp_ent.get("type") != EntityType.DATA:
+            continue
+
+        recomp_sym = recomp_ent.get("symbol")
+        if not recomp_sym:
+            continue
+
+        assert recomp_ent.recomp_addr is not None
+        symbols[recomp_ent.recomp_addr] = recomp_sym
+
     with db.batch() as batch:
-        for (
-            variable_addr,
-            variable_name,
-            function_name,
-            function_symbol,
-        ) in db.sql.execute(
-            """SELECT var.orig_addr, json_extract(var.kvstore, '$.name') as name,
-            json_extract(func.kvstore, '$.name'), json_extract(func.kvstore, '$.symbol')
-            from orig_unmatched var left join entities func on json_extract(var.kvstore, '$.parent_function') = func.orig_addr
-            where json_extract(var.kvstore, '$.static_var') = 1
-            and name is not null"""
-        ):
+        for variable_ent in db.unmatched(ImageId.ORIG):
+            variable_addr = variable_ent.orig_addr
+            assert variable_addr is not None
+
+            if not variable_ent.get("static_var"):
+                continue
+
+            variable_name = variable_ent.get("name")
+            if not variable_name:
+                continue
+
+            function_name = None
+            function_symbol = None
+
+            parent_addr = variable_ent.get("parent_function")
+            if parent_addr:
+                parent_ent = db.get(ImageId.ORIG, parent_addr)
+                if parent_ent is not None:
+                    function_name = parent_ent.get("name")
+                    function_symbol = parent_ent.get("symbol")
+
             # If we could not find the parent function, or if it has no symbol:
             if function_symbol is None:
                 report(
@@ -260,18 +299,11 @@ def match_static_variables(
                 )
                 continue
 
-            # If the static variable has a symbol, it will contain the parent function's symbol.
-            # e.g. Static variable "g_startupDelay" from function "IsleApp::Tick"
-            # The function symbol is:                    "?Tick@IsleApp@@QAEXH@Z"
-            # The variable symbol is: "?g_startupDelay@?1??Tick@IsleApp@@QAEXH@Z@4HA"
-            for (recomp_addr,) in db.sql.execute(
-                """SELECT recomp_addr FROM recomp_unmatched
-                where (json_extract(kvstore, '$.type') = ? OR json_extract(kvstore, '$.type') IS NULL)
-                and json_extract(kvstore, '$.symbol') LIKE '%' || ? || '%' || ? || '%'""",
-                (EntityType.DATA, variable_name, function_symbol),
-            ):
-                batch.match(variable_addr, recomp_addr)
-                break
+            for recomp_addr, recomp_sym in symbols.items():
+                if function_symbol in recomp_sym and variable_name in recomp_sym:
+                    batch.match(variable_addr, recomp_addr)
+                    del symbols[recomp_addr]
+                    break
             else:
                 report(
                     ReccmpEvent.NO_MATCH,
@@ -286,60 +318,76 @@ def match_variables(db: EntityDb, report: ReccmpReportProtocol = reccmp_report_n
     # TODO: We allow a match if entity_type is null.
     # This can be removed if we can more confidently declare a symbol is a variable
     # when adding from the PDB.
-    for name, recomp_addr in db.sql.execute(
-        """SELECT json_extract(kvstore, '$.name') as name, recomp_addr
-        from recomp_unmatched where name is not null
-        and (json_extract(kvstore, '$.type') = ? or json_extract(kvstore, '$.type') is null)""",
-        (EntityType.DATA,),
-    ):
-        var_name_index.add(name, recomp_addr)
+    for ent in db.unmatched(ImageId.RECOMP):
+        if ent.get("type") and ent.get("type") != EntityType.DATA:
+            continue
+
+        name = ent.get("name")
+        if not name:
+            continue
+
+        assert ent.recomp_addr is not None
+        var_name_index.add(name, ent.recomp_addr)
 
     with db.batch() as batch:
-        for orig_addr, name in db.sql.execute(
-            """SELECT orig_addr, json_extract(kvstore, '$.name') as name
-            from orig_unmatched where name is not null
-            and json_extract(kvstore, '$.type') = ?
-            and coalesce(json_extract(kvstore, '$.static_var'), 0) != 1""",
-            (EntityType.DATA,),
-        ):
+        for ent in db.unmatched(ImageId.ORIG):
+            if ent.get("type") != EntityType.DATA:
+                continue
+
+            name = ent.get("name")
+            if not name:
+                continue
+
+            if ent.get("static_var"):
+                continue
+
+            assert ent.orig_addr is not None
+
             if name in var_name_index:
                 recomp_addr = var_name_index.pop(name)
-                batch.match(orig_addr, recomp_addr)
+                batch.match(ent.orig_addr, recomp_addr)
             else:
                 report(
                     ReccmpEvent.NO_MATCH,
-                    orig_addr,
-                    msg=f"Failed to match variable {name} at 0x{orig_addr:x}",
+                    ent.orig_addr,
+                    msg=f"Failed to match variable {name} at 0x{ent.orig_addr:x}",
                 )
 
 
 def match_strings(db: EntityDb, report: ReccmpReportProtocol = reccmp_report_nop):
     string_index = EntityIndex()
 
-    for recomp_addr, text in db.sql.execute(
-        """SELECT recomp_addr, json_extract(kvstore, '$.name') as name
-        from recomp_unmatched where name is not null
-        and json_extract(kvstore,'$.type') IN (?, ?)""",
-        (EntityType.STRING, EntityType.WIDECHAR),
-    ):
-        string_index.add(text, recomp_addr)
+    for ent in db.unmatched(ImageId.RECOMP):
+        if ent.get("type") not in (EntityType.STRING, EntityType.WIDECHAR):
+            continue
+
+        text = ent.get("name")
+        if not text:
+            continue
+
+        assert ent.recomp_addr is not None
+        string_index.add(text, ent.recomp_addr)
 
     with db.batch() as batch:
-        for orig_addr, text, verified in db.sql.execute(
-            """SELECT orig_addr, json_extract(kvstore, '$.name') as name,
-            coalesce(json_extract(kvstore,'$.verified'), 0)
-            from orig_unmatched where name is not null
-            and json_extract(kvstore,'$.type') IN (?, ?)""",
-            (EntityType.STRING, EntityType.WIDECHAR),
-        ):
+        for ent in db.unmatched(ImageId.ORIG):
+            if ent.get("type") not in (EntityType.STRING, EntityType.WIDECHAR):
+                continue
+
+            text = ent.get("name")
+            if not text:
+                continue
+
+            verified = ent.get("verified", False)
+            assert ent.orig_addr is not None
+
             if text in string_index:
                 recomp_addr = string_index.pop(text)
-                batch.match(orig_addr, recomp_addr)
+                batch.match(ent.orig_addr, recomp_addr)
             elif verified:
                 report(
                     ReccmpEvent.NO_MATCH,
-                    orig_addr,
-                    msg=f"Failed to match string {text} at 0x{orig_addr:x}",
+                    ent.orig_addr,
+                    msg=f"Failed to match string {text} at 0x{ent.orig_addr:x}",
                 )
 
 
@@ -355,12 +403,14 @@ def match_lines(
     """
 
     with db.batch() as batch:
-        for orig_addr, filename, line in db.sql.execute(
-            """SELECT orig_addr, json_extract(kvstore, '$.filename') as filename, json_extract(kvstore, '$.line') as line
-            FROM orig_unmatched
-            WHERE json_extract(kvstore,'$.type') = ?""",
-            (EntityType.LINE,),
-        ):
+        for ent in db.unmatched(ImageId.ORIG):
+            if ent.get("type") != EntityType.LINE:
+                continue
+
+            assert ent.orig_addr is not None
+            filename = ent.get("filename")
+            line = ent.get("line")
+
             #
             # We only match the line directly below the annotation since not all lines of code result in a debug line, especially if optimizations are turned on.
             # However, this does cause false positives in cases like
@@ -380,13 +430,13 @@ def match_lines(
 
             # We match `line + 1` since `line` is the comment itself
             for recomp_addr in lines.search_line(filename, line + 1):
-                batch.set_recomp_addr(orig_addr, recomp_addr)
+                batch.match(ent.orig_addr, recomp_addr)
                 break
             else:
                 # No results
                 report(
                     ReccmpEvent.NO_MATCH,
-                    orig_addr,
+                    ent.orig_addr,
                     f"Found no matching debug symbol for {filename}:{line}",
                 )
 
@@ -419,29 +469,31 @@ def match_ref(
 
 
 def match_imports(db: EntityDb):
-    orig_query = """
-        SELECT orig_addr, json_extract(kvstore, '$.name') name
-        FROM orig_unmatched
-        WHERE json_extract(kvstore, '$.type') = ?
-        AND name IS NOT NULL
-    """
-
-    recomp_query = """
-        SELECT recomp_addr, json_extract(kvstore, '$.name') name
-        FROM recomp_unmatched
-        WHERE json_extract(kvstore, '$.type') = ?
-        AND name IS NOT NULL
-    """
+    orig_imports = {}
 
     # n.b. Case insensitive match here to preserve previous behavior.
     # The final entity will use the name from the recomp side.
-    orig_imports = {
-        name.upper(): addr
-        for addr, name in db.sql.execute(orig_query, (EntityType.IMPORT,))
-    }
+    for ent in db.unmatched(ImageId.ORIG):
+        if ent.get("type") != EntityType.IMPORT:
+            continue
+
+        name = ent.get("name")
+        if not name:
+            continue
+
+        assert isinstance(ent.orig_addr, int)
+        orig_imports[name.upper()] = ent.orig_addr
 
     with db.batch() as batch:
-        for recomp_addr, name in db.sql.execute(recomp_query, (EntityType.IMPORT,)):
+        for ent in db.unmatched(ImageId.RECOMP):
+            if ent.get("type") != EntityType.IMPORT:
+                continue
+
+            name = ent.get("name")
+            if not name:
+                continue
+
             orig_addr = orig_imports.get(name.upper())
             if orig_addr is not None:
-                batch.match(orig_addr, recomp_addr)
+                assert isinstance(ent.recomp_addr, int)
+                batch.match(orig_addr, ent.recomp_addr)

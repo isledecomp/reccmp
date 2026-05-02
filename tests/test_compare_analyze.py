@@ -30,10 +30,12 @@ def fixture_db():
 def get_ref_addr(db: EntityDb, img: ImageId, addr: int) -> int | None:
     """Helper function to retrieve the ref address from the refs table.
     It is not visible through the ReccmpEntity / ReccmpMatch API."""
-    for (ref,) in db.sql.execute(
-        "SELECT ref FROM refs WHERE img = ? AND addr = ?", (img, addr)
-    ):
-        return ref
+    ent = db.get(img, addr)
+    if ent is not None:
+        key = "ref_orig" if img == ImageId.ORIG else "ref_recomp"
+        ref = ent.get(key)
+        if ref:
+            return ref
 
     return None
 
@@ -43,10 +45,9 @@ def get_ref_displacement(
 ) -> tuple[int, int] | None:
     """Helper function to retrieve the displacement from the refs table.
     It is not visible through the ReccmpEntity / ReccmpMatch API."""
-    for disp in db.sql.execute(
-        "SELECT disp0, disp1 FROM refs WHERE img = ? AND addr = ?", (img, addr)
-    ):
-        return disp
+    ent = db.get(img, addr)
+    if ent is not None:
+        return ent.get("displacement")
 
     return None
 
