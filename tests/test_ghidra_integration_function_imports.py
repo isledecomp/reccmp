@@ -4,7 +4,6 @@
 # pylint: disable=import-outside-toplevel
 # pyright: reportMissingModuleSource=false
 
-import json
 from typing import TYPE_CHECKING
 
 import pytest
@@ -47,9 +46,7 @@ def test_import_trivial_function(
         this_adjust=0,
     )
     pdb_function = PdbFunction(
-        ReccmpMatch(
-            function_helper.orig_address, 1234, json.dumps({"name": "MyTestFn"})
-        ),
+        ReccmpMatch(function_helper.orig_address, 1234, {"name": "MyTestFn"}),
         func_signature,
         is_stub=False,
     )
@@ -140,7 +137,7 @@ def test_record_array_access(
         ReccmpMatch(
             function_helper.orig_address,
             1234,  # arbitrary
-            json.dumps({"name": "LegoAnim::GetActorName"}),
+            {"name": "LegoAnim::GetActorName"},
         ),
         func_signature,
         is_stub=False,
@@ -240,7 +237,7 @@ def test_global_array_access(
         ReccmpMatch(
             function_helper.orig_address,
             1234,  # arbitrary
-            json.dumps({"name": "LegoCharacterManager::GetActorName"}),
+            {"name": "LegoCharacterManager::GetActorName"},
         ),
         func_signature,
         is_stub=False,
@@ -342,7 +339,7 @@ def test_global_pointer_access(
         ReccmpMatch(
             function_helper.orig_address,
             1234,  # arbitrary
-            json.dumps({"name": "LegoCharacterManager::GetActorName"}),
+            {"name": "LegoCharacterManager::GetActorName"},
         ),
         func_signature,
         is_stub=False,

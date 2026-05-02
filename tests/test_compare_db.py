@@ -1,6 +1,5 @@
 """Testing compare database behavior, particularly matching"""
 
-import sqlite3
 from unittest.mock import patch
 import pytest
 from reccmp.compare.db import EntityDb
@@ -80,8 +79,9 @@ def test_db_all_order(db):
 
 
 def test_get_by_exact(db):
-    """get_by_orig and get_by_recomp have two parameters: the address and the 'exact' option.
-    If exact=False, we return the entity at the address OR one at the preceding address if it exists.
+    """get() has two parameters: the address and the 'exact' option.
+    If exact=False, we return the entity at the address
+    OR one at the preceding address if it exists.
     """
 
     with db.batch() as batch:
@@ -112,7 +112,7 @@ def test_get_by_exact(db):
 
 
 def test_get_by_exact_keyword(db: EntityDb):
-    """For get_by_orig and get_by_recomp, the 'exact' keyword must be used to set its value."""
+    """For get(), the 'exact' keyword must be used to set its value."""
 
     # Should fail if called without the 'exact' keyword.
     # Disable mypy checking for these calls because we've intentionally created a typing error.
@@ -218,13 +218,18 @@ def test_batch_match_combine_replace_null(db):
     assert db.get(ImageId.RECOMP, 200).get("test") == 123
 
 
-@pytest.mark.xfail(reason="Known limitation.")
-def test_batch_match_create(db):
-    """Matching requires either the orig or recomp entity to exist. It does not create entities."""
+def test_batch_match_create(db: EntityDb):
+    """Matching two addrs will create an entity."""
     with db.batch() as batch:
         batch.match(100, 200)
 
-    assert db.get(ImageId.ORIG, 100).recomp_addr == 200
+    ent = db.get(ImageId.ORIG, 100)
+    assert ent is not None
+    assert ent.recomp_addr == 200
+
+    ent = db.get(ImageId.RECOMP, 200)
+    assert ent is not None
+    assert ent.orig_addr == 100
 
 
 def test_batch_commit_twice(db):
@@ -233,12 +238,12 @@ def test_batch_commit_twice(db):
     batch = db.batch()
     batch.set(ImageId.ORIG, 100, name="Test")
 
-    with patch("reccmp.compare.db.EntityDb.bulk_orig_insert") as mock:
+    with patch("reccmp.compare.db.EntityDb.bulk_insert") as mock:
         batch.commit()
         batch.commit()
         mock.assert_called_once()
 
-    with patch("reccmp.compare.db.EntityDb.bulk_orig_insert") as mock:
+    with patch("reccmp.compare.db.EntityDb.bulk_insert") as mock:
         batch.commit()
         mock.assert_not_called()
 
@@ -316,25 +321,6 @@ def test_batch_exception_caught(db):
 
     assert db.get(ImageId.ORIG, 100) is not None
     assert db.get(ImageId.RECOMP, 200) is not None
-
-
-def test_batch_sqlite_exception(db):
-    """Should rollback if an exception occurs during the commit."""
-
-    # Not using batch context for clarity
-    batch = db.batch()
-    batch.set(ImageId.ORIG, 100, name="Test")
-    batch.set(ImageId.RECOMP, 200, test=123)
-
-    # Insert bad data that will cause a binding error
-    batch.match(100, ("bogus",))
-
-    with pytest.raises(sqlite3.Error):
-        batch.commit()
-
-    # Should rollback everything
-    assert db.get(ImageId.ORIG, 100) is None
-    assert db.get(ImageId.RECOMP, 200) is None
 
 
 def test_generic_used_function(db: EntityDb):
@@ -542,3 +528,35 @@ def test_size_functions_matched_recomp_null(db: EntityDb):
     assert entity.any_size() == 1
     assert entity.any_size(ImageId.ORIG) == 1
     assert entity.any_size(ImageId.RECOMP) == 1
+
+
+def test_independent_sets(db: EntityDb):
+    """If we modify a matched entity, the new values should be accessible
+    whether we access the entity via ORIG or RECOMP address space."""
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, name="Hello")
+        batch.set(ImageId.RECOMP, 200, name="Hello")
+        batch.match(100, 200)
+
+    # baseline
+    ent = db.get(ImageId.RECOMP, 200)
+    assert ent is not None
+    assert ent.get("name") == "Hello"
+
+    # update recomp side
+    with db.batch() as batch:
+        batch.set(ImageId.RECOMP, 200, name="asdf")
+
+    # reflected in orig
+    ent = db.get(ImageId.ORIG, 100)
+    assert ent is not None
+    assert ent.get("name") == "asdf"
+
+    # update orig side
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, name="test")
+
+    # reflected in recomp
+    ent = db.get(ImageId.RECOMP, 200)
+    assert ent is not None
+    assert ent.get("name") == "test"

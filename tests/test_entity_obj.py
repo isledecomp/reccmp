@@ -1,6 +1,5 @@
 """Tests related to the ReccmpEntity ORM object"""
 
-import json
 from reccmp.types import EntityType
 from reccmp.compare.db import ReccmpEntity, entity_name_from_string
 
@@ -9,7 +8,7 @@ def create_entity(
     orig_addr: int | None, recomp_addr: int | None, **kwargs
 ) -> ReccmpEntity:
     """Helper to create the JSON string representation of the key/value args."""
-    return ReccmpEntity(orig_addr, recomp_addr, json.dumps(kwargs))
+    return ReccmpEntity(orig_addr, recomp_addr, kwargs)
 
 
 def test_match_name_none():
