@@ -6,6 +6,7 @@ import logging
 from typing import Iterator
 import colorama
 import reccmp
+import reccmp.color
 from reccmp.compare import Compare
 from reccmp.compare.variables import (
     ComparedOffset,
@@ -96,13 +97,13 @@ def colorize_match_result(result: CompareResult, no_color: bool) -> str:
 
     match result:
         case CompareResult.MATCH:
-            color = colorama.Fore.GREEN
+            color = reccmp.color.Fore.GREEN
         case CompareResult.ERROR | CompareResult.DIFF:
-            color = colorama.Fore.RED
+            color = reccmp.color.Fore.RED
         case _:
-            color = colorama.Fore.YELLOW
+            color = reccmp.color.Fore.YELLOW
 
-    return f"{color}{result.name}{colorama.Style.RESET_ALL}"
+    return f"{color}{result.name}{reccmp.color.Style.RESET_ALL}"
 
 
 def compared_offset_string(c: ComparedOffset, no_color: bool) -> str:
@@ -114,25 +115,27 @@ def compared_offset_string(c: ComparedOffset, no_color: bool) -> str:
         return "" if no_color else c
 
     offset = f"+ 0x{c.offset:02x}"
-    header_chunk = [ansi_wrap(colorama.Fore.LIGHTBLACK_EX), f"{offset:>10}"]
+    header_chunk = [ansi_wrap(reccmp.color.Fore.LIGHTBLACK_EX), f"{offset:>10}"]
 
     name_chunk = [
         ": " if c.name else "  ",
-        ansi_wrap(colorama.Fore.WHITE),
+        ansi_wrap(reccmp.color.Fore.WHITE),
         f"{c.name if c.name else '':30}",
     ]
 
     value_a, value_b = c.values
-    values_chunk = [ansi_wrap(colorama.Fore.LIGHTWHITE_EX), value_a]
+    values_chunk = [ansi_wrap(reccmp.color.Fore.LIGHTWHITE_EX), value_a]
     if not c.match:
-        values_chunk.extend([" : ", ansi_wrap(colorama.Fore.LIGHTBLACK_EX), value_b])
+        values_chunk.extend(
+            [" : ", ansi_wrap(reccmp.color.Fore.LIGHTBLACK_EX), value_b]
+        )
 
     return " ".join(
         [
             "".join(header_chunk),
             "".join(name_chunk),
             "".join(values_chunk),
-            ansi_wrap(colorama.Style.RESET_ALL),
+            ansi_wrap(reccmp.color.Style.RESET_ALL),
         ]
     )
 
