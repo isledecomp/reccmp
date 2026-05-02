@@ -31,6 +31,10 @@ class ReccmpComparedEntity:
     # Legacy field for importing version 1 files (aggregate).
     udiff: CombinedDiffOutput | None = None
 
+    @property
+    def effective_accuracy(self) -> float:
+        return 1.0 if self.is_effective_match else self.accuracy
+
 
 class ReccmpStatusReport:
     # The filename of the original binary.
@@ -65,6 +69,54 @@ class ReccmpStatusReport:
     def has_same_source(self, other: "ReccmpStatusReport") -> bool:
         """Were both reports derived from the same reccmp target?"""
         return self.filename.lower() == other.filename.lower()
+
+
+def report_function_alignment(report: ReccmpStatusReport) -> int:
+    """Report the count of all (non-contiguous) functions where
+    the address is the same in both binaries."""
+    count = 0
+    for ent in report.entities.values():
+        if ent.type == EntityType.FUNCTION and ent.orig_addr == ent.recomp_addr:
+            count += 1
+
+    return count
+
+
+def report_function_accuracy(report: ReccmpStatusReport) -> tuple[int, float, float]:
+    """Collects the accuracy and effective accuracy of all compared functions in the report.
+    Returns (function_count, total_accuracy, total_effective_accuracy).
+    Stubs are not compared so they are excluded.
+    The accuracy scores are raw score values. Divide by the function_count to get the percentage.
+    """
+    function_count = 0
+    total_accuracy = 0.0
+    total_effective_accuracy = 0.0
+
+    for ent in report.entities.values():
+        if ent.type == EntityType.FUNCTION and not ent.is_stub:
+            function_count += 1
+            total_accuracy += ent.accuracy
+            total_effective_accuracy += ent.effective_accuracy
+
+    return (function_count, total_accuracy, total_effective_accuracy)
+
+
+def report_progress_stats(report: ReccmpStatusReport) -> tuple[int, float]:
+    """Count comparable functions in the report and sum their effective-match accuracy.
+
+    Returns (implemented_funcs, raw_accuracy). Stubs and non-FUNCTION entities are excluded.
+    Entities with no recorded type (older reports that did not serialize the field) are
+    treated as functions to preserve backward-compatible behavior."""
+    implemented = 0
+    raw_accuracy = 0.0
+    for entity in report.entities.values():
+        if entity.is_stub:
+            continue
+        if entity.type is not None and entity.type != EntityType.FUNCTION:
+            continue
+        implemented += 1
+        raw_accuracy += entity.effective_accuracy
+    return implemented, raw_accuracy
 
 
 def _get_entity_for_addr(

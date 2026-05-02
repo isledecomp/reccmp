@@ -12,6 +12,9 @@ from reccmp.compare.report import (
     ReccmpComparedEntity,
     deserialize_reccmp_report,
     serialize_reccmp_report,
+    report_function_alignment,
+    report_function_accuracy,
+    report_progress_stats,
 )
 from reccmp.types import EntityType, ImageId
 from reccmp.cvdump import CvdumpAnalysis
@@ -39,7 +42,7 @@ def to_report(compare: Compare) -> ReccmpStatusReport:
             orig_addr=orig_addr,
             name=match.name,
             type=match.match_type,
-            accuracy=match.effective_ratio,
+            accuracy=match.ratio,
             recomp_addr=recomp_addr,
             is_effective_match=match.is_effective_match,
             is_stub=match.is_stub,
@@ -254,7 +257,9 @@ def test_compare_function_effective_match():
 
     e = report.entities["0x0"]
     assert e is not None
-    assert e.accuracy == 1.0
+    # Should retain non-effective accuracy.
+    assert e.accuracy != 1.0
+    assert e.effective_accuracy == 1.0
     assert e.is_effective_match is True
 
     udiff = get_udiff(e)
@@ -451,3 +456,136 @@ def test_aggregate_workflow():
     # We should be able to serialize with and without diff data.
     serialize_reccmp_report(report, diff_included=False)
     serialize_reccmp_report(report, diff_included=True)
+
+
+def test_report_function_alignment():
+    def test_entity(
+        orig_addr: int, recomp_addr: int, entity_type: EntityType
+    ) -> tuple[str, ReccmpComparedEntity]:
+        return (
+            hex(orig_addr),
+            ReccmpComparedEntity(
+                orig_addr=hex(orig_addr),
+                recomp_addr=hex(recomp_addr),
+                name="hello",
+                accuracy=1.0,
+                type=entity_type,
+            ),
+        )
+
+    report = ReccmpStatusReport(filename="test")
+
+    # Baseline
+    report.entities = {}
+    assert report_function_alignment(report) == 0
+
+    # Non-contiguous alignment allowed
+    report.entities = dict(
+        [
+            test_entity(0, 0, EntityType.FUNCTION),
+            test_entity(1, 4, EntityType.FUNCTION),
+            test_entity(5, 5, EntityType.FUNCTION),
+        ]
+    )
+    assert report_function_alignment(report) == 2
+
+    # Vtables ignored
+    report.entities = dict(
+        [
+            test_entity(0, 0, EntityType.FUNCTION),
+            test_entity(5, 5, EntityType.VTABLE),
+        ]
+    )
+    assert report_function_alignment(report) == 1
+
+
+def test_report_function_accuracy():
+    """report_function_accuracy and report_progress_stats are similar, so test both here to save space."""
+
+    def test_entity(
+        addr: int,
+        entity_type: EntityType | None,
+        accuracy: float,
+        *,
+        effective: bool = False,
+        stub: bool = False,
+    ) -> tuple[str, ReccmpComparedEntity]:
+        return (
+            hex(addr),
+            ReccmpComparedEntity(
+                orig_addr=hex(addr),
+                recomp_addr=hex(addr),
+                name="hello",
+                accuracy=accuracy,
+                type=entity_type,
+                is_stub=stub,
+                is_effective_match=effective,
+            ),
+        )
+
+    report = ReccmpStatusReport(filename="test")
+
+    # Baseline
+    report.entities = {}
+    assert report_function_accuracy(report) == (0, 0, 0)
+    assert report_progress_stats(report) == (0, 0)
+
+    # All matching
+    report.entities = dict(
+        [
+            test_entity(0, EntityType.FUNCTION, 1.0),
+            test_entity(1, EntityType.FUNCTION, 1.0),
+        ]
+    )
+    assert report_function_accuracy(report) == (2, 2.0, 2.0)
+    assert report_progress_stats(report) == (2, 2.0)
+
+    # Some diffs
+    report.entities = dict(
+        [
+            test_entity(0, EntityType.FUNCTION, 1.0),
+            test_entity(1, EntityType.FUNCTION, 0.5),
+        ]
+    )
+    assert report_function_accuracy(report) == (2, 1.5, 1.5)
+    assert report_progress_stats(report) == (2, 1.5)
+
+    # Effective match
+    report.entities = dict(
+        [
+            test_entity(0, EntityType.FUNCTION, 1.0),
+            test_entity(1, EntityType.FUNCTION, 0.5, effective=True),
+        ]
+    )
+    assert report_function_accuracy(report) == (2, 1.5, 2.0)
+    assert report_progress_stats(report) == (2, 2.0)
+
+    # Stubs ignored
+    report.entities = dict(
+        [
+            test_entity(0, EntityType.FUNCTION, 0.8),
+            test_entity(1, EntityType.FUNCTION, 0.5, stub=True),
+        ]
+    )
+    assert report_function_accuracy(report) == (1, 0.8, 0.8)
+    assert report_progress_stats(report) == (1, 0.8)
+
+    # Vtables ignored
+    report.entities = dict(
+        [
+            test_entity(0, EntityType.VTABLE, 1.0),
+        ]
+    )
+    assert report_function_accuracy(report) == (0, 0, 0)
+    assert report_progress_stats(report) == (0, 0)
+
+    # Progress stats assumes type=None is a function.
+    # This is to preserve compatibility with files that existed before #392.
+    report.entities = dict(
+        [
+            test_entity(0, EntityType.FUNCTION, 1.0),
+            test_entity(1, None, 0.5),
+        ]
+    )
+    assert report_function_accuracy(report) == (1, 1.0, 1.0)
+    assert report_progress_stats(report) == (2, 1.5)
