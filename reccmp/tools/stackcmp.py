@@ -7,6 +7,7 @@ from typing import NamedTuple, Sequence
 
 import colorama
 import reccmp
+import reccmp.color
 from reccmp.compare import Compare
 from reccmp.compare.diff import (
     CombinedDiffOutput,
@@ -28,10 +29,10 @@ logger = logging.getLogger(__name__)
 
 colorama.just_fix_windows_console()
 
-CHECK_ICON = f"{colorama.Fore.GREEN}✓{colorama.Style.RESET_ALL}"
-SWAP_ICON = f"{colorama.Fore.YELLOW}⇄{colorama.Style.RESET_ALL}"
-ERROR_ICON = f"{colorama.Fore.RED}✗{colorama.Style.RESET_ALL}"
-UNCLEAR_ICON = f"{colorama.Fore.BLUE}?{colorama.Style.RESET_ALL}"
+CHECK_ICON = f"{reccmp.color.Fore.GREEN}✓{reccmp.color.Style.RESET_ALL}"
+SWAP_ICON = f"{reccmp.color.Fore.YELLOW}⇄{reccmp.color.Style.RESET_ALL}"
+ERROR_ICON = f"{reccmp.color.Fore.RED}✗{reccmp.color.Style.RESET_ALL}"
+UNCLEAR_ICON = f"{reccmp.color.Fore.BLUE}?{reccmp.color.Style.RESET_ALL}"
 
 
 STACK_ENTRY_REGEX = re.compile(
@@ -160,7 +161,7 @@ def analyze_diff(diff: MatchingOrMismatchingBlock, warnings: Warnings) -> StackP
 
 def print_bijective_match(left: str, right: str, exact: bool):
     icon = CHECK_ICON if exact else SWAP_ICON
-    print(f"{icon}{colorama.Style.RESET_ALL}  {left}: {right}")
+    print(f"{icon}{reccmp.color.Style.RESET_ALL}  {left}: {right}")
 
 
 def print_non_bijective_match(left: str, right: str):
@@ -172,7 +173,7 @@ def print_structural_mismatch(
 ) -> str:
     orig_str = "\n".join(f"-{x[1]}" for x in orig) if orig else "-"
     recomp_str = "\n".join(f"+{x[1]}" for x in recomp) if recomp else "+"
-    return f"{colorama.Fore.RED}{orig_str}\n{colorama.Fore.GREEN}{recomp_str}\n{colorama.Style.RESET_ALL}"
+    return f"{reccmp.color.Fore.RED}{orig_str}\n{reccmp.color.Fore.GREEN}{recomp_str}\n{reccmp.color.Style.RESET_ALL}"
 
 
 def format_list_of_offsets(offsets: list[StackRegisterOffset]) -> str:
