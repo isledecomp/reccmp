@@ -64,7 +64,7 @@ def print_match_verbose(
         ok_text = (
             "OK!"
             if is_plain
-            else (colorama.Fore.GREEN + "✨ OK! ✨" + colorama.Style.RESET_ALL)
+            else (reccmp.color.Fore.GREEN + "✨ OK! ✨" + reccmp.color.Style.RESET_ALL)
         )
         if match.ratio == 1.0:
             print(f"{addrs}: {match.name} 100% match.\n\n{ok_text}\n\n")

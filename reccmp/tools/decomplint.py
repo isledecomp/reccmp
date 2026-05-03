@@ -6,6 +6,7 @@ from pathlib import Path, PurePath
 from typing import Iterable
 import colorama
 import reccmp
+import reccmp.color
 from reccmp.dir import source_code_search
 from reccmp.parser import DecompLinter
 from reccmp.parser.error import ParserAlert
@@ -21,29 +22,29 @@ colorama.just_fix_windows_console()
 def display_errors(alerts: Iterable[ParserAlert], filename: PurePath):
     sorted_alerts = sorted(alerts, key=lambda a: a.line_number)
 
-    print(colorama.Fore.LIGHTWHITE_EX, end="")
+    print(reccmp.color.Fore.LIGHTWHITE_EX, end="")
     print(filename)
 
     for alert in sorted_alerts:
         error_type = (
-            f"{colorama.Fore.RED}error: "
+            f"{reccmp.color.Fore.RED}error: "
             if alert.is_error()
-            else f"{colorama.Fore.YELLOW}warning: "
+            else f"{reccmp.color.Fore.YELLOW}warning: "
         )
         components = [
             "  ",
-            colorama.Fore.LIGHTWHITE_EX,
+            reccmp.color.Fore.LIGHTWHITE_EX,
             f"{alert.line_number:4}",
             " : ",
             " ",
             error_type,
-            colorama.Fore.LIGHTWHITE_EX,
+            reccmp.color.Fore.LIGHTWHITE_EX,
             alert.code.name.lower(),
         ]
         print("".join(components), end="")
 
         if alert.line is not None:
-            print(f"{colorama.Fore.WHITE}  {alert.line}", end="")
+            print(f"{reccmp.color.Fore.WHITE}  {alert.line}", end="")
 
         print()
 

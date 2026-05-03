@@ -2,9 +2,9 @@ import base64
 from datetime import datetime
 from typing import Iterable, Iterator
 import logging
-import colorama
 from pystache import Renderer  # type: ignore[import-untyped]
 from reccmp.assets import get_asset_file
+import reccmp.color
 from reccmp.compare.report import (
     ReccmpStatusReport,
     ReccmpComparedEntity,
@@ -149,10 +149,10 @@ def print_combined_diff(udiff, plain: bool = False, show_both: bool = False):
             print("+++")
             print(slug)
         else:
-            print(f"{colorama.Fore.RED}---")
-            print(f"{colorama.Fore.GREEN}+++")
-            print(f"{colorama.Fore.BLUE}{slug}")
-            print(colorama.Style.RESET_ALL, end="")
+            print(f"{reccmp.color.Fore.RED}---")
+            print(f"{reccmp.color.Fore.GREEN}+++")
+            print(f"{reccmp.color.Fore.BLUE}{slug}")
+            print(reccmp.color.Style.RESET_ALL, end="")
 
         for subgroup in subgroups:
             equal = subgroup.get("both") is not None
@@ -175,7 +175,7 @@ def print_combined_diff(udiff, plain: bool = False, show_both: bool = False):
                         print(f"{addr_prefix} : -{line}")
                     else:
                         print(
-                            f"{addr_prefix} : {colorama.Fore.RED}-{line}{colorama.Style.RESET_ALL}"
+                            f"{addr_prefix} : {reccmp.color.Fore.RED}-{line}{reccmp.color.Style.RESET_ALL}"
                         )
 
                 for recomp_addr, line in subgroup["recomp"]:
@@ -190,7 +190,7 @@ def print_combined_diff(udiff, plain: bool = False, show_both: bool = False):
                         print(f"{addr_prefix} : +{line}")
                     else:
                         print(
-                            f"{addr_prefix} : {colorama.Fore.GREEN}+{line}{colorama.Style.RESET_ALL}"
+                            f"{addr_prefix} : {reccmp.color.Fore.GREEN}+{line}{reccmp.color.Style.RESET_ALL}"
                         )
 
         # Newline between each diff subgroup.
@@ -212,24 +212,24 @@ def print_diff(udiff, plain):
         # Work out color if we are printing color
         if not plain:
             if line.startswith("+"):
-                color = colorama.Fore.GREEN
+                color = reccmp.color.Fore.GREEN
             elif line.startswith("-"):
-                color = colorama.Fore.RED
+                color = reccmp.color.Fore.RED
         print(color + line)
         # Reset color if we're printing in color
         if not plain:
-            print(colorama.Style.RESET_ALL, end="")
+            print(reccmp.color.Style.RESET_ALL, end="")
     return has_diff
 
 
 def get_percent_color(value: float) -> str:
     """Return colorama ANSI escape character for the given decimal value."""
     if value == 1.0:
-        return colorama.Fore.GREEN
+        return reccmp.color.Fore.GREEN
     if value > 0.8:
-        return colorama.Fore.YELLOW
+        return reccmp.color.Fore.YELLOW
 
-    return colorama.Fore.RED
+    return reccmp.color.Fore.RED
 
 
 def percent_string(
@@ -249,9 +249,9 @@ def percent_string(
         [
             get_percent_color(ratio),
             percenttext,
-            colorama.Fore.RED if is_effective else "",
+            reccmp.color.Fore.RED if is_effective else "",
             effective_star,
-            colorama.Style.RESET_ALL,
+            reccmp.color.Style.RESET_ALL,
         ]
     )
 
