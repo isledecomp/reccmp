@@ -35,19 +35,7 @@ def to_report(compare: Compare) -> ReccmpStatusReport:
     The goal is to see the state of the data after serialization."""
     report = ReccmpStatusReport(filename=compare.target_id)
     for match in compare.compare_all():
-        orig_addr = f"0x{match.orig_addr:x}"
-        recomp_addr = f"0x{match.recomp_addr:x}"
-
-        report.entities[orig_addr] = ReccmpComparedEntity(
-            orig_addr=orig_addr,
-            name=match.name,
-            type=match.match_type,
-            accuracy=match.ratio,
-            recomp_addr=recomp_addr,
-            is_effective_match=match.is_effective_match,
-            is_stub=match.is_stub,
-            rdiff=match.result.diff,
-        )
+        report.add_match(match)
 
     json_text = serialize_reccmp_report(report, diff_included=True)
     return deserialize_reccmp_report(json_text)

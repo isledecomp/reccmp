@@ -264,22 +264,8 @@ def main():
     # Build report:
     for match in compared:
         # if we are ignoring this function, skip to next one and don't add it to the entities list
-        if not should_include_match(match):
-            continue
-
-        orig_addr = f"0x{match.orig_addr:x}"
-        recomp_addr = f"0x{match.recomp_addr:x}"
-
-        report.entities[orig_addr] = ReccmpComparedEntity(
-            orig_addr=orig_addr,
-            name=match.name,
-            type=match.match_type,
-            accuracy=match.effective_ratio,
-            recomp_addr=recomp_addr,
-            is_effective_match=match.is_effective_match,
-            is_stub=match.is_stub,
-            rdiff=match.result.diff,
-        )
+        if should_include_match(match):
+            report.add_match(match)
 
     # Count how many functions have the same virtual address in orig and recomp.
     functions_aligned_count = report_function_alignment(report)

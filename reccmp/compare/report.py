@@ -4,7 +4,7 @@ from typing import Literal, Iterable, Iterator
 from pydantic import BaseModel, ValidationError
 from pydantic_core import from_json
 from reccmp.types import EntityType
-from .diff import CombinedDiffOutput, RawDiffOutput, raw_diff_to_udiff
+from .diff import CombinedDiffOutput, DiffReport, RawDiffOutput, raw_diff_to_udiff
 
 
 class ReccmpReportDeserializeError(Exception):
@@ -65,6 +65,21 @@ class ReccmpStatusReport:
             self.timestamp = datetime.now().replace(microsecond=0)
 
         self.entities = {}
+
+    def add_match(self, match: DiffReport):
+        orig_addr = f"0x{match.orig_addr:x}"
+        recomp_addr = f"0x{match.recomp_addr:x}"
+
+        self.entities[orig_addr] = ReccmpComparedEntity(
+            orig_addr=orig_addr,
+            name=match.name,
+            type=match.match_type,
+            accuracy=match.ratio,
+            recomp_addr=recomp_addr,
+            is_effective_match=match.is_effective_match,
+            is_stub=match.is_stub,
+            rdiff=match.result.diff,
+        )
 
     def has_same_source(self, other: "ReccmpStatusReport") -> bool:
         """Were both reports derived from the same reccmp target?"""
