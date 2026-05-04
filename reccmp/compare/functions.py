@@ -145,9 +145,9 @@ class FunctionComparator:
 
         if orig_size is None:
             assert recomp_size is not None
-            next_orig = self.db.get_next_orig_addr(match.orig_addr)
-            if next_orig is not None:
-                orig_size = min(next_orig - match.orig_addr, recomp_size)
+            orig_max = match.max_size(ImageId.ORIG)
+            if orig_max is not None:
+                orig_size = min(orig_max, recomp_size)
             else:
                 orig_size = recomp_size
 

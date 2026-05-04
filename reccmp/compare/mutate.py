@@ -16,6 +16,47 @@ from .queries import get_overloaded_functions, get_named_thunks
 logger = logging.getLogger(__name__)
 
 
+def set_max_size(db: EntityDb, image_id: ImageId):
+    """In each section/segment of the image, for compared entities without a size value,
+    calculate the distance between the entity and the compared entity that follows."""
+    assert image_id in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
+
+    # Compared entity types: all kinds of function, vtable and variable.
+    measured_types = (
+        EntityType.FUNCTION,
+        EntityType.VTABLE,
+        EntityType.DATA,
+        EntityType.IMPORT_THUNK,
+        EntityType.THUNK,
+        EntityType.VTORDISP,
+    )
+
+    with db.batch() as batch:
+        for range_ in db.sections(image_id):
+            last_addr = None
+
+            for ent in db.all_in_range(image_id, range_):
+                this_type = ent.get("type")
+                if this_type not in measured_types:
+                    continue
+
+                this_addr = ent.addr(image_id)
+                assert this_addr is not None
+
+                if last_addr is not None:
+                    batch.set(image_id, last_addr, max_size=this_addr - last_addr)
+                    last_addr = None
+
+                # Only measure entities with no set size
+                if last_addr is None and ent.size(image_id) is None:
+                    if this_type in measured_types:
+                        last_addr = this_addr
+
+            # Measured against the end of the section/image.
+            if last_addr is not None:
+                batch.set(image_id, last_addr, max_size=range_.stop - last_addr)
+
+
 def match_array_elements(db: EntityDb, types: CvdumpTypesParser):
     """
     For each matched variable, check whether it is an array.
@@ -90,15 +131,14 @@ def match_array_elements(db: EntityDb, types: CvdumpTypesParser):
         # If this happens we can still add all the recomp offsets, but do not attach the orig address
         # where it would extend into the next variable.
         upper_bound = match.orig_addr + match.any_size()
-        if (
-            next_orig := db.get_next_orig_addr(match.orig_addr)
-        ) is not None and next_orig < upper_bound:
+        orig_max = match.max_size(ImageId.ORIG)
+        if orig_max is not None and orig_max < match.any_size():
             logger.warning(
                 "Array variable %s at 0x%x is larger in recomp",
                 match.name,
                 match.orig_addr,
             )
-            upper_bound = next_orig
+            upper_bound = match.orig_addr + orig_max
 
         array_element_type = types.get(array_type_key)
 

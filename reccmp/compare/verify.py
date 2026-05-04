@@ -5,7 +5,7 @@ These functions report problems with the current entities that limit or block fu
 import logging
 import struct
 from reccmp.formats.pe import PEImage
-from reccmp.types import EntityType
+from reccmp.types import EntityType, ImageId
 from .db import EntityDb
 
 logger = logging.getLogger(__name__)
@@ -24,13 +24,8 @@ def check_vtables(db: EntityDb, orig_bin: PEImage):
             and match.recomp_addr is not None
         )
 
-        next_orig = db.get_next_orig_addr(match.orig_addr)
-        if next_orig is None:
-            # this vtable is the last annotation in the project
-            continue
-
-        orig_size_upper_limit = next_orig - match.orig_addr
-        if orig_size_upper_limit < match.any_size():
+        orig_max = match.max_size(ImageId.ORIG)
+        if orig_max is not None and orig_max < match.any_size():
             logger.warning(
                 "Recomp vtable is larger than orig vtable for %s",
                 match.name,
@@ -39,7 +34,7 @@ def check_vtables(db: EntityDb, orig_bin: PEImage):
 
         # TODO: We might want to fix this at the source (cvdump) instead.
         # Any problem will be logged later when we compare the vtable.
-        vtable_size = 4 * (min(match.any_size(), orig_size_upper_limit) // 4)
+        vtable_size = 4 * (match.any_size() // 4)
         orig_table = orig_bin.read(match.orig_addr, vtable_size)
 
         # Check for a gap (null pointer) in the orig vtable.
