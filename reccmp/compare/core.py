@@ -176,13 +176,14 @@ class Compare:
             complete_partial_strings(self._db, img_id, binfile, self.bin_encoding)
             import_sections(self._db, img_id, binfile)
 
+        match_imports(self._db)
+        match_exports(self._db, self.orig_bin, self.recomp_bin)
+
         for img_id in (ImageId.ORIG, ImageId.RECOMP):
             set_max_size(self._db, img_id)
 
         match_array_elements(self._db, self.types)
 
-        match_imports(self._db)
-        match_exports(self._db, self.orig_bin, self.recomp_bin)
         check_vtables(self._db, self.orig_bin)
         match_ref(self._db, self.report)
         unique_names_for_overloaded_functions(self._db)
