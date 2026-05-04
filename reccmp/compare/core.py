@@ -329,14 +329,6 @@ class Compare:
 
         assert match.entity_type is not None
         assert match.name is not None
-        if match.get("stub", False):
-            return DiffReport(
-                match_type=EntityType(match.entity_type),
-                orig_addr=match.orig_addr,
-                recomp_addr=match.recomp_addr,
-                name=match.name,
-                is_stub=True,
-            )
 
         # We only compare certain entity types in reccmp-asmcmp:
         if match.entity_type in (EntityType.FUNCTION, EntityType.VTORDISP):
@@ -362,6 +354,7 @@ class Compare:
             name=best_name,
             result=result,
             is_library=match.get("library", False),
+            is_stub=match.get("stub", False),
         )
 
     ## Public API

@@ -180,9 +180,10 @@ def test_compare_function():
 
 
 def test_compare_function_stub():
-    """Diff report is omitted for stubs."""
+    """Diff report is now INCLUDED for stubs.
+    The distinction is that stubs are excluded from the total accuracy calculation."""
     orig_bin = RawImage.from_memory(b"\x90")  # nop
-    recomp_bin = RawImage.from_memory(b"\x90")
+    recomp_bin = RawImage.from_memory(b"\xc3")  # ret
 
     pdb = Mock(spec=CvdumpAnalysis)
     compare = Compare(orig_bin, recomp_bin, pdb, "HELLO")
@@ -201,9 +202,13 @@ def test_compare_function_stub():
     assert e.accuracy == 0.0
     assert e.is_stub is True
 
-    # No diff generated for a stub
     udiff = get_udiff(e)
-    assert udiff is None
+    assert udiff == [
+        (
+            "@@ -0x0,1 +0x0,1 @@",
+            [{"orig": [("0x0", "nop ")], "recomp": [("0x0", "ret ")]}],
+        )
+    ]
 
 
 def test_compare_function_diff():
