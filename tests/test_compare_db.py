@@ -402,58 +402,22 @@ def test_generic_get_invalid_id(db: EntityDb):
         db.get(2, 100)  # type: ignore
 
 
-def test_get_next_orig_addr(db: EntityDb):
-    """Should return the address of the entity from
-    the orig address space after the given address."""
+@pytest.mark.parametrize("image_id", ImageId)
+def test_get_all_in_range(db: EntityDb, image_id: ImageId):
+    """Demonstrate how all_in_range() returns entities."""
     with db.batch() as batch:
-        batch.set(ImageId.ORIG, 100, type=EntityType.FUNCTION)
-        batch.set(ImageId.ORIG, 200, type=EntityType.FUNCTION)
+        batch.set(image_id, 100, type=EntityType.FUNCTION)
+        batch.set(image_id, 200, type=EntityType.FUNCTION)
 
-    # The value does not need to contain an entity itself
-    assert db.get_next_orig_addr(0) == 100
+    def checker(img: ImageId, range_: range) -> tuple[int | None, ...]:
+        return tuple(ent.addr(img) for ent in db.all_in_range(img, range_))
 
-    # Always return the following address, even if the one provided is an entity
-    assert db.get_next_orig_addr(100) == 200
+    assert checker(image_id, range(300)) == (100, 200)
 
-    # Addresses following the final entity return None
-    assert db.get_next_orig_addr(200) is None
-
-
-def test_get_next_orig_addr_any_type(db: EntityDb):
-    """Demonstrate that the function works with all entity types (not just functions)."""
-    with db.batch() as batch:
-        batch.set(ImageId.ORIG, 100, type=EntityType.STRING)
-        batch.set(ImageId.ORIG, 200, type=EntityType.DATA)
-
-    assert db.get_next_orig_addr(0) == 100
-    assert db.get_next_orig_addr(100) == 200
-    assert db.get_next_orig_addr(200) is None
-
-
-def test_get_next_orig_addr_no_type(db: EntityDb):
-    """Skip entities without a type."""
-    with db.batch() as batch:
-        batch.set(ImageId.ORIG, 100, type=EntityType.FUNCTION)
-        batch.set(ImageId.ORIG, 150)
-        batch.set(ImageId.ORIG, 200, type=EntityType.FUNCTION)
-
-    assert db.get_next_orig_addr(100) == 200
-    assert db.get_next_orig_addr(150) == 200
-
-
-def test_get_next_orig_addr_function_passenger_type(db: EntityDb):
-    """Skip entities with the LINE or LABEL types.
-    These entities appear inside of other entities (i.e. functions)
-    If we did not skip them, our estimate on function size will be too small."""
-    with db.batch() as batch:
-        batch.set(ImageId.ORIG, 100, type=EntityType.FUNCTION)
-        batch.set(ImageId.ORIG, 150, type=EntityType.LINE)
-        batch.set(ImageId.ORIG, 160, type=EntityType.LABEL)
-        batch.set(ImageId.ORIG, 200, type=EntityType.FUNCTION)
-
-    assert db.get_next_orig_addr(100) == 200
-    assert db.get_next_orig_addr(150) == 200
-    assert db.get_next_orig_addr(160) == 200
+    # Range is inclusive on both ends.
+    assert checker(image_id, range(100, 200)) == (100, 200)
+    assert checker(image_id, range(101, 200)) == (200,)
+    assert checker(image_id, range(101, 199)) == tuple()
 
 
 @pytest.mark.parametrize(

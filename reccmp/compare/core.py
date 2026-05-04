@@ -45,6 +45,7 @@ from .analyze import (
     complete_partial_strings,
     match_entry,
     match_exports,
+    import_sections,
 )
 from .ingest import (
     load_cvdump,
@@ -57,6 +58,7 @@ from .mutate import (
     match_array_elements,
     name_thunks,
     unique_names_for_overloaded_functions,
+    set_max_size,
 )
 from .verify import (
     check_vtables,
@@ -158,7 +160,6 @@ class Compare:
         match_variables(self._db, self.report)
         match_lines(self._db, self._lines_db, self.report)
 
-        match_array_elements(self._db, self.types)
         # Detect floats first to eliminate potential overlap with string data
         for img_id, binfile in (
             (ImageId.ORIG, self.orig_bin),
@@ -173,9 +174,16 @@ class Compare:
             create_analysis_vtordisps(self._db, img_id, binfile)
             complete_partial_floats(self._db, img_id, binfile)
             complete_partial_strings(self._db, img_id, binfile, self.bin_encoding)
+            import_sections(self._db, img_id, binfile)
 
         match_imports(self._db)
         match_exports(self._db, self.orig_bin, self.recomp_bin)
+
+        for img_id in (ImageId.ORIG, ImageId.RECOMP):
+            set_max_size(self._db, img_id)
+
+        match_array_elements(self._db, self.types)
+
         check_vtables(self._db, self.orig_bin)
         match_ref(self._db, self.report)
         unique_names_for_overloaded_functions(self._db)

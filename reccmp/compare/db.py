@@ -67,6 +67,15 @@ class ReccmpEntity:
     def name(self) -> str | None:
         return self._kvstore.get("name")
 
+    def max_size(self, image_id: ImageId) -> int | None:
+        if image_id == ImageId.RECOMP:
+            return self._kvstore.get("recomp_max_size")
+
+        if image_id == ImageId.ORIG:
+            return self._kvstore.get("orig_max_size")
+
+        assert False, "Invalid image id"
+
     def any_size(self, image_id: ImageId = ImageId.RECOMP) -> int:
         """Returns any size for this entity: the returned value cannot be null.
         Prefer to return the size attribute for the provided ImageId if it exists.
@@ -152,7 +161,6 @@ class ReccmpMatch(ReccmpEntity):
 logger = logging.getLogger(__name__)
 
 
-# pylint: disable=too-many-instance-attributes
 class EntityBatch:
     base: "EntityDb"
 
@@ -172,12 +180,14 @@ class EntityBatch:
         self._recomp.clear()
         self._matches.clear()
 
+    # pylint: disable=too-many-positional-arguments
     def set(
         self,
         img: ImageId,
         addr: int,
         ref: int | None = None,
         size: int | None = None,
+        max_size: int | None = None,
         **kwargs,
     ):
         assert img in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
@@ -187,6 +197,11 @@ class EntityBatch:
 
         if size is not None:
             kwargs["orig_size" if img == ImageId.ORIG else "recomp_size"] = size
+
+        if max_size is not None:
+            kwargs["orig_max_size" if img == ImageId.ORIG else "recomp_max_size"] = (
+                max_size
+            )
 
         if img == ImageId.ORIG:
             self._orig.setdefault(addr, {}).update(kwargs)
@@ -257,6 +272,7 @@ class EntityDb:
     _matches: dict[ImageId, dict[int, int]]
     _addr_set: dict[ImageId, set[int]]
     _addr_order: dict[ImageId, list[int]]
+    _sections: dict[ImageId, list[range]]
 
     def __init__(self):
         self._entities = {ImageId.ORIG: {}, ImageId.RECOMP: {}}
@@ -264,6 +280,8 @@ class EntityDb:
 
         self._addr_set = {ImageId.ORIG: set(), ImageId.RECOMP: set()}
         self._addr_order = {ImageId.ORIG: [], ImageId.RECOMP: []}
+
+        self._sections = {ImageId.ORIG: [], ImageId.RECOMP: []}
 
     def batch(self) -> EntityBatch:
         return EntityBatch(self)
@@ -342,6 +360,12 @@ class EntityDb:
         self._update_addr_index(ImageId.ORIG, new_x)
         self._update_addr_index(ImageId.RECOMP, new_y)
 
+    def add_section(self, img: ImageId, range_: range):
+        self._sections[img].append(range_)
+
+    def sections(self, img: ImageId) -> Iterator[range]:
+        yield from self._sections[img]
+
     def all(self, img: ImageId) -> Iterator[ReccmpEntity]:
         """Iterate entities in order for the given the address space."""
         assert img in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
@@ -349,6 +373,19 @@ class EntityDb:
         entities = self._entities[img]
 
         for addr in self._addr_order[img]:
+            if addr in entities:
+                yield entities[addr]
+
+    def all_in_range(self, img: ImageId, range_: range) -> Iterator[ReccmpEntity]:
+        assert img in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
+
+        addrs = self._addr_order[img]
+        entities = self._entities[img]
+
+        i = bisect.bisect_left(addrs, range_.start)
+        j = bisect.bisect_right(addrs, range_.stop)
+
+        for addr in addrs[i:j]:
             if addr in entities:
                 yield entities[addr]
 
@@ -464,25 +501,3 @@ class EntityDb:
 
     def is_match(self, orig_addr: int, recomp_addr: int) -> bool:
         return self._matches[ImageId.ORIG].get(orig_addr) == recomp_addr
-
-    def get_next_orig_addr(self, addr: int) -> int | None:
-        """Return the original address (matched or not) that follows
-        the one given. If our recomp function size would cause us to read
-        too many bytes for the original function, we can adjust it.
-        Skips LINE and LABEL type entities since these these are always contained
-        within functions.
-        """
-        addrs = self._addr_order[ImageId.ORIG]
-        i = bisect.bisect_left(addrs, addr)
-        for next_addr in addrs[i:]:
-            ent = self._entities[ImageId.ORIG][next_addr]
-
-            if (
-                next_addr > addr
-                and ent
-                and ent.get("type")
-                and ent.get("type") not in (EntityType.LINE, EntityType.LABEL)
-            ):
-                return next_addr
-
-        return None

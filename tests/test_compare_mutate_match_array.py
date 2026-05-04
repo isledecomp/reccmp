@@ -206,6 +206,9 @@ def test_match_array_type_orig_smaller(db: EntityDb, types_db: CvdumpTypesParser
             data_type=0x1000,
             size=8,
         )
+        # Set the max size (i.e. distance to "blocker" entity) manually.
+        # It was previously calculated inside match_array_elements.
+        batch.set(ImageId.ORIG, 100, max_size=4)
         batch.set(ImageId.ORIG, 104, name="blocker", type=EntityType.DATA)
         batch.match(100, 100)
 
