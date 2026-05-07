@@ -1,4 +1,3 @@
-from datetime import datetime
 from dataclasses import dataclass
 from functools import cache
 import struct
@@ -20,10 +19,6 @@ from reccmp.formats.exceptions import (
 )
 from reccmp.formats import Image, PEImage
 from reccmp.types import ImageId
-
-
-def timestamp_string() -> str:
-    return datetime.now().strftime("%Y%m%d-%H%M%S")
 
 
 def has_asserts(image: Image) -> bool:
@@ -86,8 +81,6 @@ class FunctionComparator:
     orig_bin: Image
     recomp_bin: Image
     report: ReccmpReportProtocol
-    runid: str = timestamp_string()
-    debug: bool = False
     is_32bit: bool = True
 
     def __post_init__(self):
@@ -111,22 +104,6 @@ class FunctionComparator:
             ),
             is_32bit=self.is_32bit,
         )
-
-    def _dump_asm(self, orig_combined, recomp_combined):
-        """Append the provided assembly output to the debug files"""
-        with open(f"reccmp-{self.runid}-orig.txt", "a", encoding="utf-8") as f:
-            for addr, line in orig_combined:
-                if addr:
-                    f.write(f"{addr:8x}: {line}\n")
-                else:
-                    f.write(f"        : {line}\n")
-
-        with open(f"reccmp-{self.runid}-recomp.txt", "a", encoding="utf-8") as f:
-            for addr, line in recomp_combined:
-                if addr:
-                    f.write(f"{addr:8x}: {line}\n")
-                else:
-                    f.write(f"        : {line}\n")
 
     def _source_ref_of_recomp_addr(self, recomp_addr: int | None) -> str | None:
         if recomp_addr is None:
@@ -173,9 +150,6 @@ class FunctionComparator:
 
         orig_combined = self.orig_sanitize.parse_asm(orig_raw, match.orig_addr)
         recomp_combined = self.recomp_sanitize.parse_asm(recomp_raw, match.recomp_addr)
-
-        if self.debug:
-            self._dump_asm(orig_combined, recomp_combined)
 
         # Check for assert calls only if we expect to find them
         if has_asserts(self.orig_bin):
