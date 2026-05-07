@@ -353,6 +353,14 @@ class Compare:
 
     ## Public API
 
+    def count_unmatched_functions(self) -> int:
+        """Count known but unmatched functions in orig."""
+        return sum(
+            1
+            for ent in self._db.unmatched(ImageId.ORIG)
+            if ent.get("type") == EntityType.FUNCTION
+        )
+
     def get_all(self) -> Iterator[ReccmpEntity]:
         return self._db.get_all()
 
