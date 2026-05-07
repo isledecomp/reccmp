@@ -271,6 +271,9 @@ def main():
         report
     )
 
+    # Add known but unmatched functions to our count
+    function_count += compare.count_unmatched_functions()
+
     # Print diff summary to terminal
     if not args.silent and args.diff is None:
         for entity in report.entities.values():
