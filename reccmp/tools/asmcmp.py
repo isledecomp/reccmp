@@ -247,25 +247,21 @@ def main():
     if args.dump:
         dump_all_matched_functions(compared)
 
-    def should_include_match(match: DiffReport) -> bool:
-        if (
-            match.match_type == EntityType.FUNCTION
-            and match.name in target.report_config.ignore_functions
-        ):
-            return False
-
-        if args.nolib and match.is_library:
-            return False
-
-        return True
-
     report = ReccmpStatusReport(filename=target.original_path.name)
 
     # Build report:
     for match in compared:
         # if we are ignoring this function, skip to next one and don't add it to the entities list
-        if should_include_match(match):
-            report.add_match(match)
+        if (
+            match.match_type == EntityType.FUNCTION
+            and match.name in target.report_config.ignore_functions
+        ):
+            continue
+
+        if args.nolib and match.is_library:
+            continue
+
+        report.add_match(match)
 
     # Count how many functions have the same virtual address in orig and recomp.
     functions_aligned_count = report_function_alignment(report)
