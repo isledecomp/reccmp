@@ -10,7 +10,6 @@ from reccmp.compare.report import (
     ReccmpComparedEntity,
     serialize_reccmp_report,
 )
-from reccmp.types import EntityType
 
 
 def reccmp_pack_generator(lines: Iterable[str]) -> Iterator[str]:
@@ -43,24 +42,6 @@ def read_js_file(filename: str) -> str:
 
     file_header = f"/{'*' * 78}/\n// {filename}\n"
     return file_header + "".join(lines)
-
-
-def progress_stats(report: ReccmpStatusReport) -> tuple[int, float]:
-    """Count comparable functions in the report and sum their effective-match accuracy.
-
-    Returns (implemented_funcs, raw_accuracy). Stubs and non-FUNCTION entities are excluded.
-    Entities with no recorded type (older reports that did not serialize the field) are
-    treated as functions to preserve backward-compatible behavior."""
-    implemented = 0
-    raw_accuracy = 0.0
-    for entity in report.entities.values():
-        if entity.is_stub:
-            continue
-        if entity.type is not None and entity.type != EntityType.FUNCTION:
-            continue
-        implemented += 1
-        raw_accuracy += entity.accuracy
-    return implemented, raw_accuracy
 
 
 # pylint: disable=too-many-positional-arguments
@@ -272,7 +253,9 @@ def diff_json_display(show_both_addrs: bool = False, is_plain: bool = False):
             new_pct = (
                 "stub"
                 if new.is_stub
-                else percent_string(new.accuracy, new.is_effective_match, is_plain)
+                else percent_string(
+                    new.effective_accuracy, new.is_effective_match, is_plain
+                )
             )
 
             # Prefer the current name of this function if we have it.
@@ -285,7 +268,9 @@ def diff_json_display(show_both_addrs: bool = False, is_plain: bool = False):
             old_pct = (
                 "stub"
                 if saved.is_stub
-                else percent_string(saved.accuracy, saved.is_effective_match, is_plain)
+                else percent_string(
+                    saved.effective_accuracy, saved.is_effective_match, is_plain
+                )
             )
 
             if name == "":
@@ -379,7 +364,10 @@ def diff_json(
         for key, (saved, new) in combined.items()
         if saved is not None
         and new is not None
-        and (new.accuracy > saved.accuracy or (not new.is_stub and saved.is_stub))
+        and (
+            new.effective_accuracy > saved.effective_accuracy
+            or (not new.is_stub and saved.is_stub)
+        )
     }
 
     # Any non-stub function with decreased match percentage
@@ -388,7 +376,7 @@ def diff_json(
         for key, (saved, new) in combined.items()
         if saved is not None
         and new is not None
-        and new.accuracy < saved.accuracy
+        and new.effective_accuracy < saved.effective_accuracy
         and not saved.is_stub
         and not new.is_stub
     }
@@ -399,8 +387,8 @@ def diff_json(
         for key, (saved, new) in combined.items()
         if saved is not None
         and new is not None
-        and new.accuracy == 1.0
-        and saved.accuracy == 1.0
+        and new.effective_accuracy == 1.0
+        and saved.effective_accuracy == 1.0
         and new.is_effective_match != saved.is_effective_match
     }
 

@@ -68,7 +68,6 @@ logger = logging.getLogger(__name__)
 class Compare:
     # pylint: disable=too-many-instance-attributes
     _db: EntityDb
-    _debug: bool
     _lines_db: LinesDb
     code_files: list[TextFile]
     cvdump_analysis: CvdumpAnalysis
@@ -110,9 +109,6 @@ class Compare:
             self.data_sources = data_sources
         else:
             self.data_sources = []
-
-        # Controls whether we dump the asm output to a file
-        self._debug = False
 
         self._lines_db = LinesDb()
         self._db = EntityDb()
@@ -227,15 +223,6 @@ class Compare:
         )
         compare.run()
         return compare
-
-    @property
-    def debug(self) -> bool:
-        return self._debug
-
-    @debug.setter
-    def debug(self, debug: bool):
-        self._debug = debug
-        self.function_comparator.debug = debug
 
     def _compare_vtable(self, match: ReccmpMatch) -> EntityCompareResult:
         vtable_size = match.any_size()
