@@ -57,10 +57,6 @@ def print_match_verbose(
     else:
         addrs = hex(match.orig_addr)
 
-    if match.is_stub:
-        print(f"{addrs}: {match.name} is a stub. No diff.")
-        return
-
     grouped_diff = match.match_type != EntityType.VTABLE
     udiff = raw_diff_to_udiff(match.result.diff, grouped=grouped_diff)
 
