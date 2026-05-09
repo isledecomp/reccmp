@@ -291,6 +291,17 @@
     },
     {
       "address": "0x402c20",
+      "diff": [
+        [
+          "@@ -0x402c20,1 +0x502c20,1 @@",
+          [
+            {
+              "orig": [["0x402c20", "sub esp, 0xc"]],
+              "recomp": [["0x502c20", "ret"]]
+            }
+          ]
+        ]
+      ],
       "matching": 0.0,
       "name": "IsleApp::Tick",
       "recomp": "0x502c20",

@@ -32,14 +32,17 @@ function createDiffRow(obj, showRecomp) {
   // there are no diffs for this entity. (GH #201)
   const { diff = [] } = obj;
 
-  if ('stub' in obj) {
-    contents = document.createElement('div');
-    contents.className = 'no-diff';
-    contents.textContent = 'Stub. No diff.';
-  } else if (diff.length === 0) {
-    contents = document.createElement('div');
-    contents.className = 'no-diff';
-    contents.textContent = 'Identical function - no diff';
+  if (diff.length === 0) {
+    // Display an appropriate message if there is no diff data.
+    if ('stub' in obj) {
+      contents = document.createElement('div');
+      contents.className = 'no-diff';
+      contents.textContent = 'Stub. No diff.';
+    } else {
+      contents = document.createElement('div');
+      contents.className = 'no-diff';
+      contents.textContent = 'Identical function - no diff';
+    }
   } else {
     contents = document.createElement('diff-display');
     contents.dataset.option = '1';
