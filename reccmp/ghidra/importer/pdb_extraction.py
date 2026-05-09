@@ -60,6 +60,7 @@ class PdbFunctionExtractor:
         "ThisCall": "__thiscall",
         "C Near": "default",
         "STD Near": "__stdcall",
+        "Fast Near": "__fastcall",
     }
 
     def _get_cvdump_type(
