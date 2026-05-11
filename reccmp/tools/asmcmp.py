@@ -271,9 +271,6 @@ def main():
         report
     )
 
-    # Add known but unmatched functions to our count
-    function_count += compare.count_unmatched_functions()
-
     # Print diff summary to terminal
     if not args.silent and args.diff is None:
         for entity in report.entities.values():
@@ -311,6 +308,9 @@ def main():
         write_html_report(args.html, report)
 
     implemented_funcs = function_count
+
+    # Add known but unmatched functions to our count
+    function_count += compare.count_unmatched_functions()
 
     # If we know how many functions are in the file (via analysis with Ghidra or other tools)
     # we can substitute an alternate value to use when calculating the percentages below.
