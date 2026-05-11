@@ -267,9 +267,7 @@ def main():
     functions_aligned_count = report_function_alignment(report)
 
     # Number of functions compared (i.e. excluding stubs)
-    function_count, total_accuracy, total_effective_accuracy = report_function_accuracy(
-        report
-    )
+    function_count, _, total_effective_accuracy = report_function_accuracy(report)
 
     # Print diff summary to terminal
     if not args.silent and args.diff is None:
@@ -319,15 +317,22 @@ def main():
         function_count = max(function_count, int(args.total))
 
     if function_count > 0:
-        effective_accuracy = total_effective_accuracy / function_count * 100
-        actual_accuracy = total_accuracy / function_count * 100
+        implemented = implemented_funcs / function_count * 100
+        effective_accuracy = total_effective_accuracy / implemented_funcs * 100
+        # actual_accuracy = total_accuracy / implemented_funcs * 100
+        progress = total_effective_accuracy / function_count * 100
         alignment_percentage = functions_aligned_count / function_count * 100
+
         print(
-            f"\nTotal effective accuracy {effective_accuracy:.2f}% across {function_count} functions ({actual_accuracy:.2f}% actual accuracy)"
+            f"\nImplemented:  {implemented:.2f}%  ({implemented_funcs} / {function_count})"
         )
-        print(
-            f"{functions_aligned_count} functions are aligned ({alignment_percentage:.2f}%)"
-        )
+        print(f"Accuracy:     {effective_accuracy:.2f}%")
+        print(f"Progress:     {progress:.2f}%")
+
+        if functions_aligned_count > 0:
+            print(
+                f"{functions_aligned_count} functions are aligned ({alignment_percentage:.2f}%)"
+            )
 
         if args.svg is not None:
             gen_svg(
