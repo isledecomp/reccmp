@@ -69,6 +69,10 @@ class ModuleMap:
         ]
 
     def get_module(self, addr: int) -> tuple[str, str] | None:
+        # Avoid a crash if we did not read any section contributions.
+        if not self.section_contrib:
+            return None
+
         i = bisect.bisect_left(self.contrib_starts, addr)
         # If the addr matches the section contribution start, we are in the
         # right spot. Otherwise, we need to subtract one here.
