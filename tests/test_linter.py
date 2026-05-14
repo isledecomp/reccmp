@@ -169,12 +169,13 @@ def test_duplicate_strings(linter: DecompLinter):
     assert linter.alerts[0].code == ParserError.WRONG_STRING
 
     same_addr_reused = """\
-        // GLOBAL:TEXT 0x1000
+        // GLOBAL: TEST 0x1000
         int g_test = 123;
         """
 
     # This will fail like any other offset reuse.
     assert linter.read(same_addr_reused, PurePath("other.h"), "TEST") is False
+    assert linter.alerts[0].code == ParserError.DUPLICATE_OFFSET
 
 
 def test_ignore_folded_duplicate(linter: DecompLinter):

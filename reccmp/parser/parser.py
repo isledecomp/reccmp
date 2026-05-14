@@ -1,6 +1,7 @@
 # C++ file parser
 
 import io
+from dataclasses import dataclass
 from pathlib import PurePath
 from typing import Iterator
 from enum import Enum
@@ -43,6 +44,13 @@ class ReaderState(Enum):
     IN_SYNTHETIC = 8
     IN_LIBRARY = 9
     DONE = 100
+
+
+@dataclass(frozen=True)
+class ReccmpParserResult:
+    tokens: tuple[ParserSymbol, ...]
+    alerts: tuple[ParserAlert, ...]
+    path: PurePath
 
 
 class MarkerDict:
@@ -591,3 +599,8 @@ class DecompParser:
             self._syntax_warning(ParserError.UNEXPECTED_END_OF_FILE)
 
         self.state = ReaderState.DONE
+
+    def to_result(self) -> ReccmpParserResult:
+        return ReccmpParserResult(
+            tuple(self._symbols), tuple(self.alerts), self.filename
+        )

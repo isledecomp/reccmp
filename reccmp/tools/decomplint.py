@@ -2,14 +2,20 @@
 
 import argparse
 import logging
+from dataclasses import dataclass
 from pathlib import Path, PurePath
 from typing import Iterable
 import colorama
 import reccmp
 import reccmp.color
 from reccmp.dir import source_code_search
-from reccmp.parser import DecompLinter
+from reccmp.parser import DecompLinter, DecompParser, ReccmpParserResult
 from reccmp.parser.error import ParserAlert
+from reccmp.project.common import RECCMP_BUILD_CONFIG, RECCMP_PROJECT_CONFIG
+from reccmp.project.error import (
+    RecCmpProjectException,
+    RecCmpProjectNotFoundException,
+)
 from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
 from reccmp.project.detect import RecCmpProject
 from reccmp.formats import TextFile
@@ -56,12 +62,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {reccmp.VERSION}"
     )
+    parser.add_argument("--target", metavar="<target-id>", help="ID of the target")
     parser.add_argument(
         "paths",
-        metavar="<path>",
+        metavar="<paths>",
         nargs="*",
         type=Path,
-        help="The file or directory to check.",
+        help="The files or directories to check.",
     )
     parser.add_argument(
         "--module",
@@ -90,66 +97,99 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def process_files(
-    files: Iterable[TextFile], module: str | None = None
-) -> tuple[int, int]:
-    warning_count = 0
-    error_count = 0
+@dataclass
+class DecomplintOptions:
+    paths: tuple[Path, ...]
+    module: str | None
+    encoding: str = "utf-8"
 
-    linter = DecompLinter()
-    for file in files:
-        success = linter.read(file.text, file.path, module)
 
-        warnings = [a for a in linter.alerts if a.is_warning()]
-        errors = [a for a in linter.alerts if a.is_error()]
+def decomplint_parse_args(
+    args: argparse.Namespace,
+) -> tuple[DecomplintOptions, ...]:
+    if args.paths:
+        paths = tuple(source_code_search(args.paths))
+        module = args.module
+        encoding = args.encoding
 
-        error_count += len(errors)
-        warning_count += len(warnings)
+        return (DecomplintOptions(paths, module, encoding),)
 
-        if not success:
-            display_errors(linter.alerts, file.path)
-            print()
+    project = RecCmpProject.from_directory(Path.cwd())
+    if not project:
+        raise RecCmpProjectNotFoundException(
+            f"Cannot find a reccmp project (missing {RECCMP_PROJECT_CONFIG}/{RECCMP_BUILD_CONFIG})"
+        )
 
-    return (warning_count, error_count)
+    options = []
+
+    for target in project.targets.values():
+        if args.target and target.target_id != args.target:
+            continue
+
+        paths = tuple(source_code_search(target.source_paths))
+        module = target.target_id if not args.module else args.module
+        encoding = target.encoding if not args.encoding else args.encoding
+
+        options.append(DecomplintOptions(paths, module, encoding))
+
+    return tuple(options)
+
+
+def parse_file(file: TextFile) -> ReccmpParserResult:
+    parser = DecompParser()
+    parser.reset_and_set_filename(file.path)
+    parser.read(file.text)
+    parser.finish()
+    return parser.to_result()
 
 
 def main():
     args = parse_args()
-    search_paths: list[Path] = []
-    codefiles: list[TextFile] = []
+    try:
+        lint_targets = decomplint_parse_args(args)
+    except RecCmpProjectException as e:
+        logger.error("%s", e.args[0])
+        return 1
 
-    if not args.paths:
-        # No path specified. Try to find the project file.
-        project = RecCmpProject.from_directory(directory=Path.cwd())
-        if not project:
-            logger.error("Cannot find reccmp project")
-            return 1
+    # Dedupe paths before opening
+    all_paths = set(
+        (path, target.encoding) for target in lint_targets for path in target.paths
+    )
 
-        # Read each target from the reccmp-project file
-        # then get all filenames from each code directory.
-        for target in project.targets.values():
-            reduced_file_list = source_code_search(target.source_paths)
-            codefiles.extend(
-                TextFile.from_files(
-                    reduced_file_list,
-                    allow_error=True,
-                    encoding=target.encoding or "utf-8",
-                )
-            )
-    else:
-        for path in args.paths:
-            if path.is_dir() or path.is_file():
-                search_paths.append(path)
-            else:
-                logger.error("Invalid path: %s", path)
-        reduced_file_list = source_code_search(search_paths)
-        codefiles = list(
-            TextFile.from_files(
-                reduced_file_list, allow_error=True, encoding=args.encoding
-            )
-        )
+    all_files = {}
+    for path, encoding in all_paths:
+        try:
+            file = TextFile.from_file(path, encoding=encoding)
+            all_files[(path, encoding)] = parse_file(file)
+        except (FileNotFoundError, UnicodeDecodeError):
+            # Increase error_count here?
+            continue
 
-    warning_count, error_count = process_files(codefiles, module=args.module)
+    total_alerts = {}
+
+    # Syntax errors from the parser: read once.
+    for result in all_files.values():
+        total_alerts.setdefault(result.path, []).extend(result.alerts)
+
+    # Lint each grouping of files from each linter target.
+    for target in lint_targets:
+        linter = DecompLinter()
+        for path in target.paths:
+            if (path, target.encoding) in all_files:
+                result = all_files[(path, target.encoding)]
+                linter.read_result(result, target.module)
+                total_alerts.setdefault(path, []).extend(linter.alerts)
+
+    error_count = 0
+    warning_count = 0
+
+    for path, alerts in total_alerts.items():
+        error_count += sum(1 for alert in alerts if alert.is_error())
+        warning_count += sum(1 for alert in alerts if alert.is_warning())
+
+        if alerts:
+            sorted_alerts = sorted(alerts, key=lambda a: a.line_number)
+            display_errors(sorted_alerts, path)
 
     print(colorama.Style.RESET_ALL, end="")
 
