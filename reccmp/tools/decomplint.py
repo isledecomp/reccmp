@@ -2,7 +2,7 @@
 
 import argparse
 import logging
-from pathlib import Path, PurePath
+from pathlib import Path
 from typing import Iterable
 import colorama
 import reccmp
@@ -24,11 +24,11 @@ logger = logging.getLogger(__name__)
 colorama.just_fix_windows_console()
 
 
-def display_errors(alerts: Iterable[ParserAlert], filename: PurePath):
+def display_errors(alerts: Iterable[ParserAlert], filename: Path):
     sorted_alerts = sorted(alerts, key=lambda a: a.line_number)
 
     print(reccmp.color.Fore.LIGHTWHITE_EX, end="")
-    print(filename)
+    print(filename.resolve())
 
     for alert in sorted_alerts:
         error_type = (
@@ -61,19 +61,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {reccmp.VERSION}"
     )
-    parser.add_argument("--target", metavar="<target-id>", help="ID of the target")
+    # Combine --target and --module because they have the same goal:
+    # focusing on specific annotations to run order and uniqueness checks.
+    # If specific paths are provided, target defines which annotations to verify.
+    # If no paths are provided, use the path list for that target in the reccmp project.
+    parser.add_argument(
+        "--target",
+        "--module",
+        metavar="<target-id>",
+        help="Run targeted checks on annotations for the given target.",
+    )
     parser.add_argument(
         "paths",
         metavar="<paths>",
         nargs="*",
         type=Path,
         help="The files or directories to check.",
-    )
-    parser.add_argument(
-        "--module",
-        required=False,
-        type=str,
-        help="If present, run targeted checks for markers from the given module.",
     )
     parser.add_argument(
         "--warnfail",
@@ -111,9 +114,14 @@ class DecomplintOptions:
 def decomplint_parse_args(
     args: argparse.Namespace,
 ) -> tuple[DecomplintOptions, ...]:
+    """Produce a list of scopes and files to check from the command-line args:
+    1. No arguments: Lint each target separately
+    2. Target: Lint its files only
+    3. List of paths: Lint these files (with optional target scope)
+    """
     if args.paths:
         paths = tuple(source_code_search(args.paths))
-        module = args.module
+        module = args.target_id
         encoding = args.encoding
 
         return (DecomplintOptions(paths, module, encoding),)
@@ -131,7 +139,7 @@ def decomplint_parse_args(
             continue
 
         paths = tuple(source_code_search(target.source_paths))
-        module = args.module if args.module else target.target_id
+        module = target.target_id
         encoding = args.encoding if args.encoding else target.encoding
 
         options.append(DecomplintOptions(paths, module, encoding))
