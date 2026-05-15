@@ -28,7 +28,7 @@ def display_errors(alerts: Iterable[ParserAlert], filename: Path):
     sorted_alerts = sorted(alerts, key=lambda a: a.line_number)
 
     print(reccmp.color.Fore.LIGHTWHITE_EX, end="")
-    print(filename.resolve())
+    print(filename)
 
     for alert in sorted_alerts:
         error_type = (
@@ -121,7 +121,7 @@ def decomplint_parse_args(
     """
     if args.paths:
         paths = tuple(source_code_search(args.paths))
-        module = args.target_id
+        module = args.target
         encoding = args.encoding
 
         return (DecomplintOptions(paths, module, encoding),)
