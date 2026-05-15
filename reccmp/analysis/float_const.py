@@ -63,7 +63,7 @@ class FloatInstruction(NamedTuple):
 
 
 def find_float_instructions_in_buffer(
-    buf: bytes, base_addr: int = 0
+    buf: bytes | memoryview, base_addr: int = 0
 ) -> Iterator[FloatInstruction]:
     """Search the given binary blob for floating-point instructions that reference a pointer.
     If the base addr is given, add it to the offset of the instruction to get an absolute address.

@@ -29,7 +29,9 @@ class VtordispFunction(NamedTuple):
     size: int
 
 
-def find_displacements(buf: bytes, base_addr: int = 0) -> Iterator[VtordispFunction]:
+def find_displacements(
+    buf: bytes | memoryview, base_addr: int = 0
+) -> Iterator[VtordispFunction]:
     for start_match in VTOR_START_RE.finditer(buf):
         start = start_match.start()
 

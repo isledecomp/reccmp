@@ -27,13 +27,15 @@ class FuncInfo(NamedTuple):
     unwinds: tuple[UnwindMapEntry, ...]
 
 
-def find_funcinfo_offsets_in_buffer(buf: bytes) -> Iterator[int]:
+def find_funcinfo_offsets_in_buffer(buf: bytes | memoryview) -> Iterator[int]:
     """Return offsets of the FuncInfo magic number."""
     for match in FUNCINFO_MAGIC_RE.finditer(buf):
         yield match.start()
 
 
-def find_funcinfo_in_buffer(buf: bytes, base_addr: int) -> Iterator[FuncInfo]:
+def find_funcinfo_in_buffer(
+    buf: bytes | memoryview, base_addr: int
+) -> Iterator[FuncInfo]:
     """Parse the FuncInfo struct and return its location."""
     for ofs in find_funcinfo_offsets_in_buffer(buf):
         # TODO: The structure may vary depending on the magic string.
@@ -59,7 +61,7 @@ def find_funcinfo(image: PEImage) -> Iterator[FuncInfo]:
 
 
 def find_mov_eax_jmp_in_buffer(
-    buf: bytes, base_addr: int = 0
+    buf: bytes | memoryview, base_addr: int = 0
 ) -> Iterator[tuple[int, bytes]]:
     """Return offsets in the buffer that match a `mov eax, ____` instruction followed by `jmp`."""
     for match in MOV_EAX_RE.finditer(buf):

@@ -18,7 +18,7 @@ from .image import Image, ImageImport, ImageSection, ImageRegion
 from .mz import ImageDosHeader
 
 
-def pascal_string(data: bytes, offset: int = 0) -> str:
+def pascal_string(data: bytes | memoryview, offset: int = 0) -> str:
     strlen = data[offset]
     return bytes(data[offset + 1 : offset + strlen + 1]).decode("ascii")
 
@@ -63,7 +63,7 @@ class NESegmentTableEntry:
 
     @classmethod
     def from_memory(
-        cls, data: bytes, offset: int, count: int
+        cls, data: bytes | memoryview, offset: int, count: int
     ) -> tuple[tuple["NESegmentTableEntry", ...], int]:
         struct_fmt = "<4H"
         struct_size = struct.calcsize(struct_fmt)
@@ -103,7 +103,7 @@ NERelocations = tuple[NERelocation, ...]
 
 
 def iter_relocations(
-    data: bytes, offset: int = 0
+    data: bytes | memoryview, offset: int = 0
 ) -> Iterator[tuple[int, int, int, int, int]]:
     """Read raw values from the relocation table.
     The first word is the number of 8-byte relocations that follow.
@@ -117,7 +117,7 @@ def iter_relocations(
         offset += 8
 
 
-def iter_reloc_chain(data: bytes, start: int) -> Iterator[int]:
+def iter_reloc_chain(data: bytes | memoryview, start: int) -> Iterator[int]:
     """Using the segment contents in `data`, iterate each relocation site by following the
     chain of offsets that begins at offset `start`. 0xFFFF signals the end of the chain.
     """
@@ -204,7 +204,9 @@ class NEEntry:
     offset: int
 
     @classmethod
-    def from_memory(cls, data: bytes, offset: int = 0) -> tuple["NEEntry", ...]:
+    def from_memory(
+        cls, data: bytes | memoryview, offset: int = 0
+    ) -> tuple["NEEntry", ...]:
         ordinal = 0
         entries = []
 
@@ -536,7 +538,7 @@ class NEImage(Image):
         except IndexError as ex:
             raise InvalidVirtualAddressError(f"{section:04x}:{offset:04x}") from ex
 
-    def seek(self, vaddr: int) -> tuple[bytes, int]:
+    def seek(self, vaddr: int) -> tuple[memoryview, int]:
         segment, offset = self.get_relative_addr(vaddr)
         seg = self._get_segment(segment)
 
@@ -544,7 +546,7 @@ class NEImage(Image):
             raise InvalidVirtualAddressError(f"{segment:04x}:{offset:04x}")
 
         if seg.size_of_raw_data == 0:
-            return (b"", seg.virtual_size - offset)
+            return (memoryview(b""), seg.virtual_size - offset)
 
         return (seg.view[offset:], seg.virtual_size - offset)
 
