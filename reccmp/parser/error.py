@@ -101,6 +101,7 @@ class ParserAlert:
     code: ParserError
     line_number: int
     line: str | None = None
+    target: str | None = None
 
     def is_warning(self) -> bool:
         return self.code.value < ParserError.DECOMP_ERROR_START.value

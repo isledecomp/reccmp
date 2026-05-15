@@ -64,6 +64,7 @@ class DecompLinter:
                                 code=ParserError.WRONG_STRING,
                                 line_number=marker.line_number,
                                 line=f"0x{marker.offset:08x}, {repr(existing_string)} vs. {repr(marker.name)}",
+                                target=module,
                             )
                         )
                 elif not is_folded:
@@ -72,6 +73,7 @@ class DecompLinter:
                             code=ParserError.DUPLICATE_OFFSET,
                             line_number=marker.line_number,
                             line=f"0x{marker.offset:08x}",
+                            target=module,
                         )
                     )
             else:
@@ -111,6 +113,7 @@ class DecompLinter:
                         ParserAlert(
                             code=ParserError.FUNCTION_OUT_OF_ORDER,
                             line_number=fun.line_number,
+                            target=module,
                         )
                     )
 

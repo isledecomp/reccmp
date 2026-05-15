@@ -44,6 +44,7 @@ def display_errors(alerts: Iterable[ParserAlert], filename: Path):
             " ",
             error_type,
             reccmp.color.Fore.LIGHTWHITE_EX,
+            f"[{alert.target}] " if alert.target else "",
             alert.code.name.lower(),
         ]
         print("".join(components), end="")
@@ -214,6 +215,7 @@ def main():
 
             sorted_alerts = sorted(alerts, key=lambda a: a.line_number)
             display_errors(sorted_alerts, path)
+            print()
 
     print(colorama.Style.RESET_ALL, end="")
 
