@@ -9,7 +9,7 @@ import reccmp
 import reccmp.color
 from reccmp.dir import platform_independent_path_sort, source_code_search
 from reccmp.parser import DecompLinter, DecompParser, ReccmpParserResult
-from reccmp.parser.error import ParserAlert
+from reccmp.parser.error import ParserAlert, ParserError
 from reccmp.project.common import RECCMP_BUILD_CONFIG, RECCMP_PROJECT_CONFIG
 from reccmp.project.error import (
     RecCmpProjectException,
@@ -168,16 +168,25 @@ def main():
         (path, target.encoding) for target in lint_targets for path in target.paths
     )
 
+    total_alerts: dict[Path, list[ParserAlert]] = {}
+
     all_files = {}
     for path, encoding in all_paths:
         try:
             file = TextFile.from_file(path, encoding=encoding)
             all_files[(path, encoding)] = parse_file(file)
-        except (FileNotFoundError, UnicodeDecodeError):
-            # Increase error_count here?
-            continue
 
-    total_alerts: dict[Path, list[ParserAlert]] = {}
+        except FileNotFoundError:
+            total_alerts.setdefault(path, []).append(
+                ParserAlert(code=ParserError.FILE_NOT_FOUND, line_number=-1)
+            )
+
+        except UnicodeDecodeError:
+            total_alerts.setdefault(path, []).append(
+                ParserAlert(
+                    code=ParserError.UNICODE_DECODE_ERROR, line_number=-1, line=encoding
+                )
+            )
 
     # Syntax errors from the parser: read once.
     for (path, _), result in all_files.items():

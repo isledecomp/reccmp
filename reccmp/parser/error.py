@@ -86,6 +86,15 @@ class ParserError(Enum):
     # is implemented so we can match with the PDB.
     NO_IMPLEMENTATION = 207
 
+    # This code or higher is a critical error
+    DECOMP_CRITICAL_START = 300
+
+    # CRITICAL: Wrapper for FileNotFoundError
+    FILE_NOT_FOUND = 301
+
+    # CRITICAL: Wrapper for UnicodeDecodeError
+    UNICODE_DECODE_ERROR = 302
+
 
 @dataclass
 class ParserAlert:
