@@ -414,10 +414,11 @@ def test_get_all_in_range(db: EntityDb, image_id: ImageId):
 
     assert checker(image_id, range(300)) == (100, 200)
 
-    # Range is inclusive on both ends.
-    assert checker(image_id, range(100, 200)) == (100, 200)
-    assert checker(image_id, range(101, 200)) == (200,)
-    assert checker(image_id, range(101, 199)) == tuple()
+    # Returns addrs inside the input range.
+    # Inclusive on start, exclusive on stop.
+    assert checker(image_id, range(100, 201)) == (100, 200)
+    assert checker(image_id, range(100, 200)) == (100,)
+    assert checker(image_id, range(101, 200)) == tuple()
 
 
 @pytest.mark.parametrize(

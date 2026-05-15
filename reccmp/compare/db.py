@@ -383,7 +383,7 @@ class EntityDb:
         entities = self._entities[img]
 
         i = bisect.bisect_left(addrs, range_.start)
-        j = bisect.bisect_right(addrs, range_.stop)
+        j = bisect.bisect_left(addrs, range_.stop)
 
         for addr in addrs[i:j]:
             if addr in entities:
