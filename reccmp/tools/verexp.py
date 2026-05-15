@@ -16,12 +16,14 @@ from reccmp.project.detect import (
 from reccmp.project.logging import (
     argparse_add_logging_args,
     argparse_parse_logging,
+    preconfigure_logging,
 )
 
 logger = logging.getLogger(__name__)
 
 
 def main() -> int:
+    preconfigure_logging()
     parser = argparse.ArgumentParser(
         allow_abbrev=False,
         description="Verify Exports: Compare the exports of two DLLs.",

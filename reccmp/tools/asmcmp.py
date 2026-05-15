@@ -30,6 +30,7 @@ from reccmp.types import EntityType
 from reccmp.project.logging import (
     argparse_add_logging_args,
     argparse_parse_logging,
+    preconfigure_logging,
 )
 from reccmp.project.detect import (
     RecCmpProjectException,
@@ -204,6 +205,7 @@ def dump_all_matched_functions(matches: Sequence[DiffReport]):
 
 
 def main() -> int:
+    preconfigure_logging()
     args = parse_args()
 
     try:

@@ -9,6 +9,7 @@ from reccmp.project.error import RecCmpProjectException
 from reccmp.project.logging import (
     argparse_add_logging_args,
     argparse_parse_logging,
+    preconfigure_logging,
 )
 from reccmp.project.common import RECCMP_PROJECT_CONFIG
 from reccmp.project.create import create_project
@@ -27,6 +28,7 @@ class ProjectSubcommand(enum.Enum):
 
 
 def main() -> int:
+    preconfigure_logging()
     parser = argparse.ArgumentParser(
         description="Project management", allow_abbrev=False
     )

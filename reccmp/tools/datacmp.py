@@ -18,6 +18,7 @@ from reccmp.formats.pe import PEImage
 from reccmp.project.logging import (
     argparse_add_logging_args,
     argparse_parse_logging,
+    preconfigure_logging,
 )
 from reccmp.project.detect import (
     RecCmpProjectException,
@@ -136,6 +137,7 @@ def compared_offset_string(c: ComparedOffset) -> str:
 
 
 def main() -> int:
+    preconfigure_logging()
     args = parse_args()
 
     try:
