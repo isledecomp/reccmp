@@ -10,7 +10,10 @@ import reccmp.color
 from reccmp.dir import source_code_search
 from reccmp.parser import DecompLinter
 from reccmp.parser.error import ParserAlert
-from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
+from reccmp.project.logging import (
+    argparse_add_logging_args,
+    argparse_parse_logging,
+)
 from reccmp.project.detect import RecCmpProject
 from reccmp.formats import TextFile
 
@@ -113,7 +116,7 @@ def process_files(
     return (warning_count, error_count)
 
 
-def main():
+def main() -> int:
     args = parse_args()
     search_paths: list[Path] = []
     codefiles: list[TextFile] = []

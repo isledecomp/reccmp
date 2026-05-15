@@ -1,5 +1,6 @@
 import argparse
 import logging
+import reccmp.color
 
 
 def argparse_add_logging_args(parser: argparse.ArgumentParser):
@@ -14,4 +15,6 @@ def argparse_add_logging_args(parser: argparse.ArgumentParser):
 
 
 def argparse_parse_logging(args: argparse.Namespace):
+    if hasattr(args, "no_color"):
+        reccmp.color.enable_color(not args.no_color)
     logging.basicConfig(level=args.loglevel, format="[%(levelname)s] %(message)s")
