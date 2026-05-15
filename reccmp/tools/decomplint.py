@@ -2,13 +2,12 @@
 
 import argparse
 import logging
-from dataclasses import dataclass
 from pathlib import Path, PurePath
 from typing import Iterable
 import colorama
 import reccmp
 import reccmp.color
-from reccmp.dir import source_code_search
+from reccmp.dir import platform_independent_path_sort, source_code_search
 from reccmp.parser import DecompLinter, DecompParser, ReccmpParserResult
 from reccmp.parser.error import ParserAlert
 from reccmp.project.common import RECCMP_BUILD_CONFIG, RECCMP_PROJECT_CONFIG
@@ -84,7 +83,6 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--encoding",
-        default="utf-8",
         type=str,
         help="The encoding of the checked files.",
     )
@@ -97,11 +95,17 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-@dataclass
 class DecomplintOptions:
     paths: tuple[Path, ...]
     module: str | None
-    encoding: str = "utf-8"
+    encoding: str
+
+    def __init__(
+        self, paths: tuple[Path, ...], module: str | None, encoding: str | None
+    ):
+        self.paths = paths
+        self.module = module
+        self.encoding = encoding or "utf-8"
 
 
 def decomplint_parse_args(
@@ -127,8 +131,8 @@ def decomplint_parse_args(
             continue
 
         paths = tuple(source_code_search(target.source_paths))
-        module = target.target_id if not args.module else args.module
-        encoding = target.encoding if not args.encoding else args.encoding
+        module = args.module if args.module else target.target_id
+        encoding = args.encoding if args.encoding else target.encoding
 
         options.append(DecomplintOptions(paths, module, encoding))
 
@@ -165,11 +169,11 @@ def main():
             # Increase error_count here?
             continue
 
-    total_alerts = {}
+    total_alerts: dict[Path, list[ParserAlert]] = {}
 
     # Syntax errors from the parser: read once.
-    for result in all_files.values():
-        total_alerts.setdefault(result.path, []).extend(result.alerts)
+    for (path, _), result in all_files.items():
+        total_alerts.setdefault(path, []).extend(result.alerts)
 
     # Lint each grouping of files from each linter target.
     for target in lint_targets:
@@ -183,11 +187,14 @@ def main():
     error_count = 0
     warning_count = 0
 
-    for path, alerts in total_alerts.items():
-        error_count += sum(1 for alert in alerts if alert.is_error())
-        warning_count += sum(1 for alert in alerts if alert.is_warning())
+    # Paths were accumulated using a set(), so we have to sort again.
+    for path in platform_independent_path_sort(total_alerts.keys()):
+        alerts = total_alerts[path]
 
         if alerts:
+            error_count += sum(1 for alert in alerts if alert.is_error())
+            warning_count += sum(1 for alert in alerts if alert.is_warning())
+
             sorted_alerts = sorted(alerts, key=lambda a: a.line_number)
             display_errors(sorted_alerts, path)
 
