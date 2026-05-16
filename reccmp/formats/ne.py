@@ -10,6 +10,9 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Iterator, Mapping
 from enum import Enum, IntEnum, IntFlag
+from typing_extensions import Buffer
+
+from reccmp.types import ConcreteBuffer
 from .exceptions import (
     InvalidVirtualAddressError,
     SectionNotFoundError,
@@ -18,7 +21,7 @@ from .image import Image, ImageImport, ImageSection, ImageRegion
 from .mz import ImageDosHeader
 
 
-def pascal_string(data: bytes | memoryview, offset: int = 0) -> str:
+def pascal_string(data: ConcreteBuffer, offset: int = 0) -> str:
     strlen = data[offset]
     return bytes(data[offset + 1 : offset + strlen + 1]).decode("ascii")
 
@@ -63,7 +66,7 @@ class NESegmentTableEntry:
 
     @classmethod
     def from_memory(
-        cls, data: bytes | memoryview, offset: int, count: int
+        cls, data: ConcreteBuffer, offset: int, count: int
     ) -> tuple[tuple["NESegmentTableEntry", ...], int]:
         struct_fmt = "<4H"
         struct_size = struct.calcsize(struct_fmt)
@@ -103,7 +106,7 @@ NERelocations = tuple[NERelocation, ...]
 
 
 def iter_relocations(
-    data: bytes | memoryview, offset: int = 0
+    data: Buffer, offset: int = 0
 ) -> Iterator[tuple[int, int, int, int, int]]:
     """Read raw values from the relocation table.
     The first word is the number of 8-byte relocations that follow.
@@ -117,7 +120,7 @@ def iter_relocations(
         offset += 8
 
 
-def iter_reloc_chain(data: bytes | memoryview, start: int) -> Iterator[int]:
+def iter_reloc_chain(data: Buffer, start: int) -> Iterator[int]:
     """Using the segment contents in `data`, iterate each relocation site by following the
     chain of offsets that begins at offset `start`. 0xFFFF signals the end of the chain.
     """
@@ -204,9 +207,7 @@ class NEEntry:
     offset: int
 
     @classmethod
-    def from_memory(
-        cls, data: bytes | memoryview, offset: int = 0
-    ) -> tuple["NEEntry", ...]:
+    def from_memory(cls, data: Buffer, offset: int = 0) -> tuple["NEEntry", ...]:
         ordinal = 0
         entries = []
 

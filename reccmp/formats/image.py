@@ -3,6 +3,8 @@ import re
 import dataclasses
 from typing import Iterator
 from pathlib import Path
+
+from reccmp.types import ConcreteBuffer
 from .exceptions import (
     InvalidVirtualAddressError,
     InvalidVirtualReadError,
@@ -19,7 +21,7 @@ r_widestring = re.compile(rb"(?:(?:[^\x00]\x00)|(?:\x00[^\x00])|(?:[^\x00][^\x00
 @dataclasses.dataclass(frozen=True)
 class ImageRegion:
     addr: int
-    data: bytes | memoryview
+    data: ConcreteBuffer
     size: int = 0
 
     def __post_init__(self):
