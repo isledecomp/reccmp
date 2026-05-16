@@ -2,8 +2,7 @@ from enum import Enum
 from dataclasses import dataclass
 
 
-# TODO: poorly chosen name, should be AlertType or AlertCode or something
-class ParserError(Enum):
+class AlertCode(Enum):
     # WARN: Stub function exceeds some line number threshold
     UNLIKELY_STUB = 100
 
@@ -98,13 +97,13 @@ class ParserError(Enum):
 
 @dataclass
 class ParserAlert:
-    code: ParserError
+    code: AlertCode
     line_number: int
     line: str | None = None
     target: str | None = None
 
     def is_warning(self) -> bool:
-        return self.code.value < ParserError.DECOMP_ERROR_START.value
+        return self.code.value < AlertCode.DECOMP_ERROR_START.value
 
     def is_error(self) -> bool:
-        return self.code.value >= ParserError.DECOMP_ERROR_START.value
+        return self.code.value >= AlertCode.DECOMP_ERROR_START.value

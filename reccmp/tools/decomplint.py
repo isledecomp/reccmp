@@ -9,7 +9,7 @@ import reccmp
 import reccmp.color
 from reccmp.dir import platform_independent_path_sort, source_code_search
 from reccmp.parser import DecompLinter, DecompParser, ReccmpParserResult
-from reccmp.parser.error import ParserAlert, ParserError
+from reccmp.parser.error import AlertCode, ParserAlert
 from reccmp.project.common import RECCMP_BUILD_CONFIG, RECCMP_PROJECT_CONFIG
 from reccmp.project.error import (
     RecCmpProjectException,
@@ -179,13 +179,15 @@ def main():
 
         except FileNotFoundError:
             total_alerts.setdefault(path, []).append(
-                ParserAlert(code=ParserError.FILE_NOT_FOUND, line_number=-1)
+                ParserAlert(code=AlertCode.FILE_NOT_FOUND, line_number=-1)
             )
 
         except UnicodeDecodeError:
             total_alerts.setdefault(path, []).append(
                 ParserAlert(
-                    code=ParserError.UNICODE_DECODE_ERROR, line_number=-1, line=encoding
+                    code=AlertCode.UNICODE_DECODE_ERROR,
+                    line_number=-1,
+                    line=encoding,
                 )
             )
 

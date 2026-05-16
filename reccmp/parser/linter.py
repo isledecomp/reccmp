@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from pathlib import PurePath
 from typing import Sequence
 from .parser import DecompParser, ReccmpParserResult
-from .error import ParserAlert, ParserError
+from .error import AlertCode, ParserAlert
 from .node import ParserFunction, ParserSymbol, ParserString
 
 
@@ -61,7 +61,7 @@ class DecompLinter:
                     if existing_string != marker.name:
                         self.alerts.append(
                             ParserAlert(
-                                code=ParserError.WRONG_STRING,
+                                code=AlertCode.WRONG_STRING,
                                 line_number=marker.line_number,
                                 line=f"0x{marker.offset:08x}, {repr(existing_string)} vs. {repr(marker.name)}",
                                 target=module,
@@ -70,7 +70,7 @@ class DecompLinter:
                 elif not is_folded:
                     self.alerts.append(
                         ParserAlert(
-                            code=ParserError.DUPLICATE_OFFSET,
+                            code=AlertCode.DUPLICATE_OFFSET,
                             line_number=marker.line_number,
                             line=f"0x{marker.offset:08x}",
                             target=module,
@@ -111,7 +111,7 @@ class DecompLinter:
                 if fun.offset < last_offset:
                     self.alerts.append(
                         ParserAlert(
-                            code=ParserError.FUNCTION_OUT_OF_ORDER,
+                            code=AlertCode.FUNCTION_OUT_OF_ORDER,
                             line_number=fun.line_number,
                             target=module,
                         )
@@ -128,7 +128,7 @@ class DecompLinter:
             if fun.lookup_by_name:
                 self.alerts.append(
                     ParserAlert(
-                        code=ParserError.BYNAME_FUNCTION_IN_CPP,
+                        code=AlertCode.BYNAME_FUNCTION_IN_CPP,
                         line_number=fun.line_number,
                     )
                 )

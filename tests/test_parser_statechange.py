@@ -3,7 +3,7 @@ from reccmp.parser.parser import (
     ReaderState as _rs,
     DecompParser,
 )
-from reccmp.parser.error import ParserError as _pe
+from reccmp.parser.error import AlertCode as _pe
 
 # fmt: off
 state_change_marker_cases = [

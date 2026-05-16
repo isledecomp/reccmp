@@ -1,7 +1,7 @@
 from pathlib import PurePath
 import pytest
 from reccmp.parser import DecompLinter
-from reccmp.parser.error import ParserError
+from reccmp.parser.error import AlertCode
 
 
 @pytest.fixture(name="linter")
@@ -35,7 +35,7 @@ def test_order_out_of_order(linter: DecompLinter):
     assert linter.read(code, PurePath("test.cpp"), "TEST") is False
     assert len(linter.alerts) == 1
 
-    assert linter.alerts[0].code == ParserError.FUNCTION_OUT_OF_ORDER
+    assert linter.alerts[0].code == AlertCode.FUNCTION_OUT_OF_ORDER
     # N.B. Line number given is the start of the function, not the marker
     assert linter.alerts[0].line_number == 6
 
@@ -83,7 +83,7 @@ def test_byname_headers_only(linter: DecompLinter):
     assert linter.read(code, PurePath("test.h"), "TEST") is True
     linter.full_reset()
     assert linter.read(code, PurePath("test.cpp"), "TEST") is False
-    assert linter.alerts[0].code == ParserError.BYNAME_FUNCTION_IN_CPP
+    assert linter.alerts[0].code == AlertCode.BYNAME_FUNCTION_IN_CPP
 
 
 def test_duplicate_offsets_module_scope(linter: DecompLinter):
@@ -102,7 +102,7 @@ def test_duplicate_offsets_module_scope(linter: DecompLinter):
 
     # Only one error because we are focused on the TEST module
     assert len(linter.alerts) == 1
-    assert all(a.code == ParserError.DUPLICATE_OFFSET for a in linter.alerts)
+    assert all(a.code == AlertCode.DUPLICATE_OFFSET for a in linter.alerts)
 
     # Partial reset (i.e. starting a new file) will retain the list of seen offsets.
     assert linter.read(code, PurePath("test.h"), "TEST") is False
@@ -123,7 +123,7 @@ def test_duplicate_offsets_all(linter: DecompLinter):
     # Simulate a failure by reading the same file twice.
     assert linter.read(code, PurePath("test.h"), None) is True
     assert linter.read(code, PurePath("test.h"), None) is False
-    assert all(a.code == ParserError.DUPLICATE_OFFSET for a in linter.alerts)
+    assert all(a.code == AlertCode.DUPLICATE_OFFSET for a in linter.alerts)
 
 
 def test_duplicate_offsets_isolation(linter: DecompLinter):
@@ -166,7 +166,7 @@ def test_duplicate_strings(linter: DecompLinter):
     # Same address but the string is different
     assert linter.read(different_string, PurePath("greeting.h"), "TEST") is False
     assert len(linter.alerts) == 1
-    assert linter.alerts[0].code == ParserError.WRONG_STRING
+    assert linter.alerts[0].code == AlertCode.WRONG_STRING
 
     same_addr_reused = """\
         // GLOBAL: TEST 0x1000
@@ -175,7 +175,7 @@ def test_duplicate_strings(linter: DecompLinter):
 
     # This will fail like any other offset reuse.
     assert linter.read(same_addr_reused, PurePath("other.h"), "TEST") is False
-    assert linter.alerts[0].code == ParserError.DUPLICATE_OFFSET
+    assert linter.alerts[0].code == AlertCode.DUPLICATE_OFFSET
 
 
 def test_ignore_folded_duplicate(linter: DecompLinter):
