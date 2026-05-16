@@ -70,7 +70,7 @@ def parse_args() -> argparse.Namespace:
         "--target",
         "--module",
         metavar="<target-id>",
-        help="Run targeted checks on annotations for the given target.",
+        help="Run checks on annotations for the given target only.",
     )
     parser.add_argument(
         "paths",
