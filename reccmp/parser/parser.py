@@ -219,6 +219,7 @@ class DecompParser:
     def _syntax_warning(self, code):
         self.alerts.append(
             ParserAlert(
+                path=self.filename,
                 line_number=self.line_number,
                 code=code,
                 line=self.last_line.strip(),

@@ -1,5 +1,6 @@
 from enum import Enum
 from dataclasses import dataclass
+from pathlib import PurePath
 
 
 class AlertCode(Enum):
@@ -98,6 +99,7 @@ class AlertCode(Enum):
 @dataclass
 class ParserAlert:
     code: AlertCode
+    path: PurePath
     line_number: int
     line: str | None = None
     target: str | None = None

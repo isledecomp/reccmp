@@ -2,13 +2,18 @@
 
 import argparse
 import logging
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Iterable
 import colorama
 import reccmp
 import reccmp.color
-from reccmp.dir import platform_independent_path_sort, source_code_search
-from reccmp.parser import DecompLinter, DecompParser, ReccmpParserResult
+from reccmp.dir import source_code_search
+from reccmp.parser import DecompParser, ReccmpParserResult
+from reccmp.parser.linter import (
+    check_byname_allowed,
+    check_function_order,
+    lint_file_collections,
+)
 from reccmp.parser.error import AlertCode, ParserAlert
 from reccmp.project.common import RECCMP_BUILD_CONFIG, RECCMP_PROJECT_CONFIG
 from reccmp.project.error import (
@@ -24,7 +29,7 @@ logger = logging.getLogger(__name__)
 colorama.just_fix_windows_console()
 
 
-def display_errors(alerts: Iterable[ParserAlert], filename: Path):
+def display_errors(alerts: Iterable[ParserAlert], filename: Path | PurePath):
     sorted_alerts = sorted(alerts, key=lambda a: a.line_number)
 
     print(reccmp.color.Fore.LIGHTWHITE_EX, end="")
@@ -169,54 +174,68 @@ def main():
         (path, target.encoding) for target in lint_targets for path in target.paths
     )
 
-    total_alerts: dict[Path, list[ParserAlert]] = {}
-
     all_files = {}
+    all_alerts = []
     for path, encoding in all_paths:
         try:
             file = TextFile.from_file(path, encoding=encoding)
             all_files[(path, encoding)] = parse_file(file)
 
         except FileNotFoundError:
-            total_alerts.setdefault(path, []).append(
-                ParserAlert(code=AlertCode.FILE_NOT_FOUND, line_number=-1)
+            all_alerts.append(
+                ParserAlert(code=AlertCode.FILE_NOT_FOUND, path=path, line_number=-1)
             )
 
         except UnicodeDecodeError:
-            total_alerts.setdefault(path, []).append(
+            # Encoding is here as the "line" of the alert just so it's displayed to the user.
+            all_alerts.append(
                 ParserAlert(
                     code=AlertCode.UNICODE_DECODE_ERROR,
+                    path=path,
                     line_number=-1,
                     line=encoding,
                 )
             )
 
-    # Syntax errors from the parser: read once.
+    # Collect parser errors and linter errors for single files:
     for (path, _), result in all_files.items():
-        total_alerts.setdefault(path, []).extend(result.alerts)
+        all_alerts.extend(result.alerts)
+        all_alerts.extend(check_byname_allowed(result))
+        all_alerts.extend(check_function_order(result))
 
     # Lint each grouping of files from each linter target.
     for target in lint_targets:
-        linter = DecompLinter()
-        for path in target.paths:
-            if (path, target.encoding) in all_files:
-                result = all_files[(path, target.encoding)]
-                linter.read_result(result, target.module)
-                total_alerts.setdefault(path, []).extend(linter.alerts)
+        parsed_files = [
+            all_files[(path, target.encoding)]
+            for path in target.paths
+            if (path, target.encoding) in all_files
+        ]
+
+        scoped_alerts = lint_file_collections(parsed_files, module=target.module)
+        all_alerts.extend(scoped_alerts)
 
     error_count = 0
     warning_count = 0
 
+    # Group alerts by path
+    total_alerts: dict[PurePath, list[ParserAlert]] = {}
+
+    for alert in all_alerts:
+        # Filter out errors from other modules
+        if args.target is None or args.target == alert.target or alert.target is None:
+            total_alerts.setdefault(alert.path, []).append(alert)
+
     # Paths were accumulated using a set(), so we have to sort again.
-    for path in platform_independent_path_sort(total_alerts.keys()):
-        alerts = total_alerts[path]
+    sorted_paths = sorted(total_alerts.keys(), key=lambda p: str(p).lower())
+    for error_path in sorted_paths:
+        alerts = total_alerts[error_path]
 
         if alerts:
             error_count += sum(1 for alert in alerts if alert.is_error())
             warning_count += sum(1 for alert in alerts if alert.is_warning())
 
             sorted_alerts = sorted(alerts, key=lambda a: a.line_number)
-            display_errors(sorted_alerts, path)
+            display_errors(sorted_alerts, error_path)
             print()
 
     print(colorama.Style.RESET_ALL, end="")
