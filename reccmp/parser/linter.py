@@ -85,10 +85,11 @@ def check_offset_uniqueness(results: Sequence[ReccmpParserResult]) -> list[Parse
     for result in results:
         for marker in result.tokens:
             is_folded = isinstance(marker, ParserFunction) and marker.is_folded
+            is_string = isinstance(marker, ParserString)
 
             module_addresses = seen_addresses.setdefault(marker.module, set())
 
-            if marker.offset in module_addresses and not is_folded:
+            if marker.offset in module_addresses and not is_folded and not is_string:
                 alerts.append(
                     ParserAlert(
                         code=AlertCode.DUPLICATE_OFFSET,

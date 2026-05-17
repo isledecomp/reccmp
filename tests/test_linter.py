@@ -143,6 +143,8 @@ def test_duplicate_strings():
 
     assert not check_string_text([string_hello])
     assert not check_string_text([string_hello, string_hello])
+    assert not check_offset_uniqueness([string_hello])
+    assert not check_offset_uniqueness([string_hello, string_hello])
 
     different_string = """\
         // STRING: TEST 0x1000
@@ -154,6 +156,9 @@ def test_duplicate_strings():
     alerts = check_string_text([string_hello, string_hi])
     assert len(alerts) == 1
     assert alerts[0].code == AlertCode.WRONG_STRING
+
+    # Strings are skipped by the uniqueness check.
+    assert not check_offset_uniqueness([string_hello, string_hi])
 
 
 def test_ignore_folded_duplicate():
