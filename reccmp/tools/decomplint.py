@@ -67,10 +67,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {reccmp.VERSION}"
     )
-    # Combine --target and --module because they have the same goal:
-    # focusing on specific annotations to run order and uniqueness checks.
-    # If specific paths are provided, target defines which annotations to verify.
-    # If no paths are provided, use the path list for that target in the reccmp project.
+    # Syntax errors are always displayed in any file we parse.
+    # The --target option shows linter errors for that target only.
+    # If <paths> are not provided, use the code directories for that
+    # target in the project file. --module is a legacy option kept
+    # for compatibility. New CI scripts should use --target.
     parser.add_argument(
         "--target",
         "--module",
