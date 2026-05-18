@@ -68,7 +68,7 @@ class PdbFunctionExtractor:
     ) -> CvdumpParsedType | None:
         return None if type_key is None else self.compare.types.keys.get(type_key)
 
-    def get_func_signature(self, fn: SymbolsEntry) -> FunctionSignature | None:
+    def _get_func_signature(self, fn: SymbolsEntry) -> FunctionSignature | None:
         function_type_key = fn.func_type
         if function_type_key == CVInfoTypeEnum.T_NOTYPE:
             logger.debug("Treating NOTYPE function as thunk: %s", fn.name)
@@ -129,12 +129,12 @@ class PdbFunctionExtractor:
 
     def get_function_list(self) -> list[PdbFunction]:
         handled = (
-            self.handle_matched_function(match)
+            self._handle_matched_function(match)
             for match in self.compare.get_functions()
         )
         return [signature for signature in handled if signature is not None]
 
-    def handle_matched_function(self, match_info: ReccmpMatch) -> PdbFunction | None:
+    def _handle_matched_function(self, match_info: ReccmpMatch) -> PdbFunction | None:
         function_data = next(
             (
                 y
@@ -148,7 +148,7 @@ class PdbFunctionExtractor:
                 # this can be either a thunk (which we want) or an external function
                 # (which we don't want), so we tell them apart based on the validity of their address.
                 self.compare.orig_bin.get_relative_addr(match_info.orig_addr)
-                return PdbFunction(match_info, None, False)
+                return PdbFunction(match_info, None, is_stub=False)
             except InvalidVirtualAddressError:
                 logger.debug(
                     "Skipping external function %s (address 0x%x not in original binary)",
@@ -160,12 +160,12 @@ class PdbFunctionExtractor:
         function_symbol = function_data.symbol_entry
         if function_symbol is None:
             logger.debug(
-                "Could not find function symbol (likely a PUBLICS entry): %s",
+                "Could not find function symbol '%s' (likely a PUBLICS entry), importing by name only",
                 match_info.name,
             )
-            return None
+            return PdbFunction(match_info, None, is_stub=False)
 
-        function_signature = self.get_func_signature(function_symbol)
+        function_signature = self._get_func_signature(function_symbol)
 
         is_stub = bool(match_info.get("stub", False))
 
