@@ -1,148 +1,145 @@
 from pathlib import PurePath
-from typing import Sequence
-from .parser import DecompParser
-from .error import ParserAlert, ParserError
-from .node import ParserFunction, ParserSymbol, ParserString
+from typing import Iterator, Sequence
+from .parser import ReccmpParserResult
+from .error import AlertCode, ParserAlert
+from .node import ParserFunction, ParserString
 
 
-def get_checkorder_filter(module):
-    """Return a filter function on implemented functions in the given module"""
-    return lambda fun: fun.module == module and not fun.lookup_by_name
+def file_is_header(path: PurePath) -> bool:
+    return path.suffix.lower() in (".h", ".hpp")
 
 
-class DecompLinter:
-    def __init__(self) -> None:
-        self.alerts: list[ParserAlert] = []
-        self._parser = DecompParser()
-        self._filename: PurePath = PurePath("")
-        self._module: str | None = None
-        # Set of (str, int) tuples for each module/offset pair seen while scanning.
-        # This is _not_ reset between files and is intended to report offset reuse
-        # when scanning the entire directory.
-        self._offsets_used: set[tuple[str, int]] = set()
-        # Keep track of strings we have seen. Persists across files.
-        # Module/offset can be repeated for string markers but the strings must match.
-        self._strings: dict[tuple[str, int], str] = {}
+def check_byname_allowed(result: ReccmpParserResult) -> list[ParserAlert]:
+    if file_is_header(result.path):
+        return []
 
-    def start_new_file(self, filename: PurePath, module: str | None):
-        self.alerts = []
-        self._module = module
-        self._filename = filename
-        self._parser.reset_and_set_filename(filename)
+    alerts = []
 
-    def full_reset(self):
-        self._offsets_used.clear()
-        self._strings = {}
+    for fun in result.tokens:
+        if isinstance(fun, ParserFunction) and fun.lookup_by_name:
+            alerts.append(
+                ParserAlert(
+                    code=AlertCode.BYNAME_FUNCTION_IN_CPP,
+                    path=result.path,
+                    line_number=fun.line_number,
+                )
+            )
 
-    def file_is_header(self):
-        return self._filename.suffix.lower() == ".h"
+    return alerts
 
-    def _load_offsets_from_list(self, marker_list: Sequence[ParserSymbol]):
-        """Helper for loading (module, offset) tuples while the DecompParser
-        has them broken up into three different lists."""
-        for marker in marker_list:
-            # If we are checking a specific module, ignore problems in other modules
-            if self._module is not None and marker.module != self._module:
-                continue
 
-            is_string = isinstance(marker, ParserString)
+def check_function_order(result: ReccmpParserResult) -> list[ParserAlert]:
+    """Rules:
+    1. Only markers that are implemented in the file are considered. This means we
+    only look at markers that are cross-referenced with cvdump output by their line
+    number. Markers with the lookup_by_name flag set are ignored because we cannot
+    directly influence their order.
+
+    2. Order should be considered for a single module only. If we have multiple
+    markers for a single function (i.e. for LEGO1 functions linked statically to
+    ISLE) then the virtual address space will be very different. If we don't check
+    for one module only, we would incorrectly report that the file is out of order.
+
+    3. Functions marked FOLDED are ignored. The ordering is not well understood
+    and you may not have much (any?) control over which footprint is used.
+    """
+    if file_is_header(result.path):
+        return []
+
+    alerts = []
+
+    relevant_markers = (
+        marker
+        for marker in result.tokens
+        if isinstance(marker, ParserFunction) and not marker.lookup_by_name
+    )
+
+    # The most recent address for each module.
+    last_offset: dict[str, int] = {}
+
+    for fun in relevant_markers:
+        # Skip folded functions altogether.
+        # Don't use the address to check the order of any upcoming functions.
+        if fun.is_folded:
+            continue
+
+        if fun.module in last_offset and fun.offset < last_offset[fun.module]:
+            alerts.append(
+                ParserAlert(
+                    code=AlertCode.FUNCTION_OUT_OF_ORDER,
+                    path=result.path,
+                    line_number=fun.line_number,
+                    target=fun.module,
+                )
+            )
+
+        last_offset[fun.module] = fun.offset
+
+    return alerts
+
+
+def check_offset_uniqueness(results: Sequence[ReccmpParserResult]) -> list[ParserAlert]:
+    alerts = []
+    seen_addresses: dict[str, set[int]] = {}
+
+    for result in results:
+        for marker in result.tokens:
             is_folded = isinstance(marker, ParserFunction) and marker.is_folded
+            is_string = isinstance(marker, ParserString)
 
-            value = (marker.module, marker.offset)
-            if value in self._offsets_used:
-                if is_string:
-                    if self._strings[value] != marker.name:
-                        self.alerts.append(
-                            ParserAlert(
-                                code=ParserError.WRONG_STRING,
-                                line_number=marker.line_number,
-                                line=f"0x{marker.offset:08x}, {repr(self._strings[value])} vs. {repr(marker.name)}",
-                            )
-                        )
-                elif not is_folded:
-                    self.alerts.append(
+            module_addresses = seen_addresses.setdefault(marker.module, set())
+
+            if marker.offset in module_addresses and not is_folded and not is_string:
+                alerts.append(
+                    ParserAlert(
+                        code=AlertCode.DUPLICATE_OFFSET,
+                        path=result.path,
+                        line_number=marker.line_number,
+                        line=f"0x{marker.offset:08x}",
+                        target=marker.module,
+                    )
+                )
+            else:
+                module_addresses.add(marker.offset)
+
+    return alerts
+
+
+def check_string_text(results: Sequence[ReccmpParserResult]) -> list[ParserAlert]:
+    alerts = []
+    seen_strings: dict[str, dict[int, str]] = {}
+
+    for result in results:
+        relevant_markers = (
+            marker for marker in result.tokens if isinstance(marker, ParserString)
+        )
+
+        for marker in relevant_markers:
+            module_strings = seen_strings.setdefault(marker.module, {})
+
+            if marker.offset in module_strings:
+                existing_string = module_strings[marker.offset]
+                if existing_string != marker.name:
+                    alerts.append(
                         ParserAlert(
-                            code=ParserError.DUPLICATE_OFFSET,
+                            code=AlertCode.WRONG_STRING,
+                            path=result.path,
                             line_number=marker.line_number,
-                            line=f"0x{marker.offset:08x}",
+                            line=f"0x{marker.offset:08x}, {repr(existing_string)} vs. {repr(marker.name)}",
+                            target=marker.module,
                         )
                     )
             else:
-                self._offsets_used.add(value)
-                if is_string:
-                    self._strings[value] = marker.name
+                module_strings[marker.offset] = marker.name
 
-    def _check_function_order(self):
-        """Rules:
-        1. Only markers that are implemented in the file are considered. This means we
-        only look at markers that are cross-referenced with cvdump output by their line
-        number. Markers with the lookup_by_name flag set are ignored because we cannot
-        directly influence their order.
+    return alerts
 
-        2. Order should be considered for a single module only. If we have multiple
-        markers for a single function (i.e. for LEGO1 functions linked statically to
-        ISLE) then the virtual address space will be very different. If we don't check
-        for one module only, we would incorrectly report that the file is out of order.
 
-        3. Functions marked FOLDED are ignored. The ordering is not well understood
-        and you may not have much (any?) control over which footprint is used.
-        """
+def lint_file_collections(
+    results: Sequence[ReccmpParserResult], module: str | None
+) -> Iterator[ParserAlert]:
+    def module_filter(alert: ParserAlert) -> bool:
+        return module is None or alert.target == module
 
-        if self._module is None:
-            return
-
-        checkorder_filter = get_checkorder_filter(self._module)
-        last_offset = None
-        for fun in filter(checkorder_filter, self._parser.functions):
-            # Skip folded functions altogether.
-            # Don't use the address to check the order of any upcoming functions.
-            if fun.is_folded:
-                continue
-
-            if last_offset is not None:
-                if fun.offset < last_offset:
-                    self.alerts.append(
-                        ParserAlert(
-                            code=ParserError.FUNCTION_OUT_OF_ORDER,
-                            line_number=fun.line_number,
-                        )
-                    )
-
-            last_offset = fun.offset
-
-    def _check_offset_uniqueness(self):
-        self._load_offsets_from_list(self._parser.functions)
-        self._load_offsets_from_list(self._parser.vtables)
-        self._load_offsets_from_list(self._parser.variables)
-        self._load_offsets_from_list(self._parser.strings)
-
-    def _check_byname_allowed(self):
-        if self.file_is_header():
-            return
-
-        for fun in self._parser.functions:
-            if fun.lookup_by_name:
-                self.alerts.append(
-                    ParserAlert(
-                        code=ParserError.BYNAME_FUNCTION_IN_CPP,
-                        line_number=fun.line_number,
-                    )
-                )
-
-    def read(self, code: str, filename: PurePath, module: str | None = None) -> bool:
-        self.start_new_file(filename, module)
-
-        self._parser.read(code)
-
-        self._parser.finish()
-        self.alerts = self._parser.alerts[::]
-
-        self._check_offset_uniqueness()
-
-        if self._module is not None:
-            self._check_byname_allowed()
-
-            if not self.file_is_header():
-                self._check_function_order()
-
-        return len(self.alerts) == 0
+    yield from filter(module_filter, check_offset_uniqueness(results))
+    yield from filter(module_filter, check_string_text(results))
