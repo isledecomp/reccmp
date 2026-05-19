@@ -108,7 +108,7 @@ def parse_args() -> argparse.Namespace:
 
 
 @dataclass
-class DecomplintOptions:
+class DecomplintTarget:
     paths: tuple[Path, ...]
     module: str | None
     encoding: str
@@ -116,7 +116,7 @@ class DecomplintOptions:
 
 def decomplint_parse_args(
     args: argparse.Namespace,
-) -> tuple[DecomplintOptions, ...]:
+) -> tuple[DecomplintTarget, ...]:
     """Produce a list of scopes and files to check from the command-line args:
     1. No arguments: Lint each target separately
     2. Target: Lint its files only
@@ -127,7 +127,7 @@ def decomplint_parse_args(
         module = args.target
         encoding = args.encoding
 
-        return (DecomplintOptions(paths, module, encoding),)
+        return (DecomplintTarget(paths, module, encoding),)
 
     project = RecCmpProject.from_directory(Path.cwd())
     if not project:
@@ -145,7 +145,7 @@ def decomplint_parse_args(
         module = target.target_id
         encoding = target.encoding or "utf-8"
 
-        options.append(DecomplintOptions(paths, module, encoding))
+        options.append(DecomplintTarget(paths, module, encoding))
 
     return tuple(options)
 
@@ -158,19 +158,14 @@ def parse_file(file: TextFile) -> ReccmpParserResult:
     return parser.to_result()
 
 
-def main():
-    args = parse_args()
-    try:
-        lint_targets = decomplint_parse_args(args)
-    except RecCmpProjectException as e:
-        logger.error("%s", e.args[0])
-        return 1
+def lint_all_targets(lint_targets: tuple[DecomplintTarget, ...]) -> list[ParserAlert]:
+    """Lint each collection of files and optional target scope.
+    Returns unsorted list of parser/linter alerts."""
 
-    # lint_targets contains 1-N collections of files and target names for scope.
-    # Targets may have different encodings. Collect all path and encoding combinations
-    # before starting. In the unlikely event that paths overlap between targets
-    # but with different encodings, we will still try to open using each encoding
-    # and report an error if (when) this fails.
+    # Collect all path and encoding combinations before starting.
+    # Targets may share common directories, so deduplicate the paths.
+    # In the unlikely event that the same path appears with different encodings,
+    # try to open using each encoding and report an error if (when) this fails.
     all_paths = set(
         (path, target.encoding) for target in lint_targets for path in target.paths
     )
@@ -220,19 +215,32 @@ def main():
         scoped_alerts = lint_file_collections(parsed_files, module=target.module)
         all_alerts.extend(scoped_alerts)
 
+    return all_alerts
+
+
+def main():
+    args = parse_args()
+    try:
+        lint_targets = decomplint_parse_args(args)
+    except RecCmpProjectException as e:
+        logger.error("%s", e.args[0])
+        return 1
+
+    all_alerts = lint_all_targets(lint_targets)
+
     # Finished linting: report errors.
     error_count = 0
     warning_count = 0
 
-    # Group alerts by path
+    # Alerts are unsorted. Prepare to group by path.
     filtered_alerts_by_path: dict[PurePath, list[ParserAlert]] = {}
 
     for alert in all_alerts:
-        # Filter out errors from other modules
+        # If we ran with --target, filter out errors from other targets.
         if args.target is None or args.target == alert.target or alert.target is None:
             filtered_alerts_by_path.setdefault(alert.path, []).append(alert)
 
-    # Paths were accumulated using a set(), so we have to sort again.
+    # Sort paths so alerts are displayed in a consistent order.
     sorted_paths = sorted(filtered_alerts_by_path.keys(), key=lambda p: str(p).lower())
     for error_path in sorted_paths:
         alerts = filtered_alerts_by_path[error_path]
