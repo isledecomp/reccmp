@@ -166,17 +166,24 @@ def main():
         logger.error("%s", e.args[0])
         return 1
 
-    # Dedupe paths before opening
+    # lint_targets contains 1-N collections of files and target names for scope.
+    # Targets may have different encodings. Collect all path and encoding combinations
+    # before starting. In the unlikely event that paths overlap between targets
+    # but with different encodings, we will still try to open using each encoding
+    # and report an error if (when) this fails.
     all_paths = set(
         (path, target.encoding) for target in lint_targets for path in target.paths
     )
 
-    all_files = {}
+    # Collect all parser/linter alerts here and worry about sorting/collating later.
     all_alerts = []
+
+    # Open each (path, encoding) combination once, then collect code annotations.
+    parser_results = {}
     for path, encoding in all_paths:
         try:
             file = TextFile.from_file(path, encoding=encoding)
-            all_files[(path, encoding)] = parse_file(file)
+            parser_results[(path, encoding)] = parse_file(file)
 
         except FileNotFoundError:
             all_alerts.append(
@@ -194,38 +201,41 @@ def main():
                 )
             )
 
-    # Collect parser errors and linter errors for single files:
-    for (path, _), result in all_files.items():
+    # For each parsed file: add alerts that should appear only once
+    for (path, _), result in parser_results.items():
+        # Add parser syntax errors.
         all_alerts.extend(result.alerts)
+        # Add any errors from these linter checks.
         all_alerts.extend(check_byname_allowed(result))
         all_alerts.extend(check_function_order(result))
 
-    # Lint each grouping of files from each linter target.
+    # Lint each collection of files from each linter target.
     for target in lint_targets:
         parsed_files = [
-            all_files[(path, target.encoding)]
+            parser_results[(path, target.encoding)]
             for path in target.paths
-            if (path, target.encoding) in all_files
+            if (path, target.encoding) in parser_results
         ]
 
         scoped_alerts = lint_file_collections(parsed_files, module=target.module)
         all_alerts.extend(scoped_alerts)
 
+    # Finished linting: report errors.
     error_count = 0
     warning_count = 0
 
     # Group alerts by path
-    total_alerts: dict[PurePath, list[ParserAlert]] = {}
+    filtered_alerts_by_path: dict[PurePath, list[ParserAlert]] = {}
 
     for alert in all_alerts:
         # Filter out errors from other modules
         if args.target is None or args.target == alert.target or alert.target is None:
-            total_alerts.setdefault(alert.path, []).append(alert)
+            filtered_alerts_by_path.setdefault(alert.path, []).append(alert)
 
     # Paths were accumulated using a set(), so we have to sort again.
-    sorted_paths = sorted(total_alerts.keys(), key=lambda p: str(p).lower())
+    sorted_paths = sorted(filtered_alerts_by_path.keys(), key=lambda p: str(p).lower())
     for error_path in sorted_paths:
-        alerts = total_alerts[error_path]
+        alerts = filtered_alerts_by_path[error_path]
 
         if alerts:
             error_count += sum(1 for alert in alerts if alert.is_error())
