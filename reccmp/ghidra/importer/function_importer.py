@@ -21,6 +21,7 @@ from ghidra.program.model.data import (
 from reccmp.cvdump.cvinfo import CVInfoTypeEnum
 
 from .pdb_extraction import (
+    CppStackOrRegisterSymbol,
     PdbFunction,
     CppRegisterSymbol,
     CppStackSymbol,
@@ -256,34 +257,32 @@ class PdbFunctionImporterFull(PdbFunctionImporter):
                 )
                 return False
 
+            # compare argument names
             if ghidra_arg.isStackVariable():
-                # compare argument names
-                symbol_match = self.get_matching_stack_symbol(
+                match: CppStackOrRegisterSymbol | None = self.get_matching_stack_symbol(
                     ghidra_arg.getStackOffset()
                 )
             else:
                 ghidra_register = ghidra_arg.getRegister()
                 assert ghidra_register is not None
-                symbol_match = self.get_matching_register_symbol(
-                    ghidra_register.getName()
-                )
+                match = self.get_matching_register_symbol(ghidra_register.getName())
 
-            if symbol_match is None:
+            if match is None:
                 logger.debug("Not found on stack: %s", ghidra_arg)
                 return False
 
-            if symbol_match.name.startswith("__formal"):
+            if match.name.startswith("__formal"):
                 # "__formal" is the placeholder for arguments without a name
                 continue
 
-            if symbol_match.name == "__$ReturnUdt":
+            if match.name == "__$ReturnUdt":
                 # These appear in templates and cannot be set automatically, as they are a NOTYPE
                 continue
 
-            if symbol_match.name != ghidra_arg.getName():
+            if match.name != ghidra_arg.getName():
                 logger.debug(
                     "Argument name mismatch: expected %s, found %s",
-                    symbol_match.name,
+                    match.name,
                     ghidra_arg.getName(),
                 )
                 return False
@@ -348,7 +347,9 @@ class PdbFunctionImporterFull(PdbFunctionImporter):
 
     def _rename_parameter(self, index: int, param: Parameter):
         if param.isStackVariable():
-            match = self.get_matching_stack_symbol(param.getStackOffset())
+            match: CppStackOrRegisterSymbol | None = self.get_matching_stack_symbol(
+                param.getStackOffset()
+            )
             if match is None:
                 raise ParameterMismatchError(
                     f"Could not find a matching symbol at offset {param.getStackOffset()} in {self.get_full_name()}"
