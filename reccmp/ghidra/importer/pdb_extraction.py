@@ -35,7 +35,7 @@ class FunctionSignature:
     arglist: list[CvdumpTypeKey]
     return_type: CvdumpTypeKey
     class_type: CvdumpTypeKey | None
-    stack_symbols: list[CppStackOrRegisterSymbol]
+    symbols: list[CppStackOrRegisterSymbol]
     # if non-zero: an offset to the `this` parameter in a __thiscall
     this_adjust: int
 
@@ -90,15 +90,15 @@ class PdbFunctionExtractor:
         arg_list_pdb_types = arg_list_type.get("args", [])
         assert arg_list_type["argcount"] == len(arg_list_pdb_types)
 
-        stack_symbols: list[CppStackOrRegisterSymbol] = []
+        symbols: list[CppStackOrRegisterSymbol] = []
 
         # for some unexplained reason, the reported stack is offset by 4 when this flag is set.
         # Note that this affects the arguments (ebp + ...) but not the function stack (ebp - ...)
         stack_offset_delta = -4 if fn.frame_pointer_present else 0
 
-        for symbol in fn.stack_symbols:
+        for symbol in fn.symbols:
             if symbol.symbol_type == "S_REGISTER":
-                stack_symbols.append(
+                symbols.append(
                     CppRegisterSymbol(
                         symbol.name,
                         symbol.data_type,
@@ -107,7 +107,7 @@ class PdbFunctionExtractor:
                 )
             elif symbol.symbol_type == "S_BPREL32":
                 stack_offset = int(symbol.location[1:-1], 16)
-                stack_symbols.append(
+                symbols.append(
                     CppStackSymbol(
                         symbol.name,
                         symbol.data_type,
@@ -123,7 +123,7 @@ class PdbFunctionExtractor:
             arglist=arg_list_pdb_types,
             return_type=function_type["return_type"],
             class_type=class_type,
-            stack_symbols=stack_symbols,
+            symbols=symbols,
             this_adjust=this_adjust,
         )
 

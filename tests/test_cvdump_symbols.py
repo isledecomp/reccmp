@@ -36,8 +36,8 @@ def test_sblock32():
 
     # Make sure we can read the proc and all its stack references
     assert len(parser.symbols) == 1
-    assert len(parser.symbols[0].stack_symbols) == 8
-    assert parser.symbols[0].stack_symbols[0].data_type == CvdumpTypeKey(0x10EC)
+    assert len(parser.symbols[0].symbols) == 8
+    assert parser.symbols[0].symbols[0].data_type == CvdumpTypeKey(0x10EC)
 
 
 LOCAL_PROC = """
