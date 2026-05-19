@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+from dataclasses import dataclass
 from pathlib import Path, PurePath
 from typing import Iterable
 import colorama
@@ -93,6 +94,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--encoding",
+        default="utf-8",
         type=str,
         help="The encoding of the checked files.",
     )
@@ -105,17 +107,11 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
+@dataclass
 class DecomplintOptions:
     paths: tuple[Path, ...]
     module: str | None
     encoding: str
-
-    def __init__(
-        self, paths: tuple[Path, ...], module: str | None, encoding: str | None
-    ):
-        self.paths = paths
-        self.module = module
-        self.encoding = encoding or "utf-8"
 
 
 def decomplint_parse_args(
@@ -147,7 +143,7 @@ def decomplint_parse_args(
 
         paths = tuple(source_code_search(target.source_paths))
         module = target.target_id
-        encoding = args.encoding if args.encoding else target.encoding
+        encoding = target.encoding or "utf-8"
 
         options.append(DecomplintOptions(paths, module, encoding))
 
