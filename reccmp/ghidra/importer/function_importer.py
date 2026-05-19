@@ -82,9 +82,9 @@ class PdbFunctionImporter(ABC):
         name_substitutions: CompiledRegexReplacements,
     ):
         return (
-            ThunkPdbFunctionImport(api, func, type_importer, name_substitutions)
+            PdbFunctionImporterNameOnly(api, func, type_importer, name_substitutions)
             if func.signature is None
-            else FullPdbFunctionImporter(api, func, type_importer, name_substitutions)
+            else PdbFunctionImporterFull(api, func, type_importer, name_substitutions)
         )
 
     @abstractmethod
@@ -94,8 +94,9 @@ class PdbFunctionImporter(ABC):
     def overwrite_ghidra_function(self, ghidra_function: Function): ...
 
 
-class ThunkPdbFunctionImport(PdbFunctionImporter):
-    """For importing thunk functions (like vtordisp or debug build thunks) into Ghidra.
+class PdbFunctionImporterNameOnly(PdbFunctionImporter):
+    """For importing functions known only by name (e.g. vtordisp, debug build thunks,
+    or library functions without signature) into Ghidra.
     Only the name of the function will be imported."""
 
     def matches_ghidra_function(self, ghidra_function: Function) -> bool:
@@ -112,7 +113,7 @@ class ThunkPdbFunctionImport(PdbFunctionImporter):
 
 
 # pylint: disable=too-many-instance-attributes
-class FullPdbFunctionImporter(PdbFunctionImporter):
+class PdbFunctionImporterFull(PdbFunctionImporter):
     """For importing functions into Ghidra where all information are available."""
 
     def __init__(

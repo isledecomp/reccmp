@@ -65,6 +65,71 @@ void MyTestFn(void)
 """)
 
 
+def test_import_without_signature(
+    ghidra: "FlatProgramAPI",
+    function_helper: GhidraFunctionTestHelper,
+    type_helper: GhidraTypeTestHelper,
+):
+    from reccmp.ghidra.importer.function_importer import (
+        PdbFunctionImporter,
+        PdbFunction,
+    )
+
+    function_helper.overwrite_example_function(b"\xc3")
+
+    # Part 1: Import a function with non-trivial signature
+    func_signature = FunctionSignature(
+        call_type="__cdecl",
+        arglist=[CVInfoTypeEnum.T_INT4],
+        return_type=CVInfoTypeEnum.T_VOID,
+        class_type=None,
+        stack_symbols=[
+            CppStackSymbol("p_mockParam", CVInfoTypeEnum.T_INT4, 4),
+        ],
+        this_adjust=0,
+    )
+    pdb_function = PdbFunction(
+        ReccmpMatch(function_helper.orig_address, 1234, {"name": "MyTestFnPart1"}),
+        func_signature,
+        is_stub=False,
+    )
+
+    PdbFunctionImporter.build(
+        ghidra, pdb_function, type_helper.type_importer, []
+    ).overwrite_ghidra_function(function_helper.ghidra_function)
+
+    function_helper.assert_c_code("""
+void __cdecl MyTestFnPart1(int p_mockParam)
+
+{
+  return;
+}
+
+""")
+
+    # Part 2: Pretend that the previous function was detected by Ghidra
+    # and that we want to overwrite it with a function whose signature is unknown.
+    # The import is expected to change the name and preserve the signature.
+
+    second_pdb_function = PdbFunction(
+        ReccmpMatch(function_helper.orig_address, 1234, {"name": "MyTestFnPart2"}),
+        signature=None,
+        is_stub=False,
+    )
+    PdbFunctionImporter.build(
+        ghidra, second_pdb_function, type_helper.type_importer, []
+    ).overwrite_ghidra_function(function_helper.ghidra_function)
+
+    function_helper.assert_c_code("""
+void __cdecl MyTestFnPart2(int p_mockParam)
+
+{
+  return;
+}
+
+""")
+
+
 def test_record_array_access(
     ghidra: "FlatProgramAPI",
     function_helper: GhidraFunctionTestHelper,
