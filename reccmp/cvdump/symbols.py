@@ -35,7 +35,7 @@ class SymbolsEntry:
     size: int
     func_type: CvdumpTypeKey
     name: str
-    stack_symbols: list[StackOrRegisterSymbol] = field(default_factory=list)
+    symbols: list[StackOrRegisterSymbol] = field(default_factory=list)
     static_variables: list[LdataEntry] = field(default_factory=list)
     frame_pointer_present: bool = False
     addr: int | None = None  # Absolute address. Will be set later, if at all
@@ -186,7 +186,7 @@ class CvdumpSymbolsParser:
                 data_type=CvdumpTypeKey.from_str(match.group("data_type")),
                 name=match.group("name"),
             )
-            self.current_function.stack_symbols.append(new_symbol)
+            self.current_function.symbols.append(new_symbol)
 
         elif symbol_type == "S_BLOCK32":
             self.block_level += 1
