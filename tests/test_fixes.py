@@ -450,26 +450,31 @@ def test_and_swap_not_allowed():
     assert is_effective is False
 
 
-def test_patch_compare_jmp_recomp_shorter_than_orig():
+def test_patch_compare_jmp_cmp_recomp_shorter_than_orig():
     """Regression: cmp_index found in orig must be bounds-checked against recomp
     before indexing recomp[cmp_index]. Previously raised IndexError."""
     orig = ["mov eax, 1", "mov ebx, 2", "cmp eax, ebx", "jg 0x1"]
     recomp = ["mov eax, 1", "mov ebx, 2"]
     assert patch_compare_jmp(orig, recomp, "cmp") == set()
+
+
+def test_patch_compare_jmp_test_recomp_shorter_than_orig():
+    orig = ["mov eax, 1", "mov ebx, 2", "test eax, ebx", "jg 0x1"]
+    recomp = ["mov eax, 1", "mov ebx, 2"]
     assert patch_compare_jmp(orig, recomp, "test") == set()
 
 
 def test_patch_mov_compare_jmp_recomp_shorter_than_orig():
     orig = [
-        "mov eax, dword ptr [ebp-4]",
-        "cmp dword ptr [ebp-8], eax",
+        "mov eax, dword ptr [ebp - 4]",
+        "cmp dword ptr [ebp - 8], eax",
         "jl 0x1",
     ]
-    recomp = ["mov eax, dword ptr [ebp-4]"]
+    recomp = ["mov eax, dword ptr [ebp - 4]"]
     assert patch_mov_compare_jmp(orig, recomp, "cmp") == set()
 
 
 def test_patch_fld_fmul_recomp_shorter_than_orig():
-    orig = ["fld dword ptr [ebp-4]", "fmul dword ptr [ebp-8]"]
-    recomp = ["fld dword ptr [ebp-4]"]
+    orig = ["fld dword ptr [ebp - 4]", "fmul dword ptr [ebp - 8]"]
+    recomp = ["fld dword ptr [ebp - 4]"]
     assert patch_fld_fmul(orig, recomp) == set()
