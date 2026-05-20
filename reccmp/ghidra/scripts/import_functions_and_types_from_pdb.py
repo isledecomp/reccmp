@@ -174,10 +174,9 @@ def reload_reccmp_modules():
     is not enough everywhere. If you run into issues, please increase the number and document which module was affected.
     """
 
-    NUM_RELOADS = 2
+    num_reloads = 2
 
-    # Most changes are not applied after one reload. Two reloads appear to be sufficient.
-    for _ in range(NUM_RELOADS):
+    for _ in range(num_reloads):
         # needed because sys.modules is changed by importlib.reload()
         loaded_modules = sys.modules.copy()
 
