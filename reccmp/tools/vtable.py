@@ -9,7 +9,6 @@ from reccmp.utils import print_combined_diff
 from reccmp.project.logging import (
     argparse_add_logging_args,
     argparse_parse_logging,
-    preconfigure_logging,
 )
 from reccmp.project.detect import (
     argparse_add_project_target_args,
@@ -60,7 +59,6 @@ def print_summary(vtable_count: int, problem_count: int):
 
 
 def main():
-    preconfigure_logging()
     args = parse_args()
     vtable_count = 0
     problem_count = 0

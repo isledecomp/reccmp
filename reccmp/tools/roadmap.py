@@ -28,7 +28,6 @@ from reccmp.project.error import RecCmpProjectException
 from reccmp.project.logging import (
     argparse_add_logging_args,
     argparse_parse_logging,
-    preconfigure_logging,
 )
 
 logger = logging.getLogger(__name__)
@@ -387,7 +386,6 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
-    preconfigure_logging()
     args = parse_args()
 
     try:

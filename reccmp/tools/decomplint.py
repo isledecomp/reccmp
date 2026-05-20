@@ -13,7 +13,6 @@ from reccmp.parser.error import ParserAlert
 from reccmp.project.logging import (
     argparse_add_logging_args,
     argparse_parse_logging,
-    preconfigure_logging,
 )
 from reccmp.project.detect import RecCmpProject
 from reccmp.formats import TextFile
@@ -118,7 +117,6 @@ def process_files(
 
 
 def main() -> int:
-    preconfigure_logging()
     args = parse_args()
     search_paths: list[Path] = []
     codefiles: list[TextFile] = []
