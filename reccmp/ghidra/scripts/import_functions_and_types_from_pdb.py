@@ -169,7 +169,7 @@ def reload_reccmp_modules():
     and are not reloaded when relaunching the script. Therefore, in order to facilitate development
     we forcibly reload all of reccmp's modules at startup.
 
-    **NOTE**: One reload turns out to be insufficient to update most modules. A few spot-checks 
+    **NOTE**: One reload turns out to be insufficient to update most modules. A few spot-checks
     did not reveal any modules that require more than two reloads, but there is a chance that two reloads
     is not enough everywhere. If you run into issues, please increase the number and document which module was affected.
     """
@@ -178,10 +178,13 @@ def reload_reccmp_modules():
 
     # Most changes are not applied after one reload. Two reloads appear to be sufficient.
     for _ in range(NUM_RELOADS):
-        loaded_modules = sys.modules.copy() # needed because sys.modules is changed by importlib.reload()
+        # needed because sys.modules is changed by importlib.reload()
+        loaded_modules = sys.modules.copy()
+
         for name, module in loaded_modules.items():
             if "reccmp" in name:
                 importlib.reload(module)
+
 
 def main():
     api = FlatProgramAPI(getCurrentProgram(), getMonitor())
