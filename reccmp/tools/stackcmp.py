@@ -21,7 +21,11 @@ from reccmp.project.detect import (
     RecCmpProjectException,
 )
 from reccmp.cvdump.types import CvdumpTypeKey
-from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
+from reccmp.project.logging import (
+    argparse_add_logging_args,
+    argparse_parse_logging,
+    preconfigure_logging,
+)
 
 # pylint: disable=duplicate-code # misdetects a code duplication with reccmp
 
@@ -324,7 +328,8 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def main():
+def main() -> int:
+    preconfigure_logging()
     args = parse_args()
 
     try:

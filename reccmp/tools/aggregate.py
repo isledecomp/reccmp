@@ -226,7 +226,7 @@ def main():
                 args.diff[0],
             )
 
-        diff_json(saved_data, agg_report, show_both_addrs=False, is_plain=args.no_color)
+        diff_json(saved_data, agg_report, show_both_addrs=False)
 
     return 0
 
