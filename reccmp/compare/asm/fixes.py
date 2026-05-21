@@ -95,6 +95,7 @@ def patch_mov_compare_jmp(
     )
 
     # return if not found, or only found on first or last line
+    # pylint: disable=too-many-boolean-expressions
     if (
         cmp_index in (-1, 0, len(orig) - 1)
         or cmp_index >= len(recomp) - 1
