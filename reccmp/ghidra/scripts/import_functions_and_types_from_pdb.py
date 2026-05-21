@@ -1,11 +1,10 @@
 # Imports types and function signatures from debug symbols (PDB file) of the recompilation.
 #
-# This script uses Python 3 and therefore requires Ghidrathon to be installed in Ghidra (see https://github.com/mandiant/Ghidrathon).
+# This script uses Python 3 and therefore requires Ghidra to be launched with pyghidra enabled.
 # Furthermore, the virtual environment must be set up beforehand under $REPOSITORY_ROOT/.venv, and all required packages must be installed
 # (see README.md).
-# Also, the Python version of the virtual environment must probably match the Python version used for Ghidrathon.
 
-# @author J. Schulz
+# @author The reccmp Dev Team
 # @category reccmp
 # @keybinding
 # @menupath
@@ -26,9 +25,9 @@ if TYPE_CHECKING:
     # builtins that are available on the root level of scripts
     from ghidra.ghidra_builtins import *  # pyright: ignore[reportWildcardImportFromLibrary] # pylint: disable=wildcard-import # these are just for headers
 
-####################################################
-# Global settings for the Ghidrathon import script #
-####################################################
+##########################################
+# Global settings for this import script #
+##########################################
 LOG_LEVEL = logging.DEBUG
 VERBOSE = False
 
@@ -164,16 +163,26 @@ def find_target(api: "FlatProgramAPI") -> "RecCmpTarget":
     return project.get(matching_targets[0])
 
 
-def reload_module(module: str):
+def reload_reccmp_modules():
     """
-    Due to a quirk in Jep (used by Ghidrathon), imported modules persist for the lifetime of the Ghidra process
+    As of 2026-05 (Ghidra 12.1), imported modules persist for the lifetime of the Ghidra process
     and are not reloaded when relaunching the script. Therefore, in order to facilitate development
-    we force reload all our own modules at startup. See also https://github.com/mandiant/Ghidrathon/issues/103.
+    we forcibly reload all of reccmp's modules at startup.
 
-    Note that as of 2024-05-30, this remedy does not work perfectly (yet): Some changes are still not detected
-    correctly and require a Ghidra restart to be applied.
+    **NOTE**: One reload turns out to be insufficient to update most modules. A few spot-checks
+    did not reveal any modules that require more than two reloads, but there is a chance that two reloads
+    is not enough everywhere. If you run into issues, please increase the number and document which module was affected.
     """
-    importlib.reload(importlib.import_module(module))
+
+    num_reloads = 2
+
+    for _ in range(num_reloads):
+        # needed because sys.modules is changed by importlib.reload()
+        loaded_modules = sys.modules.copy()
+
+        for name, module in loaded_modules.items():
+            if "reccmp" in name:
+                importlib.reload(module)
 
 
 def main():
@@ -197,28 +206,12 @@ def main():
 # sys.path is not reset after running the script, so we should restore it
 sys_path_backup = sys.path.copy()
 try:
-    import setuptools  # type: ignore[import-untyped] # pylint: disable=unused-import # required to fix a distutils issue in Python 3.12
+    reload_reccmp_modules()
 
     # Packages are imported down here because reccmp's dependencies are only available after the venv was added to the pythonpath
-    reload_module("reccmp.project.detect")
     from reccmp.project.detect import RecCmpProject, RecCmpTarget
     from reccmp.project.error import RecCmpProjectNotFoundException
-
-    reload_module("reccmp.ghidra.importer.importer")
     from reccmp.ghidra.importer.importer import import_target_into_ghidra
-
-    reload_module("reccmp.compare")
-    reload_module("reccmp.compare.db")
-    reload_module("reccmp.ghidra.importer.entity_names")
-    reload_module("reccmp.ghidra.importer.exceptions")
-    reload_module("reccmp.ghidra.importer.pdb_extraction")
-    reload_module("reccmp.ghidra.importer.ghidra_helper")
-    reload_module("reccmp.ghidra.importer.vtable_importer")
-    reload_module("reccmp.ghidra.importer.globals_importer")
-    reload_module("reccmp.ghidra.importer.function_importer")
-    reload_module("reccmp.ghidra.importer.type_importer")
-    reload_module("reccmp.ghidra.importer.statistics")
-    reload_module("reccmp.ghidra.importer.globals")
 
     if __name__ == "__main__":
         main()

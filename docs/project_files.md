@@ -7,7 +7,7 @@ The configuration of `reccmp` requires three different files. As explained in th
 * `reccmp-build.yml` contains information that may differ in each recompilation, like the location of the recompiled binary and debug symbol file. We recommend that you ignore this file from your VCS.
   * If the names or paths of your build artifacts change, we recommend you generate this script as part of your build process.
   * If they do not, you can generate this file once and keep it in your build directory or at the repository root.
-  * Note that as of this writing, the [plugin-based Ghidra import](../reccmp/ghidra/README.md#Setup-for-Ghidrathon) needs to have a `reccmp-build.yml` at the repository root.
+  * Note that as of this writing, the [GUI-based Ghidra import](../reccmp/ghidra/README.md#GUI-Setup) needs to have a `reccmp-build.yml` at the repository root.
 
 ## Additional information in `reccmp-project.yml`
 
