@@ -780,3 +780,15 @@ def test_folded_mixed_by_module(parser):
     assert parser.functions[1].is_folded is False
 
     assert len(parser.alerts) == 0
+
+
+def test_variables_calling_constructor(parser):
+    """Can extract the variable name for variables initialized by a constructor."""
+    parser.read("""\
+        // GLOBAL: GOLDP 0x10065b54
+        const FloatConstant g_floatConst4096(4096.0f);
+        """)
+
+    assert len(parser.alerts) == 0
+    assert parser.variables[0].offset == 0x10065B54
+    assert parser.variables[0].name == "g_floatConst4096"

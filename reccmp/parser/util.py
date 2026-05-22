@@ -106,7 +106,19 @@ def get_class_name(line: str) -> str | None:
     return None
 
 
-global_regex = re.compile(r"(?P<name>(?:\w+::)*\w+)(?:\)\(|\[.*|\s*=.*|;)")
+global_regex = re.compile(
+    r"""
+    (?P<name>(?:\w+::)*\w+)       # Any identifier with 0-N namespace qualifiers
+    (?:                           # Suffix options:
+        \(\w|                     # - Open paren: call constructor
+        \)\(|                     # - Close paren, open paren: function pointer variable
+        \[.*|                     # - Open bracket: array with or without size
+        \s*=.*|                   # - Direct assignment
+        ;                         # - Not initialized
+    )
+""",
+    flags=re.X,
+)
 
 
 def get_variable_name(line: str) -> str | None:
