@@ -783,7 +783,7 @@ def test_folded_mixed_by_module(parser):
 
 
 def test_variables_calling_constructor(parser):
-    """Can extract the variable name for variables intialized by a constructor."""
+    """Can extract the variable name for variables initialized by a constructor."""
     parser.read("""\
         // GLOBAL: GOLDP 0x10065b54
         const FloatConstant g_floatConst4096(4096.0f);
