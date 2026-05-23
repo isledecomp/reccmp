@@ -79,10 +79,12 @@ class CvdumpSymbolsParser:
     )
 
     _module_start_regex = re.compile(
-        r'\*\* Module: "(?P<module>[^"]+)"(?: from "(?P<from>[^"]+)")?$'
+        r'\*\* Module: "(?P<module>[^"]+)"(?: from "(?P<from>[^"]*)")?$'
     )
 
-    _compile_key_value = re.compile(r"\s{9}(?P<key>[^:]+):\s(?P<value>.+)$")
+    _compile_key_value = re.compile(
+        r"\s{9}(?P<key>[^:=]+)(?::|\s=)(?:\s(?P<value>.+))?$"
+    )
     """
     For lines like
     `         Target processor: 80486`
@@ -124,6 +126,7 @@ class CvdumpSymbolsParser:
         # that indicates the end of the block.
         self.block_level: int = 0
         self.alerted_types: set[str] = set()
+        self.unhandled_lines: list[str] = []
 
     def read_line(self, line: str):
         if len(line) == 0:
@@ -150,7 +153,9 @@ class CvdumpSymbolsParser:
             # We do not need this info at the moment, might be useful in the future
             pass
         else:
-            logger.debug("Unhandled line: %s", line[:-1])
+            if line not in self.unhandled_lines:
+                self.unhandled_lines.append(line)
+                logger.debug("Unhandled line: %s", line)
 
     def _parse_generic_case(self, line, line_match: Match[str]):
         symbol_type: str = line_match.group("symbol_type")
