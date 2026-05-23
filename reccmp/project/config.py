@@ -66,7 +66,7 @@ class YmlReportConfig(BaseModel):
 
     @classmethod
     def default(cls) -> "YmlReportConfig":
-        return cls(ignore_functions=[])
+        return cls(ignore_functions=[], ignore_variables=[])
 
 
 @dataclass
