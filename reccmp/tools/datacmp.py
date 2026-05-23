@@ -87,6 +87,9 @@ def do_the_comparison(target: RecCmpTarget) -> Iterator[ComparisonItem]:
     )
 
     for var in compare.get_variables():
+        if var.name in target.report_config.ignore_variables:
+            continue
+
         yield variable_comparator.compare_variable(var)
 
 
