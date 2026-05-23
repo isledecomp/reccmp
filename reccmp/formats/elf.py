@@ -304,5 +304,5 @@ class ElfImage(Image):
     def taste(cls, data: bytes, offset: int) -> bool:
         return ElfFileHeader.taste(data, offset=offset)
 
-    def seek(self, vaddr: int) -> tuple[bytes, int]:
+    def seek(self, vaddr: int) -> tuple[memoryview, int]:
         raise NotImplementedError

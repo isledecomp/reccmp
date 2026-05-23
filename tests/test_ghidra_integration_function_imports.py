@@ -42,7 +42,7 @@ def test_import_trivial_function(
         arglist=[],
         return_type=CVInfoTypeEnum.T_VOID,
         class_type=None,
-        stack_symbols=[],
+        symbols=[],
         this_adjust=0,
     )
     pdb_function = PdbFunction(
@@ -50,13 +50,126 @@ def test_import_trivial_function(
         func_signature,
         is_stub=False,
     )
-
-    PdbFunctionImporter.build(
+    importer = PdbFunctionImporter.build(
         ghidra, pdb_function, type_helper.type_importer, []
-    ).overwrite_ghidra_function(function_helper.ghidra_function)
+    )
+    importer.overwrite_ghidra_function(function_helper.ghidra_function)
 
+    assert importer.matches_ghidra_function(function_helper.ghidra_function) is True
     function_helper.assert_c_code("""
 void MyTestFn(void)
+
+{
+  return;
+}
+
+""")
+
+
+def test_import_without_signature(
+    ghidra: "FlatProgramAPI",
+    function_helper: GhidraFunctionTestHelper,
+    type_helper: GhidraTypeTestHelper,
+):
+    from reccmp.ghidra.importer.function_importer import (
+        PdbFunctionImporter,
+        PdbFunction,
+    )
+
+    function_helper.overwrite_example_function(b"\xc3")
+
+    # Part 1: Import a function with non-trivial signature
+    func_signature = FunctionSignature(
+        call_type="__cdecl",
+        arglist=[CVInfoTypeEnum.T_INT4],
+        return_type=CVInfoTypeEnum.T_VOID,
+        class_type=None,
+        symbols=[
+            CppStackSymbol("p_mockParam", CVInfoTypeEnum.T_INT4, 4),
+        ],
+        this_adjust=0,
+    )
+    pdb_function = PdbFunction(
+        ReccmpMatch(function_helper.orig_address, 1234, {"name": "MyTestFnPart1"}),
+        func_signature,
+        is_stub=False,
+    )
+    importer = PdbFunctionImporter.build(
+        ghidra, pdb_function, type_helper.type_importer, []
+    )
+    importer.overwrite_ghidra_function(function_helper.ghidra_function)
+
+    assert importer.matches_ghidra_function(function_helper.ghidra_function) is True
+    function_helper.assert_c_code("""
+void __cdecl MyTestFnPart1(int p_mockParam)
+
+{
+  return;
+}
+
+""")
+
+    # Part 2: Pretend that the previous function was detected by Ghidra
+    # and that we want to overwrite it with a function whose signature is unknown.
+    # The import is expected to change the name and preserve the signature.
+
+    second_pdb_function = PdbFunction(
+        ReccmpMatch(function_helper.orig_address, 1234, {"name": "MyTestFnPart2"}),
+        signature=None,
+        is_stub=False,
+    )
+    importer = PdbFunctionImporter.build(
+        ghidra, second_pdb_function, type_helper.type_importer, []
+    )
+    importer.overwrite_ghidra_function(function_helper.ghidra_function)
+
+    assert importer.matches_ghidra_function(function_helper.ghidra_function) is True
+    function_helper.assert_c_code("""
+void __cdecl MyTestFnPart2(int p_mockParam)
+
+{
+  return;
+}
+
+""")
+
+
+def test_import_fastcall_convention(
+    ghidra: "FlatProgramAPI",
+    function_helper: GhidraFunctionTestHelper,
+    type_helper: GhidraTypeTestHelper,
+):
+    from reccmp.ghidra.importer.function_importer import (
+        PdbFunctionImporter,
+        PdbFunction,
+    )
+
+    function_helper.overwrite_example_function(b"\xc3")
+
+    func_signature = FunctionSignature(
+        call_type="__fastcall",
+        arglist=[CVInfoTypeEnum.T_INT4, CVInfoTypeEnum.T_INT4],
+        return_type=CVInfoTypeEnum.T_VOID,
+        class_type=None,
+        symbols=[
+            CppRegisterSymbol("p_src", CVInfoTypeEnum.T_INT4, "ecx"),
+            CppRegisterSymbol("p_dest", CVInfoTypeEnum.T_INT4, "edx"),
+        ],
+        this_adjust=0,
+    )
+    pdb_function = PdbFunction(
+        ReccmpMatch(function_helper.orig_address, 1234, {"name": "MyTestFn"}),
+        func_signature,
+        is_stub=False,
+    )
+    importer = PdbFunctionImporter.build(
+        ghidra, pdb_function, type_helper.type_importer, []
+    )
+    importer.overwrite_ghidra_function(function_helper.ghidra_function)
+
+    assert importer.matches_ghidra_function(function_helper.ghidra_function) is True
+    function_helper.assert_c_code("""
+void __fastcall MyTestFn(int p_src,int p_dest)
 
 {
   return;
@@ -127,7 +240,7 @@ def test_record_array_access(
         arglist=[CVInfoTypeEnum.T_INT4],
         return_type=CVInfoTypeEnum.T_32PCHAR,
         class_type=legoanim_class_key,
-        stack_symbols=[
+        symbols=[
             CppRegisterSymbol("this", legoanim_class_key, "ecx"),
             CppStackSymbol("p_index", CVInfoTypeEnum.T_INT4, 4),
         ],
@@ -142,11 +255,12 @@ def test_record_array_access(
         func_signature,
         is_stub=False,
     )
-
-    PdbFunctionImporter.build(
+    importer = PdbFunctionImporter.build(
         ghidra, pdb_function, type_helper.type_importer, []
-    ).overwrite_ghidra_function(function_helper.ghidra_function)
+    )
+    importer.overwrite_ghidra_function(function_helper.ghidra_function)
 
+    assert importer.matches_ghidra_function(function_helper.ghidra_function) is True
     function_helper.assert_c_code("""
 char * __thiscall LegoAnim::GetActorName(LegoAnim *this,int p_index)
 
@@ -228,7 +342,7 @@ def test_global_array_access(
         arglist=[CVInfoTypeEnum.T_INT4],
         return_type=CVInfoTypeEnum.T_32PCHAR,
         class_type=None,
-        stack_symbols=[
+        symbols=[
             CppStackSymbol("p_index", CVInfoTypeEnum.T_INT4, 4),
         ],
         this_adjust=0,
@@ -242,11 +356,12 @@ def test_global_array_access(
         func_signature,
         is_stub=False,
     )
-
-    PdbFunctionImporter.build(
+    importer = PdbFunctionImporter.build(
         ghidra, pdb_function, type_helper.type_importer, []
-    ).overwrite_ghidra_function(function_helper.ghidra_function)
+    )
+    importer.overwrite_ghidra_function(function_helper.ghidra_function)
 
+    assert importer.matches_ghidra_function(function_helper.ghidra_function) is True
     function_helper.assert_c_code("""
 char * LegoCharacterManager::GetActorName(int p_index)
 
@@ -330,7 +445,7 @@ def test_global_pointer_access(
         arglist=[CVInfoTypeEnum.T_INT4],
         return_type=CVInfoTypeEnum.T_32PCHAR,
         class_type=None,
-        stack_symbols=[
+        symbols=[
             CppStackSymbol("p_index", CVInfoTypeEnum.T_INT4, 4),
         ],
         this_adjust=0,
@@ -344,11 +459,12 @@ def test_global_pointer_access(
         func_signature,
         is_stub=False,
     )
-
-    PdbFunctionImporter.build(
+    importer = PdbFunctionImporter.build(
         ghidra, pdb_function, type_helper.type_importer, []
-    ).overwrite_ghidra_function(function_helper.ghidra_function)
+    )
+    importer.overwrite_ghidra_function(function_helper.ghidra_function)
 
+    assert importer.matches_ghidra_function(function_helper.ghidra_function) is True
     function_helper.assert_c_code("""
 char * LegoCharacterManager::GetActorName(int p_index)
 

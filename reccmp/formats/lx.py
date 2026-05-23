@@ -99,5 +99,5 @@ class LXImage(Image):
             header=header,
         )
 
-    def seek(self, vaddr: int) -> tuple[bytes, int]:
+    def seek(self, vaddr: int) -> tuple[memoryview, int]:
         raise NotImplementedError

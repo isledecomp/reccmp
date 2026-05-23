@@ -3,6 +3,8 @@ import re
 import dataclasses
 from typing import Iterator
 from pathlib import Path
+
+from reccmp.types import ConcreteBuffer
 from .exceptions import (
     InvalidVirtualAddressError,
     InvalidVirtualReadError,
@@ -19,7 +21,7 @@ r_widestring = re.compile(rb"(?:(?:[^\x00]\x00)|(?:\x00[^\x00])|(?:[^\x00][^\x00
 @dataclasses.dataclass(frozen=True)
 class ImageRegion:
     addr: int
-    data: bytes
+    data: ConcreteBuffer
     size: int = 0
 
     def __post_init__(self):
@@ -88,7 +90,7 @@ class Image:
         repr=False, default_factory=dict
     )
 
-    def seek(self, vaddr: int) -> tuple[bytes, int]:
+    def seek(self, vaddr: int) -> tuple[memoryview, int]:
         """Must be implemented for each image.
         1. Go to the position in virtual memory for the given address.
         2. If it is valid, return a tuple with:
@@ -162,4 +164,4 @@ class Image:
         # If we need to read uninitialized bytes, copy the physical bytes we have onto the buffer.
         data = bytearray(size)
         data[: len(view)] = view
-        return data
+        return bytes(data)

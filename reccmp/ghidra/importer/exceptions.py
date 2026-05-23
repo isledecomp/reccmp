@@ -43,7 +43,7 @@ class ClassOrNamespaceNotFoundInGhidraError(ReccmpGhidraException):
         return f"Class or namespace not found in Ghidra: {self.get_namespace_str()}"
 
 
-class StackOffsetMismatchError(ReccmpGhidraException):
+class ParameterMismatchError(ReccmpGhidraException):
     pass
 
 
