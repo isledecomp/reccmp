@@ -187,6 +187,9 @@ def source_code_search(search_paths: Path | Iterable[Path]) -> Iterator[Path]:
         if not path.exists():
             continue
 
+        # Resolve removes `..` references.
+        path = path.resolve()
+
         if path.is_file() and is_file_c_like(path):
             code_files.add(path)
             continue
