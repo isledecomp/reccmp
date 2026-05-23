@@ -11,7 +11,7 @@ from reccmp.parser.linter import (
 
 def create_parser_result(code: str, path: PurePath) -> ReccmpParserResult:
     """Since #416, the linter is a higher-level interpreter of parser results instead of a wrapper.
-    This convert the text/path into results to try to minimize changes to the existing tests.
+    This converts the text/path into results to try to minimize changes to the existing tests.
     """
     parser = DecompParser()
     parser.reset_and_set_filename(path)
