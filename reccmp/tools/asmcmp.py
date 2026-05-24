@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+from collections.abc import Sequence
+from datetime import datetime
 import argparse
 import logging
 import os
@@ -21,9 +23,14 @@ from reccmp.compare.report import (
     ReccmpComparedEntity,
     deserialize_reccmp_report,
     serialize_reccmp_report,
+    report_function_alignment,
+    report_function_accuracy,
 )
 from reccmp.types import EntityType
-from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
+from reccmp.project.logging import (
+    argparse_add_logging_args,
+    argparse_parse_logging,
+)
 from reccmp.project.detect import (
     RecCmpProjectException,
     argparse_add_project_target_args,
@@ -41,12 +48,8 @@ def gen_json(json_file: str, json_str: str):
         f.write(json_str)
 
 
-def print_match_verbose(
-    match: DiffReport, show_both_addrs: bool = False, is_plain: bool = False
-):
-    percenttext = percent_string(
-        match.effective_ratio, match.is_effective_match, is_plain
-    )
+def print_match_verbose(match: DiffReport, show_both_addrs: bool = False):
+    percenttext = percent_string(match.effective_ratio, match.is_effective_match)
 
     if show_both_addrs:
         addrs = f"0x{match.orig_addr:x} / 0x{match.recomp_addr:x}"
@@ -61,39 +64,31 @@ def print_match_verbose(
     udiff = raw_diff_to_udiff(match.result.diff, grouped=grouped_diff)
 
     if match.effective_ratio == 1.0:
-        ok_text = (
-            "OK!"
-            if is_plain
-            else (reccmp.color.Fore.GREEN + "✨ OK! ✨" + reccmp.color.Style.RESET_ALL)
-        )
+        ok_text = reccmp.color.Fore.GREEN + "✨ OK! ✨" + reccmp.color.Style.RESET_ALL
         if match.ratio == 1.0:
             print(f"{addrs}: {match.name} 100% match.\n\n{ok_text}\n\n")
         else:
-            print_combined_diff(udiff, is_plain, show_both_addrs)
+            print_combined_diff(udiff, show_both_addrs)
 
             print(
                 f"\n{addrs}: {match.name} 100% effective match (differs, but only in ways that don't affect behavior).\n\n{ok_text}\n\n"
             )
 
     else:
-        print_combined_diff(udiff, is_plain, show_both_addrs)
+        print_combined_diff(udiff, show_both_addrs)
 
         print(
             f"\n{match.name} is only {percenttext} similar to the original, diff above"
         )
 
 
-def print_match_oneline(
-    match: DiffReport, show_both_addrs: bool = False, is_plain: bool = False
-):
-    percenttext = percent_string(
-        match.effective_ratio, match.is_effective_match, is_plain
-    )
+def print_match_oneline(match: ReccmpComparedEntity, show_both_addrs: bool = False):
+    percenttext = percent_string(match.effective_accuracy, match.is_effective_match)
 
     if show_both_addrs:
-        addrs = f"0x{match.orig_addr:x} / 0x{match.recomp_addr:x}"
+        addrs = f"{match.orig_addr} / {match.recomp_addr}"
     else:
-        addrs = hex(match.orig_addr)
+        addrs = match.orig_addr
 
     if match.is_stub:
         print(f"  {match.name} ({addrs}) is a stub.")
@@ -143,6 +138,11 @@ def parse_args() -> argparse.Namespace:
         help="Diff against summary in JSON file",
     )
     parser.add_argument(
+        "--dump",
+        action="store_true",
+        help="Write decompiled assembly to debug files.",
+    )
+    parser.add_argument(
         "--html",
         "-H",
         metavar="<file>",
@@ -178,7 +178,32 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def main():
+def dump_all_matched_functions(matches: Sequence[DiffReport]):
+    logger.info("Creating assembly dump files.")
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    orig_order = sorted(matches, key=lambda m: m.orig_addr)
+    recomp_order = sorted(matches, key=lambda m: m.recomp_addr)
+
+    with open(f"reccmp-{timestamp}-orig.txt", "w+", encoding="utf-8") as f:
+        for match in orig_order:
+            f.write(f"; {match.name}\n")
+            for addr, line in match.result.diff.orig_inst:
+                if addr:
+                    f.write(f"{addr:10}: {line}\n")
+                else:
+                    f.write(f"        : {line}\n")
+
+    with open(f"reccmp-{timestamp}-recomp.txt", "w+", encoding="utf-8") as f:
+        for match in recomp_order:
+            f.write(f"; {match.name}\n")
+            for addr, line in match.result.diff.recomp_inst:
+                if addr:
+                    f.write(f"{addr:10}: {line}\n")
+                else:
+                    f.write(f"        : {line}\n")
+
+
+def main() -> int:
     args = parse_args()
 
     try:
@@ -191,9 +216,6 @@ def main():
 
     compare = Compare.from_target(target)
 
-    if args.loglevel == logging.DEBUG:
-        compare.debug = True
-
     print()
 
     ### Compare one or none.
@@ -204,63 +226,42 @@ def main():
             logger.error("Failed to find a match at address 0x%x", args.verbose)
             return 1
 
-        print_match_verbose(
-            match, show_both_addrs=args.print_rec_addr, is_plain=args.no_color
-        )
+        print_match_verbose(match, show_both_addrs=args.print_rec_addr)
         return 0
 
     ### Compare everything.
 
-    # Count how many functions have the same virtual address in orig and recomp.
-    functions_aligned_count = 0
+    compared = list(compare.compare_all())
 
-    # Number of functions compared (i.e. excluding stubs)
-    function_count = 0
-    total_accuracy = 0.0
-    total_effective_accuracy = 0.0
+    if args.dump:
+        dump_all_matched_functions(compared)
 
     report = ReccmpStatusReport(filename=target.original_path.name)
 
-    for match in compare.compare_all():
+    # Build report:
+    for match in compared:
         # if we are ignoring this function, skip to next one and don't add it to the entities list
         if (
             match.match_type == EntityType.FUNCTION
             and match.name in target.report_config.ignore_functions
         ):
             continue
+
         if args.nolib and match.is_library:
             continue
 
-        if not args.silent and args.diff is None:
-            print_match_oneline(
-                match, show_both_addrs=args.print_rec_addr, is_plain=args.no_color
-            )
+        report.add_match(match)
 
-        if (
-            match.match_type == EntityType.FUNCTION
-            and match.orig_addr == match.recomp_addr
-        ):
-            functions_aligned_count += 1
+    # Count how many functions have the same virtual address in orig and recomp.
+    functions_aligned_count = report_function_alignment(report)
 
-        if match.match_type == EntityType.FUNCTION and not match.is_stub:
-            function_count += 1
-            total_accuracy += match.ratio
-            total_effective_accuracy += match.effective_ratio
+    # Number of functions compared (i.e. excluding stubs)
+    function_count, _, total_effective_accuracy = report_function_accuracy(report)
 
-        # If html, record the diffs to an HTML file
-        orig_addr = f"0x{match.orig_addr:x}"
-        recomp_addr = f"0x{match.recomp_addr:x}"
-
-        report.entities[orig_addr] = ReccmpComparedEntity(
-            orig_addr=orig_addr,
-            name=match.name,
-            type=match.match_type,
-            accuracy=match.effective_ratio,
-            recomp_addr=recomp_addr,
-            is_effective_match=match.is_effective_match,
-            is_stub=match.is_stub,
-            rdiff=match.result.diff,
-        )
+    # Print diff summary to terminal
+    if not args.silent and args.diff is None:
+        for entity in report.entities.values():
+            print_match_oneline(entity, show_both_addrs=args.print_rec_addr)
 
     # Compare with saved diff report.
     if args.diff is not None:
@@ -272,7 +273,6 @@ def main():
                 saved_data,
                 report,
                 show_both_addrs=args.print_rec_addr,
-                is_plain=args.no_color,
             )
         except FileNotFoundError:
             # In a CI workflow, the JSON file might not exist on the first run in a new branch.
@@ -293,6 +293,9 @@ def main():
 
     implemented_funcs = function_count
 
+    # Add known but unmatched functions to our count
+    function_count += compare.count_unmatched_functions()
+
     # If we know how many functions are in the file (via analysis with Ghidra or other tools)
     # we can substitute an alternate value to use when calculating the percentages below.
     if args.total:
@@ -300,15 +303,22 @@ def main():
         function_count = max(function_count, int(args.total))
 
     if function_count > 0:
-        effective_accuracy = total_effective_accuracy / function_count * 100
-        actual_accuracy = total_accuracy / function_count * 100
+        implemented = implemented_funcs / function_count * 100
+        effective_accuracy = total_effective_accuracy / implemented_funcs * 100
+        # actual_accuracy = total_accuracy / implemented_funcs * 100
+        progress = total_effective_accuracy / function_count * 100
         alignment_percentage = functions_aligned_count / function_count * 100
+
         print(
-            f"\nTotal effective accuracy {effective_accuracy:.2f}% across {function_count} functions ({actual_accuracy:.2f}% actual accuracy)"
+            f"\nImplemented:  {implemented:.2f}%  ({implemented_funcs} / {function_count})"
         )
-        print(
-            f"{functions_aligned_count} functions are aligned ({alignment_percentage:.2f}%)"
-        )
+        print(f"Accuracy:     {effective_accuracy:.2f}%")
+        print(f"Progress:     {progress:.2f}%")
+
+        if functions_aligned_count > 0:
+            print(
+                f"{functions_aligned_count} functions are aligned ({alignment_percentage:.2f}%)"
+            )
 
         if args.svg is not None:
             gen_svg(

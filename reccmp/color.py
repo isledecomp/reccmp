@@ -1,18 +1,50 @@
 import os
 import colorama
 
-COLOR_ENABLED = not os.environ.get("NO_COLOR")
-
 
 class Fore:
-    RED = colorama.Fore.RED if COLOR_ENABLED else ""
-    GREEN = colorama.Fore.GREEN if COLOR_ENABLED else ""
-    BLUE = colorama.Fore.BLUE if COLOR_ENABLED else ""
-    YELLOW = colorama.Fore.YELLOW if COLOR_ENABLED else ""
-    WHITE = colorama.Fore.WHITE if COLOR_ENABLED else ""
-    LIGHTWHITE_EX = colorama.Fore.LIGHTWHITE_EX if COLOR_ENABLED else ""
-    LIGHTBLACK_EX = colorama.Fore.LIGHTBLACK_EX if COLOR_ENABLED else ""
+    RED = ""
+    GREEN = ""
+    BLUE = ""
+    YELLOW = ""
+    WHITE = ""
+    LIGHTWHITE_EX = ""
+    LIGHTBLACK_EX = ""
 
 
 class Style:
-    RESET_ALL = colorama.Style.RESET_ALL if COLOR_ENABLED else ""
+    RESET_ALL = ""
+
+
+def setup_colorama():
+    Fore.RED = colorama.Fore.RED
+    Fore.GREEN = colorama.Fore.GREEN
+    Fore.BLUE = colorama.Fore.BLUE
+    Fore.YELLOW = colorama.Fore.YELLOW
+    Fore.WHITE = colorama.Fore.WHITE
+    Fore.LIGHTWHITE_EX = colorama.Fore.LIGHTWHITE_EX
+    Fore.LIGHTBLACK_EX = colorama.Fore.LIGHTBLACK_EX
+
+    Style.RESET_ALL = colorama.Style.RESET_ALL
+
+
+def setup_plain():
+    Fore.RED = ""
+    Fore.GREEN = ""
+    Fore.BLUE = ""
+    Fore.YELLOW = ""
+    Fore.WHITE = ""
+    Fore.LIGHTWHITE_EX = ""
+    Fore.LIGHTBLACK_EX = ""
+
+    Style.RESET_ALL = ""
+
+
+def enable_color(enable: bool) -> None:
+    if enable and not os.environ.get("NO_COLOR"):
+        setup_colorama()
+    else:
+        setup_plain()
+
+
+enable_color(True)

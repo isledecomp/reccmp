@@ -1,9 +1,9 @@
 from enum import Enum
 from dataclasses import dataclass
+from pathlib import PurePath
 
 
-# TODO: poorly chosen name, should be AlertType or AlertCode or something
-class ParserError(Enum):
+class AlertCode(Enum):
     # WARN: Stub function exceeds some line number threshold
     UNLIKELY_STUB = 100
 
@@ -86,15 +86,26 @@ class ParserError(Enum):
     # is implemented so we can match with the PDB.
     NO_IMPLEMENTATION = 207
 
+    # This code or higher is a critical error
+    DECOMP_CRITICAL_START = 300
+
+    # CRITICAL: Wrapper for FileNotFoundError
+    FILE_NOT_FOUND = 301
+
+    # CRITICAL: Wrapper for UnicodeDecodeError
+    UNICODE_DECODE_ERROR = 302
+
 
 @dataclass
 class ParserAlert:
-    code: ParserError
+    code: AlertCode
+    path: PurePath
     line_number: int
     line: str | None = None
+    target: str | None = None
 
     def is_warning(self) -> bool:
-        return self.code.value < ParserError.DECOMP_ERROR_START.value
+        return self.code.value < AlertCode.DECOMP_ERROR_START.value
 
     def is_error(self) -> bool:
-        return self.code.value >= ParserError.DECOMP_ERROR_START.value
+        return self.code.value >= AlertCode.DECOMP_ERROR_START.value

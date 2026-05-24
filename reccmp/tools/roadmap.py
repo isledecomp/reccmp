@@ -25,7 +25,10 @@ from reccmp.project.detect import (
     argparse_parse_project_target,
 )
 from reccmp.project.error import RecCmpProjectException
-from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
+from reccmp.project.logging import (
+    argparse_add_logging_args,
+    argparse_parse_logging,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +72,10 @@ class ModuleMap:
         ]
 
     def get_module(self, addr: int) -> tuple[str, str] | None:
+        # Avoid a crash if we did not read any section contributions.
+        if not self.section_contrib:
+            return None
+
         i = bisect.bisect_left(self.contrib_starts, addr)
         # If the addr matches the section contribution start, we are in the
         # right spot. Otherwise, we need to subtract one here.

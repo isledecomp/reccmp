@@ -59,7 +59,7 @@ def compare_functions(
     recomp_bin.is_relocated_addr = is_relocated_addr or Mock(return_value=False)
     recomp_bin.is_debug = Mock(return_value=False)
 
-    comp = FunctionComparator(db, lines_db, orig_bin, recomp_bin, report, "unittest")
+    comp = FunctionComparator(db, lines_db, orig_bin, recomp_bin, report)
 
     return comp.compare_function(
         ReccmpMatch(
@@ -592,7 +592,7 @@ def test_compare_without_distinct_size(
     orig_bin = RawImage.from_memory(orig_code)
     recomp_bin = RawImage.from_memory(recomp_code)
 
-    comp = FunctionComparator(db, lines_db, orig_bin, recomp_bin, report, "unittest")
+    comp = FunctionComparator(db, lines_db, orig_bin, recomp_bin, report)
     (entity,) = list(db.get_functions())
     diffreport = comp.compare_function(entity)
 
@@ -629,7 +629,7 @@ def test_compare_with_distinct_size(
     orig_bin = RawImage.from_memory(orig_code)
     recomp_bin = RawImage.from_memory(recomp_code)
 
-    comp = FunctionComparator(db, lines_db, orig_bin, recomp_bin, report, "unittest")
+    comp = FunctionComparator(db, lines_db, orig_bin, recomp_bin, report)
     (entity,) = list(db.get_functions())
     diffreport = comp.compare_function(entity)
 

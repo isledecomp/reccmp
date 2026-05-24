@@ -255,7 +255,7 @@
         ]
       ],
       "effective": true,
-      "matching": 1.0,
+      "matching": 0.8,
       "name": "WndProc",
       "recomp": "0x501d20"
     },
@@ -380,7 +380,7 @@
         ]
       ],
       "effective": true,
-      "matching": 1.0,
+      "matching": 0.8,
       "name": "_MemPoolPreAllocate@12",
       "recomp": "0x503180"
     },
@@ -635,7 +635,7 @@
         ]
       ],
       "effective": true,
-      "matching": 1.0,
+      "matching": 0.8,
       "name": "_MemReAllocPtr@12",
       "recomp": "0x504260"
     },
@@ -681,7 +681,7 @@
         ]
       ],
       "effective": true,
-      "matching": 1.0,
+      "matching": 0.8,
       "name": "@_shi_resizeAny@16",
       "recomp": "0x5043b0"
     },
@@ -1518,7 +1518,7 @@
         ]
       ],
       "effective": true,
-      "matching": 1.0,
+      "matching": 0.9,
       "name": "@shi_isBlockInUseSmall@8",
       "recomp": "0x507530"
     },

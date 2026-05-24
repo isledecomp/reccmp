@@ -25,3 +25,11 @@ class EntityType(IntEnum):
 class ImageId(IntEnum):
     ORIG = 0
     RECOMP = 1
+
+
+ConcreteBuffer = bytes | bytearray | memoryview
+"""
+See #411 and https://docs.python.org/3.14/library/collections.abc.html#collections.abc.ByteString.
+
+To be used when `typing.Buffer` is insufficient (e.g. when `Sized` or `Indexed` is required).
+"""

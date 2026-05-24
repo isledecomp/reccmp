@@ -21,6 +21,7 @@ from ghidra.program.model.data import (
 from reccmp.cvdump.cvinfo import CVInfoTypeEnum
 
 from .pdb_extraction import (
+    CppStackOrRegisterSymbol,
     PdbFunction,
     CppRegisterSymbol,
     CppStackSymbol,
@@ -32,7 +33,7 @@ from .ghidra_helper import (
 )
 
 from .exceptions import (
-    StackOffsetMismatchError,
+    ParameterMismatchError,
     ReccmpGhidraException,
     TypeNotImplementedError,
 )
@@ -82,9 +83,9 @@ class PdbFunctionImporter(ABC):
         name_substitutions: CompiledRegexReplacements,
     ):
         return (
-            ThunkPdbFunctionImport(api, func, type_importer, name_substitutions)
+            PdbFunctionImporterNameOnly(api, func, type_importer, name_substitutions)
             if func.signature is None
-            else FullPdbFunctionImporter(api, func, type_importer, name_substitutions)
+            else PdbFunctionImporterFull(api, func, type_importer, name_substitutions)
         )
 
     @abstractmethod
@@ -94,8 +95,9 @@ class PdbFunctionImporter(ABC):
     def overwrite_ghidra_function(self, ghidra_function: Function): ...
 
 
-class ThunkPdbFunctionImport(PdbFunctionImporter):
-    """For importing thunk functions (like vtordisp or debug build thunks) into Ghidra.
+class PdbFunctionImporterNameOnly(PdbFunctionImporter):
+    """For importing functions known only by name (e.g. vtordisp, debug build thunks,
+    or library functions without signature) into Ghidra.
     Only the name of the function will be imported."""
 
     def matches_ghidra_function(self, ghidra_function: Function) -> bool:
@@ -112,7 +114,7 @@ class ThunkPdbFunctionImport(PdbFunctionImporter):
 
 
 # pylint: disable=too-many-instance-attributes
-class FullPdbFunctionImporter(PdbFunctionImporter):
+class PdbFunctionImporterFull(PdbFunctionImporter):
     """For importing functions into Ghidra where all information are available."""
 
     def __init__(
@@ -254,24 +256,33 @@ class FullPdbFunctionImporter(PdbFunctionImporter):
                     ghidra_arg.getDataType(),
                 )
                 return False
+
             # compare argument names
-            stack_match = self.get_matching_stack_symbol(ghidra_arg.getStackOffset())
-            if stack_match is None:
+            if ghidra_arg.isStackVariable():
+                match: CppStackOrRegisterSymbol | None = self.get_matching_stack_symbol(
+                    ghidra_arg.getStackOffset()
+                )
+            else:
+                ghidra_register = ghidra_arg.getRegister()
+                assert ghidra_register is not None
+                match = self.get_matching_register_symbol(ghidra_register.getName())
+
+            if match is None:
                 logger.debug("Not found on stack: %s", ghidra_arg)
                 return False
 
-            if stack_match.name.startswith("__formal"):
+            if match.name.startswith("__formal"):
                 # "__formal" is the placeholder for arguments without a name
                 continue
 
-            if stack_match.name == "__$ReturnUdt":
+            if match.name == "__$ReturnUdt":
                 # These appear in templates and cannot be set automatically, as they are a NOTYPE
                 continue
 
-            if stack_match.name != ghidra_arg.getName():
+            if match.name != ghidra_arg.getName():
                 logger.debug(
                     "Argument name mismatch: expected %s, found %s",
-                    stack_match.name,
+                    match.name,
                     ghidra_arg.getName(),
                 )
                 return False
@@ -328,26 +339,27 @@ class FullPdbFunctionImporter(PdbFunctionImporter):
 
         # Try to add Ghidra function names
         for index, param in enumerate(ghidra_parameters):
-            if param.isStackVariable():
-                self._rename_stack_parameter(index, param)
-            else:
-                if param.getName() == "this":
-                    # 'this' parameters are auto-generated and cannot be changed
-                    continue
-
-                # Appears to never happen - could in theory be relevant to __fastcall__ functions,
-                # which we haven't seen yet
-                logger.warning(
-                    "Unhandled register variable in %s", self.get_full_name()
-                )
+            if param.isRegisterVariable() and param.getName() == "this":
+                # 'this' parameters are auto-generated and cannot be changed
                 continue
 
-    def _rename_stack_parameter(self, index: int, param: Parameter):
-        match = self.get_matching_stack_symbol(param.getStackOffset())
-        if match is None:
-            raise StackOffsetMismatchError(
-                f"Could not find a matching symbol at offset {param.getStackOffset()} in {self.get_full_name()}"
+            self._rename_parameter(index, param)
+
+    def _rename_parameter(self, index: int, param: Parameter):
+        if param.isStackVariable():
+            match: CppStackOrRegisterSymbol | None = self.get_matching_stack_symbol(
+                param.getStackOffset()
             )
+            if match is None:
+                raise ParameterMismatchError(
+                    f"Could not find a matching symbol at offset {param.getStackOffset()} in {self.get_full_name()}"
+                )
+        else:
+            match = self.get_matching_register_symbol(param.getRegister().getName())
+            if match is None:
+                raise ParameterMismatchError(
+                    f"Could not find a matching symbol at register '{param.getRegister()}' in {self.get_full_name()}"
+                )
 
         if match.data_type == CVInfoTypeEnum.T_NOTYPE:
             logger.warning("Skipping stack parameter of type NOTYPE")
@@ -372,7 +384,7 @@ class FullPdbFunctionImporter(PdbFunctionImporter):
         return next(
             (
                 symbol
-                for symbol in self.signature.stack_symbols
+                for symbol in self.signature.symbols
                 if isinstance(symbol, CppStackSymbol)
                 and symbol.stack_offset == stack_offset
             ),
@@ -383,8 +395,9 @@ class FullPdbFunctionImporter(PdbFunctionImporter):
         return next(
             (
                 symbol
-                for symbol in self.signature.stack_symbols
-                if isinstance(symbol, CppRegisterSymbol) and symbol.register == register
+                for symbol in self.signature.symbols
+                if isinstance(symbol, CppRegisterSymbol)
+                and symbol.register == register.lower()
             ),
             None,
         )

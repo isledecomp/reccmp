@@ -8,6 +8,7 @@ placeholder string."""
 
 import re
 from functools import cache
+from typing_extensions import Buffer
 from .const import JUMP_MNEMONICS, SINGLE_OPERAND_INSTS
 from .instgen import InstructGen, SectionType
 from .replacement import AddrTestProtocol, NameReplacementProtocol
@@ -192,11 +193,11 @@ class ParseAsm:
 
         return (inst.mnemonic, op_str)
 
-    def parse_asm(self, data: bytes, start_addr: int) -> AsmExcerpt:
+    def parse_asm(self, data: Buffer, start_addr: int) -> AsmExcerpt:
         self.reset()
         asm: AsmExcerpt = []
 
-        ig = InstructGen(data, start_addr, self.is_32bit)
+        ig = InstructGen(bytes(data), start_addr, self.is_32bit)
 
         for section in ig.sections:
             if section.type == SectionType.CODE:

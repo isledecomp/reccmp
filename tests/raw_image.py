@@ -30,8 +30,8 @@ class RawImage(Image):
 
         return cls(data=data, view=view, filepath=Path(""), size=size)
 
-    def seek(self, vaddr: int) -> tuple[bytes, int]:
+    def seek(self, vaddr: int) -> tuple[memoryview, int]:
         if 0 <= vaddr < self.size:
-            return (self.data[vaddr:], self.size - vaddr)
+            return (memoryview(self.data[vaddr:]), self.size - vaddr)
 
         raise InvalidVirtualAddressError

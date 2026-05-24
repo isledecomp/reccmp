@@ -15,7 +15,10 @@ from reccmp.compare.variables import (
     VariableComparator,
 )
 from reccmp.formats.pe import PEImage
-from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
+from reccmp.project.logging import (
+    argparse_add_logging_args,
+    argparse_parse_logging,
+)
 from reccmp.project.detect import (
     RecCmpProjectException,
     RecCmpTarget,
@@ -87,13 +90,14 @@ def do_the_comparison(target: RecCmpTarget) -> Iterator[ComparisonItem]:
     )
 
     for var in compare.get_variables():
+        if var.name in target.report_config.ignore_variables:
+            continue
+
         yield variable_comparator.compare_variable(var)
 
 
-def colorize_match_result(result: CompareResult, no_color: bool) -> str:
+def colorize_match_result(result: CompareResult) -> str:
     """Helper to return color string or not, depending on user preference"""
-    if no_color:
-        return result.name
 
     match result:
         case CompareResult.MATCH:
@@ -106,41 +110,35 @@ def colorize_match_result(result: CompareResult, no_color: bool) -> str:
     return f"{color}{result.name}{reccmp.color.Style.RESET_ALL}"
 
 
-def compared_offset_string(c: ComparedOffset, no_color: bool) -> str:
+def compared_offset_string(c: ComparedOffset) -> str:
     """Display the offset, name, and value diff for each compared item.
     Scalar variables have only a single item, the value itself."""
 
-    def ansi_wrap(c: str):
-        """Easily remove the ANSI codes in --no-color mode."""
-        return "" if no_color else c
-
     offset = f"+ 0x{c.offset:02x}"
-    header_chunk = [ansi_wrap(reccmp.color.Fore.LIGHTBLACK_EX), f"{offset:>10}"]
+    header_chunk = [reccmp.color.Fore.LIGHTBLACK_EX, f"{offset:>10}"]
 
     name_chunk = [
         ": " if c.name else "  ",
-        ansi_wrap(reccmp.color.Fore.WHITE),
+        reccmp.color.Fore.WHITE,
         f"{c.name if c.name else '':30}",
     ]
 
     value_a, value_b = c.values
-    values_chunk = [ansi_wrap(reccmp.color.Fore.LIGHTWHITE_EX), value_a]
+    values_chunk = [reccmp.color.Fore.LIGHTWHITE_EX, value_a]
     if not c.match:
-        values_chunk.extend(
-            [" : ", ansi_wrap(reccmp.color.Fore.LIGHTBLACK_EX), value_b]
-        )
+        values_chunk.extend([" : ", reccmp.color.Fore.LIGHTBLACK_EX, value_b])
 
     return " ".join(
         [
             "".join(header_chunk),
             "".join(name_chunk),
             "".join(values_chunk),
-            ansi_wrap(reccmp.color.Style.RESET_ALL),
+            reccmp.color.Style.RESET_ALL,
         ]
     )
 
 
-def main():
+def main() -> int:
     args = parse_args()
 
     try:
@@ -167,7 +165,7 @@ def main():
         )
 
         print(
-            f"{item.name[:80]} ({address_display}) ... {colorize_match_result(item.result, args.no_color)} "
+            f"{item.name[:80]} ({address_display}) ... {colorize_match_result(item.result)} "
         )
         if item.error is not None:
             print(f"  {item.error}")
@@ -179,7 +177,7 @@ def main():
             if not args.verbose and c.match:
                 continue
 
-            print(compared_offset_string(c, args.no_color))
+            print(compared_offset_string(c))
 
         if args.verbose:
             print()

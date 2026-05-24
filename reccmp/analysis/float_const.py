@@ -13,6 +13,7 @@ Then filter on pointers into read-only sections.
 import re
 import struct
 from typing import Iterator, NamedTuple
+from typing_extensions import Buffer
 from reccmp.formats import PEImage
 
 SINGLE_PRECISION_OPCODES = frozenset(
@@ -63,7 +64,7 @@ class FloatInstruction(NamedTuple):
 
 
 def find_float_instructions_in_buffer(
-    buf: bytes, base_addr: int = 0
+    buf: Buffer, base_addr: int = 0
 ) -> Iterator[FloatInstruction]:
     """Search the given binary blob for floating-point instructions that reference a pointer.
     If the base addr is given, add it to the offset of the instruction to get an absolute address.
