@@ -4,7 +4,7 @@ from reccmp.parser.parser import (
     ReaderState,
     DecompParser,
 )
-from reccmp.parser.error import ParserError
+from reccmp.parser.error import AlertCode
 
 
 @pytest.fixture(name="parser")
@@ -26,7 +26,7 @@ def test_missing_sig(parser):
     assert parser.functions[0].line_number == 3
 
     assert len(parser.alerts) == 1
-    assert parser.alerts[0].code == ParserError.MISSED_START_OF_FUNCTION
+    assert parser.alerts[0].code == AlertCode.MISSED_START_OF_FUNCTION
 
 
 def test_not_exact_syntax(parser):
@@ -34,7 +34,7 @@ def test_not_exact_syntax(parser):
     Doing this means we don't have to save the actual text."""
     parser.read("// function: test 0x1234")
     assert len(parser.alerts) == 1
-    assert parser.alerts[0].code == ParserError.BAD_DECOMP_MARKER
+    assert parser.alerts[0].code == AlertCode.BAD_DECOMP_MARKER
 
 
 def test_invalid_marker(parser):
@@ -43,7 +43,7 @@ def test_invalid_marker(parser):
     assert parser.state == ReaderState.SEARCH
 
     assert len(parser.alerts) == 1
-    assert parser.alerts[0].code == ParserError.BOGUS_MARKER
+    assert parser.alerts[0].code == AlertCode.BOGUS_MARKER
 
 
 def test_incompatible_marker(parser):
@@ -54,7 +54,7 @@ def test_incompatible_marker(parser):
         """)
     assert parser.state == ReaderState.SEARCH
     assert len(parser.alerts) == 1
-    assert parser.alerts[0].code == ParserError.INCOMPATIBLE_MARKER
+    assert parser.alerts[0].code == AlertCode.INCOMPATIBLE_MARKER
 
 
 def test_variable(parser):
@@ -75,7 +75,7 @@ def test_synthetic_plus_marker(parser):
         """)
     assert len(parser.functions) == 0
     assert len(parser.alerts) == 1
-    assert parser.alerts[0].code == ParserError.INCOMPATIBLE_MARKER
+    assert parser.alerts[0].code == AlertCode.INCOMPATIBLE_MARKER
 
 
 def test_different_markers_different_module(parser):
@@ -108,7 +108,7 @@ def test_different_markers_same_module(parser):
 
     # Should alert to this
     assert len(parser.alerts) == 1
-    assert parser.alerts[0].code == ParserError.DUPLICATE_MODULE
+    assert parser.alerts[0].code == AlertCode.DUPLICATE_MODULE
 
 
 def test_unexpected_synthetic(parser):
@@ -123,7 +123,7 @@ def test_unexpected_synthetic(parser):
     assert parser.state == ReaderState.SEARCH
     assert len(parser.functions) == 0
     assert len(parser.alerts) == 1
-    assert parser.alerts[0].code == ParserError.INCOMPATIBLE_MARKER
+    assert parser.alerts[0].code == AlertCode.INCOMPATIBLE_MARKER
 
 
 @pytest.mark.skip(reason="not implemented yet")
@@ -137,7 +137,7 @@ def test_duplicate_offset(parser):
         """)
 
     assert len(parser.alerts) == 1
-    assert parser.alerts[0].code == ParserError.DUPLICATE_OFFSET
+    assert parser.alerts[0].code == AlertCode.DUPLICATE_OFFSET
 
 
 def test_multiple_variables(parser):
@@ -159,7 +159,7 @@ def test_multiple_variables_same_module(parser):
         const char *g_greeting;
         """)
     assert len(parser.alerts) == 1
-    assert parser.alerts[0].code == ParserError.DUPLICATE_MODULE
+    assert parser.alerts[0].code == AlertCode.DUPLICATE_MODULE
     assert len(parser.variables) == 1
     assert parser.variables[0].offset == 0x1234
 
@@ -183,7 +183,7 @@ def test_multiple_vtables_same_module(parser):
         class MxString : public MxCore {
         """)
     assert len(parser.alerts) == 1
-    assert parser.alerts[0].code == ParserError.DUPLICATE_MODULE
+    assert parser.alerts[0].code == AlertCode.DUPLICATE_MODULE
     assert len(parser.vtables) == 1
     assert parser.vtables[0].offset == 0x1234
 
@@ -205,7 +205,7 @@ def test_synthetic_same_module(parser):
         // TestClass::TestMethod
         """)
     assert len(parser.alerts) == 1
-    assert parser.alerts[0].code == ParserError.DUPLICATE_MODULE
+    assert parser.alerts[0].code == AlertCode.DUPLICATE_MODULE
     assert len(parser.functions) == 1
     assert parser.functions[0].offset == 0x1234
 
@@ -218,7 +218,7 @@ def test_synthetic_no_comment(parser):
         """)
     assert len(parser.functions) == 0
     assert len(parser.alerts) == 1
-    assert parser.alerts[0].code == ParserError.BAD_NAMEREF
+    assert parser.alerts[0].code == AlertCode.BAD_NAMEREF
     assert parser.state == ReaderState.SEARCH
 
 
@@ -259,7 +259,7 @@ def test_function_with_spaces(parser):
         """)
     assert len(parser.functions) == 1
     assert len(parser.alerts) == 1
-    assert parser.alerts[0].code == ParserError.UNEXPECTED_BLANK_LINE
+    assert parser.alerts[0].code == AlertCode.UNEXPECTED_BLANK_LINE
 
 
 def test_function_with_spaces_implicit(parser):
@@ -271,7 +271,7 @@ def test_function_with_spaces_implicit(parser):
         """)
     assert len(parser.functions) == 1
     assert len(parser.alerts) == 1
-    assert parser.alerts[0].code == ParserError.UNEXPECTED_BLANK_LINE
+    assert parser.alerts[0].code == AlertCode.UNEXPECTED_BLANK_LINE
 
 
 @pytest.mark.xfail(reason="will assume implicit lookup-by-name function")
@@ -301,7 +301,7 @@ def test_unexpected_eof(parser):
 
     assert len(parser.functions) == 1
     assert len(parser.alerts) == 1
-    assert parser.alerts[0].code == ParserError.UNEXPECTED_END_OF_FILE
+    assert parser.alerts[0].code == AlertCode.UNEXPECTED_END_OF_FILE
 
 
 def test_global_nomatch(parser):
@@ -314,7 +314,7 @@ def test_global_nomatch(parser):
         """)
     assert len(parser.variables) == 0
     assert len(parser.alerts) == 1
-    assert parser.alerts[0].code == ParserError.NO_SUITABLE_NAME
+    assert parser.alerts[0].code == AlertCode.NO_SUITABLE_NAME
 
 
 def test_static_variable(parser):
@@ -355,7 +355,7 @@ def test_reject_global_return(parser):
         """)
     assert len(parser.variables) == 0
     assert len(parser.alerts) == 1
-    assert parser.alerts[0].code == ParserError.GLOBAL_NOT_VARIABLE
+    assert parser.alerts[0].code == AlertCode.GLOBAL_NOT_VARIABLE
 
 
 def test_global_string(parser):
@@ -522,7 +522,7 @@ def test_static_variable_no_parent(parser):
     # No way to match this variable so don't report it
     assert len(parser.variables) == 0
     assert len(parser.alerts) == 1
-    assert parser.alerts[0].code == ParserError.ORPHANED_STATIC_VARIABLE
+    assert parser.alerts[0].code == AlertCode.ORPHANED_STATIC_VARIABLE
 
 
 def test_static_variable_incomplete_coverage(parser):
@@ -544,7 +544,7 @@ def test_static_variable_incomplete_coverage(parser):
 
     # Failed for TEST module
     assert len(parser.alerts) == 1
-    assert parser.alerts[0].code == ParserError.ORPHANED_STATIC_VARIABLE
+    assert parser.alerts[0].code == AlertCode.ORPHANED_STATIC_VARIABLE
 
 
 def test_header_function_declaration(parser):
@@ -558,7 +558,7 @@ def test_header_function_declaration(parser):
         """)
 
     assert len(parser.alerts) == 1
-    assert parser.alerts[0].code == ParserError.NO_IMPLEMENTATION
+    assert parser.alerts[0].code == AlertCode.NO_IMPLEMENTATION
 
 
 def test_extra(parser):
@@ -662,7 +662,7 @@ def test_function_symbol_option_warning(parser):
 
     assert len(parser.functions) == 1
     assert parser.functions[0].name_is_symbol is False
-    assert parser.alerts[0].code == ParserError.SYMBOL_OPTION_IGNORED
+    assert parser.alerts[0].code == AlertCode.SYMBOL_OPTION_IGNORED
 
 
 def test_unexpected_marker(parser):
@@ -681,7 +681,7 @@ def test_unexpected_marker(parser):
 
     assert len(parser.functions) == 0
     assert len(parser.alerts) == 1
-    assert parser.alerts[0].code == ParserError.UNEXPECTED_MARKER
+    assert parser.alerts[0].code == AlertCode.UNEXPECTED_MARKER
 
 
 def test_issue_137(parser):
@@ -693,7 +693,7 @@ def test_issue_137(parser):
         """)
 
     assert len(parser.alerts) == 1
-    assert parser.alerts[0].code == ParserError.UNEXPECTED_MARKER
+    assert parser.alerts[0].code == AlertCode.UNEXPECTED_MARKER
     assert parser.alerts[0].code.name == "UNEXPECTED_MARKER"
 
 
@@ -732,7 +732,7 @@ def test_mixed_case_module_name(parser):
 
     # Syntax warning for mixed-case module name.
     assert len(parser.alerts) == 1
-    assert parser.alerts[0].code == ParserError.BAD_DECOMP_MARKER
+    assert parser.alerts[0].code == AlertCode.BAD_DECOMP_MARKER
 
 
 def test_folded_option(parser):
@@ -780,3 +780,15 @@ def test_folded_mixed_by_module(parser):
     assert parser.functions[1].is_folded is False
 
     assert len(parser.alerts) == 0
+
+
+def test_variables_calling_constructor(parser):
+    """Can extract the variable name for variables initialized by a constructor."""
+    parser.read("""\
+        // GLOBAL: GOLDP 0x10065b54
+        const FloatConstant g_floatConst4096(4096.0f);
+        """)
+
+    assert len(parser.alerts) == 0
+    assert parser.variables[0].offset == 0x10065B54
+    assert parser.variables[0].name == "g_floatConst4096"

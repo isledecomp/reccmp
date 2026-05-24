@@ -64,7 +64,7 @@ All scripts will become available to use in your terminal with the `reccmp-` pre
   * Diff two saved reports: `reccmp-aggregate --diff ./before.json ./after.json`
   * Diff against the aggregate: `reccmp-aggregate --samples ./sample0.json ./sample1.json ./sample2.json --diff ./before.json`
 * [`decomplint`](/reccmp/tools/decomplint.py): Checks the decompilation annotations (see above)
-  * e.g. `reccmp-decomplint --module LEGO1 LEGO1`
+  * e.g. `reccmp-decomplint --target LEGO1`
 * [`reccmp`](/reccmp/tools/asmcmp.py): Compares an original binary with a recompiled binary, provided a PDB file. For example:
   * Display the diff for a single function: `reccmp-reccmp --target LEGO1 --verbose 0x100ae1a0`
   * Generate an HTML report: `reccmp-reccmp --target LEGO1 --html output.html`

@@ -8,7 +8,8 @@ jobs:
     runs-on: 'ubuntu-latest'
 
     container:
-      image: blacktop/ghidra:12.0.4
+      # Note: This version should be kept in sync with the type stubs in /requirements-tests.txt
+      image: blacktop/ghidra:12.1
       env:
         # not set by default for some reason
         GHIDRA_INSTALL_DIR: '/ghidra'

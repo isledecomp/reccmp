@@ -53,5 +53,5 @@ class MachOImage(Image):
             0xCAFEBABE,
         )
 
-    def seek(self, vaddr: int) -> tuple[bytes, int]:
+    def seek(self, vaddr: int) -> tuple[memoryview, int]:
         raise NotImplementedError

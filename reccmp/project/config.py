@@ -59,9 +59,14 @@ class YmlReportConfig(BaseModel):
         validation_alias=AliasChoices("ignore-functions", "ignore_functions"),
     )
 
+    ignore_variables: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("ignore-variables", "ignore_variables"),
+    )
+
     @classmethod
     def default(cls) -> "YmlReportConfig":
-        return cls(ignore_functions=[])
+        return cls(ignore_functions=[], ignore_variables=[])
 
 
 @dataclass

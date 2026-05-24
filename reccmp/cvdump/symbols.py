@@ -35,7 +35,7 @@ class SymbolsEntry:
     size: int
     func_type: CvdumpTypeKey
     name: str
-    stack_symbols: list[StackOrRegisterSymbol] = field(default_factory=list)
+    symbols: list[StackOrRegisterSymbol] = field(default_factory=list)
     static_variables: list[LdataEntry] = field(default_factory=list)
     frame_pointer_present: bool = False
     addr: int | None = None  # Absolute address. Will be set later, if at all
@@ -79,10 +79,12 @@ class CvdumpSymbolsParser:
     )
 
     _module_start_regex = re.compile(
-        r'\*\* Module: "(?P<module>[^"]+)"(?: from "(?P<from>[^"]+)")?$'
+        r'\*\* Module: "(?P<module>[^"]+)"(?: from "(?P<from>[^"]*)")?$'
     )
 
-    _compile_key_value = re.compile(r"\s{9}(?P<key>[^:]+):\s(?P<value>.+)$")
+    _compile_key_value = re.compile(
+        r"\s{9}(?P<key>[^:=]+)(?::|\s=)(?:\s(?P<value>.+))?$"
+    )
     """
     For lines like
     `         Target processor: 80486`
@@ -124,6 +126,7 @@ class CvdumpSymbolsParser:
         # that indicates the end of the block.
         self.block_level: int = 0
         self.alerted_types: set[str] = set()
+        self.unhandled_lines: list[str] = []
 
     def read_line(self, line: str):
         if len(line) == 0:
@@ -150,7 +153,9 @@ class CvdumpSymbolsParser:
             # We do not need this info at the moment, might be useful in the future
             pass
         else:
-            logger.debug("Unhandled line: %s", line[:-1])
+            if line not in self.unhandled_lines:
+                self.unhandled_lines.append(line)
+                logger.debug("Unhandled line: %s", line)
 
     def _parse_generic_case(self, line, line_match: Match[str]):
         symbol_type: str = line_match.group("symbol_type")
@@ -186,7 +191,7 @@ class CvdumpSymbolsParser:
                 data_type=CvdumpTypeKey.from_str(match.group("data_type")),
                 name=match.group("name"),
             )
-            self.current_function.stack_symbols.append(new_symbol)
+            self.current_function.symbols.append(new_symbol)
 
         elif symbol_type == "S_BLOCK32":
             self.block_level += 1

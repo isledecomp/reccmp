@@ -36,8 +36,8 @@ def test_sblock32():
 
     # Make sure we can read the proc and all its stack references
     assert len(parser.symbols) == 1
-    assert len(parser.symbols[0].stack_symbols) == 8
-    assert parser.symbols[0].stack_symbols[0].data_type == CvdumpTypeKey(0x10EC)
+    assert len(parser.symbols[0].symbols) == 8
+    assert parser.symbols[0].symbols[0].data_type == CvdumpTypeKey(0x10EC)
 
 
 LOCAL_PROC = """
@@ -106,3 +106,45 @@ def test_ldata32_outside_function():
     # ignored... for now.
     # Should not crash with a failed assert. See GH issue #183.
     assert len(parser.symbols) == 0
+
+
+# from MSVC 6.0
+COMPILE2_BLOCK = """
+(000018) S_COMPILE2:
+         Language: LINK
+         Target processor: 80386
+         Compiled for edit and continue: no
+         Compiled without debugging info: no
+         Compiled with LTCG: no
+         Compiled with /bzalign: no
+         Managed code present: no
+         Compiled with /GS: no
+         Compiled with /hotpatch: no
+         Converted by CVTCIL: no
+         MSIL module: no
+         Pad bits = 0x0000
+         Frontend Version: Major = 0, Minor = 0, Build = 0
+         Backend Version: Major = 6, Minor = 0, Build = 8168
+         Version string: Microsoft (R) LINK
+         Command block:
+"""
+
+
+def test_compile2_block():
+    """These blocks are currently not interpreted, but shouldn't lead to 'Unhandled line' logs."""
+    parser = CvdumpSymbolsParser()
+    for line in COMPILE2_BLOCK.split("\n"):
+        parser.read_line(line)
+
+    assert not parser.unhandled_lines
+
+
+def test_module_statements():
+    """These blocks are currently not interpreted, but shouldn't lead to 'Unhandled line' logs."""
+    parser = CvdumpSymbolsParser()
+    parser.read_line(
+        '** Module: "build\\intel\\mt_obj\\delete.obj" from "C:\\Users\\MyUser\\MSVC600-8168\\VC98\\Bin\\..\\LIB\\LIBCMT.lib"'
+    )
+    parser.read_line('** Module: "* Linker *" from ""')
+
+    assert not parser.unhandled_lines

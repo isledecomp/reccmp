@@ -1,6 +1,7 @@
 import re
 import struct
 from typing import Iterator, NamedTuple
+from typing_extensions import Buffer
 from reccmp.formats import PEImage
 
 # Match 6 byte absolute jump instructions.
@@ -16,7 +17,7 @@ class ImportThunk(NamedTuple):
 
 
 def find_absolute_jumps_in_bytes(
-    raw: bytes, base_addr: int = 0
+    raw: Buffer, base_addr: int = 0
 ) -> Iterator[tuple[int, int]]:
     """Search the given binary blob for 6-byte JMP instructions.
     Return the address/offset of the jump and its destination.

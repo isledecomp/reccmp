@@ -950,7 +950,7 @@ class PEImage(Image):
     def addr_is_uninitialized(self, vaddr: int) -> bool:
         return any(vaddr in range_ for range_ in self.uninitialized_ranges)
 
-    def seek(self, vaddr: int) -> tuple[bytes, int]:
+    def seek(self, vaddr: int) -> tuple[memoryview, int]:
         for sect, range_ in zip(self.sections, self.vaddr_ranges):
             if vaddr in range_:
                 return (sect.view[vaddr - range_.start :], range_.stop - vaddr)
