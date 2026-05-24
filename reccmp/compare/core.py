@@ -57,6 +57,7 @@ from .mutate import (
     match_array_elements,
     name_thunks,
     unique_names_for_overloaded_functions,
+    match_crt_startup,
 )
 from .verify import (
     check_vtables,
@@ -153,6 +154,8 @@ class Compare:
         match_static_variables(self._db, self.report)
         match_variables(self._db, self.report)
         match_lines(self._db, self._lines_db, self.report)
+
+        match_crt_startup(self._db, self.orig_bin, self.recomp_bin)
 
         match_array_elements(self._db, self.types)
         # Detect floats first to eliminate potential overlap with string data

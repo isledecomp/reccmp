@@ -4,11 +4,13 @@ These functions create or update entities using the current information in the d
 
 import logging
 from functools import cache
+from reccmp.analysis.crt_startup import match_crt_startup as _match_crt_startup
 from reccmp.cvdump.demangler import (
     get_function_arg_string,
 )
 from reccmp.cvdump import CvdumpTypesParser
 from reccmp.cvdump.types import CvdumpTypeKey
+from reccmp.formats import PEImage
 from reccmp.types import EntityType, ImageId
 from .db import EntityDb
 from .queries import get_overloaded_functions, get_named_thunks
@@ -162,3 +164,8 @@ def unique_names_for_overloaded_functions(db: EntityDb):
                 batch.set(ImageId.ORIG, func.orig_addr, computed_name=new_name)
             elif func.recomp_addr is not None:
                 batch.set(ImageId.RECOMP, func.recomp_addr, computed_name=new_name)
+
+
+def match_crt_startup(db: EntityDb, orig_bin: PEImage, recomp_bin: PEImage):
+    # Alias to keep this module's scope small
+    _match_crt_startup(db, orig_bin, recomp_bin)
