@@ -25,7 +25,10 @@ from reccmp.project.detect import (
     argparse_parse_project_target,
 )
 from reccmp.project.error import RecCmpProjectException
-from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
+from reccmp.project.logging import (
+    argparse_add_logging_args,
+    argparse_parse_logging,
+)
 
 logger = logging.getLogger(__name__)
 

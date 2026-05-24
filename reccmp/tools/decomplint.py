@@ -21,7 +21,10 @@ from reccmp.project.error import (
     RecCmpProjectException,
     RecCmpProjectNotFoundException,
 )
-from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
+from reccmp.project.logging import (
+    argparse_add_logging_args,
+    argparse_parse_logging,
+)
 from reccmp.project.detect import RecCmpProject
 from reccmp.formats import TextFile
 
@@ -218,7 +221,7 @@ def lint_all_targets(lint_targets: tuple[DecomplintTarget, ...]) -> list[ParserA
     return all_alerts
 
 
-def main():
+def main() -> int:
     args = parse_args()
     try:
         lint_targets = decomplint_parse_args(args)

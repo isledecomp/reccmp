@@ -6,7 +6,10 @@ import colorama
 import reccmp
 from reccmp.compare import Compare
 from reccmp.utils import print_combined_diff
-from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
+from reccmp.project.logging import (
+    argparse_add_logging_args,
+    argparse_parse_logging,
+)
 from reccmp.project.detect import (
     argparse_add_project_target_args,
     argparse_parse_project_target,
@@ -79,7 +82,7 @@ def main():
                 tbl_match.name,
                 f": orig 0x{tbl_match.orig_addr:x}, recomp 0x{tbl_match.recomp_addr:x}",
             )
-            show_vtable_diff(udiff, args.verbose, args.no_color)
+            show_vtable_diff(udiff, args.verbose)
             print()
 
     print_summary(vtable_count, problem_count)

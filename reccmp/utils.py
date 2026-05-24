@@ -178,7 +178,7 @@ def print_combined_diff(udiff, plain: bool = False, show_both: bool = False):
         print()
 
 
-def print_diff(udiff, plain):
+def print_diff(udiff):
     """Print diff in difflib.unified_diff format."""
     if udiff is None:
         return False
@@ -191,15 +191,11 @@ def print_diff(udiff, plain):
             # Skip unneeded parts of the diff for the brief view
             continue
         # Work out color if we are printing color
-        if not plain:
-            if line.startswith("+"):
-                color = reccmp.color.Fore.GREEN
-            elif line.startswith("-"):
-                color = reccmp.color.Fore.RED
-        print(color + line)
-        # Reset color if we're printing in color
-        if not plain:
-            print(reccmp.color.Style.RESET_ALL, end="")
+        if line.startswith("+"):
+            color = reccmp.color.Fore.GREEN
+        elif line.startswith("-"):
+            color = reccmp.color.Fore.RED
+        print(f"{color}{line}{reccmp.color.Style.RESET_ALL}")
     return has_diff
 
 
