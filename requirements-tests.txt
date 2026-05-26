@@ -1,5 +1,5 @@
 pytest==9.0.3
-black==26.3.1
+black==26.5.1
 codespell==2.4.2
 pylint==4.0.5
 mypy==2.1.0
