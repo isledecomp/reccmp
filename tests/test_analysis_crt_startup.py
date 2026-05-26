@@ -1,3 +1,4 @@
+import struct
 from reccmp.analysis.crt_startup import (
     get_function_fingerprint,
     find_crt_startup_labels,
@@ -117,6 +118,5 @@ def test_xca_fingerprints_avoid_crash(binfile: PEImage):
 
     try:
         analyze_crt_startup_functions(db, ImageId.ORIG, binfile, modified_range)
-    # pylint: disable=bare-except
-    except:
+    except struct.error:
         assert False, "Should not throw"
