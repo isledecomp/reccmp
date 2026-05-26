@@ -224,19 +224,25 @@ def analyze_crt_startup(
 def create_crt_matches(
     orig_array: CrtStartupArray, recomp_array: CrtStartupArray
 ) -> list[tuple[int, int]]:
-    # Don't match using blank fingerprints
-    invert_orig = dict(
-        (fp, addr) for addr, fp in orig_array.functions.items() if fp is not None
-    )
-    invert_recomp = dict(
-        (fp, addr) for addr, fp in recomp_array.functions.items() if fp is not None
-    )
+    invert_orig: dict[tuple[int, ...], list[int]] = {}
+    invert_recomp: dict[tuple[int, ...], list[int]] = {}
+
+    for key, value in orig_array.functions.items():
+        invert_orig.setdefault(value, []).append(key)
+
+    for key, value in recomp_array.functions.items():
+        invert_recomp.setdefault(value, []).append(key)
 
     matches = []
 
-    for fingerprint, orig_addr in invert_orig.items():
-        if fingerprint in invert_recomp:
-            recomp_addr = invert_recomp[fingerprint]
+    for fingerprint, orig_addrs in invert_orig.items():
+        # Don't match using blank fingerprints
+        if not fingerprint or len(orig_addrs) != 1:
+            continue
+
+        if fingerprint in invert_recomp and len(invert_recomp[fingerprint]) == 1:
+            [orig_addr] = orig_addrs
+            [recomp_addr] = invert_recomp[fingerprint]
             matches.append((orig_addr, recomp_addr))
 
             if orig_addr in orig_array.thunks and recomp_addr in recomp_array.thunks:

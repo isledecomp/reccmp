@@ -3,6 +3,8 @@ from reccmp.analysis.crt_startup import (
     get_function_fingerprint,
     find_crt_startup_labels,
     analyze_crt_startup_functions,
+    CrtStartupArray,
+    create_crt_matches,
 )
 from reccmp.compare.db import EntityDb
 from reccmp.formats import PEImage
@@ -120,3 +122,45 @@ def test_xca_fingerprints_avoid_crash(binfile: PEImage):
         analyze_crt_startup_functions(db, ImageId.ORIG, binfile, modified_range)
     except struct.error:
         assert False, "Should not throw"
+
+
+def test_create_match_baseline():
+    """No errors or exceptions for empty CRT arrays."""
+    x_array = CrtStartupArray(functions={}, thunks={})
+    y_array = CrtStartupArray(functions={}, thunks={})
+    assert not create_crt_matches(x_array, y_array)
+
+
+def test_create_match_single():
+    """Should create match for unique fingerprint."""
+    x_array = CrtStartupArray(functions={100: (1234,)}, thunks={})
+    y_array = CrtStartupArray(functions={200: (1234,)}, thunks={})
+    assert create_crt_matches(x_array, y_array) == [(100, 200)]
+
+
+def test_create_match_single_with_thunks_one_sided():
+    """Should not add thunk match unless it exists in both arrays."""
+    x_array = CrtStartupArray(functions={100: (1234,)}, thunks={100: 500})
+    y_array = CrtStartupArray(functions={200: (1234,)}, thunks={})
+    assert create_crt_matches(x_array, y_array) == [(100, 200)]
+
+
+def test_create_match_single_with_thunks_two_sided():
+    """Should match function and thunk."""
+    x_array = CrtStartupArray(functions={100: (1234,)}, thunks={100: 500})
+    y_array = CrtStartupArray(functions={200: (1234,)}, thunks={200: 600})
+    assert create_crt_matches(x_array, y_array) == [(100, 200), (500, 600)]
+
+
+def test_create_match_blank_fingerprint():
+    """Should not match functions if their fingerprint has no addresses."""
+    x_array = CrtStartupArray(functions={100: ()}, thunks={})
+    y_array = CrtStartupArray(functions={200: ()}, thunks={})
+    assert not create_crt_matches(x_array, y_array)
+
+
+def test_create_match_non_unique_fingerprint():
+    """Should not match functions if their fingerprint is not unique."""
+    x_array = CrtStartupArray(functions={100: (1234,), 200: (1234,)}, thunks={})
+    y_array = CrtStartupArray(functions={200: (1234,), 300: (1234,)}, thunks={})
+    assert not create_crt_matches(x_array, y_array)
