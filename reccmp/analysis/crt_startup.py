@@ -109,13 +109,31 @@ class UsedAddressCollector:
                     self.seen_addrs.append(addr)
 
 
+def get_function_sample_size(db: EntityDb, image_id: ImageId, addr: int) -> int:
+    """How many bytes should we read to sample the addresses used in the function?
+    Use exact size if we have it, or any size estimate available."""
+    ent = db.get(image_id, addr)
+    if ent is not None:
+        size = ent.size(image_id)
+        if size is not None:
+            return size
+
+        if image_id == ImageId.ORIG:
+            # TODO: #406 changes this API.
+            next_addr = db.get_next_orig_addr(addr)
+            if next_addr:
+                return next_addr - addr
+
+    # Arbitrary value with the intent of overshooting the function's actual size
+    # and then correcting during disassembly.
+    return 1000
+
+
 def get_function_fingerprint(
     db: EntityDb, image_id: ImageId, binfile: PEImage, addr: int
 ) -> tuple[int, ...]:
-    # 64 bytes chosen arbitrarily.
-    # These functions are typically short, and we only need
-    # to read enough to create the fingerprint.
-    raw = binfile.read(addr, 64)
+    size = get_function_sample_size(db, image_id, addr)
+    raw = binfile.read(addr, size)
 
     def entity_exists(test_addr: int) -> bool:
         return db.get(image_id, test_addr, exact=True) is not None
