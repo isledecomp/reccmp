@@ -52,6 +52,10 @@ _CRT_FUNCTION_NAMES = {
 }
 
 
+def get_crt_function_name(type_: CrtStartupArrayType) -> str:
+    return _CRT_FUNCTION_NAMES[type_]
+
+
 @dataclass
 class CrtStartupArray:
     """Result from analyzing functions in a CRT startup array.
@@ -241,50 +245,3 @@ def create_crt_matches(
                 matches.append((orig_thunk, recomp_thunk))
 
     return matches
-
-
-def match_crt_startup(db: EntityDb, orig_bin: PEImage, recomp_bin: PEImage):
-    crt_orig = tuple(analyze_crt_startup(db, ImageId.ORIG, orig_bin))
-    crt_recomp = tuple(analyze_crt_startup(db, ImageId.RECOMP, recomp_bin))
-
-    matches = []
-
-    for (orig_type, orig_array), (recomp_type, recomp_array) in zip(
-        crt_orig, crt_recomp
-    ):
-        # Safety
-        assert orig_type == recomp_type
-        if orig_array and recomp_array:
-            matches.extend(create_crt_matches(orig_array, recomp_array))
-
-    with db.batch() as batch:
-        for image_id, crt_arrays in (
-            (ImageId.ORIG, crt_orig),
-            (ImageId.RECOMP, crt_recomp),
-        ):
-            for array_type, array in crt_arrays:
-                if array is None:
-                    continue
-
-                name = _CRT_FUNCTION_NAMES[array_type]
-                assert isinstance(name, str)
-
-                for addr in array.functions.keys():
-                    batch.set(
-                        image_id,
-                        addr,
-                        type=EntityType.FUNCTION,
-                        name=name,
-                    )
-
-                    if addr in array.thunks:
-                        thunk_addr = array.thunks[addr]
-                        batch.set(
-                            image_id,
-                            thunk_addr,
-                            type=EntityType.FUNCTION,
-                            name=name,
-                        )
-
-        for orig_addr, recomp_addr in matches:
-            batch.match(orig_addr, recomp_addr)
