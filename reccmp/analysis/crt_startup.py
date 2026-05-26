@@ -1,7 +1,8 @@
 import enum
+import re
 import struct
 from dataclasses import dataclass
-from typing import Iterator
+from typing import Callable, Iterator
 from typing_extensions import Buffer
 from reccmp.compare.asm.const import JUMP_MNEMONICS
 from reccmp.compare.asm.instgen import (
@@ -9,9 +10,6 @@ from reccmp.compare.asm.instgen import (
     InstructGen,
     SectionType,
 )
-from reccmp.compare.asm.parse import ParseAsm
-from reccmp.compare.asm.replacement import AddrTestProtocol
-from reccmp.compare.functions import create_valid_addr_lookup
 from reccmp.formats import PEImage
 from reccmp.types import EntityType, ImageId
 from reccmp.compare.db import EntityDb
@@ -73,23 +71,22 @@ class CrtStartupArray:
     The thunk is what actually appeared in the ___xc_a/z list."""
 
 
-class UsedAddressCollector(ParseAsm):
-    """Wraps the asm sanitize mechanism that detects pointers and address literals
-    used in the function. Instead of replacing the addresses, just store them
-    in a list for review."""
+ADDR_REGEX = re.compile(r"0x[0-9a-f]{6,8}")
 
+
+class UsedAddressCollector:
     seen_addrs: list[int]
     """List of addrs that would be replaced by a name or placeholder."""
 
-    def __init__(self, addr_test: AddrTestProtocol | None = None) -> None:
-        super().__init__(addr_test, None, True)
+    is_entity: Callable[[int], bool]
+    """Test whether the address is a known entity in the database."""
+
+    def __init__(self, is_entity: Callable[[int], bool]) -> None:
+        self.is_entity = is_entity
         self.seen_addrs = []
 
-    def lookup(self, addr: int, exact: bool = False, indirect: bool = False) -> None:
-        self.seen_addrs.append(addr)
-
     def analyze(self, data: Buffer, start_addr: int):
-        ig = InstructGen(bytes(data), start_addr, self.is_32bit)
+        ig = InstructGen(bytes(data), start_addr, True)
 
         instructions = (
             inst
@@ -100,17 +97,16 @@ class UsedAddressCollector(ParseAsm):
 
         for inst in instructions:
             assert isinstance(inst, DisasmLiteInst)
-            if "0x" in inst.op_str and (
-                inst.mnemonic in JUMP_MNEMONICS or inst.size > 4 or not self.is_32bit
-            ):
-                # Reading the function will call the lookup() function
-                # and collect the addresses.
-                self.sanitize(inst)
-
-            # The functions we are looking at should not have complex logic
-            # that creates multiple exits.
             if inst.mnemonic == "ret":
                 break
+
+            if inst.mnemonic in JUMP_MNEMONICS:
+                continue
+
+            for hex_str in ADDR_REGEX.findall(inst.op_str):
+                addr = int(hex_str, 16)
+                if self.is_entity(addr):
+                    self.seen_addrs.append(addr)
 
 
 def get_function_fingerprint(
@@ -121,8 +117,10 @@ def get_function_fingerprint(
     # to read enough to create the fingerprint.
     raw = binfile.read(addr, 64)
 
-    addr_test = create_valid_addr_lookup(db, image_id, binfile)
-    collector = UsedAddressCollector(addr_test)
+    def entity_exists(test_addr: int) -> bool:
+        return db.get(image_id, test_addr, exact=True) is not None
+
+    collector = UsedAddressCollector(entity_exists)
     collector.analyze(raw, addr)
 
     normalized_addrs = []
