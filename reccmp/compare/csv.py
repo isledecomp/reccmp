@@ -130,7 +130,7 @@ def _convert_attrs(values: Iterable[tuple[str, str]]) -> CsvValuesType:
             output["name"] = value
 
         if key == "size":
-            output["size"] = int(value)
+            output["size"] = int(value, 0)
 
         if key == "type":
             type_name = value.strip().lower()
