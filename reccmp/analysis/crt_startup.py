@@ -275,7 +275,7 @@ def create_crt_matches(
                 [(img_x, addr_x), (img_y, addr_y)] = func_addrs
                 if img_x != img_y:
                     # These are sets, so order is not guaranteed.
-                    # Figure out which adderss is orig and which is recomp.
+                    # Figure out which address is orig and which is recomp.
                     orig_addr = addr_x if img_x == ImageId.ORIG else addr_y
                     recomp_addr = addr_y if img_y == ImageId.RECOMP else addr_x
                     matches.append((orig_addr, recomp_addr))
