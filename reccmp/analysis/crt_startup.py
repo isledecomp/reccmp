@@ -243,11 +243,16 @@ def analyze_crt_startup(
 def create_crt_matches(
     orig_array: CrtStartupArray, recomp_array: CrtStartupArray
 ) -> list[tuple[int, int]]:
+    """Match CRT startup functions from one array to other based on which addresses they use."""
 
     combined_map: dict[UsedAddress, set[tuple[ImageId, int]]] = {}
     eliminated: set[tuple[ImageId, int]] = set()
     matches = []
 
+    # Each array contains the list of startup functions with attached list of sampled addresses.
+    # Sampled addresses are already normalized to the original binary address space.
+    # Use this as our key to connect startup functions in both orig and recomp based on which
+    # addresses are used, and how (reads or writes).
     for image_id, array in ((ImageId.ORIG, orig_array), (ImageId.RECOMP, recomp_array)):
         for func_addr, addr_samples in array.functions.items():
             for sample in addr_samples:
@@ -256,40 +261,34 @@ def create_crt_matches(
     while True:
         matched_this_pass = False
 
-        # ?
+        # Remove startup functions matched on a previous pass.
         for value in combined_map.values():
             value -= eliminated
 
-        for (_, is_write), func_addrs in combined_map.items():
-            if is_write and len(func_addrs) == 2:
+        # Sampled address are separated by whether the function reads or writes to them.
+        # Read is not a superset for write, meaning: if the function only writes
+        # to the address, the function address will only be in the `is_write=True` bucket.
+        # With that separation, match any addresses where the bucket has
+        # exactly one sample from orig and exactly one sample from recomp.
+        for _, func_addrs in combined_map.items():
+            if len(func_addrs) == 2:
                 [(img_x, addr_x), (img_y, addr_y)] = func_addrs
                 if img_x != img_y:
-                    # Work out which is which
+                    # These are sets, so order is not guaranteed.
+                    # Figure out which adderss is orig and which is recomp.
                     orig_addr = addr_x if img_x == ImageId.ORIG else addr_y
                     recomp_addr = addr_y if img_y == ImageId.RECOMP else addr_x
                     matches.append((orig_addr, recomp_addr))
                     eliminated.update(func_addrs)
                     matched_this_pass = True
+                    # Break because we need to remove the addresses we just matched
+                    # to prevent a double match.
                     break
-
-        if not matched_this_pass:
-            # TODO: separate?
-            for (_, is_write), func_addrs in combined_map.items():
-                if not is_write and len(func_addrs) == 2:
-                    [(img_x, addr_x), (img_y, addr_y)] = func_addrs
-                    if img_x != img_y:
-                        # Work out which is which
-                        orig_addr = addr_x if img_x == ImageId.ORIG else addr_y
-                        recomp_addr = addr_y if img_y == ImageId.RECOMP else addr_x
-                        matches.append((orig_addr, recomp_addr))
-                        eliminated.update(func_addrs)
-                        matched_this_pass = True
-                        break
 
         if not matched_this_pass:
             break
 
-    # Add thunks
+    # Add any pairs of thunks that point to an already matched function.
     thunks = []
     for orig_addr, recomp_addr in matches:
         if orig_addr in orig_array.thunks and recomp_addr in recomp_array.thunks:

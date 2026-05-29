@@ -172,3 +172,24 @@ def test_create_match_non_unique_fingerprint():
         functions={200: (write_sample,), 300: (write_sample,)}, thunks={}
     )
     assert not create_crt_matches(x_array, y_array)
+
+
+def test_create_match_with_elimination():
+    """Can create unique matches by eliminating already-matched functions."""
+    write_sample = (1234, True)
+    read_sample = (5000, False)
+    # `write_sample` can be used to match uniquely on the first pass.
+    # `read_sample` will provide a unique match after deleting the functions that contain `write_sample`.
+    x_array = CrtStartupArray(
+        functions={100: (read_sample,), 200: (write_sample, read_sample)},
+        thunks={},
+    )
+    y_array = CrtStartupArray(
+        functions={200: (read_sample,), 300: (write_sample, read_sample)},
+        thunks={},
+    )
+    # Must be this order:
+    assert create_crt_matches(x_array, y_array) == [
+        (200, 300),
+        (100, 200),
+    ]
