@@ -22,24 +22,16 @@ class CrtStartupArrayType(enum.Enum):
     C_TERM = enum.auto()
 
 
-_CRT_STARTUP_ARRAY_LABELS = (
-    "___xi_a",
-    "___xi_z",
-    "___xc_a",
-    "___xc_z",
-    "___xp_a",
-    "___xp_z",
-    "___xt_a",
-    "___xt_z",
-)
-
-
 _CRT_STARTUP_ARRAY_BOUNDARIES = {
     CrtStartupArrayType.C_INIT: ("___xi_a", "___xi_z"),
     CrtStartupArrayType.CPP_INIT: ("___xc_a", "___xc_z"),
     CrtStartupArrayType.C_PRE_TERM: ("___xp_a", "___xp_z"),
     CrtStartupArrayType.C_TERM: ("___xt_a", "___xt_z"),
 }
+
+_CRT_STARTUP_ARRAY_LABELS = [
+    label for pair in _CRT_STARTUP_ARRAY_BOUNDARIES.values() for label in pair
+]
 
 
 _CRT_FUNCTION_NAMES = {
