@@ -46,6 +46,9 @@ def get_crt_function_name(type_: CrtStartupArrayType) -> str:
     return _CRT_FUNCTION_NAMES[type_]
 
 
+UsedAddress = tuple[int, bool]
+
+
 @dataclass
 class CrtStartupArray:
     """Result from analyzing functions in a CRT startup array.
@@ -53,7 +56,7 @@ class CrtStartupArray:
     For example: addresses of C++ initializer functions are between
     the labels ___xc_a and ___xc_z."""
 
-    functions: dict[int, tuple[int, ...]]
+    functions: dict[int, tuple[UsedAddress, ...]]
     """Maps function address -> (sorted) list of matched entities used in
     the function, normalized to orig address space. These fingerprints are
     used to match initializer functions in orig and recomp."""
@@ -67,7 +70,7 @@ ADDR_REGEX = re.compile(r"0x[0-9a-f]{6,8}")
 
 
 class UsedAddressCollector:
-    seen_addrs: list[int]
+    seen_addrs: list[UsedAddress]
     """List of addrs that would be replaced by a name or placeholder."""
 
     is_entity: Callable[[int], bool]
@@ -76,6 +79,12 @@ class UsedAddressCollector:
     def __init__(self, is_entity: Callable[[int], bool]) -> None:
         self.is_entity = is_entity
         self.seen_addrs = []
+
+    def _append_addrs(self, text: str, is_write: bool):
+        for hex_str in ADDR_REGEX.findall(text):
+            addr = int(hex_str, 16)
+            if self.is_entity(addr):
+                self.seen_addrs.append((addr, is_write))
 
     def analyze(self, data: Buffer, start_addr: int):
         ig = InstructGen(bytes(data), start_addr, True)
@@ -95,10 +104,12 @@ class UsedAddressCollector:
             if inst.mnemonic in JUMP_MNEMONICS:
                 continue
 
-            for hex_str in ADDR_REGEX.findall(inst.op_str):
-                addr = int(hex_str, 16)
-                if self.is_entity(addr):
-                    self.seen_addrs.append(addr)
+            if inst.mnemonic in ("mov", "lea"):
+                dst_operand, _, src_operand = inst.op_str.partition(", ")
+                self._append_addrs(dst_operand, True)
+                self._append_addrs(src_operand, False)
+            else:
+                self._append_addrs(inst.op_str, False)
 
 
 def get_function_sample_size(db: EntityDb, image_id: ImageId, addr: int) -> int:
@@ -123,7 +134,7 @@ def get_function_sample_size(db: EntityDb, image_id: ImageId, addr: int) -> int:
 
 def get_function_fingerprint(
     db: EntityDb, image_id: ImageId, binfile: PEImage, addr: int
-) -> tuple[int, ...]:
+) -> tuple[UsedAddress, ...]:
     size = get_function_sample_size(db, image_id, addr)
     raw = binfile.read(addr, size)
 
@@ -134,14 +145,14 @@ def get_function_fingerprint(
     collector.analyze(raw, addr)
 
     normalized_addrs = []
-    for ca in collector.seen_addrs:
-        ent = db.get(image_id, ca)
+    for sample_addr, is_write in collector.seen_addrs:
+        ent = db.get(image_id, sample_addr)
         # Only matched entities are candidates for the fingerprint
         # because we have an address in both address spaces.
         if ent and ent.matched and ent.get("type") == EntityType.DATA:
             normalized_addr = ent.addr(ImageId.ORIG)
             assert isinstance(normalized_addr, int)
-            normalized_addrs.append(normalized_addr)
+            normalized_addrs.append((normalized_addr, is_write))
 
     return tuple(normalized_addrs)
 
@@ -232,30 +243,59 @@ def analyze_crt_startup(
 def create_crt_matches(
     orig_array: CrtStartupArray, recomp_array: CrtStartupArray
 ) -> list[tuple[int, int]]:
-    invert_orig: dict[tuple[int, ...], list[int]] = {}
-    invert_recomp: dict[tuple[int, ...], list[int]] = {}
 
-    for key, value in orig_array.functions.items():
-        invert_orig.setdefault(value, []).append(key)
-
-    for key, value in recomp_array.functions.items():
-        invert_recomp.setdefault(value, []).append(key)
-
+    combined_map: dict[UsedAddress, set[tuple[ImageId, int]]] = {}
+    eliminated: set[tuple[ImageId, int]] = set()
     matches = []
 
-    for fingerprint, orig_addrs in invert_orig.items():
-        # Don't match using blank fingerprints
-        if not fingerprint or len(orig_addrs) != 1:
-            continue
+    for image_id, array in ((ImageId.ORIG, orig_array), (ImageId.RECOMP, recomp_array)):
+        for func_addr, addr_samples in array.functions.items():
+            for sample in addr_samples:
+                combined_map.setdefault(sample, set()).add((image_id, func_addr))
 
-        if fingerprint in invert_recomp and len(invert_recomp[fingerprint]) == 1:
-            [orig_addr] = orig_addrs
-            [recomp_addr] = invert_recomp[fingerprint]
-            matches.append((orig_addr, recomp_addr))
+    while True:
+        matched_this_pass = False
 
-            if orig_addr in orig_array.thunks and recomp_addr in recomp_array.thunks:
-                orig_thunk = orig_array.thunks[orig_addr]
-                recomp_thunk = recomp_array.thunks[recomp_addr]
-                matches.append((orig_thunk, recomp_thunk))
+        # ?
+        for value in combined_map.values():
+            value -= eliminated
 
+        for (_, is_write), func_addrs in combined_map.items():
+            if is_write and len(func_addrs) == 2:
+                [(img_x, addr_x), (img_y, addr_y)] = func_addrs
+                if img_x != img_y:
+                    # Work out which is which
+                    orig_addr = addr_x if img_x == ImageId.ORIG else addr_y
+                    recomp_addr = addr_y if img_y == ImageId.RECOMP else addr_x
+                    matches.append((orig_addr, recomp_addr))
+                    eliminated.update(func_addrs)
+                    matched_this_pass = True
+                    break
+
+        if not matched_this_pass:
+            # TODO: separate?
+            for (_, is_write), func_addrs in combined_map.items():
+                if not is_write and len(func_addrs) == 2:
+                    [(img_x, addr_x), (img_y, addr_y)] = func_addrs
+                    if img_x != img_y:
+                        # Work out which is which
+                        orig_addr = addr_x if img_x == ImageId.ORIG else addr_y
+                        recomp_addr = addr_y if img_y == ImageId.RECOMP else addr_x
+                        matches.append((orig_addr, recomp_addr))
+                        eliminated.update(func_addrs)
+                        matched_this_pass = True
+                        break
+
+        if not matched_this_pass:
+            break
+
+    # Add thunks
+    thunks = []
+    for orig_addr, recomp_addr in matches:
+        if orig_addr in orig_array.thunks and recomp_addr in recomp_array.thunks:
+            thunks.append(
+                (orig_array.thunks[orig_addr], recomp_array.thunks[recomp_addr])
+            )
+
+    matches.extend(thunks)
     return matches

@@ -39,7 +39,7 @@ def test_get_function_fingerprint_matched(binfile: PEImage):
         batch.match(G_MUTEX_ADDR, G_MUTEX_ADDR)
 
     assert get_function_fingerprint(db, ImageId.ORIG, binfile, SET_DO_MUTEX_ADDR) == (
-        G_MUTEX_ADDR,
+        (G_MUTEX_ADDR, True),
     )
 
 
@@ -110,7 +110,7 @@ def test_xca_fingerprints_matched_variable(binfile: PEImage):
         batch.match(0x10102B28, 0x10102B28)
 
     result = analyze_crt_startup_functions(db, ImageId.ORIG, binfile, XCA_XCZ_RANGE)
-    assert result.functions[0x1001A6D0] == (0x10102B28,)
+    assert result.functions[0x1001A6D0] == ((0x10102B28, False),)
 
 
 def test_xca_fingerprints_avoid_crash(binfile: PEImage):
@@ -133,22 +133,25 @@ def test_create_match_baseline():
 
 def test_create_match_single():
     """Should create match for unique fingerprint."""
-    x_array = CrtStartupArray(functions={100: (1234,)}, thunks={})
-    y_array = CrtStartupArray(functions={200: (1234,)}, thunks={})
+    write_sample = (1234, True)
+    x_array = CrtStartupArray(functions={100: (write_sample,)}, thunks={})
+    y_array = CrtStartupArray(functions={200: (write_sample,)}, thunks={})
     assert create_crt_matches(x_array, y_array) == [(100, 200)]
 
 
 def test_create_match_single_with_thunks_one_sided():
     """Should not add thunk match unless it exists in both arrays."""
-    x_array = CrtStartupArray(functions={100: (1234,)}, thunks={100: 500})
-    y_array = CrtStartupArray(functions={200: (1234,)}, thunks={})
+    write_sample = (1234, True)
+    x_array = CrtStartupArray(functions={100: (write_sample,)}, thunks={100: 500})
+    y_array = CrtStartupArray(functions={200: (write_sample,)}, thunks={})
     assert create_crt_matches(x_array, y_array) == [(100, 200)]
 
 
 def test_create_match_single_with_thunks_two_sided():
     """Should match function and thunk."""
-    x_array = CrtStartupArray(functions={100: (1234,)}, thunks={100: 500})
-    y_array = CrtStartupArray(functions={200: (1234,)}, thunks={200: 600})
+    write_sample = (1234, True)
+    x_array = CrtStartupArray(functions={100: (write_sample,)}, thunks={100: 500})
+    y_array = CrtStartupArray(functions={200: (write_sample,)}, thunks={200: 600})
     assert create_crt_matches(x_array, y_array) == [(100, 200), (500, 600)]
 
 
@@ -161,6 +164,11 @@ def test_create_match_blank_fingerprint():
 
 def test_create_match_non_unique_fingerprint():
     """Should not match functions if their fingerprint is not unique."""
-    x_array = CrtStartupArray(functions={100: (1234,), 200: (1234,)}, thunks={})
-    y_array = CrtStartupArray(functions={200: (1234,), 300: (1234,)}, thunks={})
+    write_sample = (1234, True)
+    x_array = CrtStartupArray(
+        functions={100: (write_sample,), 200: (write_sample,)}, thunks={}
+    )
+    y_array = CrtStartupArray(
+        functions={200: (write_sample,), 300: (write_sample,)}, thunks={}
+    )
     assert not create_crt_matches(x_array, y_array)
