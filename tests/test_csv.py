@@ -8,6 +8,7 @@ from reccmp.compare.csv import (
     CsvInvalidAddressError,
     CsvNoDelimiterError,
     CsvInvalidEntityTypeError,
+    CsvInvalidNumberError,
     ReccmpCsvParserError,
 )
 
@@ -474,3 +475,62 @@ def test_non_function_entity_types():
         (0x3000, {"type": EntityType.FLOAT}),
         (0x4000, {"type": EntityType.VTABLE}),
     ]
+
+
+def test_size_decimal_or_hex():
+    """The size column will be interpreted as hex if it has the 0x prefix."""
+
+    text = dedent("""\
+        address,size
+        0x1000,0x10
+        0x2000,10
+        0x3000,0XC0,
+        0x4000,0010""")
+    assert list(csv_parse(text)) == [
+        (0x1000, {"size": 16}),
+        (0x2000, {"size": 10}),
+        (0x3000, {"size": 192}),
+        (0x4000, {"size": 10}),  # Leading zeroes permitted
+    ]
+
+
+def test_size_empty_valid():
+    """Should not raise exception if size contains 0-to-N whitespace characters."""
+
+    text = dedent("""\
+        address,size,x-test
+        0x1000,,test
+        0x2000,    ,test
+        0x3000,\t,test""")
+
+    # The `x-test` column is ignored.
+    # It is there to more clearly show the whitespace.
+    assert list(csv_parse(text)) == [
+        (0x1000, {}),
+        (0x2000, {}),
+        (0x3000, {}),
+    ]
+
+
+def test_size_invalid_hex_without_prefix():
+    """Hex values require the `0x` prefix."""
+    with pytest.raises(CsvInvalidNumberError):
+        list(csv_parse("address,size\n1000,beef"))
+
+
+def test_size_invalid_string():
+    """Raise an exception for values that are clearly not a hex or decimal number."""
+    with pytest.raises(CsvInvalidNumberError):
+        list(csv_parse("address,size\n1000,test"))
+
+
+def test_size_invalid_hex_suffix():
+    """Hex suffix `h` not supported."""
+    with pytest.raises(CsvInvalidNumberError):
+        list(csv_parse("address,size\n1000,1000h"))
+
+
+def test_size_invalid_hex_prefix_only():
+    """Throw for hex prefix without any digits."""
+    with pytest.raises(CsvInvalidNumberError):
+        list(csv_parse("address,size\n1000,0x"))
