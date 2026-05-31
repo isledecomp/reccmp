@@ -302,7 +302,7 @@ def test_set_max_size_skip_none_type(db: EntityDb, image_id: ImageId):
     assert ent is not None
     assert ent.max_size(image_id) == 200
 
-    # Distance to end of section
+    # Max size not calculated
     ent = db.get(image_id, 200)
     assert ent is not None
     assert ent.max_size(image_id) is None
