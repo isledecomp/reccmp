@@ -156,20 +156,15 @@ class Compare:
         match_variables(self._db, self.report)
         match_lines(self._db, self._lines_db, self.report)
 
-        # Detect floats first to eliminate potential overlap with string data
         for img_id, binfile in (
             (ImageId.ORIG, self.orig_bin),
             (ImageId.RECOMP, self.recomp_bin),
         ):
             create_imports(self._db, img_id, binfile)
             create_import_thunks(self._db, img_id, binfile)
-            create_analysis_floats(self._db, img_id, binfile)
-            create_analysis_strings(self._db, img_id, binfile, self.bin_encoding)
             create_seh_entities(self._db, img_id, binfile)
             create_thunks(self._db, img_id, binfile)
             create_analysis_vtordisps(self._db, img_id, binfile)
-            complete_partial_floats(self._db, img_id, binfile)
-            complete_partial_strings(self._db, img_id, binfile, self.bin_encoding)
             import_sections(self._db, img_id, binfile)
 
         match_imports(self._db)
@@ -184,6 +179,21 @@ class Compare:
         match_ref(self._db, self.report)
         unique_names_for_overloaded_functions(self._db)
         name_thunks(self._db)
+
+        # Search for const data values and read bytes from the binaries.
+        # This happens last because establishing all other entities first
+        # will reduce false positives.
+        for img_id, binfile in (
+            (ImageId.ORIG, self.orig_bin),
+            (ImageId.RECOMP, self.recomp_bin),
+        ):
+            # Some float consts may appear to be strings.
+            # Detect floats first because we can identify them with more confidence
+            # and this eliminates them from consideration as strings.
+            create_analysis_floats(self._db, img_id, binfile)
+            create_analysis_strings(self._db, img_id, binfile, self.bin_encoding)
+            complete_partial_floats(self._db, img_id, binfile)
+            complete_partial_strings(self._db, img_id, binfile, self.bin_encoding)
 
         match_strings(self._db, self.report)
 
