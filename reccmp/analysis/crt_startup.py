@@ -104,7 +104,7 @@ class UsedAddressCollector:
             if inst.mnemonic in JUMP_MNEMONICS:
                 continue
 
-            if inst.mnemonic in ("mov", "lea"):
+            if inst.mnemonic in ("mov", "fstp"):
                 dst_operand, _, src_operand = inst.op_str.partition(", ")
                 self._append_addrs(dst_operand, True)
                 self._append_addrs(src_operand, False)

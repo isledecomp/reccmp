@@ -5,6 +5,7 @@ from reccmp.analysis.crt_startup import (
     analyze_crt_startup_functions,
     CrtStartupArray,
     create_crt_matches,
+    UsedAddressCollector,
 )
 from reccmp.compare.db import EntityDb
 from reccmp.formats import PEImage
@@ -192,4 +193,97 @@ def test_create_match_with_elimination():
     assert create_crt_matches(x_array, y_array) == [
         (200, 300),
         (100, 200),
+    ]
+
+
+def test_collector_small_addrs_ignored():
+    """Limit tested addresses to those large enough to be an EXE imagebase."""
+    code = (
+        b"\xc6\x05\x00\x00\x00\x00\x00"  # mov byte ptr [0x0], 0
+        b"\xc6\x05\x00\x10\x00\x00\x00"  # mov byte ptr [0x1000], 0
+        b"\xc6\x05\x00\x00\x40\x00\x00"  # mov byte ptr [0x400000], 0
+        b"\xc6\x05\x00\x00\x00\x10\x00"  # mov byte ptr [0x10000000], 0
+        b"\xc3"  # ret
+    )
+
+    collector = UsedAddressCollector(lambda _: True)
+    collector.analyze(code, 0)
+
+    assert collector.seen_addrs == [
+        (0x400000, True),
+        (0x10000000, True),
+    ]
+
+
+def test_collector_repeated_addrs():
+    """Collected addresses are presented in sequence and are not deduplicated.
+    The caller can choose to reduce this to a set as needed."""
+    code = (
+        b"\xc6\x05\x00\x00\x40\x00\x00"  # mov byte ptr [0x400000], 0
+        b"\xc6\x05\x00\x00\x40\x00\x00"  # mov byte ptr [0x400000], 0
+        b"\x80\x3d\x00\x00\x40\x00\x00"  # cmp byte ptr [0x400000], 0x0
+        b"\xc3"  # ret
+    )
+
+    collector = UsedAddressCollector(lambda _: True)
+    collector.analyze(code, 0)
+
+    assert collector.seen_addrs == [
+        (0x400000, True),
+        (0x400000, True),
+        (0x400000, False),
+    ]
+
+
+def test_collector_classify_float_instructions_as_read_or_write():
+    """Capstone does not present float instructions with their implicit FPU register.
+    Make sure FSTP is identified as a write, and the others as reads."""
+    code = (
+        b"\xd9\x05\x00\x10\x40\x00"  # fld dword ptr [0x401000]
+        b"\xd8\x35\x00\x20\x40\x00"  # fdiv dword ptr [0x402000]
+        b"\xd9\x1d\x00\x30\x40\x00"  # fstp dword ptr [0x403000]
+        b"\xc3"  # ret
+    )
+
+    collector = UsedAddressCollector(lambda _: True)
+    collector.analyze(code, 0)
+
+    assert collector.seen_addrs == [
+        (0x401000, False),
+        (0x402000, False),
+        (0x403000, True),
+    ]
+
+
+def test_collector_not_all_dst_operands_are_writes():
+    code = (
+        b"\x80\x3d\x00\x00\x40\x00\x00"  # cmp byte ptr [0x400000], 0x0
+        b"\xf6\x05\x00\x00\x41\x00\x08"  # test byte ptr [0x410000], 0x8
+        b"\xc3"  # ret
+    )
+
+    collector = UsedAddressCollector(lambda _: True)
+    collector.analyze(code, 0)
+
+    assert collector.seen_addrs == [
+        (0x400000, False),
+        (0x410000, False),
+    ]
+
+
+def test_collector_calls_and_jumps():
+    """Jumps are ignored. Calls are collected as read addresses.
+    (We may choose to classify them differently in the future.)"""
+    code = (
+        b"\xe8\xfb\x0f\x00\x00"  # call 0x401000
+        b"\xe9\xf6\x1f\x00\x00"  # jmp 0x402000
+        b"\xc3"  # ret
+    )
+
+    collector = UsedAddressCollector(lambda _: True)
+    # Must set start addr here because CALLs and JMPs are relative.
+    collector.analyze(code, 0x400000)
+
+    assert collector.seen_addrs == [
+        (0x401000, False),
     ]
