@@ -10,7 +10,7 @@ from reccmp.compare.asm.instgen import (
     InstructGen,
     SectionType,
 )
-from reccmp.formats import PEImage
+from reccmp.formats import Image, PEImage
 from reccmp.types import EntityType, ImageId
 from reccmp.compare.db import EntityDb
 
@@ -185,7 +185,12 @@ def find_crt_startup_labels(db: EntityDb, image_id: ImageId) -> dict[str, int]:
     return found
 
 
-def unwrap_jump(binfile: PEImage, addr: int) -> tuple[bool, int]:
+INITIALIZER_THUNK_MAX_JUMP_OFFSET = 16
+"""Some MSVC dynamic initializers are thunked. By observation, the thunked function is
+usually at the next 16-byte-aligned address. Tweak this value if necessary."""
+
+
+def unwrap_jump(binfile: Image, addr: int) -> tuple[bool, int]:
     """If there is a 5-byte JMP or CALL instruction at the given address,
     follow it by calculating the destination address.
     Returns either (True, jmp_destination) or (False, starting_addr)."""
@@ -193,11 +198,12 @@ def unwrap_jump(binfile: PEImage, addr: int) -> tuple[bool, int]:
     # Check for CALL (0xE8) or JMP (0xE9) opcodes.
     if jmp[0] in (0xE8, 0xE9):
         (offset,) = struct.unpack("<i", jmp[1:])
+        # Add 5 because the offset is based on the address of
+        # the *next* instruction after the JMP.
+        destination = addr + 5 + offset
         # Follow the jump only if it is small.
-        if abs(offset) <= 16:
-            # Add 5 because the offset is based on the address of
-            # the *next* instruction after the JMP.
-            return (True, addr + 5 + offset)
+        if abs(destination - addr) <= INITIALIZER_THUNK_MAX_JUMP_OFFSET:
+            return (True, destination)
 
     return (False, addr)
 

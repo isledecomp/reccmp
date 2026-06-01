@@ -1,4 +1,5 @@
 import struct
+import pytest
 from reccmp.analysis.crt_startup import (
     get_function_fingerprint,
     find_crt_startup_labels,
@@ -6,10 +7,12 @@ from reccmp.analysis.crt_startup import (
     CrtStartupArray,
     create_crt_matches,
     UsedAddressCollector,
+    unwrap_jump,
 )
 from reccmp.compare.db import EntityDb
 from reccmp.formats import PEImage
 from reccmp.types import ImageId, EntityType
+from .raw_image import RawImage
 
 # MxCriticalSection::SetDoMutex.
 # Short function that sets the g_mutex global variable at 0x10101e78.
@@ -287,3 +290,54 @@ def test_collector_calls_and_jumps():
     assert collector.seen_addrs == [
         (0x401000, False),
     ]
+
+
+def jump_instruction(start: int, end: int, opcode: int = 0xE9) -> bytes:
+    """Create an instruction with the correct jump displacement."""
+    return struct.pack("<Bi", opcode, end - start - 5)
+
+
+CRT_THUNK_ORIENTATIONS = (
+    (0, 5),  # Thunk first, no gap
+    (0, 16),  # Thunk first, 16-byte-aligned
+    (5, 0),  # Function first, no gap
+    (16, 0),  # Function first, 16-byte-aligned
+)
+
+
+@pytest.mark.parametrize("opcode", (0xE8, 0xE9))  # CALL, JMP
+@pytest.mark.parametrize("thunk_addr, func_addr", CRT_THUNK_ORIENTATIONS)
+def test_unwrap_jump(thunk_addr: int, func_addr: int, opcode: int):
+    """Testing situations where we assume a jump or call is a thunk."""
+    thunk = jump_instruction(start=thunk_addr, end=func_addr, opcode=opcode)
+
+    # Prepare the instructions
+    memory = bytearray(128)
+    memory[thunk_addr : thunk_addr + 5] = thunk
+    memory[func_addr] = 0xC3  # RET
+
+    binfile = RawImage.from_memory(bytes(memory))
+    assert unwrap_jump(binfile, thunk_addr) == (True, func_addr)
+    assert unwrap_jump(binfile, func_addr) == (False, func_addr)
+
+
+CRT_NOT_A_THUNK_ORIENTATIONS = (
+    (0, 0x40),  # Thunk first
+    (0x60, 0),  # Function first
+)
+
+
+@pytest.mark.parametrize("opcode", (0xE8, 0xE9))  # CALL, JMP
+@pytest.mark.parametrize("thunk_addr, func_addr", CRT_NOT_A_THUNK_ORIENTATIONS)
+def test_unwrap_jump_outside_thresh(thunk_addr: int, func_addr: int, opcode: int):
+    """Testing where we do NOT assume a jump or call is a thunk."""
+    thunk = jump_instruction(start=thunk_addr, end=func_addr, opcode=opcode)
+
+    # Prepare the instructions
+    memory = bytearray(128)
+    memory[thunk_addr : thunk_addr + 5] = thunk
+    memory[func_addr] = 0xC3  # RET
+
+    binfile = RawImage.from_memory(bytes(memory))
+    assert unwrap_jump(binfile, thunk_addr) == (False, thunk_addr)
+    assert unwrap_jump(binfile, func_addr) == (False, func_addr)
