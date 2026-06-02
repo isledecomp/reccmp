@@ -5,7 +5,7 @@ These functions create or update entities using the current information in the d
 import logging
 from functools import cache
 from reccmp.analysis.crt_startup import (
-    analyze_crt_startup,
+    detect_crt_startup_arrays,
     create_crt_matches,
     get_crt_function_name,
 )
@@ -171,8 +171,8 @@ def unique_names_for_overloaded_functions(db: EntityDb):
 
 
 def match_crt_startup(db: EntityDb, orig_bin: PEImage, recomp_bin: PEImage):
-    crt_orig = tuple(analyze_crt_startup(db, ImageId.ORIG, orig_bin))
-    crt_recomp = tuple(analyze_crt_startup(db, ImageId.RECOMP, recomp_bin))
+    crt_orig = tuple(detect_crt_startup_arrays(db, ImageId.ORIG, orig_bin))
+    crt_recomp = tuple(detect_crt_startup_arrays(db, ImageId.RECOMP, recomp_bin))
 
     matches = []
 

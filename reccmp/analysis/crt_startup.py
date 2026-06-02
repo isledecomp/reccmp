@@ -135,6 +135,10 @@ def get_function_sample_size(db: EntityDb, image_id: ImageId, addr: int) -> int:
 def get_function_fingerprint(
     db: EntityDb, image_id: ImageId, binfile: PEImage, addr: int
 ) -> tuple[UsedAddress, ...]:
+    """Create lists of addresses written to and read from by this function.
+    Filter the addresses that point to a matched variable entity.
+    These two lists of identifying characteristics about the function
+    are the "fingerprint" we can use for matching."""
     size = get_function_sample_size(db, image_id, addr)
     raw = binfile.read(addr, size)
 
@@ -229,7 +233,7 @@ def analyze_crt_startup_functions(
     return CrtStartupArray(fingerprints, thunks)
 
 
-def analyze_crt_startup(
+def detect_crt_startup_arrays(
     db: EntityDb, image_id: ImageId, binfile: PEImage
 ) -> Iterator[tuple[CrtStartupArrayType, CrtStartupArray | None]]:
     """For the CRT startup arrays in the given binary, if the start and end labels are known,
