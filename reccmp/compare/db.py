@@ -501,3 +501,31 @@ class EntityDb:
 
     def is_match(self, orig_addr: int, recomp_addr: int) -> bool:
         return self._matches[ImageId.ORIG].get(orig_addr) == recomp_addr
+
+    def get_max_size(self, image_id: ImageId, addr: int) -> int | None:
+        """Get the distance between this entity and the next "solid" entity or
+        the end of the section/image.
+        Returns None if no estimation is possible."""
+        assert image_id in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
+
+        # Stop when we reach the first entity that takes up space.
+        solid_types = EntityType.solid_types()
+
+        for range_ in self.sections(image_id):
+            # Find the image section that contains the input address.
+            if addr in range_:
+                # For all entities after the input address:
+                # (Note that this does not require the starting entity to exist.)
+                from_addr_on = range(addr + 1, range_.stop)
+                for ent in self.all_in_range(image_id, from_addr_on):
+                    this_type = ent.get("type")
+                    if this_type not in solid_types:
+                        continue
+
+                    this_addr = ent.addr(image_id)
+                    assert this_addr is not None
+                    return this_addr - addr
+
+                return range_.stop - addr
+
+        return None

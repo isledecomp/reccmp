@@ -403,6 +403,90 @@ def test_generic_get_invalid_id(db: EntityDb):
 
 
 @pytest.mark.parametrize("image_id", ImageId)
+def test_get_max_size_no_sections(db: EntityDb, image_id: ImageId):
+    """Cannot estimate size without section data?"""
+    with db.batch() as batch:
+        batch.set(image_id, 100, type=EntityType.FUNCTION)
+        batch.set(image_id, 200, type=EntityType.FUNCTION)
+
+    assert db.get_max_size(image_id, 100) is None
+    assert db.get_max_size(image_id, 200) is None
+
+
+@pytest.mark.parametrize("image_id", ImageId)
+def test_get_max_size_with_sections(db: EntityDb, image_id: ImageId):
+    """All requirements met to apply max size."""
+    db.add_section(image_id, range(100, 300))
+
+    with db.batch() as batch:
+        batch.set(image_id, 100, type=EntityType.FUNCTION)
+        batch.set(image_id, 200, type=EntityType.FUNCTION)
+
+    # Distance to next entity
+    assert db.get_max_size(image_id, 100) == 100
+
+    # Distance to end of section
+    assert db.get_max_size(image_id, 200) == 100
+
+
+@pytest.mark.parametrize("image_id", ImageId)
+def test_get_max_size_skip_none_type(db: EntityDb, image_id: ImageId):
+    """An entity with type=None is ignored when calculating
+    the max size of the preceding entity."""
+    db.add_section(image_id, range(100, 300))
+
+    with db.batch() as batch:
+        batch.set(image_id, 100, type=EntityType.FUNCTION)
+        batch.set(image_id, 200)
+
+    # Ignored entity at addr=200. Calculated against the end of the section.
+    assert db.get_max_size(image_id, 100) == 200
+
+    # Behavior differs from `set_max_size` because we do not require a specific
+    # type for the entity or for the entity to exist at all.
+    assert db.get_max_size(image_id, 200) == 100
+    assert db.get_max_size(image_id, 250) == 50
+
+
+@pytest.mark.parametrize("image_id", ImageId)
+def test_get_max_size_skip_non_compared_type(db: EntityDb, image_id: ImageId):
+    """When measuring max size, skip entities that are not a 'compared type'."""
+    db.add_section(image_id, range(100, 300))
+
+    with db.batch() as batch:
+        batch.set(image_id, 100, type=EntityType.FUNCTION)
+        batch.set(image_id, 110, type=EntityType.LINE)
+        batch.set(image_id, 120, type=EntityType.LINE)
+        batch.set(image_id, 130, type=EntityType.LINE)
+        batch.set(image_id, 200, type=EntityType.FUNCTION)
+        batch.set(image_id, 210, type=EntityType.LINE)
+        batch.set(image_id, 220, type=EntityType.LINE)
+
+    # Distance to next entity
+    assert db.get_max_size(image_id, 100) == 100
+
+    # Distance to end of section
+    assert db.get_max_size(image_id, 200) == 100
+
+
+@pytest.mark.parametrize("image_id", ImageId)
+def test_get_max_size_section_boundaries(db: EntityDb, image_id: ImageId):
+    """Do not cross section boundaries when measuring entities."""
+    db.add_section(image_id, range(100, 300))
+    db.add_section(image_id, range(500, 600))
+
+    with db.batch() as batch:
+        batch.set(image_id, 100, type=EntityType.FUNCTION)
+        batch.set(image_id, 500, type=EntityType.FUNCTION)
+
+    # Distance to end of section
+    assert db.get_max_size(image_id, 100) == 200
+
+    # Distance to end of section
+    assert db.get_max_size(image_id, 500) == 100
+
+
+@pytest.mark.parametrize("image_id", ImageId)
 def test_get_all_in_range(db: EntityDb, image_id: ImageId):
     """Demonstrate how all_in_range() returns entities."""
     with db.batch() as batch:

@@ -309,8 +309,34 @@ def test_set_max_size_skip_none_type(db: EntityDb, image_id: ImageId):
 
 
 @pytest.mark.parametrize("image_id", ImageId)
-def test_set_max_size_skip_non_compared_type(db: EntityDb, image_id: ImageId):
-    """When measuring max size, skip entities that are not a 'compared type'."""
+def test_set_max_size_skip_const_data(db: EntityDb, image_id: ImageId):
+    """Entities with intrinsic size like strings can be used as boundaries
+    to measure against, but are not measured themselves."""
+    db.add_section(image_id, range(100, 300))
+
+    with db.batch() as batch:
+        batch.set(image_id, 100, type=EntityType.FUNCTION)
+        # For the purpose of this example, don't set a size for the string.
+        # We skip entities that already have a size because they don't need
+        # an estimated max size.
+        batch.set(image_id, 200, type=EntityType.STRING)
+
+    set_max_size(db, image_id)
+
+    # Distance to next entity
+    ent = db.get(image_id, 100)
+    assert ent is not None
+    assert ent.max_size(image_id) == 100
+
+    # Max size not calculated
+    ent = db.get(image_id, 200)
+    assert ent is not None
+    assert ent.max_size(image_id) is None
+
+
+@pytest.mark.parametrize("image_id", ImageId)
+def test_set_max_size_skip_non_solid_type(db: EntityDb, image_id: ImageId):
+    """When measuring max size, skip entities that are not a "solid" type."""
     db.add_section(image_id, range(100, 300))
 
     with db.batch() as batch:

@@ -18,18 +18,16 @@ logger = logging.getLogger(__name__)
 
 def set_max_size(db: EntityDb, image_id: ImageId):
     """In each section/segment of the image, for compared entities without a size value,
-    calculate the distance between the entity and the compared entity that follows."""
+    calculate the distance between the entity and the solid entity that follows.
+    Same calculation as db.get_max_size()."""
     assert image_id in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
 
-    # Compared entity types: all kinds of function, vtable and variable.
-    measured_types = (
-        EntityType.FUNCTION,
-        EntityType.VTABLE,
-        EntityType.DATA,
-        EntityType.IMPORT_THUNK,
-        EntityType.THUNK,
-        EntityType.VTORDISP,
-    )
+    # Any entity that takes up space can be used to measure against.
+    solid_types = EntityType.solid_types()
+
+    # We don't want to measure the size of const data entities like strings.
+    # They already have an intrinsic size.
+    measured_types = EntityType.variable_size_types()
 
     with db.batch() as batch:
         for range_ in db.sections(image_id):
@@ -37,7 +35,8 @@ def set_max_size(db: EntityDb, image_id: ImageId):
 
             for ent in db.all_in_range(image_id, range_):
                 this_type = ent.get("type")
-                if this_type not in measured_types:
+                if this_type not in solid_types:
+                    # Also excludes null type.
                     continue
 
                 this_addr = ent.addr(image_id)
@@ -50,6 +49,7 @@ def set_max_size(db: EntityDb, image_id: ImageId):
                 # Only measure entities with no set size
                 if last_addr is None and ent.size(image_id) is None:
                     if this_type in measured_types:
+                        # Measure this entity next.
                         last_addr = this_addr
 
             # Measured against the end of the section/image.
