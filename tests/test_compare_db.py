@@ -450,13 +450,14 @@ def test_get_max_size_skip_none_type(db: EntityDb, image_id: ImageId):
 
 @pytest.mark.parametrize("image_id", ImageId)
 def test_get_max_size_skip_non_compared_type(db: EntityDb, image_id: ImageId):
-    """When measuring max size, skip entities that are not a 'compared type'."""
+    """When measuring max size, skip entities that are not a "solid" type.
+    Entities with a null type are also skipped."""
     db.add_section(image_id, range(100, 300))
 
     with db.batch() as batch:
         batch.set(image_id, 100, type=EntityType.FUNCTION)
         batch.set(image_id, 110, type=EntityType.LINE)
-        batch.set(image_id, 120, type=EntityType.LINE)
+        batch.set(image_id, 120)
         batch.set(image_id, 130, type=EntityType.LINE)
         batch.set(image_id, 200, type=EntityType.FUNCTION)
         batch.set(image_id, 210, type=EntityType.LINE)
