@@ -347,10 +347,14 @@ def print_diff_report(results: list[RoadmapRow]):
 
 
 def export_to_csv(csv_file: str, results: list[RoadmapRow]):
+    header_renames = {
+        "sym_type": "row_type",
+    }
+    csv_header = list(header_renames.get(f, f) for f in RoadmapRow._fields)
+
     with open(csv_file, "w+", encoding="utf-8") as f:
-        f.write(
-            "orig_sect_ofs,recomp_sect_ofs,orig_addr,recomp_addr,displacement,row_type,size,name,module\n"
-        )
+        f.write(",".join(csv_header))
+        f.write("\n")
         for row in results:
             f.write(",".join(map(or_blank, row)))
             f.write("\n")
