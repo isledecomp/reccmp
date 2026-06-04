@@ -121,11 +121,9 @@ def get_function_sample_size(db: EntityDb, image_id: ImageId, addr: int) -> int:
         if size is not None:
             return size
 
-        if image_id == ImageId.ORIG:
-            # TODO: #406 changes this API.
-            next_addr = db.get_next_orig_addr(addr)
-            if next_addr:
-                return next_addr - addr
+        max_size = db.get_max_size(image_id, addr)
+        if max_size:
+            return max_size
 
     # Arbitrary value with the intent of overshooting the function's actual size
     # and then correcting during disassembly.
