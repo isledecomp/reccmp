@@ -27,7 +27,10 @@ from reccmp.compare.report import (
     report_function_accuracy,
 )
 from reccmp.types import EntityType
-from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
+from reccmp.project.logging import (
+    argparse_add_logging_args,
+    argparse_parse_logging,
+)
 from reccmp.project.detect import (
     RecCmpProjectException,
     argparse_add_project_target_args,
@@ -45,12 +48,8 @@ def gen_json(json_file: str, json_str: str):
         f.write(json_str)
 
 
-def print_match_verbose(
-    match: DiffReport, show_both_addrs: bool = False, is_plain: bool = False
-):
-    percenttext = percent_string(
-        match.effective_ratio, match.is_effective_match, is_plain
-    )
+def print_match_verbose(match: DiffReport, show_both_addrs: bool = False):
+    percenttext = percent_string(match.effective_ratio, match.is_effective_match)
 
     if show_both_addrs:
         addrs = f"0x{match.orig_addr:x} / 0x{match.recomp_addr:x}"
@@ -65,34 +64,26 @@ def print_match_verbose(
     udiff = raw_diff_to_udiff(match.result.diff, grouped=grouped_diff)
 
     if match.effective_ratio == 1.0:
-        ok_text = (
-            "OK!"
-            if is_plain
-            else (reccmp.color.Fore.GREEN + "✨ OK! ✨" + reccmp.color.Style.RESET_ALL)
-        )
+        ok_text = reccmp.color.Fore.GREEN + "✨ OK! ✨" + reccmp.color.Style.RESET_ALL
         if match.ratio == 1.0:
             print(f"{addrs}: {match.name} 100% match.\n\n{ok_text}\n\n")
         else:
-            print_combined_diff(udiff, is_plain, show_both_addrs)
+            print_combined_diff(udiff, show_both_addrs)
 
             print(
                 f"\n{addrs}: {match.name} 100% effective match (differs, but only in ways that don't affect behavior).\n\n{ok_text}\n\n"
             )
 
     else:
-        print_combined_diff(udiff, is_plain, show_both_addrs)
+        print_combined_diff(udiff, show_both_addrs)
 
         print(
             f"\n{match.name} is only {percenttext} similar to the original, diff above"
         )
 
 
-def print_match_oneline(
-    match: ReccmpComparedEntity, show_both_addrs: bool = False, is_plain: bool = False
-):
-    percenttext = percent_string(
-        match.effective_accuracy, match.is_effective_match, is_plain
-    )
+def print_match_oneline(match: ReccmpComparedEntity, show_both_addrs: bool = False):
+    percenttext = percent_string(match.effective_accuracy, match.is_effective_match)
 
     if show_both_addrs:
         addrs = f"{match.orig_addr} / {match.recomp_addr}"
@@ -212,7 +203,7 @@ def dump_all_matched_functions(matches: Sequence[DiffReport]):
                     f.write(f"        : {line}\n")
 
 
-def main():
+def main() -> int:
     args = parse_args()
 
     try:
@@ -235,9 +226,7 @@ def main():
             logger.error("Failed to find a match at address 0x%x", args.verbose)
             return 1
 
-        print_match_verbose(
-            match, show_both_addrs=args.print_rec_addr, is_plain=args.no_color
-        )
+        print_match_verbose(match, show_both_addrs=args.print_rec_addr)
         return 0
 
     ### Compare everything.
@@ -272,9 +261,7 @@ def main():
     # Print diff summary to terminal
     if not args.silent and args.diff is None:
         for entity in report.entities.values():
-            print_match_oneline(
-                entity, show_both_addrs=args.print_rec_addr, is_plain=args.no_color
-            )
+            print_match_oneline(entity, show_both_addrs=args.print_rec_addr)
 
     # Compare with saved diff report.
     if args.diff is not None:
@@ -286,7 +273,6 @@ def main():
                 saved_data,
                 report,
                 show_both_addrs=args.print_rec_addr,
-                is_plain=args.no_color,
             )
         except FileNotFoundError:
             # In a CI workflow, the JSON file might not exist on the first run in a new branch.
