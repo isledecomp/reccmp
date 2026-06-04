@@ -130,6 +130,9 @@ class Compare:
         ):
             return
 
+        # Each task creates new entities or overwrites existing data.
+        # The tasks are ordered roughly according to the principle
+        # of highest-to-lowest confidence of data validity.
         load_cvdump_types(self.cvdump_analysis, self.types)
         load_cvdump(self.cvdump_analysis, self._db, self.recomp_bin)
         load_cvdump_lines(self.cvdump_analysis, self._lines_db, self.recomp_bin)
@@ -173,6 +176,9 @@ class Compare:
         for img_id in (ImageId.ORIG, ImageId.RECOMP):
             set_max_size(self._db, img_id)
 
+        # Creates new offset entities within the footprint of each matched
+        # array variable. If the array is larger (bytes) in recomp than in orig,
+        # stop short before overwriting any existing orig entities.
         match_array_elements(self._db, self.types)
 
         check_vtables(self._db, self.orig_bin)
@@ -182,7 +188,8 @@ class Compare:
 
         # Search for const data values and read bytes from the binaries.
         # This happens last because establishing all other entities first
-        # will reduce false positives.
+        # will reduce false positives. For each address presumed to be a
+        # float or string, skip if there is an existing entity at the address.
         for img_id, binfile in (
             (ImageId.ORIG, self.orig_bin),
             (ImageId.RECOMP, self.recomp_bin),
