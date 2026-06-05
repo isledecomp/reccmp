@@ -6,12 +6,12 @@ report how "far off" the recomp symbol is from its proper place
 in the original binary.
 """
 
-import os
 import argparse
+import bisect
 import logging
+import os
 from pathlib import Path
 import statistics
-import bisect
 from typing import Iterator, NamedTuple
 import reccmp
 from reccmp.formats import PEImage
@@ -35,6 +35,8 @@ logger = logging.getLogger(__name__)
 
 def or_blank(value) -> str:
     """Helper for dealing with potential None values in text output."""
+    if isinstance(value, int):
+        return hex(value)
     return "" if value is None else str(value)
 
 
@@ -310,6 +312,7 @@ def suggest_order(results: list[RoadmapRow], module_map: ModuleMap, match_type: 
 
 def print_text_report(results: list[RoadmapRow]):
     """Print the result with original and recomp addresses."""
+
     for row in results:
         print(
             "  ".join(
@@ -329,6 +332,7 @@ def print_diff_report(results: list[RoadmapRow]):
     """Print only entries where we have the recomp address.
     This is intended for generating a file to diff against.
     The recomp addresses are always changing so we hide those."""
+
     for row in results:
         if row.orig_addr is None or row.recomp_addr is None:
             continue
@@ -347,10 +351,14 @@ def print_diff_report(results: list[RoadmapRow]):
 
 
 def export_to_csv(csv_file: str, results: list[RoadmapRow]):
+    header_renames = {
+        "sym_type": "row_type",
+    }
+    csv_header = list(header_renames.get(f, f) for f in RoadmapRow._fields)
+
     with open(csv_file, "w+", encoding="utf-8") as f:
-        f.write(
-            "orig_sect_ofs,recomp_sect_ofs,orig_addr,recomp_addr,displacement,row_type,size,name,module\n"
-        )
+        f.write(",".join(csv_header))
+        f.write("\n")
         for row in results:
             f.write(",".join(map(or_blank, row)))
             f.write("\n")
