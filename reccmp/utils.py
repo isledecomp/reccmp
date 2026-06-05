@@ -12,6 +12,12 @@ from reccmp.compare.report import (
 )
 
 
+def safe_denominator(v: int) -> int:
+    if v == 0:
+        return 1
+    return v
+
+
 def reccmp_pack_generator(lines: Iterable[str]) -> Iterator[str]:
     """Emits only lines between the "reccmp-pack-begin" and "reccmp-pack-end" markers.
     Intended to remove ES6 imports and exports that are not compatible with our
@@ -66,8 +72,8 @@ def gen_svg(
         {
             "name": name_svg,
             "icon": icon_data,
-            "implemented": f"{(svg_implemented_funcs / total_funcs * 100):.2f}% ({svg_implemented_funcs}/{total_funcs})",
-            "accuracy": f"{(raw_accuracy / svg_implemented_funcs * 100):.2f}%",
+            "implemented": f"{(svg_implemented_funcs / safe_denominator(total_funcs) * 100):.2f}% ({svg_implemented_funcs}/{total_funcs})",
+            "accuracy": f"{(raw_accuracy / safe_denominator(svg_implemented_funcs) * 100):.2f}%",
             "progbar": total_statistic * full_percentbar_width,
             "percent": f"{(total_statistic * 100):.2f}%",
         },
