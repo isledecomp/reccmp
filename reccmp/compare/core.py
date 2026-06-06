@@ -242,7 +242,7 @@ class Compare:
             )
         )
 
-        project_aliases = {target.target_id : target.marker_aliases}
+        project_aliases = {target.target_id: target.marker_aliases}
 
         compare = cls(
             origfile,
