@@ -206,6 +206,9 @@ def test_match_array_type_orig_smaller(db: EntityDb, types_db: CvdumpTypesParser
             data_type=0x1000,
             size=8,
         )
+        # Set the max size (i.e. distance to "blocker" entity) manually.
+        # It was previously calculated inside match_array_elements.
+        batch.set(ImageId.ORIG, 100, max_size=4)
         batch.set(ImageId.ORIG, 104, name="blocker", type=EntityType.DATA)
         batch.match(100, 100)
 
@@ -561,4 +564,83 @@ def test_match_array_array_of_union_structs(db: EntityDb, types_db: CvdumpTypesP
     )
     assert not any(
         db.get(ImageId.RECOMP, addr) for addr in (101, 102, 103, 105, 106, 107)
+    )
+
+
+def test_match_array_of_struct_bitfield(db: EntityDb, types_db: CvdumpTypesParser):
+    """Verify comparing an array of struct bitfields uses the underlying type of the bitfield"""
+    types_db.keys[TK(0x1000)] = {
+        "type": "LF_ARRAY",
+        "array_type": TK(0x1001),
+        "size": 4 * 8,
+    }
+    types_db.keys[TK(0x1001)] = {
+        "type": "LF_STRUCTURE",
+        "field_list_type": TK(0x1002),
+        "size": 8,
+    }
+    types_db.keys[TK(0x1002)] = {
+        "type": "LF_FIELDLIST",
+        "members": [
+            FieldListItem(offset=0, name="v0", type=CVInfoTypeEnum.T_UINT4),
+            FieldListItem(offset=4, name="bit0", type=TK(0x1003)),
+            FieldListItem(offset=4, name="bit1", type=TK(0x1004)),
+        ],
+    }
+    types_db.keys[TK(0x1003)] = {
+        "type": "LF_BITFIELD",
+        "bit_start": 0,
+        "bit_count": 1,
+        "bit_type": CVInfoTypeEnum.T_UCHAR,
+    }
+    types_db.keys[TK(0x1004)] = {
+        "type": "LF_BITFIELD",
+        "bit_start": 1,
+        "bit_count": 1,
+        "bit_type": CVInfoTypeEnum.T_UCHAR,
+    }
+
+    with db.batch() as batch:
+        batch.set(
+            ImageId.RECOMP,
+            0x100,
+            name="test",
+            type=EntityType.DATA,
+            data_type=0x1000,
+            size=32,
+        )
+        batch.match(0x100, 0x100)
+
+    match_array_elements(db, types_db)
+
+    e = db.get(ImageId.ORIG, 0x100)
+    assert e is not None
+    assert e.name == "test[0].v0"
+    assert e.get("type") == EntityType.DATA
+    assert e.any_size() == 32
+
+    e = db.get(ImageId.RECOMP, 0x118)
+    assert e is not None
+    assert e.name == "test[3].v0"
+    assert e.get("type") == EntityType.OFFSET
+    assert e.any_size() == 4
+
+    e = db.get(ImageId.RECOMP, 0x11C)
+    assert e is not None
+    assert e.name == "test[3].bit0"
+    assert e.get("type") == EntityType.OFFSET
+    assert e.any_size() == 1
+
+    assert not any(
+        db.get(ImageId.ORIG, addr) for addr in range(0x100, 0x120) if addr % 4 != 0
+    )
+    assert all(
+        db.get(ImageId.ORIG, addr) for addr in range(0x100, 0x120) if addr % 4 == 0
+    )
+
+    assert not any(
+        db.get(ImageId.RECOMP, addr) for addr in range(0x100, 0x120) if addr % 4 != 0
+    )
+    assert all(
+        db.get(ImageId.RECOMP, addr) for addr in range(0x100, 0x120) if addr % 4 == 0
     )

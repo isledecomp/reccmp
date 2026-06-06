@@ -13,6 +13,7 @@ from reccmp.utils import (
     print_combined_diff,
     diff_json,
     percent_string,
+    safe_denominator,
     write_html_report,
 )
 
@@ -27,7 +28,10 @@ from reccmp.compare.report import (
     report_function_accuracy,
 )
 from reccmp.types import EntityType
-from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
+from reccmp.project.logging import (
+    argparse_add_logging_args,
+    argparse_parse_logging,
+)
 from reccmp.project.detect import (
     RecCmpProjectException,
     argparse_add_project_target_args,
@@ -45,12 +49,8 @@ def gen_json(json_file: str, json_str: str):
         f.write(json_str)
 
 
-def print_match_verbose(
-    match: DiffReport, show_both_addrs: bool = False, is_plain: bool = False
-):
-    percenttext = percent_string(
-        match.effective_ratio, match.is_effective_match, is_plain
-    )
+def print_match_verbose(match: DiffReport, show_both_addrs: bool = False):
+    percenttext = percent_string(match.effective_ratio, match.is_effective_match)
 
     if show_both_addrs:
         addrs = f"0x{match.orig_addr:x} / 0x{match.recomp_addr:x}"
@@ -61,34 +61,26 @@ def print_match_verbose(
     udiff = raw_diff_to_udiff(match.result.diff, grouped=grouped_diff)
 
     if match.effective_ratio == 1.0:
-        ok_text = (
-            "OK!"
-            if is_plain
-            else (reccmp.color.Fore.GREEN + "✨ OK! ✨" + reccmp.color.Style.RESET_ALL)
-        )
+        ok_text = reccmp.color.Fore.GREEN + "✨ OK! ✨" + reccmp.color.Style.RESET_ALL
         if match.ratio == 1.0:
             print(f"{addrs}: {match.name} 100% match.\n\n{ok_text}\n\n")
         else:
-            print_combined_diff(udiff, is_plain, show_both_addrs)
+            print_combined_diff(udiff, show_both_addrs)
 
             print(
                 f"\n{addrs}: {match.name} 100% effective match (differs, but only in ways that don't affect behavior).\n\n{ok_text}\n\n"
             )
 
     else:
-        print_combined_diff(udiff, is_plain, show_both_addrs)
+        print_combined_diff(udiff, show_both_addrs)
 
         print(
             f"\n{match.name} is only {percenttext} similar to the original, diff above"
         )
 
 
-def print_match_oneline(
-    match: ReccmpComparedEntity, show_both_addrs: bool = False, is_plain: bool = False
-):
-    percenttext = percent_string(
-        match.effective_accuracy, match.is_effective_match, is_plain
-    )
+def print_match_oneline(match: ReccmpComparedEntity, show_both_addrs: bool = False):
+    percenttext = percent_string(match.effective_accuracy, match.is_effective_match)
 
     if show_both_addrs:
         addrs = f"{match.orig_addr} / {match.recomp_addr}"
@@ -208,7 +200,7 @@ def dump_all_matched_functions(matches: Sequence[DiffReport]):
                     f.write(f"        : {line}\n")
 
 
-def main():
+def main() -> int:
     args = parse_args()
 
     try:
@@ -231,9 +223,7 @@ def main():
             logger.error("Failed to find a match at address 0x%x", args.verbose)
             return 1
 
-        print_match_verbose(
-            match, show_both_addrs=args.print_rec_addr, is_plain=args.no_color
-        )
+        print_match_verbose(match, show_both_addrs=args.print_rec_addr)
         return 0
 
     ### Compare everything.
@@ -263,16 +253,12 @@ def main():
     functions_aligned_count = report_function_alignment(report)
 
     # Number of functions compared (i.e. excluding stubs)
-    function_count, total_accuracy, total_effective_accuracy = report_function_accuracy(
-        report
-    )
+    function_count, _, total_effective_accuracy = report_function_accuracy(report)
 
     # Print diff summary to terminal
     if not args.silent and args.diff is None:
         for entity in report.entities.values():
-            print_match_oneline(
-                entity, show_both_addrs=args.print_rec_addr, is_plain=args.no_color
-            )
+            print_match_oneline(entity, show_both_addrs=args.print_rec_addr)
 
     # Compare with saved diff report.
     if args.diff is not None:
@@ -284,7 +270,6 @@ def main():
                 saved_data,
                 report,
                 show_both_addrs=args.print_rec_addr,
-                is_plain=args.no_color,
             )
         except FileNotFoundError:
             # In a CI workflow, the JSON file might not exist on the first run in a new branch.
@@ -305,32 +290,45 @@ def main():
 
     implemented_funcs = function_count
 
+    # Add known but unmatched functions to our count
+    function_count += compare.count_unmatched_functions()
+
     # If we know how many functions are in the file (via analysis with Ghidra or other tools)
     # we can substitute an alternate value to use when calculating the percentages below.
     if args.total:
         # Use the alternate value if it exceeds the number of annotated functions
         function_count = max(function_count, int(args.total))
 
-    if function_count > 0:
-        effective_accuracy = total_effective_accuracy / function_count * 100
-        actual_accuracy = total_accuracy / function_count * 100
-        alignment_percentage = functions_aligned_count / function_count * 100
-        print(
-            f"\nTotal effective accuracy {effective_accuracy:.2f}% across {function_count} functions ({actual_accuracy:.2f}% actual accuracy)"
-        )
+    implemented = implemented_funcs / safe_denominator(function_count) * 100
+
+    effective_accuracy = (
+        total_effective_accuracy / safe_denominator(implemented_funcs) * 100
+    )
+    progress = total_effective_accuracy / safe_denominator(function_count) * 100
+    alignment_percentage = (
+        functions_aligned_count / safe_denominator(function_count) * 100
+    )
+
+    print(
+        f"\nImplemented:  {implemented:.2f}%  ({implemented_funcs} / {function_count})"
+    )
+    print(f"Accuracy:     {effective_accuracy:.2f}%")
+    print(f"Progress:     {progress:.2f}%")
+
+    if functions_aligned_count > 0:
         print(
             f"{functions_aligned_count} functions are aligned ({alignment_percentage:.2f}%)"
         )
 
-        if args.svg is not None:
-            gen_svg(
-                args.svg,
-                os.path.basename(target.original_path),
-                args.svg_icon,
-                implemented_funcs,
-                function_count,
-                total_effective_accuracy,
-            )
+    if args.svg is not None:
+        gen_svg(
+            args.svg,
+            os.path.basename(target.original_path),
+            args.svg_icon,
+            implemented_funcs,
+            function_count,
+            total_effective_accuracy,
+        )
     return 0
 
 

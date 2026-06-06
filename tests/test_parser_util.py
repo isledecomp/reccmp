@@ -147,10 +147,11 @@ def test_get_class_name_none(line: str):
 
 
 variable_name_cases = [
-    # with prefix for easy access
+    # With "g_" prefix, formerly a requirement for variables in reccmp-enabled code.
     ("char* g_test;", "g_test"),
     ("g_test;", "g_test"),
     ("void (*g_test)(int);", "g_test"),
+    ("void (*g_test)(char*, int);", "g_test"),
     ("char g_test[50];", "g_test"),
     ("char g_test[50] = {1234,", "g_test"),
     ("int g_test = 500;", "g_test"),
@@ -158,10 +159,16 @@ variable_name_cases = [
     ("char* hello;", "hello"),
     ("hello;", "hello"),
     ("void (*hello)(int);", "hello"),
+    ("char hello[];", "hello"),
+    ("char hello[][];", "hello"),
     ("char hello[50];", "hello"),
+    ("char hello[10][50];", "hello"),
     ("char hello[50] = {1234,", "hello"),
     ("int hello = 500;", "hello"),
     ("char* gBoring_material_names[2];", "gBoring_material_names"),
+    ("const FloatConstant g_floatConst4096(4096.0f);", "g_floatConst4096"),
+    ("int really::really::qualified::variable hello;", "hello"),
+    ("fully::qualified::type test = 5;", "test"),
 ]
 
 

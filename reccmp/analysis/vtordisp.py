@@ -4,6 +4,7 @@ import re
 import struct
 from typing import Iterator, NamedTuple
 from reccmp.formats.pe import PEImage
+from reccmp.types import ConcreteBuffer
 
 # Each vtordisp function begins with `sub ecx, <byte>`
 VTOR_START_RE = re.compile(rb"\x2b\x49")
@@ -29,7 +30,9 @@ class VtordispFunction(NamedTuple):
     size: int
 
 
-def find_displacements(buf: bytes, base_addr: int = 0) -> Iterator[VtordispFunction]:
+def find_displacements(
+    buf: ConcreteBuffer, base_addr: int = 0
+) -> Iterator[VtordispFunction]:
     for start_match in VTOR_START_RE.finditer(buf):
         start = start_match.start()
 

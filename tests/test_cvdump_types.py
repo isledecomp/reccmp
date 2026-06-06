@@ -1195,3 +1195,23 @@ def test_unknown_primitive_type(empty_parser: CvdumpTypesParser):
     empty_parser.read_all(ARRAY_WITH_UNKNOWN_ELEMENT)
     with pytest.raises(CvdumpKeyError):
         empty_parser.get_scalars(TK(0x1000))
+
+
+ARRAY_OF_STRUCT_BITFIELDS = """
+0x1002 : Length = 10, Leaf = 0x1205 LF_BITFIELD
+        bits = 1, starting position = 0, Type = T_UCHAR(0020)
+
+0x1003 : Length = 10, Leaf = 0x1205 LF_BITFIELD
+        bits = 3, starting position = 6, Type = T_UINT4(0075)
+"""
+
+
+def test_bitfields(empty_parser: CvdumpTypesParser):
+    """Make sure we can read a LF_BITFIELD present in LF_FIELDLIST"""
+    empty_parser.read_all(ARRAY_OF_STRUCT_BITFIELDS)
+    assert empty_parser.keys[TK(0x1002)]["bit_start"] == 0
+    assert empty_parser.keys[TK(0x1002)]["bit_count"] == 1
+    assert empty_parser.keys[TK(0x1002)]["bit_type"] == CVInfoTypeEnum.T_UCHAR
+    assert empty_parser.keys[TK(0x1003)]["bit_start"] == 6
+    assert empty_parser.keys[TK(0x1003)]["bit_count"] == 3
+    assert empty_parser.keys[TK(0x1003)]["bit_type"] == CVInfoTypeEnum.T_UINT4

@@ -45,6 +45,7 @@ from .analyze import (
     complete_partial_strings,
     match_entry,
     match_exports,
+    import_sections,
 )
 from .ingest import (
     load_cvdump,
@@ -57,6 +58,8 @@ from .mutate import (
     match_array_elements,
     name_thunks,
     unique_names_for_overloaded_functions,
+    match_crt_startup,
+    set_max_size,
 )
 from .verify import (
     check_vtables,
@@ -128,6 +131,9 @@ class Compare:
         ):
             return
 
+        # Each task creates new entities or overwrites existing data.
+        # The tasks are ordered roughly according to the principle
+        # of highest-to-lowest confidence of data validity.
         load_cvdump_types(self.cvdump_analysis, self.types)
         load_cvdump(self.cvdump_analysis, self._db, self.recomp_bin)
         load_cvdump_lines(self.cvdump_analysis, self._lines_db, self.recomp_bin)
@@ -154,6 +160,8 @@ class Compare:
         match_variables(self._db, self.report)
         match_lines(self._db, self._lines_db, self.report)
 
+        match_crt_startup(self._db, self.orig_bin, self.recomp_bin)
+
         match_array_elements(self._db, self.types)
         # Detect floats first to eliminate potential overlap with string data
         for img_id, binfile in (
@@ -162,20 +170,42 @@ class Compare:
         ):
             create_imports(self._db, img_id, binfile)
             create_import_thunks(self._db, img_id, binfile)
-            create_analysis_floats(self._db, img_id, binfile)
-            create_analysis_strings(self._db, img_id, binfile, self.bin_encoding)
             create_seh_entities(self._db, img_id, binfile)
             create_thunks(self._db, img_id, binfile)
             create_analysis_vtordisps(self._db, img_id, binfile)
-            complete_partial_floats(self._db, img_id, binfile)
-            complete_partial_strings(self._db, img_id, binfile, self.bin_encoding)
+            import_sections(self._db, img_id, binfile)
 
         match_imports(self._db)
         match_exports(self._db, self.orig_bin, self.recomp_bin)
+
+        for img_id in (ImageId.ORIG, ImageId.RECOMP):
+            set_max_size(self._db, img_id)
+
+        # Creates new offset entities within the footprint of each matched
+        # array variable. If the array is larger (bytes) in recomp than in orig,
+        # stop short before overwriting any existing orig entities.
+        match_array_elements(self._db, self.types)
+
         check_vtables(self._db, self.orig_bin)
         match_ref(self._db, self.report)
         unique_names_for_overloaded_functions(self._db)
         name_thunks(self._db)
+
+        # Search for const data values and read bytes from the binaries.
+        # This happens last because establishing all other entities first
+        # will reduce false positives. For each address presumed to be a
+        # float or string, skip if there is an existing entity at the address.
+        for img_id, binfile in (
+            (ImageId.ORIG, self.orig_bin),
+            (ImageId.RECOMP, self.recomp_bin),
+        ):
+            # Some float consts may appear to be strings.
+            # Detect floats first because we can identify them with more confidence
+            # and this eliminates them from consideration as strings.
+            create_analysis_floats(self._db, img_id, binfile)
+            create_analysis_strings(self._db, img_id, binfile, self.bin_encoding)
+            complete_partial_floats(self._db, img_id, binfile)
+            complete_partial_strings(self._db, img_id, binfile, self.bin_encoding)
 
         match_strings(self._db, self.report)
 
@@ -345,6 +375,14 @@ class Compare:
         )
 
     ## Public API
+
+    def count_unmatched_functions(self) -> int:
+        """Count known but unmatched functions in orig."""
+        return sum(
+            1
+            for ent in self._db.unmatched(ImageId.ORIG)
+            if ent.get("type") == EntityType.FUNCTION
+        )
 
     def get_all(self) -> Iterator[ReccmpEntity]:
         return self._db.get_all()

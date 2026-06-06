@@ -24,6 +24,13 @@ from .queries import get_floats_without_data, get_strings_without_data
 logger = logging.getLogger(__name__)
 
 
+def import_sections(db: EntityDb, image_id: ImageId, binfile: Image):
+    assert image_id in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
+
+    for sect in binfile.sections:
+        db.add_section(image_id, sect.virtual_range)
+
+
 def match_entry(db: EntityDb, orig_bin: PEImage, recomp_bin: PEImage):
     # The _entry symbol is referenced in the PE header so we get this match for free.
     with db.batch() as batch:

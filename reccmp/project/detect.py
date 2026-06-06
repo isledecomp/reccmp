@@ -120,6 +120,10 @@ class GhidraConfig:
 @dataclass
 class ReportConfig:
     ignore_functions: list[str] = field(default_factory=list)
+    """Functions matching these names will be omitted from the reccmp-reccmp report."""
+
+    ignore_variables: list[str] = field(default_factory=list)
+    """Variables matching these names will be omitted from the reccmp-datacmp report."""
 
 
 @dataclass
@@ -368,6 +372,7 @@ class RecCmpProject:
             if target.report is not None:
                 report = ReportConfig(
                     ignore_functions=target.report.ignore_functions,
+                    ignore_variables=target.report.ignore_variables,
                 )
             else:
                 report = None

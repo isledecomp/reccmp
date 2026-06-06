@@ -14,4 +14,6 @@ max-line-length = 120
 check_untyped_defs = true
 
 [tool.pytest.ini_options]
+# The default `.pytest_cache` path is rejected by Ghidra 12.1.
+cache_dir="pytest_cache"
 xfail_strict=true
