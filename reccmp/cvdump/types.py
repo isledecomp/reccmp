@@ -171,6 +171,11 @@ class CvdumpParsedType(TypedDict):
     arg_list_type: NotRequired[CvdumpTypeKey]
     this_adjust: NotRequired[int]
 
+    # LF_BITFIELD
+    bit_start: NotRequired[int]
+    bit_count: NotRequired[int]
+    bit_type: NotRequired[CvdumpTypeKey]
+
 
 class CvdumpTypesParser:
     """Parser for cvdump output, TYPES section.
@@ -258,8 +263,13 @@ class CvdumpTypesParser:
         r"\s+field list type (?P<field_type>0x\w+),.*Size = (?P<size>\d+)\s*,class name = (?P<name>(?:[^\n,]|,\S)+)(?:, unique name = [^\n,]+)?(?:,\s.*UDT\((?P<udt>0x\w+)\))?"
     )
 
+    LF_BITFIELD_LINE = re.compile(
+        r"bits = (?P<bitcount>[1-9][0-9]*), starting position = (?P<start>[0-9]*), Type = (?P<type_str>[^(]+)\((?P<type>[0-9a-fA-F]+)\)"
+    )
+
     MODES_OF_INTEREST = {
         "LF_ARRAY",
+        "LF_BITFIELD",
         "LF_CLASS",
         "LF_ENUM",
         "LF_FIELDLIST",
@@ -384,6 +394,9 @@ class CvdumpTypesParser:
             members = self._mock_array_members(obj)
         elif obj_type in ("LF_CLASS", "LF_STRUCTURE", "LF_UNION", "LF_FIELDLIST"):
             members = self._get_field_list(obj)
+        elif obj_type in ("LF_BITFIELD",):
+            res = self.get(obj["bit_type"])
+            return res
         else:
             # e.g. obj_type == "LF_PROCEDURE"
             members = None
@@ -533,6 +546,9 @@ class CvdumpTypesParser:
 
                     case "LF_UNION":
                         self.keys[leaf_id] = self.read_union(leaf, leaf_type)
+
+                    case "LF_BITFIELD":
+                        self.keys[leaf_id] = self.read_bitfield(leaf, leaf_type)
 
                     case _:
                         # Check for exhaustiveness
@@ -812,5 +828,18 @@ class CvdumpTypesParser:
             obj["udt"] = CvdumpTypeKey.from_str(udt)
 
         obj["size"] = int(match.group("size"))
+
+        return obj
+
+    def read_bitfield(self, leaf: str, leaf_type: str) -> CvdumpParsedType:
+        match = self.LF_BITFIELD_LINE.search(leaf)
+        assert match is not None
+
+        obj: CvdumpParsedType = {
+            "type": leaf_type,
+            "bit_start": int(match.group("start")),
+            "bit_count": int(match.group("bitcount")),
+            "bit_type": CvdumpTypeKey(int(match.group("type"), 16)),
+        }
 
         return obj
