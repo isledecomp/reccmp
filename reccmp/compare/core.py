@@ -58,6 +58,7 @@ from .mutate import (
     match_array_elements,
     name_thunks,
     unique_names_for_overloaded_functions,
+    match_crt_startup,
     set_max_size,
 )
 from .verify import (
@@ -159,6 +160,10 @@ class Compare:
         match_variables(self._db, self.report)
         match_lines(self._db, self._lines_db, self.report)
 
+        match_crt_startup(self._db, self.orig_bin, self.recomp_bin)
+
+        match_array_elements(self._db, self.types)
+        # Detect floats first to eliminate potential overlap with string data
         for img_id, binfile in (
             (ImageId.ORIG, self.orig_bin),
             (ImageId.RECOMP, self.recomp_bin),
