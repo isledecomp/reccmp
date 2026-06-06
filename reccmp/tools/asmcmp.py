@@ -13,6 +13,7 @@ from reccmp.utils import (
     print_combined_diff,
     diff_json,
     percent_string,
+    safe_denominator,
     write_html_report,
 )
 
@@ -302,33 +303,36 @@ def main() -> int:
         # Use the alternate value if it exceeds the number of annotated functions
         function_count = max(function_count, int(args.total))
 
-    if function_count > 0:
-        implemented = implemented_funcs / function_count * 100
-        effective_accuracy = total_effective_accuracy / implemented_funcs * 100
-        # actual_accuracy = total_accuracy / implemented_funcs * 100
-        progress = total_effective_accuracy / function_count * 100
-        alignment_percentage = functions_aligned_count / function_count * 100
+    implemented = implemented_funcs / safe_denominator(function_count) * 100
 
+    effective_accuracy = (
+        total_effective_accuracy / safe_denominator(implemented_funcs) * 100
+    )
+    progress = total_effective_accuracy / safe_denominator(function_count) * 100
+    alignment_percentage = (
+        functions_aligned_count / safe_denominator(function_count) * 100
+    )
+
+    print(
+        f"\nImplemented:  {implemented:.2f}%  ({implemented_funcs} / {function_count})"
+    )
+    print(f"Accuracy:     {effective_accuracy:.2f}%")
+    print(f"Progress:     {progress:.2f}%")
+
+    if functions_aligned_count > 0:
         print(
-            f"\nImplemented:  {implemented:.2f}%  ({implemented_funcs} / {function_count})"
+            f"{functions_aligned_count} functions are aligned ({alignment_percentage:.2f}%)"
         )
-        print(f"Accuracy:     {effective_accuracy:.2f}%")
-        print(f"Progress:     {progress:.2f}%")
 
-        if functions_aligned_count > 0:
-            print(
-                f"{functions_aligned_count} functions are aligned ({alignment_percentage:.2f}%)"
-            )
-
-        if args.svg is not None:
-            gen_svg(
-                args.svg,
-                os.path.basename(target.original_path),
-                args.svg_icon,
-                implemented_funcs,
-                function_count,
-                total_effective_accuracy,
-            )
+    if args.svg is not None:
+        gen_svg(
+            args.svg,
+            os.path.basename(target.original_path),
+            args.svg_icon,
+            implemented_funcs,
+            function_count,
+            total_effective_accuracy,
+        )
     return 0
 
 
