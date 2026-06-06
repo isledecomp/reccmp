@@ -70,7 +70,7 @@ def match_array_elements(db: EntityDb, types: CvdumpTypesParser):
     @cache
     def get_type_size(type_key: CvdumpTypeKey) -> int:
         type_ = types.get(type_key)
-        assert type_.size is not None
+        assert type_.size is not None, type_key
         return type_.size
 
     # Helper function
