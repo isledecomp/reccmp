@@ -253,11 +253,16 @@ def main() -> int:
 
         report.add_match(match)
 
+    # Includes stubs
+    function_count = sum(
+        1 for ent in report.entities.values() if ent.type == EntityType.FUNCTION
+    )
+
     # Count how many functions have the same virtual address in orig and recomp.
     functions_aligned_count = report_function_alignment(report)
 
     # Number of functions compared (i.e. excluding stubs)
-    function_count, _, total_effective_accuracy = report_function_accuracy(report)
+    implemented_funcs, _, total_effective_accuracy = report_function_accuracy(report)
 
     # Print diff summary to terminal
     if not args.silent and args.diff is None:
@@ -291,8 +296,6 @@ def main() -> int:
 
     if args.html is not None:
         write_html_report(args.html, report)
-
-    implemented_funcs = function_count
 
     # Add known but unmatched functions to our count
     function_count += compare.count_unmatched_functions()
