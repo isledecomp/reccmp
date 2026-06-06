@@ -54,6 +54,10 @@ class CsvInvalidEntityTypeError(ReccmpCsvParserError):
     """The entity type string did not match any of our allowed values."""
 
 
+class CsvInvalidNumberError(ReccmpCsvParserError):
+    """The string value is not a valid hex or decimal number."""
+
+
 CsvValueOptions = int | str | bool | EntityType
 
 
@@ -108,6 +112,16 @@ def _csv_preprocess(lines: Iterable[str]) -> Iterator[tuple[int, str]]:
         yield (i, line)
 
 
+def decimal_or_hex(value: str) -> int:
+    """Parse the string as either hex (with required '0x' or '0X' prefix) or decimal (no prefix)."""
+    is_hex = value.lower().startswith("0x")
+    base = 16 if is_hex else 10
+    try:
+        return int(value, base=base)
+    except ValueError as ex:
+        raise CsvInvalidNumberError(value) from ex
+
+
 def _convert_attrs(values: Iterable[tuple[str, str]]) -> CsvValuesType:
     """Both a filter and a conversion step for the row values.
     For the incoming iterable of key/value pairs, only output the ones we want set
@@ -130,7 +144,7 @@ def _convert_attrs(values: Iterable[tuple[str, str]]) -> CsvValuesType:
             output["name"] = value
 
         if key == "size":
-            output["size"] = int(value)
+            output["size"] = decimal_or_hex(value)
 
         if key == "type":
             type_name = value.strip().lower()
