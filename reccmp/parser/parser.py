@@ -222,7 +222,7 @@ class DecompParser:
                 path=self.filename,
                 line_number=self.line_number,
                 code=code,
-                line=self.last_line.strip(),
+                detail=self.last_line.strip(),
             )
         )
 
@@ -461,7 +461,7 @@ class DecompParser:
             self._line_marker(marker)
 
         else:
-            self._syntax_warning(AlertCode.BOGUS_MARKER)
+            self._syntax_warning(AlertCode.UNKNOWN_ANNOTATION)
 
     def read_line(self, line: str):
         if self.state == ReaderState.DONE:
@@ -475,7 +475,7 @@ class DecompParser:
             # TODO: what's the best place for this?
             # Does it belong with reading or marker handling?
             if not is_marker_exact(self.last_line):
-                self._syntax_warning(AlertCode.BAD_DECOMP_MARKER)
+                self._syntax_warning(AlertCode.NOT_STRICT_FORMAT)
             self._handle_marker(marker)
             return
 

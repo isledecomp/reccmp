@@ -40,6 +40,7 @@ def display_errors(alerts: Iterable[ParserAlert], filename: Path | PurePath):
     print(filename)
 
     for alert in sorted_alerts:
+        line_number = alert.line_number if alert.line_number > 0 else ""
         error_type = (
             f"{reccmp.color.Fore.RED}error: "
             if alert.is_error()
@@ -48,7 +49,7 @@ def display_errors(alerts: Iterable[ParserAlert], filename: Path | PurePath):
         components = [
             "  ",
             reccmp.color.Fore.LIGHTWHITE_EX,
-            f"{alert.line_number:4}",
+            f"{line_number:4}",
             " : ",
             " ",
             error_type,
@@ -58,8 +59,8 @@ def display_errors(alerts: Iterable[ParserAlert], filename: Path | PurePath):
         ]
         print("".join(components), end="")
 
-        if alert.line is not None:
-            print(f"{reccmp.color.Fore.WHITE}  {alert.line}", end="")
+        if alert.detail is not None:
+            print(f"{reccmp.color.Fore.WHITE}  {alert.detail}", end="")
 
         print()
 
@@ -184,18 +185,14 @@ def lint_all_targets(lint_targets: tuple[DecomplintTarget, ...]) -> list[ParserA
             parser_results[(path, encoding)] = parse_file(file)
 
         except FileNotFoundError:
-            all_alerts.append(
-                ParserAlert(code=AlertCode.FILE_NOT_FOUND, path=path, line_number=-1)
-            )
+            all_alerts.append(ParserAlert(code=AlertCode.FILE_NOT_FOUND, path=path))
 
         except UnicodeDecodeError:
-            # Encoding is here as the "line" of the alert just so it's displayed to the user.
             all_alerts.append(
                 ParserAlert(
                     code=AlertCode.UNICODE_DECODE_ERROR,
                     path=path,
-                    line_number=-1,
-                    line=encoding,
+                    detail=encoding,
                 )
             )
 

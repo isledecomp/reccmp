@@ -7,8 +7,8 @@ class AlertCode(Enum):
     # WARN: Stub function exceeds some line number threshold
     UNLIKELY_STUB = 100
 
-    # WARN: Decomp marker is close enough to be recognized, but does not follow syntax exactly
-    BAD_DECOMP_MARKER = 101
+    # WARN: Decomp marker does not follow strict syntax.
+    NOT_STRICT_FORMAT = 101
 
     # WARN: Multiple markers in sequence do not have distinct modules
     DUPLICATE_MODULE = 102
@@ -18,7 +18,7 @@ class AlertCode(Enum):
 
     # WARN: We read a line that matches the decomp marker pattern, but we are not set up
     # to handle it
-    BOGUS_MARKER = 104
+    UNKNOWN_ANNOTATION = 104
 
     # WARN: New function marker appeared while we were inside a function
     MISSED_END_OF_FUNCTION = 105
@@ -100,8 +100,8 @@ class AlertCode(Enum):
 class ParserAlert:
     code: AlertCode
     path: PurePath
-    line_number: int
-    line: str | None = None
+    line_number: int = -1
+    detail: str | None = None
     target: str | None = None
 
     def is_warning(self) -> bool:
