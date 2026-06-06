@@ -224,6 +224,7 @@ def test_marker_trailing_spaces():
 
 
 def test_marker_aliases():
+    """Testing with aliases that have been normalized by normalize_project_aliases()"""
     # No alias
     marker = match_marker("// FUNC: TEST 0x1234")
     assert marker and marker.type == MarkerType.UNKNOWN
@@ -237,12 +238,12 @@ def test_marker_aliases():
     assert marker and marker.type == MarkerType.UNKNOWN
 
     # Alias goes nowhere
-    marker = match_marker("// FUNC: TEST 0x1234", {"TEST": {"FUNC": "FUNCTINO"}})
+    marker = match_marker("// FUNC: TEST 0x1234", {"TEST": {"FUNC": "HELLO"}})
     assert marker and marker.type == MarkerType.UNKNOWN
 
     # Double alias not followed
     marker = match_marker(
-        "// FUNC: TEST 0x1234", {"TEST": {"FUNC": "FUNCTINO", "FUNCTION": "FUNCTION"}}
+        "// FUNC: TEST 0x1234", {"TEST": {"FUNC": "HELLO", "HELLO": "FUNCTION"}}
     )
     assert marker and marker.type == MarkerType.UNKNOWN
 
