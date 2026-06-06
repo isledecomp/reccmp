@@ -1,6 +1,6 @@
 from enum import Enum
 from dataclasses import dataclass
-from pathlib import PurePath
+from pathlib import Path, PurePath
 
 
 class AlertCode(Enum):
@@ -54,6 +54,9 @@ class AlertCode(Enum):
     # This makes no sense, so we ignore the option.
     SYMBOL_OPTION_IGNORED = 113
 
+    # WARN: The alias does not point to a valid marker type and has no effect.
+    ALIAS_GOES_NOWHERE = 114
+
     # This code or higher is an error, not a warning
     DECOMP_ERROR_START = 200
 
@@ -86,6 +89,13 @@ class AlertCode(Enum):
     # is implemented so we can match with the PDB.
     NO_IMPLEMENTATION = 207
 
+    # ERROR: An alias was reused. Only the first occurrence of each
+    # case-insensitive key is used. The rest are ignored.
+    ALIAS_DUPLICATE_KEY = 208
+
+    # ERROR: An alias matches a built-in marker type string, and was dropped.
+    ALIAS_REDEFINES_BUILTIN = 209
+
     # This code or higher is a critical error
     DECOMP_CRITICAL_START = 300
 
@@ -99,7 +109,7 @@ class AlertCode(Enum):
 @dataclass
 class ParserAlert:
     code: AlertCode
-    path: PurePath
+    path: PurePath | Path
     line_number: int = -1
     detail: str | None = None
     target: str | None = None

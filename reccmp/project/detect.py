@@ -169,6 +169,8 @@ class RecCmpPartialTarget:
     # Data to set directly in the database (addresses refer to orig binary)
     data_sources: list[Path] | None = None
 
+    marker_aliases: dict[str, str] | None = None
+
 
 @dataclass
 class RecCmpTarget:
@@ -207,6 +209,8 @@ class RecCmpTarget:
 
     # Data to set directly in the database (addresses refer to orig binary)
     data_sources: list[Path] = field(default_factory=list)
+
+    marker_aliases: dict[str, str] = field(default_factory=dict)
 
 
 class RecCmpProject:
@@ -264,6 +268,7 @@ class RecCmpProject:
             ghidra = GhidraConfig()
 
         data_sources = target.data_sources or []
+        marker_aliases = target.marker_aliases or {}
 
         if target.report_config is not None:
             report = target.report_config
@@ -281,6 +286,7 @@ class RecCmpProject:
             source_paths=target.source_paths,
             ghidra_config=ghidra,
             data_sources=data_sources,
+            marker_aliases=marker_aliases,
             report_config=report,
         )
 
@@ -394,6 +400,7 @@ class RecCmpProject:
                 source_paths=source_paths,
                 ghidra_config=ghidra,
                 data_sources=data_sources,
+                marker_aliases=target.marker_aliases,
                 report_config=report,
             )
 

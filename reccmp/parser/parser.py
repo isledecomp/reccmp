@@ -20,6 +20,7 @@ from .marker import (
     MarkerCategory,
     match_marker,
     is_marker_exact,
+    ProjectAliases,
 )
 from .node import (
     ParserLineSymbol,
@@ -133,7 +134,7 @@ class DecompParser:
     # pylint: disable=too-many-instance-attributes
     # Could combine output lists into a single list to get under the limit,
     # but not right now
-    def __init__(self) -> None:
+    def __init__(self, aliases: ProjectAliases | None = None) -> None:
         # The lists to be populated as we parse
         self._symbols: list[ParserSymbol] = []
         self.alerts: list[ParserAlert] = []
@@ -166,6 +167,8 @@ class DecompParser:
         self.function_sig: str = ""
 
         self.filename: PurePath = PurePath("")
+
+        self.aliases = aliases or {}
 
     def reset_and_set_filename(self, filename: PurePath):
         self._symbols = []
@@ -470,7 +473,7 @@ class DecompParser:
         self.last_line = line  # TODO: Useful or hack for error reporting?
         self.line_number += 1
 
-        marker = match_marker(line)
+        marker = match_marker(line, aliases=self.aliases)
         if marker is not None:
             # TODO: what's the best place for this?
             # Does it belong with reading or marker handling?

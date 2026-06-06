@@ -5,6 +5,7 @@ from typing import Iterable, Iterator
 from typing_extensions import Self
 from reccmp.project.detect import RecCmpTarget
 from reccmp.compare.diff import EntityCompareResult, RawDiffOutput
+from reccmp.parser.marker import ProjectAliases, normalize_project_aliases
 from reccmp.dir import source_code_search
 from reccmp.compare.functions import FunctionComparator
 from reccmp.formats import (
@@ -82,6 +83,7 @@ class Compare:
     types: CvdumpTypesParser
     function_comparator: FunctionComparator
     data_sources: list[TextFile]
+    project_aliases: ProjectAliases
 
     # pylint: disable=too-many-arguments
     # pylint: disable=too-many-positional-arguments
@@ -94,6 +96,7 @@ class Compare:
         encoding: str | None = None,
         code_files: list[TextFile] | None = None,
         data_sources: list[TextFile] | None = None,
+        project_aliases: ProjectAliases | None = None,
     ):
         self.orig_bin = orig_bin
         self.recomp_bin = recomp_bin
@@ -101,6 +104,7 @@ class Compare:
         self.target_id = target_id
         self.src_encoding = encoding or "utf-8"
         self.bin_encoding = encoding or "latin1"
+        self.project_aliases = normalize_project_aliases(project_aliases or {})
 
         if isinstance(code_files, list):
             self.code_files = code_files
@@ -146,6 +150,7 @@ class Compare:
             self.target_id,
             self._db,
             self.bin_encoding,
+            self.project_aliases,
             self.report,
         )
 
@@ -237,6 +242,8 @@ class Compare:
             )
         )
 
+        project_aliases = {target.target_id : target.marker_aliases}
+
         compare = cls(
             origfile,
             recompfile,
@@ -245,6 +252,7 @@ class Compare:
             encoding=target.encoding,
             data_sources=data_sources,
             code_files=code_files,
+            project_aliases=project_aliases,
         )
         compare.run()
         return compare
