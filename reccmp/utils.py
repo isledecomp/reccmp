@@ -311,41 +311,51 @@ class ReccmpDiffJudgement(enum.Enum):
 def entity_diff_change(
     saved: ReccmpComparedEntity | None, new: ReccmpComparedEntity | None
 ) -> ReccmpDiffJudgement:
-    if saved is None:
+    if saved is None and new is not None:
         return ReccmpDiffJudgement.NEW
 
-    if new is None or (
-        new is not None and saved is not None and new.is_stub and not saved.is_stub
-    ):
+    if saved is not None and new is None:
         return ReccmpDiffJudgement.DROPPED
 
-    if (
-        saved is not None
-        and new is not None
-        and (
-            new.effective_accuracy > saved.effective_accuracy
-            or (not new.is_stub and saved.is_stub)
-        )
-    ):
+    assert saved and new
+
+    # Do not report changes if the entity is a stub in both reports.
+    # (Regression in GH #405)
+    if saved.is_stub and new.is_stub:
+        return ReccmpDiffJudgement.NOTHING
+
+    if saved.is_stub and not new.is_stub:
         return ReccmpDiffJudgement.INCREASE
 
-    if (
-        saved is not None
-        and new is not None
-        and new.effective_accuracy < saved.effective_accuracy
-        and not saved.is_stub
-        and not new.is_stub
-    ):
+    if not saved.is_stub and new.is_stub:
         return ReccmpDiffJudgement.DECREASE
 
-    if (
-        saved is not None
-        and new is not None
-        and new.effective_accuracy == 1.0
-        and saved.effective_accuracy == 1.0
-        and new.is_effective_match != saved.is_effective_match
-    ):
+    # The entity is still functionally equivalent despite the degradation.
+    if saved.accuracy == 1.0 and new.is_effective_match:
         return ReccmpDiffJudgement.ENTROPY
+
+    # GH #431.
+    # Previously, we reported changes in either direction as ENTROPY.
+    if saved.is_effective_match and new.accuracy == 1.0:
+        return ReccmpDiffJudgement.INCREASE
+
+    # Don't report internal accuracy changes if it is still an effective match.
+    if saved.is_effective_match and new.is_effective_match:
+        return ReccmpDiffJudgement.NOTHING
+
+    # Don't consider accuracy if either report has an effective match.
+    if saved.is_effective_match and not new.is_effective_match:
+        return ReccmpDiffJudgement.DECREASE
+
+    if not saved.is_effective_match and new.is_effective_match:
+        return ReccmpDiffJudgement.INCREASE
+
+    # It is not a stub or effective match. Compare raw accuracy.
+    if saved.accuracy < new.accuracy:
+        return ReccmpDiffJudgement.INCREASE
+
+    if saved.accuracy > new.accuracy:
+        return ReccmpDiffJudgement.DECREASE
 
     return ReccmpDiffJudgement.NOTHING
 

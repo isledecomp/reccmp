@@ -1,4 +1,3 @@
-import pytest
 from reccmp.utils import entity_diff_change, ReccmpDiffJudgement
 from reccmp.compare.report import ReccmpComparedEntity
 
@@ -48,7 +47,6 @@ def test_diff_no_change():
     assert entity_diff_change(ent, ent) == ReccmpDiffJudgement.NOTHING
 
 
-@pytest.mark.xfail(reason="TODO")
 def test_diff_stub_changes():
     """Do not report accuracy changes if the entity is a stub in both reports."""
     low_stub = entity(accuracy=0.5, is_stub=True)
@@ -57,7 +55,6 @@ def test_diff_stub_changes():
     assert entity_diff_change(high_stub, low_stub) == ReccmpDiffJudgement.NOTHING
 
 
-@pytest.mark.xfail(reason="TODO")
 def test_diff_stub_effective_changes():
     """Do not report effective-match changes if the entity is a stub in both reports."""
     low_stub = entity(accuracy=0.5, is_stub=True, is_effective_match=True)
@@ -74,11 +71,15 @@ def test_diff_stub_to_non_stub():
     high_stub = entity(accuracy=0.8, is_stub=True)
     assert entity_diff_change(low_stub, ent) == ReccmpDiffJudgement.INCREASE
     assert entity_diff_change(high_stub, ent) == ReccmpDiffJudgement.INCREASE
+    assert entity_diff_change(ent, low_stub) == ReccmpDiffJudgement.DECREASE
+    assert entity_diff_change(ent, high_stub) == ReccmpDiffJudgement.DECREASE
 
     low_stub_effective = entity(accuracy=0.5, is_stub=True, is_effective_match=True)
     high_stub_effective = entity(accuracy=0.8, is_stub=True, is_effective_match=True)
     assert entity_diff_change(low_stub_effective, ent) == ReccmpDiffJudgement.INCREASE
     assert entity_diff_change(high_stub_effective, ent) == ReccmpDiffJudgement.INCREASE
+    assert entity_diff_change(ent, low_stub_effective) == ReccmpDiffJudgement.DECREASE
+    assert entity_diff_change(ent, high_stub_effective) == ReccmpDiffJudgement.DECREASE
 
 
 def test_diff_accuracy_change():
@@ -111,7 +112,6 @@ def test_diff_downgrade_from_effective():
     assert entity_diff_change(effective, higher_ent) == ReccmpDiffJudgement.DECREASE
 
 
-@pytest.mark.xfail(reason="TODO #431")
 def test_diff_effective_to_match():
     """Moving from an effective-match to an exact match is an INCREASE. See GH #431."""
     match = entity(accuracy=1.0)
@@ -124,3 +124,15 @@ def test_diff_match_to_effective():
     match = entity(accuracy=1.0)
     effective = entity(accuracy=0.8, is_effective_match=True)
     assert entity_diff_change(match, effective) == ReccmpDiffJudgement.ENTROPY
+
+
+def test_diff_effective_to_effective():
+    """Do not report accuracy changes for effective matches."""
+    low_effective = entity(accuracy=0.2, is_effective_match=True)
+    high_effective = entity(accuracy=0.8, is_effective_match=True)
+    assert (
+        entity_diff_change(low_effective, high_effective) == ReccmpDiffJudgement.NOTHING
+    )
+    assert (
+        entity_diff_change(high_effective, low_effective) == ReccmpDiffJudgement.NOTHING
+    )
