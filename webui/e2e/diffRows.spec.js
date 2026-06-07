@@ -45,8 +45,8 @@ test.describe('Diff rows', () => {
   });
 
   test('"Stub" message', async ({ page }) => {
-    // Get the first stub
-    const stubRow = page.locator('tr[data-address]', { hasText: 'stub', exact: true }).nth(0);
+    // Get the first stub without any data
+    const stubRow = page.locator('tr[data-address]', { hasText: 'IsleApp::Close', exact: true }).nth(0);
     const link = stubRow.locator('td[data-col="name"]');
 
     // Make sure there are no diff rows (so our next locator can look for any diff-row element)
@@ -63,6 +63,23 @@ test.describe('Diff rows', () => {
 
     // The message should be gone
     await expect(page.locator('tr[data-diff]').getByText('no diff')).not.toBeAttached();
+  });
+
+  test('"Stub" with data', async ({ page }) => {
+    // Get the first stub that HAS diff data
+    const stubRow = page.locator('tr[data-address]', { hasText: 'IsleApp::Tick', exact: true }).nth(0);
+    const link = stubRow.locator('td[data-col="name"]');
+
+    // Make sure there are no diff rows (so our next locator can look for any diff-row element)
+    await expect(page.locator('tr[data-diff]')).toHaveCount(0);
+
+    // Expand the diff
+    await link.click();
+
+    // Searching for unified diff display elements.
+    await expect(page.locator('tr[data-diff]')).toContainText('---');
+    await expect(page.locator('tr[data-diff]')).toContainText('+++');
+    await expect(page.locator('tr[data-diff]')).not.toContainText('no diff');
   });
 
   test('Diff display', async ({ page }) => {
@@ -98,5 +115,43 @@ test.describe('Diff rows', () => {
     // Diff row was never closed. When the entity returns to view it should still be open.
     await searchbox.clear();
     await expect(diffRow).toBeAttached();
+  });
+
+  test('Effective match', async ({ page }) => {
+    const row = page.locator('tr[data-address]', { hasText: '100.00%*', exact: true }).nth(0);
+    const link = row.locator('td[data-col="name"]');
+
+    // Make sure there are no diff rows (so our next locator can look for any diff-row element)
+    await expect(page.locator('tr[data-diff]')).toHaveCount(0);
+
+    // Expand diff row
+    await link.click();
+
+    // Searching for unified diff display elements.
+    await expect(page.locator('tr[data-diff]')).toContainText('---');
+    await expect(page.locator('tr[data-diff]')).toContainText('+++');
+  });
+
+  test('Non-stub without diff data', async ({ page }) => {
+    // Filter the results
+    await page.getByRole('checkbox', { name: /Hide 100%/ }).click();
+
+    const row = page.locator('tr[data-address]', { hasText: 'Padding001', exact: true }).nth(0);
+    const link = row.locator('td[data-col="name"]');
+
+    // Make sure there are no diff rows (so our next locator can look for any diff-row element)
+    await expect(page.locator('tr[data-diff]')).toHaveCount(0);
+
+    // Expand the diff
+    await link.click();
+
+    // Should now see the "no diff" message
+    await expect(page.locator('tr[data-diff]').getByText('no diff')).toBeAttached();
+
+    // Close the diff row
+    await link.click();
+
+    // The message should be gone
+    await expect(page.locator('tr[data-diff]').getByText('no diff')).not.toBeAttached();
   });
 });

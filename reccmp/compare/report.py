@@ -212,9 +212,6 @@ def get_udiff_for_entity(entity: ReccmpComparedEntity) -> CombinedDiffOutput | N
         # We need data to create the unified diff.
         return None
 
-    if entity.is_stub:
-        return None
-
     if entity.type == EntityType.VTABLE:
         # Complete diff is always shown for vtables, even if they match.
         return raw_diff_to_udiff(entity.rdiff, grouped=False)
