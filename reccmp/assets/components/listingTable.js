@@ -30,16 +30,12 @@ function createDiffRow(obj, showRecomp) {
 
   // If "diff" is undefined or empty, that means
   // there are no diffs for this entity. (GH #201)
-  const { diff = [] } = obj;
+  const { diff = [], matching = 0.0 } = obj;
 
-  if ('stub' in obj) {
+  if (diff.length === 0) {
     contents = document.createElement('div');
     contents.className = 'no-diff';
-    contents.textContent = 'Stub. No diff.';
-  } else if (diff.length === 0) {
-    contents = document.createElement('div');
-    contents.className = 'no-diff';
-    contents.textContent = 'Identical function - no diff';
+    contents.textContent = matching === 1.0 ? 'Identical function - no diff' : 'No diff available';
   } else {
     contents = document.createElement('diff-display');
     contents.dataset.option = '1';

@@ -59,6 +59,7 @@ from .mutate import (
     match_array_elements,
     name_thunks,
     unique_names_for_overloaded_functions,
+    match_crt_startup,
     set_max_size,
 )
 from .verify import (
@@ -164,6 +165,10 @@ class Compare:
         match_variables(self._db, self.report)
         match_lines(self._db, self._lines_db, self.report)
 
+        match_crt_startup(self._db, self.orig_bin, self.recomp_bin)
+
+        match_array_elements(self._db, self.types)
+        # Detect floats first to eliminate potential overlap with string data
         for img_id, binfile in (
             (ImageId.ORIG, self.orig_bin),
             (ImageId.RECOMP, self.recomp_bin),
@@ -349,14 +354,6 @@ class Compare:
 
         assert match.entity_type is not None
         assert match.name is not None
-        if match.get("stub", False):
-            return DiffReport(
-                match_type=EntityType(match.entity_type),
-                orig_addr=match.orig_addr,
-                recomp_addr=match.recomp_addr,
-                name=match.name,
-                is_stub=True,
-            )
 
         # We only compare certain entity types in reccmp-asmcmp:
         if match.entity_type in (EntityType.FUNCTION, EntityType.VTORDISP):
@@ -382,6 +379,7 @@ class Compare:
             name=best_name,
             result=result,
             is_library=match.get("library", False),
+            is_stub=match.get("stub", False),
         )
 
     ## Public API
