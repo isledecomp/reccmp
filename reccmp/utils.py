@@ -293,7 +293,7 @@ def diff_json_display(show_both_addrs: bool = False, is_plain: bool = False):
 
 
 class ReccmpDiffJudgement(enum.Enum):
-    NOTHING = enum.auto()
+    NO_CHANGE = enum.auto()
     """The entity did not change in a way worth reporting."""
     NEW = enum.auto()
     """This entity did not appear in the saved report."""
@@ -322,7 +322,7 @@ def entity_diff_change(
     # Do not report changes if the entity is a stub in both reports.
     # (Regression in GH #405)
     if saved.is_stub and new.is_stub:
-        return ReccmpDiffJudgement.NOTHING
+        return ReccmpDiffJudgement.NO_CHANGE
 
     if saved.is_stub and not new.is_stub:
         return ReccmpDiffJudgement.INCREASE
@@ -341,7 +341,7 @@ def entity_diff_change(
 
     # Don't report internal accuracy changes if it is still an effective match.
     if saved.is_effective_match and new.is_effective_match:
-        return ReccmpDiffJudgement.NOTHING
+        return ReccmpDiffJudgement.NO_CHANGE
 
     # Don't consider accuracy if either report has an effective match.
     if saved.is_effective_match and not new.is_effective_match:
@@ -357,7 +357,7 @@ def entity_diff_change(
     if saved.accuracy > new.accuracy:
         return ReccmpDiffJudgement.DECREASE
 
-    return ReccmpDiffJudgement.NOTHING
+    return ReccmpDiffJudgement.NO_CHANGE
 
 
 def diff_json(

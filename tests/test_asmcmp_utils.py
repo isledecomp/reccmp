@@ -44,23 +44,23 @@ def test_diff_dropped_entity():
 def test_diff_no_change():
     """Do not report accuracy changes if nothing has changed."""
     ent = entity(accuracy=0.5)
-    assert entity_diff_change(ent, ent) == ReccmpDiffJudgement.NOTHING
+    assert entity_diff_change(ent, ent) == ReccmpDiffJudgement.NO_CHANGE
 
 
 def test_diff_stub_changes():
     """Do not report accuracy changes if the entity is a stub in both reports."""
     low_stub = entity(accuracy=0.5, is_stub=True)
     high_stub = entity(accuracy=0.8, is_stub=True)
-    assert entity_diff_change(low_stub, high_stub) == ReccmpDiffJudgement.NOTHING
-    assert entity_diff_change(high_stub, low_stub) == ReccmpDiffJudgement.NOTHING
+    assert entity_diff_change(low_stub, high_stub) == ReccmpDiffJudgement.NO_CHANGE
+    assert entity_diff_change(high_stub, low_stub) == ReccmpDiffJudgement.NO_CHANGE
 
 
 def test_diff_stub_effective_changes():
     """Do not report effective-match changes if the entity is a stub in both reports."""
     low_stub = entity(accuracy=0.5, is_stub=True, is_effective_match=True)
     high_stub = entity(accuracy=1.0, is_stub=True)
-    assert entity_diff_change(low_stub, high_stub) == ReccmpDiffJudgement.NOTHING
-    assert entity_diff_change(high_stub, low_stub) == ReccmpDiffJudgement.NOTHING
+    assert entity_diff_change(low_stub, high_stub) == ReccmpDiffJudgement.NO_CHANGE
+    assert entity_diff_change(high_stub, low_stub) == ReccmpDiffJudgement.NO_CHANGE
 
 
 def test_diff_stub_to_non_stub():
@@ -131,8 +131,10 @@ def test_diff_effective_to_effective():
     low_effective = entity(accuracy=0.2, is_effective_match=True)
     high_effective = entity(accuracy=0.8, is_effective_match=True)
     assert (
-        entity_diff_change(low_effective, high_effective) == ReccmpDiffJudgement.NOTHING
+        entity_diff_change(low_effective, high_effective)
+        == ReccmpDiffJudgement.NO_CHANGE
     )
     assert (
-        entity_diff_change(high_effective, low_effective) == ReccmpDiffJudgement.NOTHING
+        entity_diff_change(high_effective, low_effective)
+        == ReccmpDiffJudgement.NO_CHANGE
     )
