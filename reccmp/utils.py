@@ -1,4 +1,5 @@
 import base64
+import enum
 from datetime import datetime
 from typing import Iterable, Iterator
 import logging
@@ -291,6 +292,64 @@ def diff_json_display(show_both_addrs: bool = False, is_plain: bool = False):
     return formatter
 
 
+class ReccmpDiffJudgement(enum.Enum):
+    NOTHING = enum.auto()
+    """The entity did not change in a way worth reporting."""
+    NEW = enum.auto()
+    """This entity did not appear in the saved report."""
+    INCREASE = enum.auto()
+    """This entity's accuracy increased from the saved report."""
+    DECREASE = enum.auto()
+    """This entity's accuracy decreased from the saved report."""
+    DROPPED = enum.auto()
+    """This entity no longer exists."""
+    ENTROPY = enum.auto()
+    """This entity's accuracy changed, but we have determined it to be functionally-equivalent."""
+
+
+# pylint: disable=too-many-return-statements
+def entity_diff_change(
+    saved: ReccmpComparedEntity | None, new: ReccmpComparedEntity | None
+) -> ReccmpDiffJudgement:
+    if saved is None:
+        return ReccmpDiffJudgement.NEW
+
+    if new is None or (
+        new is not None and saved is not None and new.is_stub and not saved.is_stub
+    ):
+        return ReccmpDiffJudgement.DROPPED
+
+    if (
+        saved is not None
+        and new is not None
+        and (
+            new.effective_accuracy > saved.effective_accuracy
+            or (not new.is_stub and saved.is_stub)
+        )
+    ):
+        return ReccmpDiffJudgement.INCREASE
+
+    if (
+        saved is not None
+        and new is not None
+        and new.effective_accuracy < saved.effective_accuracy
+        and not saved.is_stub
+        and not new.is_stub
+    ):
+        return ReccmpDiffJudgement.DECREASE
+
+    if (
+        saved is not None
+        and new is not None
+        and new.effective_accuracy == 1.0
+        and saved.effective_accuracy == 1.0
+        and new.is_effective_match != saved.is_effective_match
+    ):
+        return ReccmpDiffJudgement.ENTROPY
+
+    return ReccmpDiffJudgement.NOTHING
+
+
 def diff_json(
     saved_data: ReccmpStatusReport,
     new_data: ReccmpStatusReport,
@@ -339,70 +398,24 @@ def diff_json(
         for addr in sorted(all_addrs)
     }
 
-    DiffSubsectionType = dict[
-        str, tuple[ReccmpComparedEntity | None, ReccmpComparedEntity | None]
-    ]
-
-    # The criteria for diff judgement is in these dict comprehensions:
-    # Any function not in the saved file
-    new_functions: DiffSubsectionType = {
-        key: (saved, new) for key, (saved, new) in combined.items() if saved is None
-    }
-
-    # Any function now missing from the saved file
-    # or a non-stub -> stub conversion
-    dropped_functions: DiffSubsectionType = {
-        key: (saved, new)
-        for key, (saved, new) in combined.items()
-        if new is None
-        or (new is not None and saved is not None and new.is_stub and not saved.is_stub)
-    }
-
-    # TODO: move these two into functions if the assessment gets more complex
-    # Any function with increased match percentage
-    # or stub -> non-stub conversion
-    improved_functions: DiffSubsectionType = {
-        key: (saved, new)
-        for key, (saved, new) in combined.items()
-        if saved is not None
-        and new is not None
-        and (
-            new.effective_accuracy > saved.effective_accuracy
-            or (not new.is_stub and saved.is_stub)
-        )
-    }
-
-    # Any non-stub function with decreased match percentage
-    degraded_functions: DiffSubsectionType = {
-        key: (saved, new)
-        for key, (saved, new) in combined.items()
-        if saved is not None
-        and new is not None
-        and new.effective_accuracy < saved.effective_accuracy
-        and not saved.is_stub
-        and not new.is_stub
-    }
-
-    # Any function with former or current "effective" match
-    entropy_functions: DiffSubsectionType = {
-        key: (saved, new)
-        for key, (saved, new) in combined.items()
-        if saved is not None
-        and new is not None
-        and new.effective_accuracy == 1.0
-        and saved.effective_accuracy == 1.0
-        and new.is_effective_match != saved.is_effective_match
+    judgements = {
+        key: entity_diff_change(*diff_pair) for key, diff_pair in combined.items()
     }
 
     get_diff_str = diff_json_display(show_both_addrs, is_plain)
 
-    for diff_name, diff_dict in [
-        ("New", new_functions),
-        ("Increased", improved_functions),
-        ("Decreased", degraded_functions),
-        ("Dropped", dropped_functions),
-        ("Compiler entropy", entropy_functions),
+    for diff_name, diff_judgement in [
+        ("New", ReccmpDiffJudgement.NEW),
+        ("Increased", ReccmpDiffJudgement.INCREASE),
+        ("Decreased", ReccmpDiffJudgement.DECREASE),
+        ("Dropped", ReccmpDiffJudgement.DROPPED),
+        ("Compiler entropy", ReccmpDiffJudgement.ENTROPY),
     ]:
+        diff_dict = {
+            key: value
+            for key, value in combined.items()
+            if judgements.get(key) == diff_judgement
+        }
         if len(diff_dict) == 0:
             continue
 
