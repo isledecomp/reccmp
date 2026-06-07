@@ -2,6 +2,7 @@
 
 from typing import Callable, Iterable, Iterator
 from reccmp.formats import TextFile
+from .marker import ProjectAliases
 from .parser import DecompParser
 from .node import (
     ParserLineSymbol,
@@ -14,10 +15,15 @@ from .node import (
 
 
 class DecompCodebase:
-    def __init__(self, files: Iterable[TextFile], module: str) -> None:
+    def __init__(
+        self,
+        files: Iterable[TextFile],
+        module: str,
+        aliases: ProjectAliases | None = None,
+    ) -> None:
         self._symbols: list[ParserSymbol] = []
 
-        parser = DecompParser()
+        parser = DecompParser(aliases)
         for f in files:
             parser.reset_and_set_filename(f.path)
             parser.read(f.text)

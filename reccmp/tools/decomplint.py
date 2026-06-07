@@ -10,6 +10,7 @@ import reccmp
 import reccmp.color
 from reccmp.dir import source_code_search
 from reccmp.parser import DecompParser, ReccmpParserResult
+from reccmp.parser.marker import MarkerType, ProjectAliases, normalize_project_aliases
 from reccmp.parser.linter import (
     check_byname_allowed,
     check_function_order,
@@ -40,6 +41,7 @@ def display_errors(alerts: Iterable[ParserAlert], filename: Path | PurePath):
     print(filename)
 
     for alert in sorted_alerts:
+        line_number = alert.line_number if alert.line_number > 0 else ""
         error_type = (
             f"{reccmp.color.Fore.RED}error: "
             if alert.is_error()
@@ -48,7 +50,7 @@ def display_errors(alerts: Iterable[ParserAlert], filename: Path | PurePath):
         components = [
             "  ",
             reccmp.color.Fore.LIGHTWHITE_EX,
-            f"{alert.line_number:4}",
+            f"{line_number:4}",
             " : ",
             " ",
             error_type,
@@ -58,8 +60,8 @@ def display_errors(alerts: Iterable[ParserAlert], filename: Path | PurePath):
         ]
         print("".join(components), end="")
 
-        if alert.line is not None:
-            print(f"{reccmp.color.Fore.WHITE}  {alert.line}", end="")
+        if alert.detail is not None:
+            print(f"{reccmp.color.Fore.WHITE}  {alert.detail}", end="")
 
         print()
 
@@ -115,6 +117,9 @@ class DecomplintTarget:
     paths: tuple[Path, ...]
     module: str | None
     encoding: str
+    # Project-file only:
+    project_file_path: Path | None = None
+    aliases: dict[str, str] | None = None
 
 
 def decomplint_parse_args(
@@ -148,17 +153,76 @@ def decomplint_parse_args(
         module = target.target_id
         encoding = target.encoding or "utf-8"
 
-        options.append(DecomplintTarget(paths, module, encoding))
+        options.append(
+            DecomplintTarget(
+                paths,
+                module,
+                encoding,
+                project_file_path=project.project_config_path,
+                aliases=target.marker_aliases,
+            )
+        )
 
     return tuple(options)
 
 
-def parse_file(file: TextFile) -> ReccmpParserResult:
-    parser = DecompParser()
+def parse_file(file: TextFile, aliases: ProjectAliases | None) -> ReccmpParserResult:
+    parser = DecompParser(aliases)
     parser.reset_and_set_filename(file.path)
     parser.read(file.text)
     parser.finish()
     return parser.to_result()
+
+
+def check_aliases(lint_targets: tuple[DecomplintTarget, ...]) -> list[ParserAlert]:
+    """Verify the marker aliases applied to each target."""
+    builtin_types = {t.name for t in MarkerType}
+    alerts = []
+
+    for target in lint_targets:
+        if target.aliases is None:
+            continue
+
+        # mypy
+        project_file_path = target.project_file_path or PurePath("")
+
+        assert isinstance(target.aliases, dict)
+
+        seen_keys = set()
+        for key, value in target.aliases.items():
+            if key.upper() in builtin_types:
+                alerts.append(
+                    ParserAlert(
+                        code=AlertCode.ALIAS_REDEFINES_BUILTIN,
+                        path=project_file_path,
+                        detail=f"{key} : {value}",
+                        target=target.module,
+                    )
+                )
+
+            if value.upper() not in builtin_types:
+                alerts.append(
+                    ParserAlert(
+                        code=AlertCode.ALIAS_GOES_NOWHERE,
+                        path=project_file_path,
+                        detail=f"{key} : {value}",
+                        target=target.module,
+                    )
+                )
+
+            if key.upper() in seen_keys:
+                alerts.append(
+                    ParserAlert(
+                        code=AlertCode.ALIAS_DUPLICATE_KEY,
+                        path=project_file_path,
+                        detail=f"{key} : {value}",
+                        target=target.module,
+                    )
+                )
+
+            seen_keys.add(key.upper())
+
+    return alerts
 
 
 def lint_all_targets(lint_targets: tuple[DecomplintTarget, ...]) -> list[ParserAlert]:
@@ -176,26 +240,32 @@ def lint_all_targets(lint_targets: tuple[DecomplintTarget, ...]) -> list[ParserA
     # Collect all parser/linter alerts here and worry about sorting/collating later.
     all_alerts = []
 
+    # Combine aliases for each target by their target name.
+    # We need them all together because we read all markers from all files once.
+    # (It's not currently possible to provide aliases at the command line.)
+    project_aliases = {
+        target.module: target.aliases
+        for target in lint_targets
+        if target.module is not None and target.aliases is not None
+    }
+    project_aliases = normalize_project_aliases(project_aliases)
+
     # Open each (path, encoding) combination once, then collect code annotations.
     parser_results = {}
     for path, encoding in all_paths:
         try:
             file = TextFile.from_file(path, encoding=encoding)
-            parser_results[(path, encoding)] = parse_file(file)
+            parser_results[(path, encoding)] = parse_file(file, project_aliases)
 
         except FileNotFoundError:
-            all_alerts.append(
-                ParserAlert(code=AlertCode.FILE_NOT_FOUND, path=path, line_number=-1)
-            )
+            all_alerts.append(ParserAlert(code=AlertCode.FILE_NOT_FOUND, path=path))
 
         except UnicodeDecodeError:
-            # Encoding is here as the "line" of the alert just so it's displayed to the user.
             all_alerts.append(
                 ParserAlert(
                     code=AlertCode.UNICODE_DECODE_ERROR,
                     path=path,
-                    line_number=-1,
-                    line=encoding,
+                    detail=encoding,
                 )
             )
 
@@ -230,6 +300,7 @@ def main() -> int:
         return 1
 
     all_alerts = lint_all_targets(lint_targets)
+    all_alerts.extend(check_aliases(lint_targets))
 
     # Finished linting: report errors.
     error_count = 0

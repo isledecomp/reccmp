@@ -624,3 +624,35 @@ def test_load_code_folded(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     assert entity is not None
     assert entity.recomp_addr == 0x5555
     assert entity.get("type") == EntityType.FUNCTION
+
+
+def test_load_code_with_alias(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
+    """Should ignore unknown annotations until we provide a valid alias."""
+    files = (
+        TextFile(
+            PurePath("test.cpp"),
+            dedent("""\
+                // fun: TEST 0x10001000
+                // Hello::Test"""),
+        ),
+    )
+
+    # Nothing created for custom annotation.
+    load_markers(files, lines_db, binfile, "TEST", db)
+    entity = db.get(ImageId.ORIG, 0x10001000)
+    assert entity is None
+
+    # Should create function entity after adding alias.
+    load_markers(
+        files,
+        lines_db,
+        binfile,
+        "TEST",
+        db,
+        # Aliases have been normalized, so "FUN" here matches "fun" in the code.
+        project_aliases={"TEST": {"FUN": "FUNCTION"}},
+    )
+    entity = db.get(ImageId.ORIG, 0x10001000)
+    assert entity is not None
+    assert entity.get("name") == "Hello::Test"
+    assert entity.get("type") == EntityType.FUNCTION

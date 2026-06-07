@@ -20,6 +20,7 @@ from .marker import (
     MarkerCategory,
     match_marker,
     is_marker_exact,
+    ProjectAliases,
 )
 from .node import (
     ParserLineSymbol,
@@ -133,7 +134,7 @@ class DecompParser:
     # pylint: disable=too-many-instance-attributes
     # Could combine output lists into a single list to get under the limit,
     # but not right now
-    def __init__(self) -> None:
+    def __init__(self, aliases: ProjectAliases | None = None) -> None:
         # The lists to be populated as we parse
         self._symbols: list[ParserSymbol] = []
         self.alerts: list[ParserAlert] = []
@@ -166,6 +167,8 @@ class DecompParser:
         self.function_sig: str = ""
 
         self.filename: PurePath = PurePath("")
+
+        self.aliases = aliases or {}
 
     def reset_and_set_filename(self, filename: PurePath):
         self._symbols = []
@@ -222,7 +225,7 @@ class DecompParser:
                 path=self.filename,
                 line_number=self.line_number,
                 code=code,
-                line=self.last_line.strip(),
+                detail=self.last_line.strip(),
             )
         )
 
@@ -461,7 +464,7 @@ class DecompParser:
             self._line_marker(marker)
 
         else:
-            self._syntax_warning(AlertCode.BOGUS_MARKER)
+            self._syntax_warning(AlertCode.UNKNOWN_ANNOTATION)
 
     def read_line(self, line: str):
         if self.state == ReaderState.DONE:
@@ -470,12 +473,12 @@ class DecompParser:
         self.last_line = line  # TODO: Useful or hack for error reporting?
         self.line_number += 1
 
-        marker = match_marker(line)
+        marker = match_marker(line, aliases=self.aliases)
         if marker is not None:
             # TODO: what's the best place for this?
             # Does it belong with reading or marker handling?
             if not is_marker_exact(self.last_line):
-                self._syntax_warning(AlertCode.BAD_DECOMP_MARKER)
+                self._syntax_warning(AlertCode.NOT_STRICT_FORMAT)
             self._handle_marker(marker)
             return
 

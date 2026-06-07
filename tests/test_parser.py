@@ -34,7 +34,7 @@ def test_not_exact_syntax(parser):
     Doing this means we don't have to save the actual text."""
     parser.read("// function: test 0x1234")
     assert len(parser.alerts) == 1
-    assert parser.alerts[0].code == AlertCode.BAD_DECOMP_MARKER
+    assert parser.alerts[0].code == AlertCode.NOT_STRICT_FORMAT
 
 
 def test_invalid_marker(parser):
@@ -43,7 +43,7 @@ def test_invalid_marker(parser):
     assert parser.state == ReaderState.SEARCH
 
     assert len(parser.alerts) == 1
-    assert parser.alerts[0].code == AlertCode.BOGUS_MARKER
+    assert parser.alerts[0].code == AlertCode.UNKNOWN_ANNOTATION
 
 
 def test_incompatible_marker(parser):
@@ -732,7 +732,7 @@ def test_mixed_case_module_name(parser):
 
     # Syntax warning for mixed-case module name.
     assert len(parser.alerts) == 1
-    assert parser.alerts[0].code == AlertCode.BAD_DECOMP_MARKER
+    assert parser.alerts[0].code == AlertCode.NOT_STRICT_FORMAT
 
 
 def test_folded_option(parser):

@@ -95,7 +95,7 @@ def check_offset_uniqueness(results: Sequence[ReccmpParserResult]) -> list[Parse
                         code=AlertCode.DUPLICATE_OFFSET,
                         path=result.path,
                         line_number=marker.line_number,
-                        line=f"0x{marker.offset:08x}",
+                        detail=f"0x{marker.offset:08x}",
                         target=marker.module,
                     )
                 )
@@ -125,7 +125,7 @@ def check_string_text(results: Sequence[ReccmpParserResult]) -> list[ParserAlert
                             code=AlertCode.WRONG_STRING,
                             path=result.path,
                             line_number=marker.line_number,
-                            line=f"0x{marker.offset:08x}, {repr(existing_string)} vs. {repr(marker.name)}",
+                            detail=f"0x{marker.offset:08x}, {repr(existing_string)} vs. {repr(marker.name)}",
                             target=marker.module,
                         )
                     )

@@ -5,6 +5,7 @@ from reccmp.parser.marker import (
     MarkerType,
     match_marker,
     is_marker_exact,
+    normalize_project_aliases,
 )
 from reccmp.parser.util import (
     is_blank_or_comment,
@@ -220,3 +221,51 @@ def test_marker_trailing_spaces():
     assert marker is not None
     assert marker.offset == 0x1234
     assert marker.extra is None
+
+
+def test_marker_aliases():
+    """Testing with aliases that have been normalized by normalize_project_aliases()"""
+    # No alias
+    marker = match_marker("// FUNC: TEST 0x1234")
+    assert marker and marker.type == MarkerType.UNKNOWN
+
+    # Alias demo
+    marker = match_marker("// FUNC: TEST 0x1234", {"TEST": {"FUNC": "FUNCTION"}})
+    assert marker and marker.type == MarkerType.FUNCTION
+
+    # Aliases are scoped by target
+    marker = match_marker("// FUNC: TEST 0x1234", {"HELLO": {"FUNC": "FUNCTION"}})
+    assert marker and marker.type == MarkerType.UNKNOWN
+
+    # Alias goes nowhere
+    marker = match_marker("// FUNC: TEST 0x1234", {"TEST": {"FUNC": "HELLO"}})
+    assert marker and marker.type == MarkerType.UNKNOWN
+
+    # Double alias not followed
+    marker = match_marker(
+        "// FUNC: TEST 0x1234", {"TEST": {"FUNC": "HELLO", "HELLO": "FUNCTION"}}
+    )
+    assert marker and marker.type == MarkerType.UNKNOWN
+
+
+def test_normalize_project_aliases():
+    assert not normalize_project_aliases({})
+
+    # Normalize target and alias names for lookup
+    assert normalize_project_aliases({"test": {"func": "FUNCTION"}}) == {
+        "TEST": {"FUNC": "FUNCTION"}
+    }
+
+    # Drop empty alias lists
+    assert not normalize_project_aliases({"TEST": {}})
+
+    # Drop aliases that point to nothing
+    assert not normalize_project_aliases({"TEST": {"func": "FUNC"}})
+
+    # Drop aliases that try to reassign a built-in type
+    assert not normalize_project_aliases({"TEST": {"FUNCTION": "GLOBAL"}})
+
+    # Drop duplicated alias
+    assert normalize_project_aliases(
+        {"TEST": {"func": "FUNCTION", "FUNC": "TEMPLATE"}}
+    ) == {"TEST": {"FUNC": "FUNCTION"}}
