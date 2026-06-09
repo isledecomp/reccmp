@@ -94,6 +94,7 @@ class ProjectFileTarget(BaseModel):
         validation_alias=AliasChoices("marker-aliases", "marker_aliases"),
         default_factory=dict,
     )
+    icon: Path | None = Field(default=None)
 
 
 class ProjectFile(YmlFileModel):

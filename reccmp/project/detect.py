@@ -171,6 +171,8 @@ class RecCmpPartialTarget:
 
     marker_aliases: dict[str, str] | None = None
 
+    icon: Path | None = None
+
 
 @dataclass
 class RecCmpTarget:
@@ -211,6 +213,8 @@ class RecCmpTarget:
     data_sources: list[Path] = field(default_factory=list)
 
     marker_aliases: dict[str, str] = field(default_factory=dict)
+
+    icon: Path | None = None
 
 
 class RecCmpProject:
@@ -288,6 +292,7 @@ class RecCmpProject:
             data_sources=data_sources,
             marker_aliases=marker_aliases,
             report_config=report,
+            icon=target.icon,
         )
 
     def find_build_config(self, search_path: Path) -> BuildFile | None:
@@ -391,6 +396,7 @@ class RecCmpProject:
             data_sources = [
                 project_directory / ds_path for ds_path in target.data_sources
             ]
+            target_icon = project_directory / target.icon if target.icon else None
 
             project.targets[target_id] = RecCmpPartialTarget(
                 target_id=target_id,
@@ -402,6 +408,7 @@ class RecCmpProject:
                 data_sources=data_sources,
                 marker_aliases=target.marker_aliases,
                 report_config=report,
+                icon=target_icon,
             )
 
         # Apply reccmp-user.yml
