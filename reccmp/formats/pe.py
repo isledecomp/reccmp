@@ -736,19 +736,21 @@ class PEImage(Image):
         instruction in the function is a jmp to the address in .idata.
         Search .text to find these functions."""
 
-        if not self.is_debug:
-            return []
-
         thunks = []
-        # If this is a debug build, read the thunks at the start of .text
+        # Read the incremental-link thunk table at the start of .text.
+        # Entries are 5-byte jmps, optionally padded with int3 (0xCC) bytes.
         # Terminated by a big block of 0xcc padding bytes before the first
         # real function in the section.
         for sect in self.get_code_regions():
             ofs = 0
-            while True:
-                opcode, operand = struct.unpack("<Bi", sect.data[ofs : ofs + 5])
+            while ofs + 5 <= len(sect.data):
+                opcode = sect.data[ofs]
+                if opcode == 0xCC and thunks:
+                    ofs += 1
+                    continue
                 if opcode != 0xE9:
                     break
+                (operand,) = struct.unpack("<i", sect.data[ofs + 1 : ofs + 5])
 
                 thunk_ofs = sect.addr + ofs
                 jmp_ofs = thunk_ofs + 5 + operand

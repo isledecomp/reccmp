@@ -32,12 +32,22 @@ def create_name_lookup(
 
         return None
 
+    ref_key = "ref_orig" if image_id == ImageId.ORIG else "ref_recomp"
+
     def get_name(entity: ReccmpEntity, offset: int = 0) -> str | None:
         """The offset is the difference between the input search address and the entity's
         starting address. Decide whether to return the base name (match_name) or
         a string with the base name plus the offset.
         Returns None if there is no suitable name."""
         if offset == 0:
+            # Resolve jmp thunks (e.g. incremental-link table entries) to their
+            # target so a call through the thunk compares equal to a direct call.
+            if entity.entity_type == EntityType.THUNK:
+                ref_addr = entity.get(ref_key)
+                if isinstance(ref_addr, int):
+                    target = db.get(image_id, ref_addr, exact=True)
+                    if target is not None and target.entity_type == EntityType.FUNCTION:
+                        return target.match_name()
             return entity.match_name()
 
         # We will not return an offset name if this is not a variable
