@@ -1,6 +1,9 @@
 import re
 from enum import Enum
 
+TargetAliases = dict[str, str]
+ProjectAliases = dict[str, TargetAliases]
+
 
 class MarkerCategory(Enum):
     """For the purposes of grouping multiple different DecompMarkers together,
@@ -133,14 +136,67 @@ class DecompMarker:
         return self._type in (MarkerType.GLOBAL, MarkerType.STRING, MarkerType.LINE)
 
 
-def match_marker(line: str) -> DecompMarker | None:
+def normalize_target_aliases(aliases: TargetAliases) -> TargetAliases:
+    """Drop invalid aliases that meet one of these criteria:
+    1. They try to overwrite a built-in marker type. e.g. FUNCTION -> GLOBAL
+    2. They do not point to a built-in marker type. e.g. TEST -> HELLO
+    3. They repeat a previous alias. e.g. aliases on "Func" and "func" (different case)
+    """
+    builtin_types = {t.name for t in MarkerType}
+    allowed_pairs = []
+    seen_keys = set()
+
+    for key, value in aliases.items():
+        if (
+            key.upper() not in builtin_types
+            and value.upper() in builtin_types
+            and key.upper() not in seen_keys
+        ):
+            # Key name converted for lookup
+            seen_keys.add(key.upper())
+            allowed_pairs.append((key.upper(), value))
+
+    return dict(allowed_pairs)
+
+
+def normalize_project_aliases(project_aliases: ProjectAliases) -> ProjectAliases:
+    output = {}
+
+    for target, aliases in project_aliases.items():
+        normalized = normalize_target_aliases(aliases)
+        # Drop this target if there are no valid aliases left.
+        if normalized:
+            # Target name converted for lookup
+            output[target.upper()] = normalized
+
+    return output
+
+
+def resolve_alias(marker_type: str, target_name: str, aliases: ProjectAliases) -> str:
+    if not aliases or target_name.upper() not in aliases:
+        return marker_type
+
+    return aliases[target_name.upper()].get(marker_type.upper(), marker_type)
+
+
+def match_marker(
+    line: str, aliases: ProjectAliases | None = None
+) -> DecompMarker | None:
+    if aliases is None:
+        aliases = {}
+
     match = markerRegex.match(line)
     if match is None:
         return None
 
+    marker_type = match.group("type")
+    target_name = match.group("module")
+
+    marker_type = resolve_alias(marker_type, target_name, aliases)
+
     return DecompMarker(
-        marker_type=match.group("type"),
-        module=match.group("module"),
+        marker_type=marker_type,
+        module=target_name,
         offset=int(match.group("offset"), 16),
         extra=match.group("extra"),
     )

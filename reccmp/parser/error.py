@@ -1,14 +1,14 @@
 from enum import Enum
 from dataclasses import dataclass
+from pathlib import Path, PurePath
 
 
-# TODO: poorly chosen name, should be AlertType or AlertCode or something
-class ParserError(Enum):
+class AlertCode(Enum):
     # WARN: Stub function exceeds some line number threshold
     UNLIKELY_STUB = 100
 
-    # WARN: Decomp marker is close enough to be recognized, but does not follow syntax exactly
-    BAD_DECOMP_MARKER = 101
+    # WARN: Decomp marker does not follow strict syntax.
+    NOT_STRICT_FORMAT = 101
 
     # WARN: Multiple markers in sequence do not have distinct modules
     DUPLICATE_MODULE = 102
@@ -18,7 +18,7 @@ class ParserError(Enum):
 
     # WARN: We read a line that matches the decomp marker pattern, but we are not set up
     # to handle it
-    BOGUS_MARKER = 104
+    UNKNOWN_ANNOTATION = 104
 
     # WARN: New function marker appeared while we were inside a function
     MISSED_END_OF_FUNCTION = 105
@@ -54,6 +54,9 @@ class ParserError(Enum):
     # This makes no sense, so we ignore the option.
     SYMBOL_OPTION_IGNORED = 113
 
+    # WARN: The alias does not point to a valid marker type and has no effect.
+    ALIAS_GOES_NOWHERE = 114
+
     # This code or higher is an error, not a warning
     DECOMP_ERROR_START = 200
 
@@ -86,15 +89,33 @@ class ParserError(Enum):
     # is implemented so we can match with the PDB.
     NO_IMPLEMENTATION = 207
 
+    # ERROR: An alias was reused. Only the first occurrence of each
+    # case-insensitive key is used. The rest are ignored.
+    ALIAS_DUPLICATE_KEY = 208
+
+    # ERROR: An alias matches a built-in marker type string, and was dropped.
+    ALIAS_REDEFINES_BUILTIN = 209
+
+    # This code or higher is a critical error
+    DECOMP_CRITICAL_START = 300
+
+    # CRITICAL: Wrapper for FileNotFoundError
+    FILE_NOT_FOUND = 301
+
+    # CRITICAL: Wrapper for UnicodeDecodeError
+    UNICODE_DECODE_ERROR = 302
+
 
 @dataclass
 class ParserAlert:
-    code: ParserError
-    line_number: int
-    line: str | None = None
+    code: AlertCode
+    path: PurePath | Path
+    line_number: int = -1
+    detail: str | None = None
+    target: str | None = None
 
     def is_warning(self) -> bool:
-        return self.code.value < ParserError.DECOMP_ERROR_START.value
+        return self.code.value < AlertCode.DECOMP_ERROR_START.value
 
     def is_error(self) -> bool:
-        return self.code.value >= ParserError.DECOMP_ERROR_START.value
+        return self.code.value >= AlertCode.DECOMP_ERROR_START.value

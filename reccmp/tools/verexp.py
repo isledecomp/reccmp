@@ -13,12 +13,15 @@ from reccmp.project.detect import (
     argparse_add_project_target_args,
     argparse_parse_project_target,
 )
-from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
+from reccmp.project.logging import (
+    argparse_add_logging_args,
+    argparse_parse_logging,
+)
 
 logger = logging.getLogger(__name__)
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(
         allow_abbrev=False,
         description="Verify Exports: Compare the exports of two DLLs.",
@@ -53,7 +56,7 @@ def main():
     re_exp = get_exports(target.recompiled_path)
 
     udiff = difflib.unified_diff(og_exp, re_exp)
-    has_diff = print_diff(udiff, args.no_color)
+    has_diff = print_diff(udiff)
 
     return 1 if has_diff else 0
 

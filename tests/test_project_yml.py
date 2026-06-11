@@ -134,3 +134,27 @@ def test_project_source_root_missing_key():
 
     assert isinstance(p.targets["TEST"].source_root, tuple)
     assert p.targets["TEST"].source_root == ()
+
+
+def test_project_marker_aliases():
+    p = ProjectFile.from_str("""\
+        targets:
+            TEST:
+                hash:
+                    sha256: test
+                filename: test.exe
+        """)
+
+    assert not p.targets["TEST"].marker_aliases
+
+    p = ProjectFile.from_str("""\
+        targets:
+            TEST:
+                hash:
+                    sha256: test
+                filename: test.exe
+                marker-aliases:
+                    fun: FUNCTION
+        """)
+
+    assert p.targets["TEST"].marker_aliases == {"fun": "FUNCTION"}

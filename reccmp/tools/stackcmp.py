@@ -21,7 +21,10 @@ from reccmp.project.detect import (
     RecCmpProjectException,
 )
 from reccmp.cvdump.types import CvdumpTypeKey
-from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
+from reccmp.project.logging import (
+    argparse_add_logging_args,
+    argparse_parse_logging,
+)
 
 # pylint: disable=duplicate-code # misdetects a code duplication with reccmp
 
@@ -198,7 +201,7 @@ def compare_function_stacks(udiff: CombinedDiffOutput, fn_symbol: SymbolsEntry):
 
     stack_symbols: dict[int, StackSymbol] = {}
 
-    for symbol in fn_symbol.stack_symbols:
+    for symbol in fn_symbol.symbols:
         if symbol.symbol_type == "S_BPREL32":
             # convert hex to signed 32 bit integer
             hex_bytes = bytes.fromhex(symbol.location[1:-1])
@@ -324,7 +327,7 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def main():
+def main() -> int:
     args = parse_args()
 
     try:

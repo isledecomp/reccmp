@@ -95,8 +95,10 @@ def patch_mov_compare_jmp(
     )
 
     # return if not found, or only found on first or last line
+    # pylint: disable=too-many-boolean-expressions
     if (
         cmp_index in (-1, 0, len(orig) - 1)
+        or cmp_index >= len(recomp) - 1
         or
         # recomp should also have a cmp in the same line
         not recomp[cmp_index].startswith(cmp_instruction)
@@ -212,6 +214,7 @@ def patch_compare_jmp(
     # return if not found, or only found on the last line
     if (
         cmp_index in (-1, len(orig) - 1)
+        or cmp_index >= len(recomp) - 1
         or
         # recomp should also have a cmp in the same line
         not recomp[cmp_index].startswith(cmp_instruction)
@@ -249,6 +252,7 @@ def patch_fld_fmul(orig: list[str], recomp: list[str]) -> set[int]:
     # return if not found, or only found on the last line
     if (
         fld_index in (-1, len(orig) - 1)
+        or fld_index >= len(recomp) - 1
         or
         # recomp should also have a fld in the same line
         not recomp[fld_index].startswith("fld")
