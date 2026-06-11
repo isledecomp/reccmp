@@ -1,3 +1,5 @@
+/** @import { ReccmpInternalState } from '../types' */
+
 import { ReccmpRegisterEvent } from '../events';
 
 // reccmp-pack-begin
@@ -6,6 +8,7 @@ class PageNumberOf extends window.HTMLElement {
     this.dispatchEvent(new ReccmpRegisterEvent(this.update.bind(this)));
   }
 
+  /** @param {ReccmpInternalState} state */
   update({ pageNumber, maxPageNumber }) {
     this.textContent = `Page ${pageNumber + 1} of ${maxPageNumber + 1}`;
   }

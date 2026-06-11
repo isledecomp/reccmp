@@ -1,10 +1,24 @@
-// reccmp-pack-begin
+/**
+ * @import {
+ *   ColumnNames,
+ *   DiffFragBoth,
+ *   DiffFragSingle,
+ *   MatchingOrMismatchingBlock,
+ *   ReccmpComparedEntity,
+ *   ReccmpInternalState,
+ * } from "./types"
+ */
 
-// Special internal values to ensure this sort order for matching column:
-// 1. Stub
-// 2. Any match percentage [0.0, 1.0)
-// 3. Effective match
-// 4. Actual 100% match
+// reccmp-pack-begin
+/**
+ * Special internal values to ensure this sort order for matching column:
+ * 1. Stub
+ * 2. Any match percentage [0.0, 1.0)
+ * 3. Effective match
+ * 4. Actual 100% match
+ * @param {ReccmpComparedEntity} row
+ * @returns {number}
+ */
 function getRowSortValue(row) {
   // Stubs appear at the bottom, below even a 0% match.
   if ('stub' in row) {
@@ -25,7 +39,18 @@ function getRowSortValue(row) {
   return row.matching;
 }
 
+/**
+ * @param {Object} args
+ * @param {ColumnNames} args.sortCol
+ * @param {boolean} args.sortDesc
+ * @returns {(x: ReccmpComparedEntity, y: ReccmpComparedEntity) => number}
+ */
 function createSortFunction({ sortCol, sortDesc }) {
+  /**
+   * @param {ReccmpComparedEntity} rowA
+   * @param {ReccmpComparedEntity} rowB
+   * @returns {number}
+   */
   return (rowA, rowB) => {
     const valA = sortCol === 'matching' ? getRowSortValue(rowA) : rowA[sortCol];
     const valB = sortCol === 'matching' ? getRowSortValue(rowB) : rowB[sortCol];
@@ -40,9 +65,21 @@ function createSortFunction({ sortCol, sortDesc }) {
   };
 }
 
+/**
+ * @param {Object} args
+ * @param {boolean} args.hidePerfect
+ * @param {boolean} args.hideStub
+ * @param {string} args.query
+ * @param {number} args.filterType
+ * @returns {(row: ReccmpComparedEntity) => boolean}
+ */
 function createFilterFunction({ hidePerfect, hideStub, query, filterType }) {
   const queryNormalized = query.toLowerCase().trim();
 
+  /**
+   * @param {ReccmpComparedEntity} row
+   * @returns {boolean}
+   */
   return (row) => {
     // Destructuring sets defaults for optional values from this object.
     const { effective = false, stub = false, diff = '', name, address, matching } = row;
@@ -69,8 +106,11 @@ function createFilterFunction({ hidePerfect, hideStub, query, filterType }) {
       return false;
     }
 
-    // special matcher for combined diff
-    const anyLineMatch = ([_addr, line]) => line.toLowerCase().trim().includes(queryNormalized);
+    /**
+     * special matcher for combined diff
+     * @type {(frag: DiffFragBoth | DiffFragSingle) => boolean}
+     */
+    const anyLineMatch = (frag) => frag[1].toLowerCase().trim().includes(queryNormalized);
 
     // Flatten all diff groups for the search
     const diffs = diff.flatMap(([_slug, subgroups]) => subgroups);
@@ -91,7 +131,19 @@ function createFilterFunction({ hidePerfect, hideStub, query, filterType }) {
   };
 }
 
+/**
+ * @param {ReccmpComparedEntity[]} input
+ * @param {number} chunkSize
+ * @returns {ReccmpComparedEntity[][]}
+ */
 function batched(input, chunkSize) {
+  /**
+   * @template T
+   * @generator
+   * @param {Array<T>} arr
+   * @param {number} n
+   * @yields {Array<T>}
+   */
   function* gen(arr, n) {
     for (let i = 0; i < arr.length; i += n) {
       yield arr.slice(i, i + n);
@@ -102,13 +154,19 @@ function batched(input, chunkSize) {
 }
 
 class ReccmpState {
+  /** @param {ReccmpComparedEntity[]} dataset */
   constructor(dataset) {
+    /**
+     * @readonly
+     * @type {ReccmpComparedEntity[]}
+     */
     this.dataset = dataset;
+
+    /** @type {ReccmpInternalState} */
     this.state = {
-      // Filtered list of entities
       results: this.dataset,
 
-      // results split into subarrays according to the pageSize.
+      // Results split into subarrays according to the pageSize.
       pages: [],
 
       // Sort column and direction
@@ -129,7 +187,7 @@ class ReccmpState {
       // Rows with detail row (keyed by address)
       expanded: {},
 
-      // Paging. Numbers are 0-based. Display components add 1 to both for.
+      // Paging. Numbers are 0-based. Display components add 1 to both for
       currentPage: [],
       pageNumber: 0,
       maxPageNumber: 0,
@@ -140,6 +198,10 @@ class ReccmpState {
     this.updateResults();
   }
 
+  /**
+   * @param {number} desiredPage
+   * @returns {number}
+   */
   clampPage(desiredPage) {
     // Clamp desiredPage to (0, maxPageNumber] --> a page that actually exists.
     return Math.max(0, Math.min(desiredPage, this.state.maxPageNumber));
@@ -167,11 +229,13 @@ class ReccmpState {
     this.updateCurrentPage();
   }
 
+  /** @param {number} page */
   setPageNumber(page) {
     this.state.pageNumber = this.clampPage(page);
     this.updateCurrentPage();
   }
 
+  /** @param {string} value */
   setFilterType(value) {
     // 1: Search by address or name.
     // 2: Search disassembly.
@@ -184,11 +248,13 @@ class ReccmpState {
     this.updateResults();
   }
 
+  /** @param {string} query */
   setQuery(query) {
     this.state.query = query;
     this.updateResults();
   }
 
+  /** @param {boolean} value */
   setShowRecomp(value) {
     this.state.showRecomp = value;
 
@@ -200,6 +266,7 @@ class ReccmpState {
     }
   }
 
+  /** @param {ColumnNames} column */
   setSortCol(column) {
     // Flip sort direction if this is the current sort column.
     if (column === this.state.sortCol) {
@@ -211,21 +278,25 @@ class ReccmpState {
     this.updateResults();
   }
 
+  /** @param {boolean} value */
   setHidePerfect(value) {
     this.state.hidePerfect = value;
     this.updateResults();
   }
 
+  /** @param {boolean} value */
   setHideStub(value) {
     this.state.hideStub = value;
     this.updateResults();
   }
 
+  /** @param {string} value */
   setPageSize(value) {
     this.state.pageSize = parseInt(value);
     this.updateResults();
   }
 
+  /** @param {string} addr */
   toggleExpanded(addr) {
     if (addr in this.state.expanded) {
       delete this.state.expanded[addr];

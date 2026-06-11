@@ -62,3 +62,8 @@ jobs:
       working-directory: ./webui
       run: |
         npm run lint
+
+    - name: TypeScript
+      working-directory: ./webui
+      run: |
+        npx tsc
