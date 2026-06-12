@@ -217,16 +217,15 @@ def get_percent_color(value: float) -> str:
 
 
 def percent_string(
-    ratio: float, is_effective: bool = False, is_plain: bool = False
+    ratio: float, is_effective: bool = False, markdown: bool = False
 ) -> str:
     """Helper to construct a percentage string from the given ratio.
-    If is_effective (i.e. effective match), indicate that with the asterisk.
-    If is_plain, don't use colorama ANSI codes."""
+    If is_effective (i.e. effective match), indicate that with the asterisk."""
 
     percenttext = f"{(ratio * 100):.2f}%"
     effective_star = "*" if is_effective else ""
 
-    if is_plain:
+    if markdown:
         return percenttext + effective_star
 
     return "".join(
@@ -240,7 +239,7 @@ def percent_string(
     )
 
 
-def diff_json_display(show_both_addrs: bool = False, is_plain: bool = False):
+def diff_json_display(show_both_addrs: bool = False, markdown: bool = False):
     """Generate a function that will display the diff according to
     the reccmp display preferences."""
 
@@ -257,7 +256,7 @@ def diff_json_display(show_both_addrs: bool = False, is_plain: bool = False):
                 "stub"
                 if new.is_stub
                 else percent_string(
-                    new.effective_accuracy, new.is_effective_match, is_plain
+                    new.effective_accuracy, new.is_effective_match, markdown
                 )
             )
 
@@ -272,7 +271,7 @@ def diff_json_display(show_both_addrs: bool = False, is_plain: bool = False):
                 "stub"
                 if saved.is_stub
                 else percent_string(
-                    saved.effective_accuracy, saved.is_effective_match, is_plain
+                    saved.effective_accuracy, saved.is_effective_match, markdown
                 )
             )
 
@@ -283,6 +282,10 @@ def diff_json_display(show_both_addrs: bool = False, is_plain: bool = False):
             addr_string = f"{orig_addr} / {recomp_addr:10}"
         else:
             addr_string = orig_addr
+
+        if markdown:
+            # Escape backtick (e.g. `scalar deleting destructor')
+            name = name.replace("`", "\\`")
 
         # The ANSI codes from colorama counted towards string length,
         # so displaying this as an ascii-like spreadsheet
@@ -412,7 +415,7 @@ def diff_json(
         key: entity_diff_change(*diff_pair) for key, diff_pair in combined.items()
     }
 
-    get_diff_str = diff_json_display(show_both_addrs, is_plain=markdown)
+    get_diff_str = diff_json_display(show_both_addrs, markdown=markdown)
 
     for diff_name, diff_judgement in [
         ("New", ReccmpDiffJudgement.NEW),
