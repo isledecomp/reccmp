@@ -364,7 +364,7 @@ def diff_json(
     saved_data: ReccmpStatusReport,
     new_data: ReccmpStatusReport,
     show_both_addrs: bool = False,
-    is_plain: bool = False,
+    markdown: bool = False,
 ):
     """Compare two status report files, determine what items changed, and print the result."""
 
@@ -412,7 +412,7 @@ def diff_json(
         key: entity_diff_change(*diff_pair) for key, diff_pair in combined.items()
     }
 
-    get_diff_str = diff_json_display(show_both_addrs, is_plain)
+    get_diff_str = diff_json_display(show_both_addrs, is_plain=markdown)
 
     for diff_name, diff_judgement in [
         ("New", ReccmpDiffJudgement.NEW),
@@ -429,7 +429,10 @@ def diff_json(
         if len(diff_dict) == 0:
             continue
 
-        print(f"{diff_name} ({len(diff_dict)}):")
+        if markdown:
+            print(f"## {diff_name} ({len(diff_dict)}) ##")
+        else:
+            print(f"{diff_name} ({len(diff_dict)}):")
 
         for addr, (saved, new) in diff_dict.items():
             print(get_diff_str(addr, saved, new))

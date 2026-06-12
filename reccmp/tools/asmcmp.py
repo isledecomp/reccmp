@@ -167,6 +167,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Exclude LIBRARY annotations from the analysis",
     )
+    parser.add_argument("--markdown", action="store_true")
     argparse_add_logging_args(parser)
 
     args = parser.parse_args()
@@ -270,6 +271,7 @@ def main() -> int:
                 saved_data,
                 report,
                 show_both_addrs=args.print_rec_addr,
+                markdown=args.markdown,
             )
         except FileNotFoundError:
             # In a CI workflow, the JSON file might not exist on the first run in a new branch.
@@ -309,11 +311,18 @@ def main() -> int:
         functions_aligned_count / safe_denominator(function_count) * 100
     )
 
-    print(
-        f"\nImplemented:  {implemented:.2f}%  ({implemented_funcs} / {function_count})"
-    )
-    print(f"Accuracy:     {effective_accuracy:.2f}%")
-    print(f"Progress:     {progress:.2f}%")
+    if args.markdown:
+        print(
+            f"\n**Implemented**: {implemented:.2f}% *({implemented_funcs} / {function_count})*"
+        )
+        print(f"**Accuracy:** {effective_accuracy:.2f}%")
+        print(f"**Progress:** {progress:.2f}%")
+    else:
+        print(
+            f"\nImplemented:  {implemented:.2f}%  ({implemented_funcs} / {function_count})"
+        )
+        print(f"Accuracy:     {effective_accuracy:.2f}%")
+        print(f"Progress:     {progress:.2f}%")
 
     if functions_aligned_count > 0:
         print(
