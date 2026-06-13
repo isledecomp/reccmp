@@ -21,6 +21,10 @@ JUMP_MNEMONICS = {
     "jo",
     "jp",
     "js",
+    # Capstone uses loope/loopne, not loopz/loopnz.
+    "loop",
+    "loope",
+    "loopne",
 }
 
 # Guaranteed to be a single operand.
