@@ -38,6 +38,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--no-color", "-n", action="store_true", help="Do not color the output"
     )
+    parser.add_argument(
+        "--filter",
+        "-f",
+        metavar="<substring>",
+        default=None,
+        help="Only compare vtables whose name contains this (case-insensitive) substring",
+    )
     argparse_add_logging_args(parser)
 
     args = parser.parse_args()
@@ -72,7 +79,11 @@ def main():
 
     engine = Compare.from_target(target)
 
+    name_filter = args.filter.lower() if args.filter else None
+
     for tbl_match in engine.compare_vtables():
+        if name_filter is not None and name_filter not in (tbl_match.name or "").lower():
+            continue
         vtable_count += 1
         if tbl_match.accuracy < 1:
             problem_count += 1
@@ -99,6 +110,8 @@ def main():
     for fun_match in engine.get_functions():
         assert fun_match.name is not None
         if "`vtordisp" not in fun_match.name:
+            continue
+        if name_filter is not None and name_filter not in fun_match.name.lower():
             continue
 
         diff = engine.compare_address(fun_match.orig_addr)
