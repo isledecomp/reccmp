@@ -418,6 +418,42 @@ def test_compare_vtable_diff():
     assert diff_groups[2].keys() == {"orig", "recomp"}
 
 
+def test_compare_vtable_thunk_resolution():
+    """A vtable slot that points at an incremental-link jmp thunk should compare
+    equal to a slot that points directly at the thunk's target function."""
+
+    # orig: function@0, thunk@4 (jmp to function), vtable@8 -> slot points to thunk.
+    orig_mem = (
+        b"\xc3\x00\x00\x00"  # function@0
+        + b"\xe9\xf7\xff\xff\xff"  # thunk@4: jmp -9 (-> 0), int3-padded below
+        + b"\xcc\xcc\xcc"
+        + b"\x04\x00\x00\x00"  # vtable@12: slot -> thunk@4
+    )
+    # recomp: function@0, vtable@4 -> slot points directly to function.
+    recomp_mem = b"\xc3\x00\x00\x00" + b"\x00\x00\x00\x00"
+
+    orig_bin = RawImage.from_memory(orig_mem)
+    recomp_bin = RawImage.from_memory(recomp_mem)
+
+    pdb = Mock(spec=CvdumpAnalysis)
+    compare = Compare(orig_bin, recomp_bin, pdb, "HELLO")
+
+    with get_db(compare).batch() as batch:
+        batch.set(ImageId.RECOMP, 0, type=EntityType.FUNCTION, name="func", size=1)
+        # The thunk only exists in the original; it refs the real function.
+        batch.set(ImageId.ORIG, 4, type=EntityType.THUNK, name="func_thunk", ref=0)
+        batch.set(ImageId.RECOMP, 4, type=EntityType.VTABLE, name="hello", size=4)
+        batch.match(0, 0)
+        batch.match(12, 4)
+
+    report = to_report(compare)
+
+    e = report.entities["0xc"]
+    assert e is not None
+    # Without thunk resolution the slot would mismatch (thunk vs function).
+    assert e.accuracy == 1.0
+
+
 def test_aggregate_workflow():
     """Example of serializing a report, deserializing it, then serializing again.
     `reccmp-aggregate` manages report-only entities not derived from the EntityDb."""
