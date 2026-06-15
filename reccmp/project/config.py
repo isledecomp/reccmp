@@ -63,6 +63,7 @@ class YmlReportConfig(BaseModel):
         default_factory=list,
         validation_alias=AliasChoices("ignore-variables", "ignore_variables"),
     )
+    icon: Path | None = Field(default=None)
 
     @classmethod
     def default(cls) -> "YmlReportConfig":
@@ -94,7 +95,6 @@ class ProjectFileTarget(BaseModel):
         validation_alias=AliasChoices("marker-aliases", "marker_aliases"),
         default_factory=dict,
     )
-    icon: Path | None = Field(default=None)
 
 
 class ProjectFile(YmlFileModel):

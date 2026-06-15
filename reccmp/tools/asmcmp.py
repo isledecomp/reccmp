@@ -288,7 +288,7 @@ def main() -> int:
             args.json, serialize_reccmp_report(report, diff_included=diff_included)
         )
 
-    target_icon = args.svg_icon or target.icon
+    target_icon = args.svg_icon or target.report_config.icon
 
     if args.html is not None:
         write_html_report(args.html, report, target_icon)
