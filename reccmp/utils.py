@@ -52,11 +52,16 @@ def read_js_file(filename: str) -> str:
     return file_header + "".join(lines)
 
 
-def base64_blob(path: Path) -> str:
+def get_base64_icon(path: Path) -> str:
+    if path.suffix.lower() != ".png":
+        logging.getLogger().error("Icon must be PNG image: %s", path)
+        return ""
+
     try:
         with path.open("rb") as f:
             return base64.b64encode(f.read()).decode("utf-8")
     except FileNotFoundError:
+        logging.getLogger().error("Could not open icon: %s", path)
         return ""
 
 
@@ -72,7 +77,7 @@ def gen_svg(
     """Render the progress SVG badge from the bundled template."""
     icon_data = None
     if icon:
-        icon_data = base64_blob(icon)
+        icon_data = get_base64_icon(icon)
 
     total_statistic = raw_accuracy / total_funcs
     full_percentbar_width = 127.18422
@@ -125,8 +130,8 @@ def write_html_report(
     report_str = serialize_reccmp_report(report, diff_included=True)
 
     favicon = ""
-    if icon and icon.suffix == ".png":
-        favicon = base64_blob(icon)
+    if icon:
+        favicon = get_base64_icon(icon)
 
     output_data = Renderer().render_path(
         get_asset_file("template.html"),
