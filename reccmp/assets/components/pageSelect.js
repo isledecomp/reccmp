@@ -1,6 +1,14 @@
-import { ReccmpRegisterEvent } from '../events';
+/** @import { ColumnNames, ReccmpComparedEntity, ReccmpInternalState } from '../types' */
+
+import { ReccmpRegisterEvent, ReccmpSetPageEvent } from '../events';
+import { getMatchPercentText } from './listingTable';
 
 // reccmp-pack-begin
+
+/**
+ * @param {string} str
+ * @returns {string}
+ */
 function getCppClass(str) {
   const idx = str.indexOf('::');
   if (idx !== -1) {
@@ -10,7 +18,12 @@ function getCppClass(str) {
   return str;
 }
 
-// Clamp string length to specified length and pad with ellipsis
+/**
+ * Clamp string length to specified length and pad with ellipsis
+ * @param {string} str
+ * @param {number} maxlen
+ * @returns {string}
+ */
 function stringTruncate(str, maxlen = 20) {
   str = getCppClass(str);
   if (str.length > maxlen) {
@@ -20,13 +33,18 @@ function stringTruncate(str, maxlen = 20) {
   return str;
 }
 
+/**
+ * @param {ReccmpComparedEntity[][]} pages
+ * @param {ColumnNames} sortCol
+ * @returns {[number, string, string][]}
+ */
 function pageHeadings(pages, sortCol) {
   return pages.map((page, index) => {
     const first = page[0];
     const last = page[page.length - 1];
 
-    let start = first[sortCol];
-    let end = last[sortCol];
+    let start = String(first[sortCol]);
+    let end = String(last[sortCol]);
 
     if (sortCol === 'matching') {
       start = getMatchPercentText(first);
@@ -40,16 +58,18 @@ function pageHeadings(pages, sortCol) {
 class PageSelect extends window.HTMLElement {
   connectedCallback() {
     this.innerHTML = `<select></select>`;
-
-    this.querySelector('select').addEventListener('change', (evt) => {
-      this.dispatchEvent(new CustomEvent('setPage', { bubbles: true, detail: evt.target.value }));
+    const select = /** @type {HTMLSelectElement} */ (this.querySelector('select'));
+    select.addEventListener('change', (evt) => {
+      const target = /** @type {HTMLSelectElement} */ (evt.target);
+      this.dispatchEvent(new ReccmpSetPageEvent(parseInt(target.value)));
     });
 
     this.dispatchEvent(new ReccmpRegisterEvent(this.update.bind(this)));
   }
 
+  /** @param {ReccmpInternalState} state */
   update({ pages, pageNumber, results, sortCol }) {
-    const select = this.querySelector('select');
+    const select = /** @type {HTMLSelectElement} */ (this.querySelector('select'));
 
     if (results.length === 0) {
       select.setAttribute('disabled', '');
@@ -64,7 +84,7 @@ class PageSelect extends window.HTMLElement {
     const options = [];
     for (const [value, fromText, toText] of pageHeadings(pages, sortCol)) {
       const option = document.createElement('option');
-      option.value = value;
+      option.value = String(value);
       if (pageNumber === value) {
         option.setAttribute('selected', '');
       }

@@ -125,6 +125,9 @@ class ReportConfig:
     ignore_variables: list[str] = field(default_factory=list)
     """Variables matching these names will be omitted from the reccmp-datacmp report."""
 
+    icon: Path | None = None
+    """Path to icon (PNG image) to use in SVG and HTML reports."""
+
 
 @dataclass
 class RecCmpPartialTarget:
@@ -376,9 +379,15 @@ class RecCmpProject:
             else:
                 ghidra = None
             if target.report is not None:
+                target_icon = (
+                    project_directory / target.report.icon
+                    if target.report.icon
+                    else None
+                )
                 report = ReportConfig(
                     ignore_functions=target.report.ignore_functions,
                     ignore_variables=target.report.ignore_variables,
+                    icon=target_icon,
                 )
             else:
                 report = None

@@ -1,3 +1,20 @@
+/** @import { InternalStateCallback } from './types' */
+
+import {
+  ReccmpFilterTypeEvent,
+  ReccmpHidePerfectEvent,
+  ReccmpHideStubEvent,
+  ReccmpNextPageEvent,
+  ReccmpPageSizeEvent,
+  ReccmpPrevPageEvent,
+  ReccmpQueryEvent,
+  ReccmpRegisterEvent,
+  ReccmpSetPageEvent,
+  ReccmpShowRecompEvent,
+  ReccmpSortColEvent,
+  ReccmpTableEvent,
+  ReccmpToggleExpandedEvent,
+} from './events';
 import { global_reccmp_data } from './globals';
 import { ReccmpState } from './state';
 
@@ -6,75 +23,78 @@ import { ReccmpState } from './state';
 class ReccmpProvider extends window.HTMLElement {
   constructor() {
     super();
+    /** @type {ReccmpState} */
     this.reccmp = new ReccmpState(global_reccmp_data);
+    /** @type {InternalStateCallback[]} */
     this.listeners = [];
+    /** @type {InternalStateCallback[]} */
     this.tables = [];
 
-    this.addEventListener('reccmp-register', (evt) => {
+    this.addEventListener(ReccmpRegisterEvent.eventName, (evt) => {
       evt.stopImmediatePropagation();
-      this.listeners.push(evt.detail);
+      this.listeners.push(evt.callback);
       // Call the listener immediately after registering.
       // This populates the component with data.
-      evt.detail(this.reccmp.state);
+      evt.callback(this.reccmp.state);
     });
 
-    this.addEventListener('reccmp-table', (evt) => {
+    this.addEventListener(ReccmpTableEvent.eventName, (evt) => {
       evt.stopImmediatePropagation();
-      this.tables.push(evt.detail);
+      this.tables.push(evt.callback);
     });
 
-    this.addEventListener('setHidePerfect', (evt) => {
-      this.reccmp.setHidePerfect(evt.detail);
+    this.addEventListener(ReccmpHidePerfectEvent.eventName, (evt) => {
+      this.reccmp.setHidePerfect(evt.value);
       this.callListeners();
     });
 
-    this.addEventListener('setHideStub', (evt) => {
-      this.reccmp.setHideStub(evt.detail);
+    this.addEventListener(ReccmpHideStubEvent.eventName, (evt) => {
+      this.reccmp.setHideStub(evt.value);
       this.callListeners();
     });
 
-    this.addEventListener('setShowRecomp', (evt) => {
-      this.reccmp.setShowRecomp(evt.detail);
+    this.addEventListener(ReccmpShowRecompEvent.eventName, (evt) => {
+      this.reccmp.setShowRecomp(evt.value);
       this.callListeners();
     });
 
-    this.addEventListener('prevPage', () => {
+    this.addEventListener(ReccmpPrevPageEvent.eventName, () => {
       this.reccmp.setPageNumber(this.reccmp.state.pageNumber - 1);
       this.callListeners();
     });
 
-    this.addEventListener('nextPage', () => {
+    this.addEventListener(ReccmpNextPageEvent.eventName, () => {
       this.reccmp.setPageNumber(this.reccmp.state.pageNumber + 1);
       this.callListeners();
     });
 
-    this.addEventListener('setPage', (evt) => {
-      this.reccmp.setPageNumber(evt.detail);
+    this.addEventListener(ReccmpSetPageEvent.eventName, (evt) => {
+      this.reccmp.setPageNumber(evt.value);
       this.callListeners();
     });
 
-    this.addEventListener('setQuery', (evt) => {
-      this.reccmp.setQuery(evt.detail);
+    this.addEventListener(ReccmpQueryEvent.eventName, (evt) => {
+      this.reccmp.setQuery(evt.value);
       this.callListeners();
     });
 
-    this.addEventListener('setFilterType', (evt) => {
-      this.reccmp.setFilterType(evt.detail);
+    this.addEventListener(ReccmpFilterTypeEvent.eventName, (evt) => {
+      this.reccmp.setFilterType(evt.value);
       this.callListeners();
     });
 
-    this.addEventListener('setSortCol', (evt) => {
-      this.reccmp.setSortCol(evt.detail);
+    this.addEventListener(ReccmpSortColEvent.eventName, (evt) => {
+      this.reccmp.setSortCol(evt.value);
       this.callListeners();
     });
 
-    this.addEventListener('setPageSize', (evt) => {
-      this.reccmp.setPageSize(evt.detail);
+    this.addEventListener(ReccmpPageSizeEvent.eventName, (evt) => {
+      this.reccmp.setPageSize(evt.value);
       this.callListeners();
     });
 
-    this.addEventListener('toggleExpanded', (evt) => {
-      this.reccmp.toggleExpanded(evt.detail);
+    this.addEventListener(ReccmpToggleExpandedEvent.eventName, (evt) => {
+      this.reccmp.toggleExpanded(evt.value);
       for (const fn of this.tables) {
         fn(this.reccmp.state);
       }

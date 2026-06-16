@@ -129,6 +129,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--svg-icon",
         metavar="icon",
+        type=Path,
         help="Icon to use in SVG (PNG)",
     )
     parser.add_argument(

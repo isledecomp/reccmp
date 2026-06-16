@@ -2,7 +2,7 @@ import ClickToCopy from './components/clickToCopy';
 import { DiffDisplay, DiffDisplayOptions } from './components/diffDisplay';
 import HidePerfect from './components/hidePerfect';
 import HideStub from './components/hideStub';
-import ListingTable from './components/listingTable';
+import { ListingTable } from './components/listingTable';
 import NextPageButton from './components/nextPageButton';
 import PageNumberOf from './components/pageNumberOf';
 import PageSelect from './components/pageSelect';
