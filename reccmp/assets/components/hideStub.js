@@ -1,18 +1,23 @@
-import { ReccmpRegisterEvent } from '../events';
+/** @import { ReccmpInternalState } from '../types' */
+
+import { ReccmpHideStubEvent, ReccmpRegisterEvent } from '../events';
 
 // reccmp-pack-begin
 class HideStub extends window.HTMLElement {
   connectedCallback() {
     this.innerHTML = `<label><input type="checkbox" />Hide stubs</label>`;
-    this.querySelector('input[type=checkbox]').addEventListener('change', (evt) => {
-      this.dispatchEvent(new CustomEvent('setHideStub', { bubbles: true, detail: evt.target.checked }));
+    const checkbox = /** @type {HTMLInputElement} */ (this.querySelector('input[type=checkbox]'));
+    checkbox.addEventListener('change', (evt) => {
+      this.dispatchEvent(new ReccmpHideStubEvent(/** @type {HTMLInputElement} */ (evt.target).checked));
     });
 
     this.dispatchEvent(new ReccmpRegisterEvent(this.update.bind(this)));
   }
 
+  /** @param {ReccmpInternalState} state */
   update({ hideStub }) {
-    this.querySelector('input[type=checkbox]').checked = hideStub;
+    const checkbox = /** @type {HTMLInputElement} */ (this.querySelector('input[type=checkbox]'));
+    checkbox.checked = hideStub;
   }
 }
 

@@ -1,16 +1,38 @@
+/**
+ * @import {
+ *   DiffFragBoth,
+ *   DiffFragSingle,
+ *   ReccmpComparedEntity,
+ *   ColumnNames,
+ *   MatchingOrMismatchingBlock
+ * } from "../types"
+ *
+ */
+
 import { getDataByAddr } from '../globals';
 
 // reccmp-pack-begin
 
-function formatAsm(entries, _addrOption) {
+/** @param {MatchingOrMismatchingBlock[]} entries */
+function formatAsm(entries) {
+  /** @type {HTMLTableRowElement[]} */
   const output = [];
 
+  /**
+   * @param {string} text
+   * @returns {HTMLTableCellElement}
+   */
   const createTh = (text) => {
     const th = document.createElement('th');
     th.innerText = text;
     return th;
   };
 
+  /**
+   * @param {string} text
+   * @param {string} className
+   * @returns {HTMLTableCellElement}
+   */
   const createTd = (text, className = '') => {
     const td = document.createElement('td');
     td.innerText = text;
@@ -57,15 +79,6 @@ function formatAsm(entries, _addrOption) {
   return output;
 }
 
-// Helper for this set/remove attribute block
-function setBooleanAttribute(element, attribute, value) {
-  if (value) {
-    element.setAttribute(attribute, '');
-  } else {
-    element.removeAttribute(attribute);
-  }
-}
-
 class DiffDisplayOptions extends window.HTMLElement {
   static observedAttributes = ['data-option'];
 
@@ -102,25 +115,26 @@ class DiffDisplayOptions extends window.HTMLElement {
         <label for="showBoth">Both</label>
       </fieldset>`;
 
-    shadow.querySelectorAll('input[type=radio]').forEach((radio) => {
-      const checked = this.option === radio.getAttribute('value');
-      setBooleanAttribute(radio, 'checked', checked);
+    shadow.querySelectorAll('input[type=radio]').forEach((element) => {
+      const radio = /** @type {HTMLInputElement} */ (element);
+      radio.checked = this.option === radio.getAttribute('value');
 
       radio.addEventListener('change', (evt) => {
-        this.option = evt.target.value;
+        this.option = /** @type {HTMLInputElement} */ (evt.target).value;
       });
     });
   }
 
   set option(value) {
-    this.setAttribute('data-option', parseInt(value));
+    this.setAttribute('data-option', value);
   }
 
   get option() {
-    return this.getAttribute('data-option') ?? 1;
+    return this.getAttribute('data-option') ?? '1';
   }
 
-  attributeChangedCallback(name, _oldValue, _newValue) {
+  /** @param {string} name */
+  attributeChangedCallback(name) {
     if (name !== 'data-option') {
       return;
     }
@@ -140,13 +154,17 @@ class DiffDisplay extends window.HTMLElement {
     const optControl = new DiffDisplayOptions();
     optControl.option = this.option;
     optControl.addEventListener('change', (evt) => {
-      this.option = evt.target.option;
+      this.option = /** @type {DiffDisplayOptions} */ (evt.target).option;
     });
     this.appendChild(optControl);
 
     const div = document.createElement('div');
     const obj = getDataByAddr(this.address);
 
+    /**
+     * @param {string} text
+     * @param {string} className
+     */
     const createHeaderLine = (text, className) => {
       const div = document.createElement('div');
       div.textContent = text;
@@ -154,7 +172,7 @@ class DiffDisplay extends window.HTMLElement {
       return div;
     };
 
-    const groups = obj.diff;
+    const groups = obj.diff ?? [];
     groups.forEach(([slug, subgroups]) => {
       const secondTable = document.createElement('table');
       secondTable.classList.add('diffTable');
@@ -168,7 +186,7 @@ class DiffDisplay extends window.HTMLElement {
       const tbody = document.createElement('tbody');
       secondTable.appendChild(tbody);
 
-      const diffs = formatAsm(subgroups, this.option);
+      const diffs = formatAsm(subgroups);
       for (const el of diffs) {
         tbody.appendChild(el);
       }
@@ -180,7 +198,7 @@ class DiffDisplay extends window.HTMLElement {
   }
 
   get address() {
-    return this.getAttribute('data-address');
+    return this.getAttribute('data-address') ?? ''; // required?
   }
 
   set address(value) {
@@ -188,7 +206,7 @@ class DiffDisplay extends window.HTMLElement {
   }
 
   get option() {
-    return this.getAttribute('data-option') ?? 1;
+    return this.getAttribute('data-option') ?? '1';
   }
 
   set option(value) {
