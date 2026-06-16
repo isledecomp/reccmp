@@ -2,6 +2,7 @@
 
 from collections.abc import Sequence
 from datetime import datetime
+from pathlib import Path
 import argparse
 import logging
 import os
@@ -151,7 +152,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--svg", "-S", metavar="<file>", help="Generate SVG graphic of progress"
     )
-    parser.add_argument("--svg-icon", metavar="icon", help="Icon to use in SVG (PNG)")
+    parser.add_argument(
+        "--svg-icon", metavar="icon", type=Path, help="Icon to use in SVG (PNG)"
+    )
     parser.add_argument(
         "--print-rec-addr",
         action="store_true",
@@ -285,8 +288,10 @@ def main() -> int:
             args.json, serialize_reccmp_report(report, diff_included=diff_included)
         )
 
+    target_icon = args.svg_icon or target.report_config.icon
+
     if args.html is not None:
-        write_html_report(args.html, report)
+        write_html_report(args.html, report, target_icon)
 
     implemented_funcs = function_count
 
@@ -324,7 +329,7 @@ def main() -> int:
         gen_svg(
             args.svg,
             os.path.basename(target.original_path),
-            args.svg_icon,
+            target_icon,
             implemented_funcs,
             function_count,
             total_effective_accuracy,

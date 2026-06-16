@@ -1,6 +1,7 @@
 import base64
 import enum
 from datetime import datetime
+from pathlib import Path
 from typing import Iterable, Iterator
 import logging
 from pystache import Renderer  # type: ignore[import-untyped]
@@ -51,11 +52,24 @@ def read_js_file(filename: str) -> str:
     return file_header + "".join(lines)
 
 
+def get_base64_icon(path: Path) -> str:
+    if path.suffix.lower() != ".png":
+        logging.getLogger().error("Icon must be PNG image: %s", path)
+        return ""
+
+    try:
+        with path.open("rb") as f:
+            return base64.b64encode(f.read()).decode("utf-8")
+    except FileNotFoundError:
+        logging.getLogger().error("Could not open icon: %s", path)
+        return ""
+
+
 # pylint: disable=too-many-positional-arguments
 def gen_svg(
     svg_file: str,
     name_svg: str,
-    icon: str | None,
+    icon: Path | None,
     svg_implemented_funcs: int,
     total_funcs: int,
     raw_accuracy: float,
@@ -63,8 +77,7 @@ def gen_svg(
     """Render the progress SVG badge from the bundled template."""
     icon_data = None
     if icon:
-        with open(icon, "rb") as iconfile:
-            icon_data = base64.b64encode(iconfile.read()).decode("utf-8")
+        icon_data = get_base64_icon(icon)
 
     total_statistic = raw_accuracy / total_funcs
     full_percentbar_width = 127.18422
@@ -83,7 +96,9 @@ def gen_svg(
         svgfile.write(output_data)
 
 
-def write_html_report(html_file: str, report: ReccmpStatusReport):
+def write_html_report(
+    html_file: str, report: ReccmpStatusReport, icon: Path | None = None
+):
     """Create the interactive HTML diff viewer with the given report."""
     # For the flat-file report, the component JS files must be added in a particular order
     # so that any dependencies required by a particular file have already been resolved.
@@ -114,9 +129,13 @@ def write_html_report(html_file: str, report: ReccmpStatusReport):
     # Convert the report to a JSON string to insert in the HTML template.
     report_str = serialize_reccmp_report(report, diff_included=True)
 
+    favicon = ""
+    if icon:
+        favicon = get_base64_icon(icon)
+
     output_data = Renderer().render_path(
         get_asset_file("template.html"),
-        {"report": report_str, "reccmp_js": reccmp_js},
+        {"report": report_str, "reccmp_js": reccmp_js, "favicon": favicon},
     )
 
     with open(html_file, "w", encoding="utf-8") as htmlfile:

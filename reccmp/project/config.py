@@ -63,6 +63,7 @@ class YmlReportConfig(BaseModel):
         default_factory=list,
         validation_alias=AliasChoices("ignore-variables", "ignore_variables"),
     )
+    icon: Path | None = Field(default=None)
 
     @classmethod
     def default(cls) -> "YmlReportConfig":
