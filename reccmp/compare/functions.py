@@ -13,6 +13,7 @@ from reccmp.compare.asm.replacement import (
 from reccmp.compare.db import EntityDb, ReccmpMatch
 from reccmp.compare.diff import EntityCompareResult, RawDiffOutput
 from reccmp.compare.event import ReccmpEvent, ReccmpReportProtocol
+from reccmp.cvdump.types import CvdumpTypesParser
 from reccmp.formats.exceptions import (
     InvalidVirtualAddressError,
     InvalidVirtualReadError,
@@ -81,6 +82,7 @@ class FunctionComparator:
     orig_bin: Image
     recomp_bin: Image
     report: ReccmpReportProtocol
+    types: CvdumpTypesParser
     is_32bit: bool = True
 
     def __post_init__(self):
@@ -90,6 +92,7 @@ class FunctionComparator:
                 self.db,
                 ImageId.ORIG,
                 create_bin_lookup(self.orig_bin),
+                self.types.get_name_for_offset,
             ),
             is_32bit=self.is_32bit,
         )
@@ -101,6 +104,7 @@ class FunctionComparator:
                 self.db,
                 ImageId.RECOMP,
                 create_bin_lookup(self.recomp_bin),
+                self.types.get_name_for_offset,
             ),
             is_32bit=self.is_32bit,
         )

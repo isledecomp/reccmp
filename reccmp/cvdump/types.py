@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import bisect
 import re
 import logging
 from typing import NamedTuple
@@ -499,6 +500,48 @@ class CvdumpTypesParser:
             last_extent = scalar.offset
 
         return output
+
+    def get_name_for_offset(self, type_key: CvdumpTypeKey, offset: int) -> str:
+        names = []
+
+        # Limit to arrays to start to imitate match_array_elements.
+        ok_to_run = False
+        if type_key in self.keys:
+            type_dict = self.keys[type_key]
+            ok_to_run = type_dict.get("type") == "LF_ARRAY"
+
+        if not ok_to_run:
+            if offset > 0:
+                return f"+{offset}"
+
+            return ""
+
+        # 2 levels deep (for now)
+        for _ in range(2):
+            try:
+                obj = self.get(type_key)
+            except CvdumpKeyError:
+                break
+
+            if obj.is_scalar():
+                break
+
+            assert isinstance(obj.members, list)
+            i = bisect.bisect_right(obj.members, offset, key=lambda mem: mem.offset)
+            if i == 0:
+                # Negative offset?
+                break
+
+            mem = obj.members[i - 1]
+            type_key = mem.type
+            offset -= mem.offset
+            names.append(mem.name)
+
+        if offset > 0:
+            names.append(f"+{offset}")
+
+        # TODO: precise format
+        return ".".join(names)
 
     def get_format_string(self, type_key: CvdumpTypeKey) -> str:
         members = self.get_scalars_gapless(type_key)

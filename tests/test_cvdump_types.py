@@ -513,6 +513,21 @@ def test_members_recursive(parser: CvdumpTypesParser):
     ]
 
 
+@pytest.mark.xfail(reason="Not enabled (yet) for entities that are not arrays.")
+def test_offset_names_for_struct(parser: CvdumpTypesParser):
+    """Make sure that we unwrap the dependency tree correctly."""
+    # MxVariable field list
+    assert parser.get_name_for_offset(TK(0x22D4), 0) == "vftable"
+    assert parser.get_name_for_offset(TK(0x22D4), 4) == "m_key.vftable"
+    assert parser.get_name_for_offset(TK(0x22D4), 8) == "m_key.m_id"
+    assert parser.get_name_for_offset(TK(0x22D4), 12) == "m_key.m_data"
+    assert parser.get_name_for_offset(TK(0x22D4), 16) == "m_key.m_length"
+    assert parser.get_name_for_offset(TK(0x22D4), 20) == "m_value.vftable"
+    assert parser.get_name_for_offset(TK(0x22D4), 24) == "m_value.m_id"
+    assert parser.get_name_for_offset(TK(0x22D4), 28) == "m_value.m_data"
+    assert parser.get_name_for_offset(TK(0x22D4), 32) == "m_value.m_length"
+
+
 def test_struct(parser: CvdumpTypesParser):
     """Basic test for converting type into struct.unpack format string."""
     # MxCore: vftable and uint32. The vftable pointer is read as uint32.
