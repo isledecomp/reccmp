@@ -167,7 +167,6 @@ class Compare:
 
         match_crt_startup(self._db, self.orig_bin, self.recomp_bin)
 
-        match_array_elements(self._db, self.types)
         # Detect floats first to eliminate potential overlap with string data
         for img_id, binfile in (
             (ImageId.ORIG, self.orig_bin),
