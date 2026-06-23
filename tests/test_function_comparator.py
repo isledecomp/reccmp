@@ -597,7 +597,9 @@ def test_compare_without_distinct_size(
     recomp_bin = RawImage.from_memory(recomp_code)
 
     # TODO: Remove types dep?
-    comp = FunctionComparator(db, lines_db, orig_bin, recomp_bin, report, CvdumpTypesParser())
+    comp = FunctionComparator(
+        db, lines_db, orig_bin, recomp_bin, report, CvdumpTypesParser()
+    )
     (entity,) = list(db.get_functions())
     diffreport = comp.compare_function(entity)
 
@@ -635,7 +637,9 @@ def test_compare_with_distinct_size(
     recomp_bin = RawImage.from_memory(recomp_code)
 
     # TODO: Remove types dep?
-    comp = FunctionComparator(db, lines_db, orig_bin, recomp_bin, report, CvdumpTypesParser())
+    comp = FunctionComparator(
+        db, lines_db, orig_bin, recomp_bin, report, CvdumpTypesParser()
+    )
     (entity,) = list(db.get_functions())
     diffreport = comp.compare_function(entity)
 
