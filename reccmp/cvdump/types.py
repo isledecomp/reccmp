@@ -535,13 +535,15 @@ class CvdumpTypesParser:
             mem = obj.members[i - 1]
             type_key = mem.type
             offset -= mem.offset
-            names.append(mem.name)
+            if mem.name.startswith("["):
+                names.append(mem.name)
+            else:
+                names.append(f".{mem.name}")
 
         if offset > 0:
             names.append(f"+{offset}")
 
-        # TODO: precise format
-        return ".".join(names)
+        return "".join(names)
 
     def get_format_string(self, type_key: CvdumpTypeKey) -> str:
         members = self.get_scalars_gapless(type_key)

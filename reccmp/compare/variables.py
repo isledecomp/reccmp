@@ -203,19 +203,24 @@ def pointer_display(
     entity = db.get(img, addr, exact=False)
 
     if entity is not None:
-        name = entity.best_name()
-        offset_name = ""
+        name = None
 
         base_addr = entity.addr(img)
         assert isinstance(base_addr, int)
 
         offset = addr - base_addr
-        type_key = entity.get("type_key")
-        if type_key:
-            offset_name = types.get_name_for_offset(CvdumpTypeKey(type_key), offset)
+        if offset == 0:
+            name = entity.match_name()
+        else:
+            type_key = entity.get("data_type")
+            if type_key:
+                suffix = types.get_name_for_offset(CvdumpTypeKey(type_key), offset)
+                name = entity.match_name(suffix)
+            else:
+                name = entity.match_name(f"+{offset}")
 
         if name:
-            return f"Pointer to {name}{offset_name}"
+            return f"Pointer to {name}"
 
     # This variable did not match if we do not have
     # the pointer target in our DB.

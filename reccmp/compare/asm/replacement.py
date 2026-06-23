@@ -51,9 +51,9 @@ def create_name_lookup(
         type_key = entity.get("data_type")
         if type_key:
             suffix = offset_name(CvdumpTypeKey(type_key), offset)
-            return f"{entity.name}{suffix} (OFFSET)"
+            return entity.match_name(suffix)
 
-        return f"{entity.name}+{offset} (OFFSET)"
+        return entity.match_name(f"+{offset}")
 
     def indirect_lookup(addr: int) -> str | None:
         """Same as regular lookup but aware of the fact that the address is a pointer.

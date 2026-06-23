@@ -119,7 +119,7 @@ class ReccmpEntity:
 
         return None
 
-    def match_name(self) -> str | None:
+    def match_name(self, suffix: str = "") -> str | None:
         """Combination of the name and compare type.
         Intended for name substitution in the diff. If there is a diff,
         it will be more obvious what this symbol indicates."""
@@ -127,14 +127,11 @@ class ReccmpEntity:
         if best_name is None:
             return None
 
+        if suffix:
+            return f"{best_name}{suffix} (OFFSET)"
+
         ctype = EntityTypeLookup.get(self.entity_type or -1, "UNK")
         return f"{best_name} ({ctype})"
-
-    def offset_name(self, ofs: int) -> str | None:
-        if self.name is None:
-            return None
-
-        return f"{self.name}+{ofs} (OFFSET)"
 
 
 class ReccmpMatch(ReccmpEntity):
