@@ -51,7 +51,7 @@ def create_analysis_strings(
             if addr in binfile.relocations:
                 continue
 
-            if is_likely_latin1(string) and not db.used(img_id, addr):
+            if is_likely_latin1(string) and not db.occupied(img_id, addr):
                 batch.set(
                     img_id,
                     addr,
@@ -67,7 +67,7 @@ def create_analysis_floats(db: EntityDb, img_id: ImageId, binfile: PEImage):
     deduped like strings."""
     with db.batch() as batch:
         for addr, size, float_value in find_float_consts(binfile):
-            if not db.used(img_id, addr):
+            if not db.occupied(img_id, addr):
                 batch.set(
                     img_id,
                     addr,

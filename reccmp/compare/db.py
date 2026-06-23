@@ -496,6 +496,20 @@ class EntityDb:
         assert img in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
         return addr in self._addr_set[img]
 
+    def occupied(self, img: ImageId, addr: int) -> bool:
+        if self.used(img, addr):
+            return True
+
+        entity = self.get(img, addr, exact=False)
+        if entity is None:
+            return False
+
+        base_addr = entity.addr(img)
+        assert isinstance(base_addr, int)
+
+        size = entity.any_size(img)
+        return addr - base_addr < size
+
     def is_match(self, orig_addr: int, recomp_addr: int) -> bool:
         return self._matches[ImageId.ORIG].get(orig_addr) == recomp_addr
 
