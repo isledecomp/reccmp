@@ -41,6 +41,7 @@ from .analyze import (
     create_analysis_floats,
     create_analysis_strings,
     create_analysis_vtordisps,
+    create_crt_functions,
     create_seh_entities,
     complete_partial_floats,
     complete_partial_strings,
@@ -165,8 +166,6 @@ class Compare:
         match_variables(self._db, self.report)
         match_lines(self._db, self._lines_db, self.report)
 
-        match_crt_startup(self._db, self.orig_bin, self.recomp_bin)
-
         # Detect floats first to eliminate potential overlap with string data
         for img_id, binfile in (
             (ImageId.ORIG, self.orig_bin),
@@ -177,6 +176,7 @@ class Compare:
             create_seh_entities(self._db, img_id, binfile)
             create_thunks(self._db, img_id, binfile)
             create_analysis_vtordisps(self._db, img_id, binfile)
+            create_crt_functions(self._db, img_id, binfile)
             import_sections(self._db, img_id, binfile)
 
         match_imports(self._db)
@@ -185,6 +185,7 @@ class Compare:
         for img_id in (ImageId.ORIG, ImageId.RECOMP):
             set_max_size(self._db, img_id)
 
+        match_crt_startup(self._db, self.orig_bin, self.recomp_bin)
         # Creates new offset entities within the footprint of each matched
         # array variable. If the array is larger (bytes) in recomp than in orig,
         # stop short before overwriting any existing orig entities.

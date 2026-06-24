@@ -7,7 +7,6 @@ from functools import cache
 from reccmp.analysis.crt_startup import (
     detect_crt_startup_arrays,
     create_crt_matches,
-    get_crt_function_name,
 )
 from reccmp.cvdump.demangler import (
     get_function_arg_string,
@@ -225,32 +224,5 @@ def match_crt_startup(db: EntityDb, orig_bin: PEImage, recomp_bin: PEImage):
             matches.extend(create_crt_matches(orig_array, recomp_array))
 
     with db.batch() as batch:
-        for image_id, crt_arrays in (
-            (ImageId.ORIG, crt_orig),
-            (ImageId.RECOMP, crt_recomp),
-        ):
-            for array_type, array in crt_arrays:
-                if array is None:
-                    continue
-
-                name = get_crt_function_name(array_type)
-
-                for addr in array.functions.keys():
-                    batch.set(
-                        image_id,
-                        addr,
-                        type=EntityType.FUNCTION,
-                        name=name,
-                    )
-
-                    if addr in array.thunks:
-                        thunk_addr = array.thunks[addr]
-                        batch.set(
-                            image_id,
-                            thunk_addr,
-                            type=EntityType.FUNCTION,
-                            name=name,
-                        )
-
         for orig_addr, recomp_addr in matches:
             batch.match(orig_addr, recomp_addr)
