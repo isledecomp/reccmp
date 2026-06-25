@@ -493,10 +493,12 @@ class EntityDb:
                 yield match
 
     def used(self, img: ImageId, addr: int) -> bool:
+        """Is there an entity at this address?"""
         assert img in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
         return addr in self._addr_set[img]
 
     def occupied(self, img: ImageId, addr: int) -> bool:
+        """Is there an entity with a size that covers this address?"""
         if self.used(img, addr):
             return True
 

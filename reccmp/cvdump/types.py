@@ -44,6 +44,29 @@ class FieldListItem(NamedTuple):
     type: CvdumpTypeKey
 
 
+def get_best_member_item(
+    members: list[FieldListItem], offset: int
+) -> FieldListItem | None:
+    """Find the member that equals or is closest to our offset.
+    Unions and bitfields may have multiple candidates with the same offset.
+    In that case, use the first one."""
+    if not members:
+        return None
+
+    i = bisect.bisect_left(members, offset, key=lambda mem: mem.offset)
+    j = bisect.bisect_right(members, offset, key=lambda mem: mem.offset)
+
+    # If the indices are equal, our offset is between two field list items.
+    # Use one index earlier because it contains the offset.
+    if i == j:
+        i = max(0, i - 1)
+
+    for mem in members[i:j]:
+        return mem
+
+    return None
+
+
 class EnumItem(NamedTuple):
     name: str
     value: int
@@ -504,7 +527,8 @@ class CvdumpTypesParser:
     def get_name_for_offset(self, type_key: CvdumpTypeKey, offset: int) -> str:
         names = []
 
-        # Limit to arrays to start to imitate match_array_elements.
+        # Limited to arrays for now.
+        # The goal is to imitate the effect of match_array_elements.
         ok_to_run = False
         if type_key in self.keys:
             type_dict = self.keys[type_key]
@@ -516,7 +540,7 @@ class CvdumpTypesParser:
 
             return ""
 
-        # 2 levels deep (for now)
+        # 2 levels max depth (for now)
         for _ in range(2):
             try:
                 obj = self.get(type_key)
@@ -527,12 +551,11 @@ class CvdumpTypesParser:
                 break
 
             assert isinstance(obj.members, list)
-            i = bisect.bisect_right(obj.members, offset, key=lambda mem: mem.offset)
-            if i == 0:
+            mem = get_best_member_item(obj.members, offset)
+            if mem is None:
                 # Negative offset?
                 break
 
-            mem = obj.members[i - 1]
             type_key = mem.type
             offset -= mem.offset
             if mem.name.startswith("["):

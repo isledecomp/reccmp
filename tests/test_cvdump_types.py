@@ -515,7 +515,6 @@ def test_members_recursive(parser: CvdumpTypesParser):
 
 @pytest.mark.xfail(reason="Not enabled (yet) for entities that are not arrays.")
 def test_offset_names_for_struct(parser: CvdumpTypesParser):
-    """Make sure that we unwrap the dependency tree correctly."""
     # MxVariable field list
     assert parser.get_name_for_offset(TK(0x22D4), 0) == "vftable"
     assert parser.get_name_for_offset(TK(0x22D4), 4) == "m_key.vftable"
@@ -526,6 +525,22 @@ def test_offset_names_for_struct(parser: CvdumpTypesParser):
     assert parser.get_name_for_offset(TK(0x22D4), 24) == "m_value.m_id"
     assert parser.get_name_for_offset(TK(0x22D4), 28) == "m_value.m_data"
     assert parser.get_name_for_offset(TK(0x22D4), 32) == "m_value.m_length"
+
+    # Sub-members
+    assert parser.get_name_for_offset(TK(0x22D4), 1) == "vftable+1"
+    assert parser.get_name_for_offset(TK(0x22D4), 26) == "m_value.m_id+2"
+
+
+def test_offset_names_for_array(parser: CvdumpTypesParser):
+    assert parser.get_name_for_offset(TK(0x103B), 0) == "[0]"
+    assert parser.get_name_for_offset(TK(0x103B), 4) == "[1]"
+    assert parser.get_name_for_offset(TK(0x103B), 8) == "[2]"
+    assert parser.get_name_for_offset(TK(0x103B), 12) == "[3]"
+
+    # Sub-members
+    assert parser.get_name_for_offset(TK(0x103B), 1) == "[0]+1"
+    assert parser.get_name_for_offset(TK(0x103B), 2) == "[0]+2"
+    assert parser.get_name_for_offset(TK(0x103B), 3) == "[0]+3"
 
 
 def test_struct(parser: CvdumpTypesParser):
@@ -1230,3 +1245,41 @@ def test_bitfields(empty_parser: CvdumpTypesParser):
     assert empty_parser.keys[TK(0x1003)]["bit_start"] == 6
     assert empty_parser.keys[TK(0x1003)]["bit_count"] == 3
     assert empty_parser.keys[TK(0x1003)]["bit_type"] == CVInfoTypeEnum.T_UINT4
+
+
+def test_match_array_of_struct_bitfield(empty_parser: CvdumpTypesParser):
+    """Verify comparing an array of struct bitfields uses the underlying type of the bitfield"""
+    empty_parser.keys[TK(0x1000)] = {
+        "type": "LF_ARRAY",
+        "array_type": TK(0x1001),
+        "size": 4 * 8,
+    }
+    empty_parser.keys[TK(0x1001)] = {
+        "type": "LF_STRUCTURE",
+        "field_list_type": TK(0x1002),
+        "size": 8,
+    }
+    empty_parser.keys[TK(0x1002)] = {
+        "type": "LF_FIELDLIST",
+        "members": [
+            FieldListItem(offset=0, name="v0", type=CVInfoTypeEnum.T_UINT4),
+            FieldListItem(offset=4, name="bit0", type=TK(0x1003)),
+            FieldListItem(offset=4, name="bit1", type=TK(0x1004)),
+        ],
+    }
+    empty_parser.keys[TK(0x1003)] = {
+        "type": "LF_BITFIELD",
+        "bit_start": 0,
+        "bit_count": 1,
+        "bit_type": CVInfoTypeEnum.T_UCHAR,
+    }
+    empty_parser.keys[TK(0x1004)] = {
+        "type": "LF_BITFIELD",
+        "bit_start": 1,
+        "bit_count": 1,
+        "bit_type": CVInfoTypeEnum.T_UCHAR,
+    }
+
+    assert empty_parser.get_name_for_offset(TK(0x1000), 0) == "[0].v0"
+    assert empty_parser.get_name_for_offset(TK(0x1000), 0x18) == "[3].v0"
+    assert empty_parser.get_name_for_offset(TK(0x1000), 0x1C) == "[3].bit0"

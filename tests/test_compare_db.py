@@ -341,6 +341,41 @@ def test_generic_used_function(db: EntityDb):
     assert db.used(ImageId.RECOMP, 100) is True
 
 
+@pytest.mark.parametrize("image_id", ImageId)
+def test_generic_occupied_function(db: EntityDb, image_id: ImageId):
+    """occupied() checks both the given address and its footprint."""
+    assert db.occupied(image_id, 100) is False
+
+    with db.batch() as batch:
+        batch.set(image_id, 100, name="Test")
+
+    assert db.occupied(image_id, 100) is True
+    assert db.occupied(image_id, 105) is False
+    assert db.occupied(image_id, 110) is False
+
+    with db.batch() as batch:
+        batch.set(image_id, 100, size=8)
+
+    assert db.occupied(image_id, 100) is True
+    assert db.occupied(image_id, 105) is True
+    assert db.occupied(image_id, 110) is False
+
+
+def test_occupied_use_any_size(db: EntityDb):
+    """occupied() will use any size value in either address space."""
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, name="Test")
+        batch.set(ImageId.RECOMP, 100, size=8)
+        batch.match(100, 100)
+
+    assert db.occupied(ImageId.ORIG, 100) is True
+    assert db.occupied(ImageId.RECOMP, 100) is True
+    assert db.occupied(ImageId.ORIG, 105) is True
+    assert db.occupied(ImageId.RECOMP, 105) is True
+    assert db.occupied(ImageId.ORIG, 110) is False
+    assert db.occupied(ImageId.RECOMP, 110) is False
+
+
 def test_generic_used_invalid_id(db: EntityDb):
     """Should fail if the image id is outside the enum"""
     with pytest.raises(AssertionError):
