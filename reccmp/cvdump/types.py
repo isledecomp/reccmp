@@ -105,13 +105,29 @@ class ScalarType(NamedTuple):
 
 class TypeInfo(NamedTuple):
     key: CvdumpTypeKey
+    """The unique identifier from the PDB."""
     size: int | None
+    """Total size of this type in bytes."""
     name: str | None = None
+    """Optional name for this complex type."""
     members: list[FieldListItem] | None = None
+    """Struct only: List of members in this struct or class."""
+    array_type: CvdumpTypeKey | None = None
+    """Array only: Underlying type of each array element."""
+    array_length: int | None = None
+    """Array only: Count of elements in the array."""
+    array_element_size: int | None = None
+    """Array only: Size in bytes of each array element."""
+
+    def is_struct(self) -> bool:
+        return self.members is not None
+
+    def is_array(self) -> bool:
+        return self.array_type is not None
 
     def is_scalar(self) -> bool:
         # TODO: distinction between a class with zero members and no vtable?
-        return self.members is None
+        return self.members is None and self.array_type is None
 
 
 def member_list_to_struct_string(members: list[ScalarType]) -> str:
@@ -333,33 +349,6 @@ class CvdumpTypesParser:
 
         return sorted(members, key=lambda m: m.offset)
 
-    def _mock_array_members(self, type_obj: CvdumpParsedType) -> list[FieldListItem]:
-        """LF_ARRAY elements provide the element type and the total size.
-        We want the list of "members" as if this was a struct."""
-
-        if type_obj.get("type") != "LF_ARRAY":
-            raise CvdumpTypeError("Type is not an LF_ARRAY")
-
-        array_type = type_obj.get("array_type")
-        if array_type is None:
-            raise CvdumpIntegrityError("No array element type")
-
-        array_element_size = self.get(array_type).size
-        assert (
-            array_element_size is not None
-        ), "Encountered an array whose type has no size"
-
-        n_elements = type_obj["size"] // array_element_size
-
-        return [
-            FieldListItem(
-                offset=i * array_element_size,
-                type=array_type,
-                name=f"[{i}]",
-            )
-            for i in range(n_elements)
-        ]
-
     def get(self, type_key: CvdumpTypeKey) -> TypeInfo:
         """Convert our dictionary values read from the cvdump output
         into a consistent format for the given type."""
@@ -413,23 +402,39 @@ class CvdumpTypesParser:
 
             return self.get(underlying_type)
 
+        members = None
+        array_type = None
+        array_length = None
+        array_element_size = None
+
         # Else it is not a forward reference, so build out the object here.
         if obj_type == "LF_ARRAY":
-            members = self._mock_array_members(obj)
+            array_type = obj.get("array_type")
+            if array_type is None:
+                raise CvdumpIntegrityError("No array element type")
+
+            array_element_size = self.get(array_type).size
+            assert (
+                array_element_size is not None
+            ), "Encountered an array whose type has no size"
+
+            assert "size" in obj, "Cannot reconstruct array without total size"
+            array_length = obj["size"] // array_element_size
+
         elif obj_type in ("LF_CLASS", "LF_STRUCTURE", "LF_UNION", "LF_FIELDLIST"):
             members = self._get_field_list(obj)
         elif obj_type in ("LF_BITFIELD",):
             res = self.get(obj["bit_type"])
             return res
-        else:
-            # e.g. obj_type == "LF_PROCEDURE"
-            members = None
 
         return TypeInfo(
             key=type_key,
             size=obj.get("size"),
             name=obj.get("name"),
             members=members,
+            array_type=array_type,
+            array_length=array_length,
+            array_element_size=array_element_size,
         )
 
     def get_by_name(self, name: str) -> TypeInfo:
@@ -451,6 +456,23 @@ class CvdumpTypesParser:
                     type=cvinfo,
                     name=None,
                 )
+            ]
+
+        if obj.is_array():
+            assert obj.array_type is not None
+            assert obj.array_length is not None
+            assert obj.array_element_size is not None
+
+            array_element_members = self.get_scalars(obj.array_type)
+
+            return [
+                ScalarType(
+                    offset=i * obj.array_element_size + cm.offset,
+                    type=cm.type,
+                    name=join_member_names(f"[{i}]", cm.name),
+                )
+                for i in range(obj.array_length)
+                for cm in array_element_members
             ]
 
         # mypy?
@@ -550,17 +572,24 @@ class CvdumpTypesParser:
             if obj.is_scalar():
                 break
 
-            assert isinstance(obj.members, list)
-            mem = get_best_member_item(obj.members, offset)
-            if mem is None:
-                # Negative offset?
-                break
+            if obj.is_array():
+                assert obj.array_type is not None
+                assert obj.array_element_size is not None
 
-            type_key = mem.type
-            offset -= mem.offset
-            if mem.name.startswith("["):
-                names.append(mem.name)
+                array_idx = offset // obj.array_element_size
+                type_key = obj.array_type
+                offset -= array_idx * obj.array_element_size
+                names.append(f"[{array_idx}]")
+
             else:
+                assert isinstance(obj.members, list)
+                mem = get_best_member_item(obj.members, offset)
+                if mem is None:
+                    # Negative offset?
+                    break
+
+                type_key = mem.type
+                offset -= mem.offset
                 names.append(f".{mem.name}")
 
         if offset > 0:

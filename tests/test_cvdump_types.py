@@ -543,6 +543,14 @@ def test_offset_names_for_array(parser: CvdumpTypesParser):
     assert parser.get_name_for_offset(TK(0x103B), 3) == "[0]+3"
 
 
+def test_offset_name_for_array_of_structs(parser: CvdumpTypesParser):
+    # ROIColorAlias[22], element size 20, total size 440.
+    assert parser.get_name_for_offset(TK(0x19B1), 0) == "[0].m_name"
+    assert parser.get_name_for_offset(TK(0x19B1), 4) == "[0].m_red"
+    assert parser.get_name_for_offset(TK(0x19B1), 20) == "[1].m_name"
+    assert parser.get_name_for_offset(TK(0x19B1), 436) == "[21].m_unk0x10"
+
+
 def test_struct(parser: CvdumpTypesParser):
     """Basic test for converting type into struct.unpack format string."""
     # MxCore: vftable and uint32. The vftable pointer is read as uint32.
@@ -633,6 +641,14 @@ def test_array(parser: CvdumpTypesParser):
         (8, "[2]", CVInfoTypeEnum.T_REAL32),
         (12, "[3]", CVInfoTypeEnum.T_REAL32),
     ]
+
+    # ROIColorAlias[22]
+    color_alias = simplify_scalars(parser.get_scalars(TK(0x19B1)))
+    assert len(color_alias) == 5 * 22  # 5 struct members, 22 elements
+    assert (0, "[0].m_name", CVInfoTypeEnum.T_32PRCHAR) in color_alias
+    assert (4, "[0].m_red", CVInfoTypeEnum.T_INT4) in color_alias
+    assert (20, "[1].m_name", CVInfoTypeEnum.T_32PRCHAR) in color_alias
+    assert (436, "[21].m_unk0x10", CVInfoTypeEnum.T_INT4) in color_alias
 
 
 def test_2d_array(parser: CvdumpTypesParser):
