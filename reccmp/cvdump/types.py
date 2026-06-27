@@ -547,14 +547,13 @@ class CvdumpTypesParser:
         return output
 
     def get_name_for_offset(self, type_key: CvdumpTypeKey, offset: int) -> str:
-        names = []
-
-        # Limited to arrays for now.
-        # The goal is to imitate the effect of match_array_elements.
+        """Limited to arrays for now."""
         if type_key in self.keys:
             type_dict = self.keys[type_key]
             if type_dict.get("type") != "LF_ARRAY":
                 return f"+{offset}" if offset > 0 else ""
+
+        names = []
 
         # 2 levels max depth (for now)
         for _ in range(2):
