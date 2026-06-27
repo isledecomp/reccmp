@@ -551,16 +551,10 @@ class CvdumpTypesParser:
 
         # Limited to arrays for now.
         # The goal is to imitate the effect of match_array_elements.
-        ok_to_run = False
         if type_key in self.keys:
             type_dict = self.keys[type_key]
-            ok_to_run = type_dict.get("type") == "LF_ARRAY"
-
-        if not ok_to_run:
-            if offset > 0:
-                return f"+{offset}"
-
-            return ""
+            if type_dict.get("type") != "LF_ARRAY":
+                return f"+{offset}" if offset > 0 else ""
 
         # 2 levels max depth (for now)
         for _ in range(2):
