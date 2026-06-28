@@ -492,14 +492,14 @@ class EntityDb:
                 assert isinstance(match, ReccmpMatch)
                 yield match
 
-    def used(self, img: ImageId, addr: int) -> bool:
+    def exists(self, img: ImageId, addr: int) -> bool:
         """Is there an entity at this address?"""
         assert img in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
         return addr in self._addr_set[img]
 
-    def occupied(self, img: ImageId, addr: int) -> bool:
+    def intersects(self, img: ImageId, addr: int) -> bool:
         """Is there an entity with a size that covers this address?"""
-        if self.used(img, addr):
+        if self.exists(img, addr):
             return True
 
         entity = self.get(img, addr, exact=False)
