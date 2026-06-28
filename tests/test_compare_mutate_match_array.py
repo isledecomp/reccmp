@@ -1,6 +1,4 @@
-"""Tests for the `match_array_elements` function from the reccmp compare.
-For matched variable array entities, create and match new entities for each array element.
-"""
+"""Tests for offset name subtitution that imitate the behavior of the removed `match_array_elements` function."""
 
 from functools import partial
 import pytest
@@ -23,6 +21,7 @@ def fixture_types() -> CvdumpTypesParser:
 def name_for_address(
     db: EntityDb, types_db: CvdumpTypesParser, image_id: ImageId, addr: int
 ) -> str:
+    """It would be better to test the real code path instead. GH #461"""
     entity = db.get(image_id, addr, exact=False)
     assert entity is not None
     base_addr = entity.addr(image_id)

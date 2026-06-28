@@ -547,7 +547,7 @@ class CvdumpTypesParser:
         return output
 
     def get_name_for_offset(self, type_key: CvdumpTypeKey, offset: int) -> str:
-        """Limited to arrays for now."""
+        """Limited to arrays for now. Enable to close GH #462."""
         if type_key in self.keys:
             type_dict = self.keys[type_key]
             if type_dict.get("type") != "LF_ARRAY":

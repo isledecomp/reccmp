@@ -60,7 +60,7 @@ def compare_functions(
     recomp_bin.is_relocated_addr = is_relocated_addr or Mock(return_value=False)
     recomp_bin.is_debug = Mock(return_value=False)
 
-    # TODO: Remove types dep?
+    # TODO: Refactor dependencies. GH #461
     comp = FunctionComparator(
         db, lines_db, orig_bin, recomp_bin, report, CvdumpTypesParser()
     )
@@ -596,7 +596,7 @@ def test_compare_without_distinct_size(
     orig_bin = RawImage.from_memory(orig_code)
     recomp_bin = RawImage.from_memory(recomp_code)
 
-    # TODO: Remove types dep?
+    # TODO: Refactor dependencies. GH #461
     comp = FunctionComparator(
         db, lines_db, orig_bin, recomp_bin, report, CvdumpTypesParser()
     )
@@ -636,7 +636,7 @@ def test_compare_with_distinct_size(
     orig_bin = RawImage.from_memory(orig_code)
     recomp_bin = RawImage.from_memory(recomp_code)
 
-    # TODO: Remove types dep?
+    # TODO: Refactor dependencies. GH #461
     comp = FunctionComparator(
         db, lines_db, orig_bin, recomp_bin, report, CvdumpTypesParser()
     )
