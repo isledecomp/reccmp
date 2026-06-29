@@ -57,7 +57,6 @@ from .ingest import (
     load_data_sources,
 )
 from .mutate import (
-    match_array_elements,
     name_thunks,
     unique_names_for_overloaded_functions,
     match_crt_startup,
@@ -127,7 +126,12 @@ class Compare:
         self.types = CvdumpTypesParser()
 
         self.function_comparator = FunctionComparator(
-            self._db, self._lines_db, self.orig_bin, self.recomp_bin, self.report
+            self._db,
+            self._lines_db,
+            self.orig_bin,
+            self.recomp_bin,
+            self.report,
+            self.types,
         )
 
     def run(self):
@@ -186,11 +190,6 @@ class Compare:
             set_max_size(self._db, img_id)
 
         match_crt_startup(self._db, self.orig_bin, self.recomp_bin)
-        # Creates new offset entities within the footprint of each matched
-        # array variable. If the array is larger (bytes) in recomp than in orig,
-        # stop short before overwriting any existing orig entities.
-        match_array_elements(self._db, self.types)
-
         check_vtables(self._db, self.orig_bin)
         match_ref(self._db, self.report)
         unique_names_for_overloaded_functions(self._db)

@@ -193,15 +193,34 @@ def create_comparison_item(
     )
 
 
-def pointer_display(db: EntityDb, img: ImageId, addr: int) -> str:
+def pointer_display(
+    db: EntityDb, types: CvdumpTypesParser, img: ImageId, addr: int
+) -> str:
     """Helper to streamline pointer textual display."""
     if addr == 0:
         return "nullptr"
 
-    ptr_match = db.get(img, addr)
+    entity = db.get(img, addr, exact=False)
 
-    if ptr_match is not None:
-        return f"Pointer to {ptr_match.match_name()}"
+    if entity is not None:
+        name = None
+
+        base_addr = entity.addr(img)
+        assert isinstance(base_addr, int)
+
+        offset = addr - base_addr
+        if offset == 0:
+            name = entity.match_name()
+        else:
+            type_key = entity.get("data_type")
+            if type_key:
+                suffix = types.get_name_for_offset(CvdumpTypeKey(type_key), offset)
+                name = entity.match_name(suffix)
+            else:
+                name = entity.match_name(f"+{offset}")
+
+        if name:
+            return f"Pointer to {name}"
 
     # This variable did not match if we do not have
     # the pointer target in our DB.
@@ -223,6 +242,29 @@ class VariableComparator:
             return True
 
         return self.db.is_match(orig_addr, recomp_addr)
+
+    def is_pointer_match_to_offset(self, orig_addr: int, recomp_addr: int) -> bool:
+        """Check whether these pointers point at the same offset of the same matched entity."""
+        orig_ent = self.db.get(ImageId.ORIG, orig_addr, exact=False)
+        recomp_ent = self.db.get(ImageId.RECOMP, recomp_addr, exact=False)
+
+        if orig_ent is None or recomp_ent is None:
+            return False
+
+        # Are both entities matched?
+        if not isinstance(orig_ent, ReccmpMatch) or not isinstance(
+            recomp_ent, ReccmpMatch
+        ):
+            return False
+
+        # Are they matched to each other?
+        if orig_ent.orig_addr != recomp_ent.orig_addr:
+            return False
+
+        # Are we at the same offset?
+        return (orig_addr - orig_ent.orig_addr) == (
+            recomp_addr - recomp_ent.recomp_addr
+        )
 
     def compare_variable(self, var: ReccmpMatch) -> ComparisonItem:
         # pylint: disable=too-many-locals
@@ -302,8 +344,13 @@ class VariableComparator:
             if member.pointer:
                 match = self.is_pointer_match(orig_val, recomp_val)
 
-                value_a = pointer_display(self.db, ImageId.ORIG, orig_val)
-                value_b = pointer_display(self.db, ImageId.RECOMP, recomp_val)
+                if not match:
+                    match = self.is_pointer_match_to_offset(orig_val, recomp_val)
+
+                value_a = pointer_display(self.db, self.types, ImageId.ORIG, orig_val)
+                value_b = pointer_display(
+                    self.db, self.types, ImageId.RECOMP, recomp_val
+                )
             else:
                 match = orig_val == recomp_val
                 value_a = str(orig_val)
