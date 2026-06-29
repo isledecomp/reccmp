@@ -46,17 +46,7 @@ def create_valid_addr_lookup(
         if addr > bin_file.imagebase and bin_file.is_relocated_addr(addr):
             return True
 
-        # Check whether the address points to valid data
-        entity = db.get(image_id, addr, exact=False)
-        if entity is None:
-            return False
-        base_addr = entity.addr(image_id)
-        if base_addr is None:
-            # should never happen
-            return False
-
-        address_is_contained_in_entity = addr <= base_addr + entity.any_size(image_id)
-        return address_is_contained_in_entity
+        return db.intersects(image_id, addr)
 
     return lookup
 

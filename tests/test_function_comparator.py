@@ -8,6 +8,7 @@ from reccmp.compare.event import ReccmpEvent, ReccmpReportProtocol
 from reccmp.compare.functions import (
     FunctionComparator,
     EntityCompareResult,
+    create_valid_addr_lookup,
 )
 from reccmp.compare.lines import LinesDb
 from reccmp.types import EntityType, ImageId
@@ -658,3 +659,22 @@ def test_compare_with_distinct_size(
     assert diffreport.diff.recomp_inst == [
         ("0x0", "nop "),
     ]
+
+
+def test_addr_test_entity_range_check_exclusive(db: EntityDb):
+    """If there is no relocation table, check for an existing entity
+    that intersects value X to decide whether X is an address or a number.
+    This check should be inclusive at the entity's base address and exclusive
+    at its base address plus the size. GH #464"""
+    orig_bin = Mock(spec=[])
+    orig_bin.imagebase = 0
+    orig_bin.is_relocated_addr = Mock(return_value=False)
+
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 0x1000, type=EntityType.DATA, name="test", size=2)
+
+    addr_test = create_valid_addr_lookup(db, ImageId.ORIG, orig_bin)
+
+    assert addr_test(0x1000) is True
+    assert addr_test(0x1001) is True
+    assert addr_test(0x1002) is False
