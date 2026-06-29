@@ -2,6 +2,7 @@ import enum
 import re
 import struct
 from dataclasses import dataclass
+from functools import partial
 from typing import Callable, Iterator
 from typing_extensions import Buffer
 from reccmp.compare.asm.const import JUMP_MNEMONICS
@@ -140,10 +141,7 @@ def get_function_fingerprint(
     size = get_function_sample_size(db, image_id, addr)
     raw = binfile.read(addr, size)
 
-    def entity_exists(test_addr: int) -> bool:
-        return db.get(image_id, test_addr, exact=True) is not None
-
-    collector = UsedAddressCollector(entity_exists)
+    collector = UsedAddressCollector(partial(db.exists, image_id))
     collector.analyze(raw, addr)
 
     normalized_addrs = []
@@ -246,6 +244,25 @@ def detect_crt_startup_arrays(
             )
         else:
             yield (array_type, None)
+
+
+def read_crt_arrays(
+    db: EntityDb, image_id: ImageId, binfile: PEImage
+) -> Iterator[tuple[str, list[int]]]:
+    labels = find_crt_startup_labels(db, image_id)
+    for array_type, (label_start, label_end) in _CRT_STARTUP_ARRAY_BOUNDARIES.items():
+        if label_start in labels and label_end in labels:
+            array_range = range(labels[label_start], labels[label_end])
+            base_name = get_crt_function_name(array_type)
+            addrs = []
+
+            for addr in read_crt_array(binfile, array_range):
+                addrs.append(addr)
+                was_thunk, real_addr = unwrap_jump(binfile, addr)
+                if was_thunk:
+                    addrs.append(real_addr)
+
+            yield (base_name, addrs)
 
 
 def create_crt_matches(
