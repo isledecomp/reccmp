@@ -51,7 +51,7 @@ def create_analysis_strings(
             if addr in binfile.relocations:
                 continue
 
-            if is_likely_latin1(string) and not db.used(img_id, addr):
+            if is_likely_latin1(string) and not db.intersects(img_id, addr):
                 batch.set(
                     img_id,
                     addr,
@@ -67,7 +67,7 @@ def create_analysis_floats(db: EntityDb, img_id: ImageId, binfile: PEImage):
     deduped like strings."""
     with db.batch() as batch:
         for addr, size, float_value in find_float_consts(binfile):
-            if not db.used(img_id, addr):
+            if not db.intersects(img_id, addr):
                 batch.set(
                     img_id,
                     addr,
@@ -145,7 +145,7 @@ def create_thunks(db: EntityDb, img_id: ImageId, binfile: PEImage):
     These are the result of an incremental build."""
     with db.batch() as batch:
         for thunk_addr, func_addr in binfile.thunks:
-            if not db.used(img_id, thunk_addr):
+            if not db.exists(img_id, thunk_addr):
                 batch.set(
                     img_id,
                     thunk_addr,
@@ -204,7 +204,7 @@ def create_analysis_vtordisps(db: EntityDb, img_id: ImageId, binfile: PEImage):
             )
 
             # Create an entity for the referenced function, but do not overwrite an existing entity (for now).
-            if not db.used(img_id, vtor.func_addr):
+            if not db.exists(img_id, vtor.func_addr):
                 batch.set(img_id, vtor.func_addr, type=EntityType.FUNCTION)
 
 

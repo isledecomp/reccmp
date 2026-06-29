@@ -82,6 +82,21 @@ def test_create_analysis_strings_do_not_replace(db: EntityDb):
     assert e.get("type") != EntityType.STRING
 
 
+def test_create_analysis_strings_do_not_replace_overlap(db: EntityDb):
+    """Should not create new entity if it would overlap an existing one."""
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, type=EntityType.FUNCTION, size=10)
+
+    binfile = Mock(spec=[])
+    binfile.iter_string = Mock(return_value=[(105, "Hello")])
+    binfile.relocations = set()
+
+    create_analysis_strings(db, ImageId.ORIG, binfile)
+
+    e = db.get(ImageId.ORIG, 105)
+    assert e is None
+
+
 def test_create_analysis_strings_not_relocated(db: EntityDb):
     """Should not add the string if its address is the site of a relocation.
     i.e. We know this is a pointer, despite how it appears."""
@@ -168,6 +183,23 @@ def test_create_analysis_floats_do_not_replace(db: EntityDb):
     e = db.get(ImageId.ORIG, 100)
     assert e is not None
     assert e.get("type") != EntityType.FLOAT
+
+
+def test_create_analysis_floats_do_not_replace_overlap(db: EntityDb):
+    """Should not create new entity if it would overlap an existing one."""
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, type=EntityType.DATA, size=10)
+
+    binfile = Mock(spec=[])
+
+    with patch(
+        "reccmp.compare.analyze.find_float_consts",
+        return_value=[(105, 4, 0.5)],
+    ):
+        create_analysis_floats(db, ImageId.ORIG, binfile)
+
+    e = db.get(ImageId.ORIG, 105)
+    assert e is None
 
 
 def test_create_analysis_vtordisps(db: EntityDb, binfile: PEImage):

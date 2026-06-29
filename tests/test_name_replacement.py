@@ -1,5 +1,6 @@
 import pytest
 from reccmp.types import EntityType, ImageId
+from reccmp.cvdump.types import CvdumpTypeKey
 from reccmp.compare.db import EntityDb
 from reccmp.compare.asm.replacement import (
     create_name_lookup,
@@ -21,10 +22,13 @@ def create_lookup(
     def bin_lookup(addr: int) -> int | None:
         return addrs.get(addr)
 
-    if is_orig:
-        return create_name_lookup(db, ImageId.ORIG, bin_lookup)
+    def offset_lookup(_: CvdumpTypeKey, __: int) -> str:
+        return ""
 
-    return create_name_lookup(db, ImageId.RECOMP, bin_lookup)
+    if is_orig:
+        return create_name_lookup(db, ImageId.ORIG, bin_lookup, offset_lookup)
+
+    return create_name_lookup(db, ImageId.RECOMP, bin_lookup, offset_lookup)
 
 
 ####

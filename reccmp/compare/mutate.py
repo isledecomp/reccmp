@@ -3,7 +3,6 @@ These functions create or update entities using the current information in the d
 """
 
 import logging
-from functools import cache
 from reccmp.analysis.crt_startup import (
     detect_crt_startup_arrays,
     create_crt_matches,
@@ -12,8 +11,6 @@ from reccmp.analysis.crt_startup import (
 from reccmp.cvdump.demangler import (
     get_function_arg_string,
 )
-from reccmp.cvdump import CvdumpTypesParser
-from reccmp.cvdump.types import CvdumpTypeKey
 from reccmp.formats import PEImage
 from reccmp.types import EntityType, ImageId
 from .db import EntityDb
@@ -61,123 +58,6 @@ def set_max_size(db: EntityDb, image_id: ImageId):
             # Measured against the end of the section/image.
             if last_addr is not None:
                 batch.set(image_id, last_addr, max_size=range_.stop - last_addr)
-
-
-def match_array_elements(db: EntityDb, types: CvdumpTypesParser):
-    """
-    For each matched variable, check whether it is an array.
-    If yes, adds a match for all its elements. If it is an array of structs, all fields in that struct are also matched.
-    Note that there is no recursion, so an array of arrays would not be handled entirely.
-    This step is necessary e.g. for `0x100f0a20` (LegoRacers.cpp).
-    """
-    seen_recomp = set()
-    batch = db.batch()
-
-    @cache
-    def get_type_size(type_key: CvdumpTypeKey) -> int:
-        type_ = types.get(type_key)
-        assert type_.size is not None, type_key
-        return type_.size
-
-    # Helper function
-    # pylint: disable=too-many-positional-arguments
-    def _add_match_in_array(
-        name: str,
-        size: int,
-        orig_addr: int,
-        recomp_addr: int,
-        max_orig: int,
-        is_main_variable: bool,
-    ):
-        if recomp_addr in seen_recomp:
-            return
-
-        seen_recomp.add(recomp_addr)
-
-        if is_main_variable:
-            # Don't replace the type or size of the main variable entity.
-            batch.set(ImageId.RECOMP, recomp_addr, name=name)
-        else:
-            batch.set(
-                ImageId.RECOMP,
-                recomp_addr,
-                name=name,
-                size=size,
-                type=EntityType.OFFSET,
-            )
-
-        if orig_addr < max_orig:
-            batch.match(orig_addr, recomp_addr)
-
-    for match in db.get_matches_by_type(EntityType.DATA):
-        # TODO: The type information we need is in multiple places. (See #106)
-        type_key_raw = match.get("data_type")
-        if type_key_raw is None:
-            continue
-
-        type_key = CvdumpTypeKey(type_key_raw)
-        if type_key.is_scalar():
-            # scalar type, so clearly not an array
-            continue
-
-        type_dict = types.keys.get(type_key)
-        if type_dict is None:
-            continue
-
-        if type_dict.get("type") != "LF_ARRAY":
-            continue
-
-        array_type_key = type_dict.get("array_type")
-        if array_type_key is None:
-            continue
-
-        data_type = types.get(type_key)
-
-        # Check whether another orig variable appears before the end of the array in recomp.
-        # If this happens we can still add all the recomp offsets, but do not attach the orig address
-        # where it would extend into the next variable.
-        upper_bound = match.orig_addr + match.any_size()
-        orig_max = match.max_size(ImageId.ORIG)
-        if orig_max is not None and orig_max < match.any_size():
-            logger.warning(
-                "Array variable %s at 0x%x is larger in recomp",
-                match.name,
-                match.orig_addr,
-            )
-            upper_bound = match.orig_addr + orig_max
-
-        array_element_type = types.get(array_type_key)
-
-        assert data_type.members is not None
-
-        for array_element in data_type.members:
-            orig_element_base_addr = match.orig_addr + array_element.offset
-            recomp_element_base_addr = match.recomp_addr + array_element.offset
-            if array_element_type.members is None:
-                # If array of scalars
-                assert array_element_type.size is not None
-                _add_match_in_array(
-                    f"{match.name}{array_element.name}",
-                    array_element_type.size,
-                    orig_element_base_addr,
-                    recomp_element_base_addr,
-                    upper_bound,
-                    array_element.offset == 0,
-                )
-
-            else:
-                # Else: multidimensional array or array of structs
-                for member in array_element_type.members:
-                    _add_match_in_array(
-                        f"{match.name}{array_element.name}.{member.name}",
-                        get_type_size(member.type),
-                        orig_element_base_addr + member.offset,
-                        recomp_element_base_addr + member.offset,
-                        upper_bound,
-                        array_element.offset + member.offset == 0,
-                    )
-
-    batch.commit()
 
 
 def name_thunks(db: EntityDb):

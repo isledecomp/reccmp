@@ -119,7 +119,7 @@ class ReccmpEntity:
 
         return None
 
-    def match_name(self) -> str | None:
+    def match_name(self, suffix: str = "") -> str | None:
         """Combination of the name and compare type.
         Intended for name substitution in the diff. If there is a diff,
         it will be more obvious what this symbol indicates."""
@@ -127,14 +127,11 @@ class ReccmpEntity:
         if best_name is None:
             return None
 
+        if suffix:
+            return f"{best_name}{suffix} (OFFSET)"
+
         ctype = EntityTypeLookup.get(self.entity_type or -1, "UNK")
         return f"{best_name} ({ctype})"
-
-    def offset_name(self, ofs: int) -> str | None:
-        if self.name is None:
-            return None
-
-        return f"{self.name}+{ofs} (OFFSET)"
 
 
 class ReccmpMatch(ReccmpEntity):
@@ -495,9 +492,25 @@ class EntityDb:
                 assert isinstance(match, ReccmpMatch)
                 yield match
 
-    def used(self, img: ImageId, addr: int) -> bool:
+    def exists(self, img: ImageId, addr: int) -> bool:
+        """Is there an entity at this address?"""
         assert img in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
         return addr in self._addr_set[img]
+
+    def intersects(self, img: ImageId, addr: int) -> bool:
+        """Is there an entity with a size that covers this address?"""
+        if self.exists(img, addr):
+            return True
+
+        entity = self.get(img, addr, exact=False)
+        if entity is None:
+            return False
+
+        base_addr = entity.addr(img)
+        assert isinstance(base_addr, int)
+
+        size = entity.any_size(img)
+        return addr - base_addr < size
 
     def is_match(self, orig_addr: int, recomp_addr: int) -> bool:
         return self._matches[ImageId.ORIG].get(orig_addr) == recomp_addr

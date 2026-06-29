@@ -323,28 +323,63 @@ def test_batch_exception_caught(db):
     assert db.get(ImageId.RECOMP, 200) is not None
 
 
-def test_generic_used_function(db: EntityDb):
-    """used() has a parameter to select which address space to check."""
-    assert db.used(ImageId.ORIG, 100) is False
-    assert db.used(ImageId.RECOMP, 100) is False
+def test_generic_exists_function(db: EntityDb):
+    """exists() has a parameter to select which address space to check."""
+    assert db.exists(ImageId.ORIG, 100) is False
+    assert db.exists(ImageId.RECOMP, 100) is False
 
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 100, name="Test")
 
-    assert db.used(ImageId.ORIG, 100) is True
-    assert db.used(ImageId.RECOMP, 100) is False
+    assert db.exists(ImageId.ORIG, 100) is True
+    assert db.exists(ImageId.RECOMP, 100) is False
 
     with db.batch() as batch:
         batch.set(ImageId.RECOMP, 100, name="Test")
 
-    assert db.used(ImageId.ORIG, 100) is True
-    assert db.used(ImageId.RECOMP, 100) is True
+    assert db.exists(ImageId.ORIG, 100) is True
+    assert db.exists(ImageId.RECOMP, 100) is True
 
 
-def test_generic_used_invalid_id(db: EntityDb):
+@pytest.mark.parametrize("image_id", ImageId)
+def test_generic_intersects_function(db: EntityDb, image_id: ImageId):
+    """intersects() checks both the given address and its footprint."""
+    assert db.intersects(image_id, 100) is False
+
+    with db.batch() as batch:
+        batch.set(image_id, 100, name="Test")
+
+    assert db.intersects(image_id, 100) is True
+    assert db.intersects(image_id, 105) is False
+    assert db.intersects(image_id, 110) is False
+
+    with db.batch() as batch:
+        batch.set(image_id, 100, size=8)
+
+    assert db.intersects(image_id, 100) is True
+    assert db.intersects(image_id, 105) is True
+    assert db.intersects(image_id, 110) is False
+
+
+def test_intersects_use_any_size(db: EntityDb):
+    """intersects() will use any size value in either address space."""
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, name="Test")
+        batch.set(ImageId.RECOMP, 100, size=8)
+        batch.match(100, 100)
+
+    assert db.intersects(ImageId.ORIG, 100) is True
+    assert db.intersects(ImageId.RECOMP, 100) is True
+    assert db.intersects(ImageId.ORIG, 105) is True
+    assert db.intersects(ImageId.RECOMP, 105) is True
+    assert db.intersects(ImageId.ORIG, 110) is False
+    assert db.intersects(ImageId.RECOMP, 110) is False
+
+
+def test_generic_exists_invalid_id(db: EntityDb):
     """Should fail if the image id is outside the enum"""
     with pytest.raises(AssertionError):
-        db.used(2, 100)  # type: ignore
+        db.exists(2, 100)  # type: ignore
 
 
 def test_generic_set_function(db: EntityDb):
