@@ -1,4 +1,4 @@
-"""Tests for offset name subtitution that imitate the behavior of the removed `match_array_elements` function."""
+"""Tests for offset name substitution that imitate the behavior of the removed `match_array_elements` function."""
 
 from functools import partial
 import pytest
