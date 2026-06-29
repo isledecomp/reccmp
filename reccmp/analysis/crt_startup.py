@@ -141,7 +141,7 @@ def get_function_fingerprint(
     size = get_function_sample_size(db, image_id, addr)
     raw = binfile.read(addr, size)
 
-    collector = UsedAddressCollector(partial(db.used, image_id))
+    collector = UsedAddressCollector(partial(db.exists, image_id))
     collector.analyze(raw, addr)
 
     normalized_addrs = []
