@@ -1,7 +1,7 @@
 import logging
 import difflib
 import struct
-from typing import Iterable, Iterator
+from typing import Callable, Iterable, Iterator
 from typing_extensions import Self
 from reccmp.project.detect import RecCmpTarget
 from reccmp.compare.diff import EntityCompareResult, RawDiffOutput
@@ -341,7 +341,7 @@ class Compare:
             match_ratio=ratio,
         )
 
-    def _compare_match(self, match: ReccmpMatch) -> DiffReport | None:
+    def compare_match(self, match: ReccmpMatch) -> DiffReport | None:
         """Router for comparison type"""
 
         if match.size is None or match.any_size() == 0:
@@ -382,14 +382,6 @@ class Compare:
 
     ## Public API
 
-    def count_unmatched_functions(self) -> int:
-        """Count known but unmatched functions in orig."""
-        return sum(
-            1
-            for ent in self._db.unmatched(ImageId.ORIG)
-            if ent.get("type") == EntityType.FUNCTION
-        )
-
     def get_all(self) -> Iterator[ReccmpEntity]:
         return self._db.get_all()
 
@@ -407,22 +399,34 @@ class Compare:
         if match is None:
             return None
 
-        return self._compare_match(match)
+        return self.compare_match(match)
 
     def compare_all(self) -> Iterable[DiffReport]:
         for match in self._db.get_matches():
-            diff = self._compare_match(match)
+            diff = self.compare_match(match)
             if diff is not None:
                 yield diff
 
     def compare_functions(self) -> Iterable[DiffReport]:
         for match in self.get_functions():
-            diff = self._compare_match(match)
+            diff = self.compare_match(match)
             if diff is not None:
                 yield diff
 
     def compare_vtables(self) -> Iterable[DiffReport]:
         for match in self.get_vtables():
-            diff = self._compare_match(match)
+            diff = self.compare_match(match)
             if diff is not None:
                 yield diff
+
+    def get_all_compared(
+        self, func_filter: Callable[[ReccmpEntity], bool]
+    ) -> Iterator[ReccmpEntity]:
+        for ent in self._db.all(ImageId.ORIG):
+            entity_type = ent.get("type")
+            if entity_type in (EntityType.FUNCTION, EntityType.VTORDISP):
+                if func_filter(ent):
+                    yield ent
+
+            if entity_type == EntityType.VTABLE:
+                yield ent
