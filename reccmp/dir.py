@@ -163,7 +163,16 @@ def walk_source_dir(source: Path, *, recursive: bool = True) -> Iterator[Path]:
     """Returns any C/C++ source code files found in the given directory tree."""
 
     # Python 3.12 introduced Path.walk(). We use os.walk() instead for broader compatibility.
-    for subdir, _, files in os.walk(source.absolute()):
+    for subdir, dirnames, files in os.walk(source.absolute()):
+        # Prune nested git checkouts (submodules, `git worktree` trees such as
+        # .claude/worktrees/<id>/). They contain their own copy of every marked
+        # source file, so scanning them would register each annotation address
+        # twice and trip the duplicate-address handling.
+        dirnames[:] = [
+            d
+            for d in dirnames
+            if d != ".git" and not os.path.exists(os.path.join(subdir, d, ".git"))
+        ]
         for file in files:
             path = Path(os.path.join(subdir, file))
             if is_file_c_like(path):
