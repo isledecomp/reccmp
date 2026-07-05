@@ -82,7 +82,10 @@ def main():
     name_filter = args.filter.lower() if args.filter else None
 
     for tbl_match in engine.compare_vtables():
-        if name_filter is not None and name_filter not in (tbl_match.name or "").lower():
+        if (
+            name_filter is not None
+            and name_filter not in (tbl_match.name or "").lower()
+        ):
             continue
         vtable_count += 1
         if tbl_match.accuracy < 1:
@@ -115,7 +118,13 @@ def main():
             continue
 
         diff = engine.compare_address(fun_match.orig_addr)
-        assert diff is not None
+        if diff is None:
+            logging.getLogger(__name__).warning(
+                "Could not compare adjuster thunk %s (0x%x)",
+                fun_match.name,
+                fun_match.orig_addr,
+            )
+            continue
         if diff.accuracy < 1.0:
             problem_count += 1
             print(
