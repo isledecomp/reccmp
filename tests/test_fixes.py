@@ -174,6 +174,9 @@ def test_fix_fld_fadd_with_instruction_between():
 
     assert is_effective is False
 
+    # fadd is commutative, so swapped operands with an intervening
+    # non-x87 instruction are an effective match
+    # (via is_commutative_x87_chain_swap).
     orig_asm = [
         "fld dword ptr [ebp - 0x18]",
         "mov eax, 1",
@@ -188,7 +191,7 @@ def test_fix_fld_fadd_with_instruction_between():
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
     is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
-    assert is_effective is False
+    assert is_effective is True
 
 
 def test_fix_fld_fmul_invalid_duplication():
@@ -478,3 +481,108 @@ def test_patch_fld_fmul_recomp_shorter_than_orig():
     orig = ["fld dword ptr [ebp - 4]", "fmul dword ptr [ebp - 8]"]
     recomp = ["fld dword ptr [ebp - 4]"]
     assert patch_fld_fmul(orig, recomp) == set()
+
+
+# The following tests cover is_commutative_x87_chain_swap: MSVC
+# nondeterministically swaps the operand chains of commutative x87
+# computations (e.g. tableA[i] + tableB[j]) between recompiles.
+# The asm below is the real shape of Imperialism 0x4e0590 after sanitization.
+
+X87_CHAIN_ORIG = [
+    "mov eax, dword ptr [ecx + 0x94]",
+    "movsx edx, word ptr [eax + 0xc]",
+    "mov eax, dword ptr [ecx + 0x9c]",
+    "fld dword ptr [edx*4 + g_skillTableA (DATA)]",
+    "movsx ecx, word ptr [eax + 0xc]",
+    "fadd dword ptr [ecx*4 + g_skillTableB (DATA)]",
+    "ret",
+]
+
+X87_CHAIN_RECOMP = [
+    "mov eax, dword ptr [ecx + 0x9c]",
+    "movsx edx, word ptr [eax + 0xc]",
+    "mov eax, dword ptr [ecx + 0x94]",
+    "fld dword ptr [edx*4 + g_skillTableB (DATA)]",
+    "movsx ecx, word ptr [eax + 0xc]",
+    "fadd dword ptr [ecx*4 + g_skillTableA (DATA)]",
+    "ret",
+]
+
+
+def test_commutative_x87_chain_swap_valid():
+    """The fld/fadd displacements are cross-swapped and the two
+    address-load movs transpose: an effective match."""
+    diff = difflib.SequenceMatcher(None, X87_CHAIN_ORIG, X87_CHAIN_RECOMP)
+    assert (
+        find_effective_match(diff.get_opcodes(), X87_CHAIN_ORIG, X87_CHAIN_RECOMP)
+        is True
+    )
+
+
+def test_commutative_x87_chain_swap_fsub_invalid():
+    """fsub is not commutative: must not be an effective match."""
+    recomp = list(X87_CHAIN_RECOMP)
+    recomp[5] = "fsub dword ptr [ecx*4 + g_skillTableA (DATA)]"
+
+    diff = difflib.SequenceMatcher(None, X87_CHAIN_ORIG, recomp)
+    assert find_effective_match(diff.get_opcodes(), X87_CHAIN_ORIG, recomp) is False
+
+
+def test_commutative_x87_chain_swap_mov_not_transposed():
+    """A mov that differs without a transposed partner is a real diff."""
+    recomp = list(X87_CHAIN_RECOMP)
+    recomp[0] = "mov eax, dword ptr [ecx + 0xa0]"
+
+    diff = difflib.SequenceMatcher(None, X87_CHAIN_ORIG, recomp)
+    assert find_effective_match(diff.get_opcodes(), X87_CHAIN_ORIG, recomp) is False
+
+
+def test_commutative_x87_chain_swap_x87_instruction_between():
+    """An x87 instruction between the fld and the fadd modifies st(0),
+    so the operand order matters: must not be an effective match."""
+    orig = [
+        "fld dword ptr [g_floatA (FLOAT)]",
+        "fsqrt",
+        "fadd dword ptr [g_floatB (FLOAT)]",
+        "ret",
+    ]
+    recomp = [
+        "fld dword ptr [g_floatB (FLOAT)]",
+        "fsqrt",
+        "fadd dword ptr [g_floatA (FLOAT)]",
+        "ret",
+    ]
+
+    diff = difflib.SequenceMatcher(None, orig, recomp)
+    assert find_effective_match(diff.get_opcodes(), orig, recomp) is False
+
+
+def test_commutative_x87_chain_swap_index_registers_stay():
+    """Only the displacements swap; if the index registers differ too,
+    the skeletons don't match and this is a real diff."""
+    recomp = list(X87_CHAIN_RECOMP)
+    recomp[3] = "fld dword ptr [eax*4 + g_skillTableB (DATA)]"
+
+    diff = difflib.SequenceMatcher(None, X87_CHAIN_ORIG, recomp)
+    assert find_effective_match(diff.get_opcodes(), X87_CHAIN_ORIG, recomp) is False
+
+
+def test_commutative_x87_chain_swap_mov_after_fld_invalid():
+    """A differing mov after the fld is not operand-chain setup."""
+    orig = [
+        "mov eax, dword ptr [ecx + 0x94]",
+        "fld dword ptr [g_floatA (FLOAT)]",
+        "mov edx, dword ptr [ecx + 0x9c]",
+        "fadd dword ptr [g_floatB (FLOAT)]",
+        "ret",
+    ]
+    recomp = [
+        "mov eax, dword ptr [ecx + 0x9c]",
+        "fld dword ptr [g_floatB (FLOAT)]",
+        "mov edx, dword ptr [ecx + 0x94]",
+        "fadd dword ptr [g_floatA (FLOAT)]",
+        "ret",
+    ]
+
+    diff = difflib.SequenceMatcher(None, orig, recomp)
+    assert find_effective_match(diff.get_opcodes(), orig, recomp) is False

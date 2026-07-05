@@ -278,6 +278,106 @@ def patch_fld_fmul(orig: list[str], recomp: list[str]) -> set[int]:
     return set()
 
 
+# Matches the displacement (symbol or offset) of a memory operand:
+# the final term inside the brackets, e.g. `g_table (DATA)` in
+# `fld dword ptr [edx*4 + g_table (DATA)]`.
+DISPLACEMENT_RE = re.compile(r"[+-] ?(.+)\]$")
+BRACKET_RE = re.compile(r"\[(.+)\]$")
+
+COMMUTATIVE_X87_MNEMONICS = ("fadd", "fmul")
+
+
+def _displacement_parts(line: str) -> tuple[str, str | None]:
+    """Split an instruction into (skeleton, displacement) where the
+    displacement is the last term of its memory operand. The skeleton is
+    the line with the displacement replaced by a placeholder."""
+    match = DISPLACEMENT_RE.search(line) or BRACKET_RE.search(line)
+    if match is None:
+        return line, None
+
+    return line[: match.start(1)] + "?" + line[match.end(1) :], match.group(1)
+
+
+def is_commutative_x87_chain_swap(orig_asm: list[str], recomp_asm: list[str]) -> bool:
+    """MSVC nondeterministically swaps the two operand chains of a commutative
+    x87 computation between recompiles. For example, `tableA[i] + tableB[j]`:
+
+        mov eax, [ecx + 0x94]               mov eax, [ecx + 0x9c]
+        movsx edx, word ptr [eax + 0xc]     movsx edx, word ptr [eax + 0xc]
+        mov eax, [ecx + 0x9c]               mov eax, [ecx + 0x94]
+        fld dword ptr [edx*4 + tableA]      fld dword ptr [edx*4 + tableB]
+        movsx ecx, word ptr [eax + 0xc]     movsx ecx, word ptr [eax + 0xc]
+        fadd dword ptr [ecx*4 + tableB]     fadd dword ptr [ecx*4 + tableA]
+        ret                                 ret
+
+    fadd/fmul are commutative so both versions are equivalent. Detect this
+    shape: the fld and the fadd/fmul swap their memory displacements while
+    the index registers stay put, and the address-load movs that feed the
+    two chains transpose as exact-text pairs."""
+    if len(orig_asm) != len(recomp_asm):
+        return False
+
+    diff_idx = [i for i, (a, b) in enumerate(zip(orig_asm, recomp_asm)) if a != b]
+    if not diff_idx:
+        return False
+
+    flds = [
+        i
+        for i in diff_idx
+        if _mnemonic(orig_asm[i]) == "fld" and _mnemonic(recomp_asm[i]) == "fld"
+    ]
+    comms = [
+        i
+        for i in diff_idx
+        if _mnemonic(orig_asm[i]) in COMMUTATIVE_X87_MNEMONICS
+        and _mnemonic(recomp_asm[i]) == _mnemonic(orig_asm[i])
+    ]
+    if len(flds) != 1 or len(comms) != 1:
+        return False
+
+    fld_idx, comm_idx = flds[0], comms[0]
+    if comm_idx < fld_idx:
+        return False
+
+    # The swap is only sound if nothing touches the x87 stack between the
+    # fld and the commutative op (e.g. an fsqrt would make the two operand
+    # orders produce different results).
+    if any(
+        _mnemonic(orig_asm[k]).startswith("f") for k in range(fld_idx + 1, comm_idx)
+    ):
+        return False
+
+    orig_fld, orig_fld_disp = _displacement_parts(orig_asm[fld_idx])
+    orig_comm, orig_comm_disp = _displacement_parts(orig_asm[comm_idx])
+    recomp_fld, recomp_fld_disp = _displacement_parts(recomp_asm[fld_idx])
+    recomp_comm, recomp_comm_disp = _displacement_parts(recomp_asm[comm_idx])
+
+    if None in (orig_fld_disp, orig_comm_disp, recomp_fld_disp, recomp_comm_disp):
+        return False
+
+    # Only the displacements may differ, and they must be cross-swapped.
+    if orig_fld != recomp_fld or orig_comm != recomp_comm:
+        return False
+
+    if not (orig_fld_disp == recomp_comm_disp and orig_comm_disp == recomp_fld_disp):
+        return False
+
+    # Every other differing line must be part of the operand-chain setup:
+    # a mov before the fld, transposed with an identical-text partner.
+    remaining = [k for k in diff_idx if k not in (fld_idx, comm_idx)]
+    if any(
+        k > fld_idx
+        or _mnemonic(orig_asm[k]) != "mov"
+        or _mnemonic(recomp_asm[k]) != "mov"
+        for k in remaining
+    ):
+        return False
+
+    return sorted(orig_asm[k] for k in remaining) == sorted(
+        recomp_asm[k] for k in remaining
+    )
+
+
 def patch_cmp_swaps(
     codes: Sequence[DiffOpcode], orig_asm: list[str], recomp_asm: list[str]
 ) -> set[int]:
@@ -507,6 +607,10 @@ def find_effective_match(
     Meaning: do they differ only by instruction order or register selection?"""
     if not effective_match_possible(orig_asm, recomp_asm):
         return False
+
+    # Whole-function check: commutative x87 operand-chain swap.
+    if is_commutative_x87_chain_swap(orig_asm, recomp_asm):
+        return True
 
     already_equal = {
         j for code, _, __, j1, j2 in codes for j in range(j1, j2) if code == "equal"
