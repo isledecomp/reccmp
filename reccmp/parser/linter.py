@@ -70,6 +70,12 @@ def check_function_order(result: ReccmpParserResult) -> list[ParserAlert]:
                     path=result.path,
                     line_number=fun.line_number,
                     target=fun.module,
+                    # Point at the reordering tool so the fix does not depend
+                    # on tribal knowledge.
+                    detail=(
+                        "fix: uv run python -m tools.workflow.reorder_marked_functions "
+                        f"{result.path}"
+                    ),
                 )
             )
 
