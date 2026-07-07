@@ -2,11 +2,12 @@
 
 from unittest.mock import Mock, patch
 import pytest
-from reccmp.compare.asm.parse import DisasmLiteInst, ParseAsm
+from reccmp.compare.asm.parse import ParseAsm
 from reccmp.compare.asm.replacement import (
     AddrTestProtocol,
     NameReplacementProtocol,
 )
+from reccmp.compare.asm.types import DisasmLiteInst
 
 REGISTER_ONLY_INSTRUCTIONS = (
     # No operands

@@ -40,8 +40,10 @@ def test_score_notify():
     assert types_only == (SectionType.CODE, SectionType.ADDR_TAB, SectionType.DATA_TAB)
 
     # CODE section stopped at correct place?
-    instructions = ig.sections[0].contents
-    assert isinstance(instructions[-1], DisasmLiteInst)
+    section = ig.sections[0]
+    assert section.type == SectionType.CODE
+    instructions = [DisasmLiteInst(*inst) for inst in section.contents]
+
     assert instructions[-1].address == 0x100014D2
     # n.b. 0x100014d2 is the dummy instruction `mov edi, edi`
     # Ghidra does more thorough analysis and ignores this.
@@ -73,8 +75,10 @@ def test_smack_case():
     assert ig.sections[0].type == ig.sections[2].type == SectionType.CODE
 
     # Make sure we captured the instruction immediately after
-    assert isinstance(ig.sections[2].contents[0], DisasmLiteInst)
-    assert ig.sections[2].contents[0].mnemonic == "mov"
+    section = ig.sections[2]
+    assert section.type == SectionType.CODE
+    instructions = [DisasmLiteInst(*inst) for inst in section.contents]
+    assert instructions[0].mnemonic == "mov"
 
 
 # BETA10 0x1004c9cc
@@ -100,8 +104,10 @@ def test_beta_case():
     assert ig.sections[0].type == ig.sections[2].type == SectionType.CODE
 
     # Make sure we captured the instruction immediately after
-    assert isinstance(ig.sections[2].contents[0], DisasmLiteInst)
-    assert ig.sections[2].contents[0].mnemonic == "mov"
+    section = ig.sections[2]
+    assert section.type == SectionType.CODE
+    instructions = [DisasmLiteInst(*inst) for inst in section.contents]
+    assert instructions[0].mnemonic == "mov"
 
 
 # LEGO1 0x1000fb50
