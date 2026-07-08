@@ -163,17 +163,16 @@ class InstructGen:
         self.code_tracks.append(instructions)
         return instructions
 
-    def _handle_jump(self, inst: DisasmLiteTuple):
+    def _handle_jump(self, op_str: str):
         # If this is a regular jump and its destination is within the
         # bounds of the binary data (i.e. presumed function size)
         # add it to our list of confirmed addresses.
-        inst_address, inst_size, inst_mnemonic, inst_op_str = inst
-        if inst_op_str[0] == "0":
-            value = int(inst_op_str, 16)
+        if op_str[0] == "0":
+            value = int(op_str, 16)
             self._insert_confirmed_addr(value, SectionType.CODE)
 
         # If this is jumping into a table of addresses, save the destination
-        elif (match := displacement_regex.match(inst_op_str)) is not None:
+        elif (match := displacement_regex.match(op_str)) is not None:
             value = int(match.group(1), 16)
             self._insert_confirmed_addr(value, SectionType.ADDR_TAB)
 
@@ -195,8 +194,7 @@ class InstructGen:
                     self.cur_addr += 1
                     break
 
-                for inst in instructions:
-                    inst_address, inst_size, inst_mnemonic, inst_op_str = inst
+                for _, inst_size, inst_mnemonic, inst_op_str in instructions:
                     # section_end is updated as we read instructions.
                     # If we are into a jump/data table and would read
                     # a junk instruction, stop here.
@@ -206,7 +204,7 @@ class InstructGen:
                     # print(f"{inst.address:x} : {inst.mnemonic} {inst.op_str}")
 
                     if inst_mnemonic in JUMP_MNEMONICS:
-                        self._handle_jump(inst)
+                        self._handle_jump(inst_op_str)
                         # Todo: log calls too (unwind section)
                     elif inst_mnemonic in ("mov", "movzx"):
                         # Todo: maintain pairing of data/jump tables
