@@ -30,7 +30,7 @@ jobs:
 
     - name: Restore sample binaries
       id: cache
-      uses: actions/cache/restore@v3
+      uses: actions/cache/restore@v6
       with:
         enableCrossOsArchive: true
         path: binfiles
