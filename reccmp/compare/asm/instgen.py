@@ -17,6 +17,13 @@ def get_disassembler(is_32: bool = True) -> Cs:
 
 
 DisasmLiteTuple = tuple[int, int, str, str]
+"""Raw tuple returned by capstone's disasm_lite() function.
+The fields are:
+    - address
+    - size (of instruction, in bytes)
+    - mnemonic
+    - op_str (all operands, comma-delimited)
+"""
 
 displacement_regex = re.compile(r".*\+ (0x[0-9a-f]+)\]")
 

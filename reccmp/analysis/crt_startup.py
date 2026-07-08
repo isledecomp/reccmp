@@ -90,12 +90,8 @@ class UsedAddressCollector:
 
         for section in ig.sections:
             if section.type == SectionType.CODE:
-                for (
-                    _,
-                    __,
-                    inst_mnemonic,
-                    inst_op_str,
-                ) in section.contents:
+                for inst in section.contents:
+                    inst_mnemonic, inst_op_str = inst[2:]
                     if inst_mnemonic == "ret":
                         break
 
