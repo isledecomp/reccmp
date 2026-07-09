@@ -176,6 +176,9 @@ JUMP_SAMPLES = (
     (DisasmLiteInst(0x1000, 5, "jmp", "0x805"), "-0x800"),
     (DisasmLiteInst(0x1000, 2, "je", "0x1006"), "0x4"),
     (DisasmLiteInst(0x1000, 2, "je", "0x1000"), "-0x2"),
+    (DisasmLiteInst(0x1000, 5, "loop", "0x10ac"), "0xa7"),
+    (DisasmLiteInst(0x1000, 2, "loope", "0x1006"), "0x4"),
+    (DisasmLiteInst(0x1000, 2, "loopne", "0x1000"), "-0x2"),
 )
 
 

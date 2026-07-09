@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import bisect
 import re
 import logging
 from typing import NamedTuple
@@ -43,6 +44,29 @@ class FieldListItem(NamedTuple):
     type: CvdumpTypeKey
 
 
+def get_best_member_item(
+    members: list[FieldListItem], offset: int
+) -> FieldListItem | None:
+    """Find the member that equals or is closest to our offset.
+    Unions and bitfields may have multiple candidates with the same offset.
+    In that case, use the first one."""
+    if not members:
+        return None
+
+    i = bisect.bisect_left(members, offset, key=lambda mem: mem.offset)
+    j = bisect.bisect_right(members, offset, key=lambda mem: mem.offset)
+
+    # If the indices are equal, our offset is between two field list items.
+    # Use one index earlier because it contains the offset.
+    if i == j:
+        i = max(0, i - 1)
+
+    for mem in members[i:j]:
+        return mem
+
+    return None
+
+
 class EnumItem(NamedTuple):
     name: str
     value: int
@@ -81,13 +105,29 @@ class ScalarType(NamedTuple):
 
 class TypeInfo(NamedTuple):
     key: CvdumpTypeKey
+    """The unique identifier from the PDB."""
     size: int | None
+    """Total size of this type in bytes."""
     name: str | None = None
+    """Optional name for this complex type."""
     members: list[FieldListItem] | None = None
+    """Struct only: List of members in this struct or class."""
+    array_type: CvdumpTypeKey | None = None
+    """Array only: Underlying type of each array element."""
+    array_length: int | None = None
+    """Array only: Count of elements in the array."""
+    array_element_size: int | None = None
+    """Array only: Size in bytes of each array element."""
+
+    def is_struct(self) -> bool:
+        return self.members is not None
+
+    def is_array(self) -> bool:
+        return self.array_type is not None
 
     def is_scalar(self) -> bool:
         # TODO: distinction between a class with zero members and no vtable?
-        return self.members is None
+        return self.members is None and self.array_type is None
 
 
 def member_list_to_struct_string(members: list[ScalarType]) -> str:
@@ -170,6 +210,11 @@ class CvdumpParsedType(TypedDict):
     num_params: NotRequired[int]
     arg_list_type: NotRequired[CvdumpTypeKey]
     this_adjust: NotRequired[int]
+
+    # LF_BITFIELD
+    bit_start: NotRequired[int]
+    bit_count: NotRequired[int]
+    bit_type: NotRequired[CvdumpTypeKey]
 
 
 class CvdumpTypesParser:
@@ -258,8 +303,13 @@ class CvdumpTypesParser:
         r"\s+field list type (?P<field_type>0x\w+),.*Size = (?P<size>\d+)\s*,class name = (?P<name>(?:[^\n,]|,\S)+)(?:, unique name = [^\n,]+)?(?:,\s.*UDT\((?P<udt>0x\w+)\))?"
     )
 
+    LF_BITFIELD_LINE = re.compile(
+        r"bits = (?P<bitcount>[1-9][0-9]*), starting position = (?P<start>[0-9]*), Type = (?P<type_str>[^(]+)\((?P<type>[0-9a-fA-F]+)\)"
+    )
+
     MODES_OF_INTEREST = {
         "LF_ARRAY",
+        "LF_BITFIELD",
         "LF_CLASS",
         "LF_ENUM",
         "LF_FIELDLIST",
@@ -298,33 +348,6 @@ class CvdumpTypesParser:
         members += raw_members
 
         return sorted(members, key=lambda m: m.offset)
-
-    def _mock_array_members(self, type_obj: CvdumpParsedType) -> list[FieldListItem]:
-        """LF_ARRAY elements provide the element type and the total size.
-        We want the list of "members" as if this was a struct."""
-
-        if type_obj.get("type") != "LF_ARRAY":
-            raise CvdumpTypeError("Type is not an LF_ARRAY")
-
-        array_type = type_obj.get("array_type")
-        if array_type is None:
-            raise CvdumpIntegrityError("No array element type")
-
-        array_element_size = self.get(array_type).size
-        assert (
-            array_element_size is not None
-        ), "Encountered an array whose type has no size"
-
-        n_elements = type_obj["size"] // array_element_size
-
-        return [
-            FieldListItem(
-                offset=i * array_element_size,
-                type=array_type,
-                name=f"[{i}]",
-            )
-            for i in range(n_elements)
-        ]
 
     def get(self, type_key: CvdumpTypeKey) -> TypeInfo:
         """Convert our dictionary values read from the cvdump output
@@ -379,20 +402,39 @@ class CvdumpTypesParser:
 
             return self.get(underlying_type)
 
+        members = None
+        array_type = None
+        array_length = None
+        array_element_size = None
+
         # Else it is not a forward reference, so build out the object here.
         if obj_type == "LF_ARRAY":
-            members = self._mock_array_members(obj)
+            array_type = obj.get("array_type")
+            if array_type is None:
+                raise CvdumpIntegrityError("No array element type")
+
+            array_element_size = self.get(array_type).size
+            assert (
+                array_element_size is not None
+            ), "Encountered an array whose type has no size"
+
+            assert "size" in obj, "Cannot reconstruct array without total size"
+            array_length = obj["size"] // array_element_size
+
         elif obj_type in ("LF_CLASS", "LF_STRUCTURE", "LF_UNION", "LF_FIELDLIST"):
             members = self._get_field_list(obj)
-        else:
-            # e.g. obj_type == "LF_PROCEDURE"
-            members = None
+        elif obj_type in ("LF_BITFIELD",):
+            res = self.get(obj["bit_type"])
+            return res
 
         return TypeInfo(
             key=type_key,
             size=obj.get("size"),
             name=obj.get("name"),
             members=members,
+            array_type=array_type,
+            array_length=array_length,
+            array_element_size=array_element_size,
         )
 
     def get_by_name(self, name: str) -> TypeInfo:
@@ -414,6 +456,23 @@ class CvdumpTypesParser:
                     type=cvinfo,
                     name=None,
                 )
+            ]
+
+        if obj.is_array():
+            assert obj.array_type is not None
+            assert obj.array_length is not None
+            assert obj.array_element_size is not None
+
+            array_element_members = self.get_scalars(obj.array_type)
+
+            return [
+                ScalarType(
+                    offset=i * obj.array_element_size + cm.offset,
+                    type=cm.type,
+                    name=join_member_names(f"[{i}]", cm.name),
+                )
+                for i in range(obj.array_length)
+                for cm in array_element_members
             ]
 
         # mypy?
@@ -487,6 +546,50 @@ class CvdumpTypesParser:
 
         return output
 
+    def get_name_for_offset(self, type_key: CvdumpTypeKey, offset: int) -> str:
+        """Limited to arrays for now. Enable to close GH #462."""
+        if type_key in self.keys:
+            type_dict = self.keys[type_key]
+            if type_dict.get("type") != "LF_ARRAY":
+                return f"+{offset}" if offset > 0 else ""
+
+        names = []
+
+        # 2 levels max depth (for now)
+        for _ in range(2):
+            try:
+                obj = self.get(type_key)
+            except CvdumpKeyError:
+                break
+
+            if obj.is_scalar():
+                break
+
+            if obj.is_array():
+                assert obj.array_type is not None
+                assert obj.array_element_size is not None
+
+                array_idx = offset // obj.array_element_size
+                type_key = obj.array_type
+                offset -= array_idx * obj.array_element_size
+                names.append(f"[{array_idx}]")
+
+            else:
+                assert isinstance(obj.members, list)
+                mem = get_best_member_item(obj.members, offset)
+                if mem is None:
+                    # Negative offset?
+                    break
+
+                type_key = mem.type
+                offset -= mem.offset
+                names.append(f".{mem.name}")
+
+        if offset > 0:
+            names.append(f"+{offset}")
+
+        return "".join(names)
+
     def get_format_string(self, type_key: CvdumpTypeKey) -> str:
         members = self.get_scalars_gapless(type_key)
         return member_list_to_struct_string(members)
@@ -533,6 +636,9 @@ class CvdumpTypesParser:
 
                     case "LF_UNION":
                         self.keys[leaf_id] = self.read_union(leaf, leaf_type)
+
+                    case "LF_BITFIELD":
+                        self.keys[leaf_id] = self.read_bitfield(leaf, leaf_type)
 
                     case _:
                         # Check for exhaustiveness
@@ -812,5 +918,18 @@ class CvdumpTypesParser:
             obj["udt"] = CvdumpTypeKey.from_str(udt)
 
         obj["size"] = int(match.group("size"))
+
+        return obj
+
+    def read_bitfield(self, leaf: str, leaf_type: str) -> CvdumpParsedType:
+        match = self.LF_BITFIELD_LINE.search(leaf)
+        assert match is not None
+
+        obj: CvdumpParsedType = {
+            "type": leaf_type,
+            "bit_start": int(match.group("start")),
+            "bit_count": int(match.group("bitcount")),
+            "bit_type": CvdumpTypeKey(int(match.group("type"), 16)),
+        }
 
         return obj

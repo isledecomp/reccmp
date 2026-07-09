@@ -1,4 +1,5 @@
 // reccmp-pack-begin
+/** @param {string} value */
 function copyToClipboard(value) {
   navigator.clipboard.writeText(value);
 }
@@ -10,7 +11,7 @@ class ClickToCopy extends window.HTMLElement {
     });
 
     this.addEventListener('click', (evt) => {
-      copyToClipboard(evt.target.textContent);
+      copyToClipboard(/** @type {HTMLElement} */ (evt.target).textContent);
       this.setAttribute('copied', '');
       // Display "copied!" message for up to 2 seconds
       // if the user keeps their mouse on the link.

@@ -1,18 +1,22 @@
-import { ReccmpRegisterEvent } from '../events';
+/** @import { ReccmpInternalState } from '../types' */
+
+import { ReccmpNextPageEvent, ReccmpRegisterEvent } from '../events';
 
 // reccmp-pack-begin
 class NextPageButton extends window.HTMLElement {
   connectedCallback() {
     this.innerHTML = `<button>next</button>`;
-    this.querySelector('button').addEventListener('click', () => {
-      this.dispatchEvent(new CustomEvent('nextPage', { bubbles: true }));
+    const button = /** @type {HTMLButtonElement} */ (this.querySelector('button'));
+    button.addEventListener('click', () => {
+      this.dispatchEvent(new ReccmpNextPageEvent());
     });
 
     this.dispatchEvent(new ReccmpRegisterEvent(this.update.bind(this)));
   }
 
+  /** @param {ReccmpInternalState} state */
   update({ pageNumber, maxPageNumber }) {
-    const button = this.querySelector('button');
+    const button = /** @type {HTMLButtonElement} */ (this.querySelector('button'));
     if (pageNumber === maxPageNumber) {
       button.setAttribute('disabled', '');
     } else {

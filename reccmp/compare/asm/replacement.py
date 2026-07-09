@@ -1,6 +1,7 @@
 from functools import cache
 from typing import Callable, Protocol
 from reccmp.compare.db import EntityDb, ReccmpEntity
+from reccmp.cvdump.types import CvdumpTypeKey
 from reccmp.types import EntityType, ImageId
 
 
@@ -18,6 +19,7 @@ def create_name_lookup(
     db: EntityDb,
     image_id: ImageId,
     bin_read: Callable[[int], int | None],
+    offset_name: Callable[[CvdumpTypeKey, int], str],
 ) -> NameReplacementProtocol:
     """Function generator for name replacement"""
     assert image_id in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
@@ -46,7 +48,12 @@ def create_name_lookup(
         ) or offset >= entity.any_size(image_id):
             return None
 
-        return entity.offset_name(offset)
+        type_key = entity.get("data_type")
+        if type_key:
+            suffix = offset_name(CvdumpTypeKey(type_key), offset)
+            return entity.match_name(suffix)
+
+        return entity.match_name(f"+{offset}")
 
     def indirect_lookup(addr: int) -> str | None:
         """Same as regular lookup but aware of the fact that the address is a pointer.

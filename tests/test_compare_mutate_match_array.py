@@ -1,11 +1,7 @@
-"""Tests for the `match_array_elements` function from the reccmp compare.
-For matched variable array entities, create and match new entities for each array element.
-"""
+"""Tests for offset name substitution that imitate the behavior of the removed `match_array_elements` function."""
 
+from functools import partial
 import pytest
-from reccmp.compare.mutate import (
-    match_array_elements,
-)
 from reccmp.types import EntityType, ImageId
 from reccmp.compare.db import EntityDb
 from reccmp.cvdump.types import CvdumpTypesParser, FieldListItem, CVInfoTypeEnum
@@ -22,9 +18,26 @@ def fixture_types() -> CvdumpTypesParser:
     return CvdumpTypesParser()
 
 
-def test_match_array_with_nothing():
-    """Should not fail if there is nothing in either database."""
-    match_array_elements(EntityDb(), CvdumpTypesParser())
+def name_for_address(
+    db: EntityDb, types_db: CvdumpTypesParser, image_id: ImageId, addr: int
+) -> str:
+    """It would be better to test the real code path instead. GH #461"""
+    entity = db.get(image_id, addr, exact=False)
+    assert entity is not None
+    base_addr = entity.addr(image_id)
+    assert isinstance(base_addr, int)
+    offset = addr - base_addr
+
+    suffix = ""
+    type_key = entity.get("data_type")
+    if isinstance(type_key, int):
+        suffix = types_db.get_name_for_offset(TK(type_key), offset)
+
+    name = entity.name
+    if name:
+        return name + suffix
+
+    return ""
 
 
 def test_match_array(db: EntityDb, types_db: CvdumpTypesParser):
@@ -48,33 +61,12 @@ def test_match_array(db: EntityDb, types_db: CvdumpTypesParser):
         )
         batch.match(100, 100)
 
-    match_array_elements(db, types_db)
+    get_name = partial(name_for_address, db, types_db)
 
-    e = db.get(ImageId.ORIG, 100)
-    assert e is not None
-    assert e.name == "test[0]"
-    assert e.get("type") == EntityType.DATA
-    assert e.any_size() == 8
-
-    e = db.get(ImageId.ORIG, 104)
-    assert e is not None
-    assert e.name == "test[1]"
-    assert e.get("type") == EntityType.OFFSET
-    assert e.any_size() == 4
-    assert e.recomp_addr == 104  # Should create new match
-
-    e = db.get(ImageId.RECOMP, 100)
-    assert e is not None
-    assert e.name == "test[0]"
-    assert e.get("type") == EntityType.DATA
-    assert e.any_size() == 8
-
-    e = db.get(ImageId.RECOMP, 104)
-    assert e is not None
-    assert e.name == "test[1]"
-    assert e.get("type") == EntityType.OFFSET
-    assert e.any_size() == 4
-    assert e.orig_addr == 104  # Should create new match
+    assert get_name(ImageId.ORIG, 100) == "test[0]"
+    assert get_name(ImageId.ORIG, 104) == "test[1]"
+    assert get_name(ImageId.RECOMP, 100) == "test[0]"
+    assert get_name(ImageId.RECOMP, 104) == "test[1]"
 
 
 def test_match_array_key_unset(db: EntityDb):
@@ -91,22 +83,12 @@ def test_match_array_key_unset(db: EntityDb):
         batch.match(100, 100)
 
     # Empty types db so the key lookup will fail
-    match_array_elements(db, CvdumpTypesParser())
+    get_name = partial(name_for_address, db, CvdumpTypesParser())
 
-    # Does not rename main entity
-    e = db.get(ImageId.ORIG, 100)
-    assert e is not None
-    assert e.name == "test"
-    assert e.get("type") == EntityType.DATA
-
-    e = db.get(ImageId.RECOMP, 100)
-    assert e is not None
-    assert e.name == "test"
-    assert e.get("type") == EntityType.DATA
-
-    # Does not create new entity
-    assert db.get(ImageId.ORIG, 104) is None
-    assert db.get(ImageId.RECOMP, 104) is None
+    assert get_name(ImageId.ORIG, 100) == "test"
+    assert get_name(ImageId.ORIG, 104) == "test+4"
+    assert get_name(ImageId.RECOMP, 100) == "test"
+    assert get_name(ImageId.RECOMP, 104) == "test+4"
 
 
 def test_match_array_type_is_scalar(db: EntityDb):
@@ -124,22 +106,12 @@ def test_match_array_type_is_scalar(db: EntityDb):
         batch.match(100, 100)
 
     # Scalars are not currently part of the type database dict, so use an empty one.
-    match_array_elements(db, CvdumpTypesParser())
+    get_name = partial(name_for_address, db, CvdumpTypesParser())
 
-    # Does not rename main entity
-    e = db.get(ImageId.ORIG, 100)
-    assert e is not None
-    assert e.name == "test"
-    assert e.get("type") == EntityType.DATA
-
-    e = db.get(ImageId.RECOMP, 100)
-    assert e is not None
-    assert e.name == "test"
-    assert e.get("type") == EntityType.DATA
-
-    # Does not create new entity
-    assert db.get(ImageId.ORIG, 104) is None
-    assert db.get(ImageId.RECOMP, 104) is None
+    assert get_name(ImageId.ORIG, 100) == "test"
+    assert get_name(ImageId.ORIG, 104) == "test+4"
+    assert get_name(ImageId.RECOMP, 100) == "test"
+    assert get_name(ImageId.RECOMP, 104) == "test+4"
 
 
 def test_match_array_type_is_struct(db: EntityDb, types_db: CvdumpTypesParser):
@@ -170,22 +142,12 @@ def test_match_array_type_is_struct(db: EntityDb, types_db: CvdumpTypesParser):
         batch.match(100, 100)
 
     # Empty types db so the key lookup will fail
-    match_array_elements(db, CvdumpTypesParser())
+    get_name = partial(name_for_address, db, CvdumpTypesParser())
 
-    # Does not rename main entity
-    e = db.get(ImageId.ORIG, 100)
-    assert e is not None
-    assert e.name == "test"
-    assert e.get("type") == EntityType.DATA
-
-    e = db.get(ImageId.RECOMP, 100)
-    assert e is not None
-    assert e.name == "test"
-    assert e.get("type") == EntityType.DATA
-
-    # Does not create new entity
-    assert db.get(ImageId.ORIG, 104) is None
-    assert db.get(ImageId.RECOMP, 104) is None
+    assert get_name(ImageId.ORIG, 100) == "test"
+    assert get_name(ImageId.ORIG, 104) == "test+4"
+    assert get_name(ImageId.RECOMP, 100) == "test"
+    assert get_name(ImageId.RECOMP, 104) == "test+4"
 
 
 def test_match_array_type_orig_smaller(db: EntityDb, types_db: CvdumpTypesParser):
@@ -206,33 +168,18 @@ def test_match_array_type_orig_smaller(db: EntityDb, types_db: CvdumpTypesParser
             data_type=0x1000,
             size=8,
         )
+        # Set the max size (i.e. distance to "blocker" entity) manually.
+        # It was previously calculated inside match_array_elements.
+        batch.set(ImageId.ORIG, 100, max_size=4)
         batch.set(ImageId.ORIG, 104, name="blocker", type=EntityType.DATA)
         batch.match(100, 100)
 
-    match_array_elements(db, types_db)
+    get_name = partial(name_for_address, db, types_db)
 
-    # Should rename first orig entity
-    e = db.get(ImageId.ORIG, 100)
-    assert e is not None
-    assert e.name == "test[0]"
-    assert e.get("type") == EntityType.DATA
-
-    # But not the second
-    e = db.get(ImageId.ORIG, 104)
-    assert e is not None
-    assert e.name == "blocker"
-    assert e.recomp_addr is None  # Should NOT create new match
-
-    e = db.get(ImageId.RECOMP, 100)
-    assert e is not None
-    assert e.name == "test[0]"
-    assert e.get("type") == EntityType.DATA
-
-    e = db.get(ImageId.RECOMP, 104)
-    assert e is not None
-    assert e.name == "test[1]"
-    assert e.get("type") == EntityType.OFFSET
-    assert e.orig_addr is None  # Should NOT create new match
+    assert get_name(ImageId.ORIG, 100) == "test[0]"
+    assert get_name(ImageId.ORIG, 104) == "blocker"
+    assert get_name(ImageId.RECOMP, 100) == "test[0]"
+    assert get_name(ImageId.RECOMP, 104) == "test[1]"
 
 
 def test_match_array_array_of_structs(db: EntityDb, types_db: CvdumpTypesParser):
@@ -266,51 +213,16 @@ def test_match_array_array_of_structs(db: EntityDb, types_db: CvdumpTypesParser)
         )
         batch.match(100, 100)
 
-    match_array_elements(db, types_db)
+    get_name = partial(name_for_address, db, types_db)
 
-    orig_entities = [db.get(ImageId.ORIG, addr) for addr in (100, 104, 108, 112)]
-    recomp_entities = [db.get(ImageId.RECOMP, addr) for addr in (100, 104, 108, 112)]
-
-    assert all(orig_entities)
-    assert all(recomp_entities)
-
-    # "if e" required for type narrowing. mypy does not recognize the all() asserts.
-    assert [e.recomp_addr for e in orig_entities if e] == [100, 104, 108, 112]
-    assert [e.orig_addr for e in recomp_entities if e] == [100, 104, 108, 112]
-
-    assert [e.name for e in orig_entities if e] == [
-        "test[0].hello",
-        "test[0].world",
-        "test[1].hello",
-        "test[1].world",
-    ]
-    assert [e.name for e in recomp_entities if e] == [
-        "test[0].hello",
-        "test[0].world",
-        "test[1].hello",
-        "test[1].world",
-    ]
-
-    # Should create offset entities but not alter the parent variable entity.
-    orig_types = [e.get("type") for e in orig_entities if e]
-    orig_sizes = [e.any_size() for e in orig_entities if e]
-    assert orig_types == [
-        EntityType.DATA,
-        EntityType.OFFSET,
-        EntityType.OFFSET,
-        EntityType.OFFSET,
-    ]
-    assert orig_sizes == [16, 4, 4, 4]
-
-    recomp_types = [e.get("type") for e in recomp_entities if e]
-    recomp_sizes = [e.any_size() for e in recomp_entities if e]
-    assert recomp_types == [
-        EntityType.DATA,
-        EntityType.OFFSET,
-        EntityType.OFFSET,
-        EntityType.OFFSET,
-    ]
-    assert recomp_sizes == [16, 4, 4, 4]
+    assert get_name(ImageId.ORIG, 100) == "test[0].hello"
+    assert get_name(ImageId.ORIG, 104) == "test[0].world"
+    assert get_name(ImageId.ORIG, 108) == "test[1].hello"
+    assert get_name(ImageId.ORIG, 112) == "test[1].world"
+    assert get_name(ImageId.RECOMP, 100) == "test[0].hello"
+    assert get_name(ImageId.RECOMP, 104) == "test[0].world"
+    assert get_name(ImageId.RECOMP, 108) == "test[1].hello"
+    assert get_name(ImageId.RECOMP, 112) == "test[1].world"
 
 
 def test_match_array_array_of_arrays(db: EntityDb, types_db: CvdumpTypesParser):
@@ -337,50 +249,16 @@ def test_match_array_array_of_arrays(db: EntityDb, types_db: CvdumpTypesParser):
         )
         batch.match(100, 100)
 
-    match_array_elements(db, types_db)
+    get_name = partial(name_for_address, db, types_db)
 
-    orig_entities = [db.get(ImageId.ORIG, addr) for addr in (100, 104, 108, 112)]
-    recomp_entities = [db.get(ImageId.RECOMP, addr) for addr in (100, 104, 108, 112)]
-
-    assert all(orig_entities)
-    assert all(recomp_entities)
-
-    assert [e.recomp_addr for e in orig_entities if e] == [100, 104, 108, 112]
-    assert [e.orig_addr for e in recomp_entities if e] == [100, 104, 108, 112]
-
-    assert [e.name for e in orig_entities if e] == [
-        "test[0].[0]",
-        "test[0].[1]",
-        "test[1].[0]",
-        "test[1].[1]",
-    ]
-    assert [e.name for e in recomp_entities if e] == [
-        "test[0].[0]",
-        "test[0].[1]",
-        "test[1].[0]",
-        "test[1].[1]",
-    ]
-
-    # Should create offset entities but not alter the parent variable entity.
-    orig_types = [e.get("type") for e in orig_entities if e]
-    orig_sizes = [e.any_size() for e in orig_entities if e]
-    assert orig_types == [
-        EntityType.DATA,
-        EntityType.OFFSET,
-        EntityType.OFFSET,
-        EntityType.OFFSET,
-    ]
-    assert orig_sizes == [16, 4, 4, 4]
-
-    recomp_types = [e.get("type") for e in recomp_entities if e]
-    recomp_sizes = [e.any_size() for e in recomp_entities if e]
-    assert recomp_types == [
-        EntityType.DATA,
-        EntityType.OFFSET,
-        EntityType.OFFSET,
-        EntityType.OFFSET,
-    ]
-    assert recomp_sizes == [16, 4, 4, 4]
+    assert get_name(ImageId.ORIG, 100) == "test[0][0]"
+    assert get_name(ImageId.ORIG, 104) == "test[0][1]"
+    assert get_name(ImageId.ORIG, 108) == "test[1][0]"
+    assert get_name(ImageId.ORIG, 112) == "test[1][1]"
+    assert get_name(ImageId.RECOMP, 100) == "test[0][0]"
+    assert get_name(ImageId.RECOMP, 104) == "test[0][1]"
+    assert get_name(ImageId.RECOMP, 108) == "test[1][0]"
+    assert get_name(ImageId.RECOMP, 112) == "test[1][1]"
 
 
 def test_match_array_array_of_structs_limit(db: EntityDb, types_db: CvdumpTypesParser):
@@ -426,56 +304,16 @@ def test_match_array_array_of_structs_limit(db: EntityDb, types_db: CvdumpTypesP
         )
         batch.match(100, 100)
 
-    match_array_elements(db, types_db)
+    get_name = partial(name_for_address, db, types_db)
 
-    # Create first and second level entities. (Same as test_match_array_array_of_structs)
-    orig_entities = [db.get(ImageId.ORIG, addr) for addr in (100, 104, 108, 112)]
-    recomp_entities = [db.get(ImageId.RECOMP, addr) for addr in (100, 104, 108, 112)]
-
-    assert all(orig_entities)
-    assert all(recomp_entities)
-
-    assert [e.recomp_addr for e in orig_entities if e] == [100, 104, 108, 112]
-    assert [e.orig_addr for e in recomp_entities if e] == [100, 104, 108, 112]
-
-    # Should not use ".x" name
-    assert [e.name for e in orig_entities if e] == [
-        "test[0].hello",
-        "test[0].world",
-        "test[1].hello",
-        "test[1].world",
-    ]
-    assert [e.name for e in recomp_entities if e] == [
-        "test[0].hello",
-        "test[0].world",
-        "test[1].hello",
-        "test[1].world",
-    ]
-
-    # Should NOT create the third level entities. (e.g "test[0].hello.y")
-    assert not any(db.get(ImageId.ORIG, addr) for addr in (102, 106, 110, 114))
-    assert not any(db.get(ImageId.RECOMP, addr) for addr in (102, 106, 110, 114))
-
-    # Should create offset entities but not alter the parent variable entity.
-    orig_types = [e.get("type") for e in orig_entities if e]
-    orig_sizes = [e.any_size() for e in orig_entities if e]
-    assert orig_types == [
-        EntityType.DATA,
-        EntityType.OFFSET,
-        EntityType.OFFSET,
-        EntityType.OFFSET,
-    ]
-    assert orig_sizes == [16, 4, 4, 4]
-
-    recomp_types = [e.get("type") for e in recomp_entities if e]
-    recomp_sizes = [e.any_size() for e in recomp_entities if e]
-    assert recomp_types == [
-        EntityType.DATA,
-        EntityType.OFFSET,
-        EntityType.OFFSET,
-        EntityType.OFFSET,
-    ]
-    assert recomp_sizes == [16, 4, 4, 4]
+    assert get_name(ImageId.ORIG, 100) == "test[0].hello"
+    assert get_name(ImageId.ORIG, 104) == "test[0].world"
+    assert get_name(ImageId.ORIG, 108) == "test[1].hello"
+    assert get_name(ImageId.ORIG, 112) == "test[1].world"
+    assert get_name(ImageId.RECOMP, 100) == "test[0].hello"
+    assert get_name(ImageId.RECOMP, 104) == "test[0].world"
+    assert get_name(ImageId.RECOMP, 108) == "test[1].hello"
+    assert get_name(ImageId.RECOMP, 112) == "test[1].world"
 
 
 def test_match_array_array_of_union_structs(db: EntityDb, types_db: CvdumpTypesParser):
@@ -529,36 +367,60 @@ def test_match_array_array_of_union_structs(db: EntityDb, types_db: CvdumpTypesP
         )
         batch.match(100, 100)
 
-    match_array_elements(db, types_db)
+    get_name = partial(name_for_address, db, types_db)
 
-    e = db.get(ImageId.ORIG, 100)
-    assert e is not None
-    assert e.name == "test[0].hello"
-    assert e.get("type") == EntityType.DATA
-    assert e.any_size() == 8
+    assert get_name(ImageId.ORIG, 100) == "test[0].hello"
+    assert get_name(ImageId.ORIG, 104) == "test[1].hello"
+    assert get_name(ImageId.RECOMP, 100) == "test[0].hello"
+    assert get_name(ImageId.RECOMP, 104) == "test[1].hello"
 
-    e = db.get(ImageId.ORIG, 104)
-    assert e is not None
-    assert e.name == "test[1].hello"
-    assert e.get("type") == EntityType.OFFSET
-    assert e.any_size() == 4
 
-    e = db.get(ImageId.RECOMP, 100)
-    assert e is not None
-    assert e.name == "test[0].hello"
-    assert e.get("type") == EntityType.DATA
-    assert e.any_size() == 8
+def test_match_array_of_struct_bitfield(db: EntityDb, types_db: CvdumpTypesParser):
+    """Verify comparing an array of struct bitfields uses the underlying type of the bitfield"""
+    types_db.keys[TK(0x1000)] = {
+        "type": "LF_ARRAY",
+        "array_type": TK(0x1001),
+        "size": 4 * 8,
+    }
+    types_db.keys[TK(0x1001)] = {
+        "type": "LF_STRUCTURE",
+        "field_list_type": TK(0x1002),
+        "size": 8,
+    }
+    types_db.keys[TK(0x1002)] = {
+        "type": "LF_FIELDLIST",
+        "members": [
+            FieldListItem(offset=0, name="v0", type=CVInfoTypeEnum.T_UINT4),
+            FieldListItem(offset=4, name="bit0", type=TK(0x1003)),
+            FieldListItem(offset=4, name="bit1", type=TK(0x1004)),
+        ],
+    }
+    types_db.keys[TK(0x1003)] = {
+        "type": "LF_BITFIELD",
+        "bit_start": 0,
+        "bit_count": 1,
+        "bit_type": CVInfoTypeEnum.T_UCHAR,
+    }
+    types_db.keys[TK(0x1004)] = {
+        "type": "LF_BITFIELD",
+        "bit_start": 1,
+        "bit_count": 1,
+        "bit_type": CVInfoTypeEnum.T_UCHAR,
+    }
 
-    e = db.get(ImageId.RECOMP, 104)
-    assert e is not None
-    assert e.name == "test[1].hello"
-    assert e.get("type") == EntityType.OFFSET
-    assert e.any_size() == 4
+    with db.batch() as batch:
+        batch.set(
+            ImageId.RECOMP,
+            0x100,
+            name="test",
+            type=EntityType.DATA,
+            data_type=0x1000,
+            size=32,
+        )
+        batch.match(0x100, 0x100)
 
-    # Should NOT create entities for the union offsets
-    assert not any(
-        db.get(ImageId.ORIG, addr) for addr in (101, 102, 103, 105, 106, 107)
-    )
-    assert not any(
-        db.get(ImageId.RECOMP, addr) for addr in (101, 102, 103, 105, 106, 107)
-    )
+    get_name = partial(name_for_address, db, types_db)
+
+    assert get_name(ImageId.ORIG, 0x100) == "test[0].v0"
+    assert get_name(ImageId.RECOMP, 0x118) == "test[3].v0"
+    assert get_name(ImageId.RECOMP, 0x11C) == "test[3].bit0"

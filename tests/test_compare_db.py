@@ -323,28 +323,63 @@ def test_batch_exception_caught(db):
     assert db.get(ImageId.RECOMP, 200) is not None
 
 
-def test_generic_used_function(db: EntityDb):
-    """used() has a parameter to select which address space to check."""
-    assert db.used(ImageId.ORIG, 100) is False
-    assert db.used(ImageId.RECOMP, 100) is False
+def test_generic_exists_function(db: EntityDb):
+    """exists() has a parameter to select which address space to check."""
+    assert db.exists(ImageId.ORIG, 100) is False
+    assert db.exists(ImageId.RECOMP, 100) is False
 
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 100, name="Test")
 
-    assert db.used(ImageId.ORIG, 100) is True
-    assert db.used(ImageId.RECOMP, 100) is False
+    assert db.exists(ImageId.ORIG, 100) is True
+    assert db.exists(ImageId.RECOMP, 100) is False
 
     with db.batch() as batch:
         batch.set(ImageId.RECOMP, 100, name="Test")
 
-    assert db.used(ImageId.ORIG, 100) is True
-    assert db.used(ImageId.RECOMP, 100) is True
+    assert db.exists(ImageId.ORIG, 100) is True
+    assert db.exists(ImageId.RECOMP, 100) is True
 
 
-def test_generic_used_invalid_id(db: EntityDb):
+@pytest.mark.parametrize("image_id", ImageId)
+def test_generic_intersects_function(db: EntityDb, image_id: ImageId):
+    """intersects() checks both the given address and its footprint."""
+    assert db.intersects(image_id, 100) is False
+
+    with db.batch() as batch:
+        batch.set(image_id, 100, name="Test")
+
+    assert db.intersects(image_id, 100) is True
+    assert db.intersects(image_id, 105) is False
+    assert db.intersects(image_id, 110) is False
+
+    with db.batch() as batch:
+        batch.set(image_id, 100, size=8)
+
+    assert db.intersects(image_id, 100) is True
+    assert db.intersects(image_id, 105) is True
+    assert db.intersects(image_id, 110) is False
+
+
+def test_intersects_use_any_size(db: EntityDb):
+    """intersects() will use any size value in either address space."""
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, name="Test")
+        batch.set(ImageId.RECOMP, 100, size=8)
+        batch.match(100, 100)
+
+    assert db.intersects(ImageId.ORIG, 100) is True
+    assert db.intersects(ImageId.RECOMP, 100) is True
+    assert db.intersects(ImageId.ORIG, 105) is True
+    assert db.intersects(ImageId.RECOMP, 105) is True
+    assert db.intersects(ImageId.ORIG, 110) is False
+    assert db.intersects(ImageId.RECOMP, 110) is False
+
+
+def test_generic_exists_invalid_id(db: EntityDb):
     """Should fail if the image id is outside the enum"""
     with pytest.raises(AssertionError):
-        db.used(2, 100)  # type: ignore
+        db.exists(2, 100)  # type: ignore
 
 
 def test_generic_set_function(db: EntityDb):
@@ -402,58 +437,108 @@ def test_generic_get_invalid_id(db: EntityDb):
         db.get(2, 100)  # type: ignore
 
 
-def test_get_next_orig_addr(db: EntityDb):
-    """Should return the address of the entity from
-    the orig address space after the given address."""
+@pytest.mark.parametrize("image_id", ImageId)
+def test_get_max_size_no_sections(db: EntityDb, image_id: ImageId):
+    """Cannot estimate size without section data?"""
     with db.batch() as batch:
-        batch.set(ImageId.ORIG, 100, type=EntityType.FUNCTION)
-        batch.set(ImageId.ORIG, 200, type=EntityType.FUNCTION)
+        batch.set(image_id, 100, type=EntityType.FUNCTION)
+        batch.set(image_id, 200, type=EntityType.FUNCTION)
 
-    # The value does not need to contain an entity itself
-    assert db.get_next_orig_addr(0) == 100
-
-    # Always return the following address, even if the one provided is an entity
-    assert db.get_next_orig_addr(100) == 200
-
-    # Addresses following the final entity return None
-    assert db.get_next_orig_addr(200) is None
+    assert db.get_max_size(image_id, 100) is None
+    assert db.get_max_size(image_id, 200) is None
 
 
-def test_get_next_orig_addr_any_type(db: EntityDb):
-    """Demonstrate that the function works with all entity types (not just functions)."""
+@pytest.mark.parametrize("image_id", ImageId)
+def test_get_max_size_with_sections(db: EntityDb, image_id: ImageId):
+    """All requirements met to apply max size."""
+    db.add_section(image_id, range(100, 300))
+
     with db.batch() as batch:
-        batch.set(ImageId.ORIG, 100, type=EntityType.STRING)
-        batch.set(ImageId.ORIG, 200, type=EntityType.DATA)
+        batch.set(image_id, 100, type=EntityType.FUNCTION)
+        batch.set(image_id, 200, type=EntityType.FUNCTION)
 
-    assert db.get_next_orig_addr(0) == 100
-    assert db.get_next_orig_addr(100) == 200
-    assert db.get_next_orig_addr(200) is None
+    # Distance to next entity
+    assert db.get_max_size(image_id, 100) == 100
+
+    # Distance to end of section
+    assert db.get_max_size(image_id, 200) == 100
 
 
-def test_get_next_orig_addr_no_type(db: EntityDb):
-    """Skip entities without a type."""
+@pytest.mark.parametrize("image_id", ImageId)
+def test_get_max_size_skip_none_type(db: EntityDb, image_id: ImageId):
+    """An entity with type=None is ignored when calculating
+    the max size of the preceding entity."""
+    db.add_section(image_id, range(100, 300))
+
     with db.batch() as batch:
-        batch.set(ImageId.ORIG, 100, type=EntityType.FUNCTION)
-        batch.set(ImageId.ORIG, 150)
-        batch.set(ImageId.ORIG, 200, type=EntityType.FUNCTION)
+        batch.set(image_id, 100, type=EntityType.FUNCTION)
+        batch.set(image_id, 200)
 
-    assert db.get_next_orig_addr(100) == 200
-    assert db.get_next_orig_addr(150) == 200
+    # Ignored entity at addr=200. Calculated against the end of the section.
+    assert db.get_max_size(image_id, 100) == 200
+
+    # Behavior differs from `set_max_size` because we do not require a specific
+    # type for the entity or for the entity to exist at all.
+    assert db.get_max_size(image_id, 200) == 100
+    assert db.get_max_size(image_id, 250) == 50
 
 
-def test_get_next_orig_addr_function_passenger_type(db: EntityDb):
-    """Skip entities with the LINE or LABEL types.
-    These entities appear inside of other entities (i.e. functions)
-    If we did not skip them, our estimate on function size will be too small."""
+@pytest.mark.parametrize("image_id", ImageId)
+def test_get_max_size_skip_non_compared_type(db: EntityDb, image_id: ImageId):
+    """When measuring max size, skip entities that are not a "solid" type.
+    Entities with a null type are also skipped."""
+    db.add_section(image_id, range(100, 300))
+
     with db.batch() as batch:
-        batch.set(ImageId.ORIG, 100, type=EntityType.FUNCTION)
-        batch.set(ImageId.ORIG, 150, type=EntityType.LINE)
-        batch.set(ImageId.ORIG, 160, type=EntityType.LABEL)
-        batch.set(ImageId.ORIG, 200, type=EntityType.FUNCTION)
+        batch.set(image_id, 100, type=EntityType.FUNCTION)
+        batch.set(image_id, 110, type=EntityType.LINE)
+        batch.set(image_id, 120)
+        batch.set(image_id, 130, type=EntityType.LINE)
+        batch.set(image_id, 200, type=EntityType.FUNCTION)
+        batch.set(image_id, 210, type=EntityType.LINE)
+        batch.set(image_id, 220, type=EntityType.LINE)
 
-    assert db.get_next_orig_addr(100) == 200
-    assert db.get_next_orig_addr(150) == 200
-    assert db.get_next_orig_addr(160) == 200
+    # Distance to next entity
+    assert db.get_max_size(image_id, 100) == 100
+
+    # Distance to end of section
+    assert db.get_max_size(image_id, 200) == 100
+
+
+@pytest.mark.parametrize("image_id", ImageId)
+def test_get_max_size_section_boundaries(db: EntityDb, image_id: ImageId):
+    """Do not cross section boundaries when measuring entities."""
+    db.add_section(image_id, range(100, 300))
+    db.add_section(image_id, range(500, 600))
+
+    with db.batch() as batch:
+        batch.set(image_id, 100, type=EntityType.FUNCTION)
+        batch.set(image_id, 500, type=EntityType.FUNCTION)
+
+    # Distance to end of section
+    assert db.get_max_size(image_id, 100) == 200
+
+    # Distance to end of section
+    assert db.get_max_size(image_id, 500) == 100
+
+
+@pytest.mark.parametrize("image_id", ImageId)
+def test_get_all_in_range(db: EntityDb, image_id: ImageId):
+    """Demonstrate how all_in_range() returns entities."""
+    with db.batch() as batch:
+        batch.set(image_id, 100, type=EntityType.FUNCTION)
+        batch.set(image_id, 200, type=EntityType.FUNCTION)
+
+    def checker(img: ImageId, range_: range) -> tuple[int | None, ...]:
+        return tuple(ent.addr(img) for ent in db.all_in_range(img, range_))
+
+    assert checker(image_id, range(300)) == (100, 200)
+
+    # Returns addrs inside the input range.
+    # Inclusive on start, exclusive on stop.
+    assert checker(image_id, range(100, 201)) == (100, 200)
+    assert checker(image_id, range(100, 200)) == (100,)
+    assert checker(image_id, range(101, 200)) == tuple()
 
 
 @pytest.mark.parametrize(

@@ -382,10 +382,9 @@ def test_compare_other_pointers_no_effective_match(
     assert c.result == CompareResult.DIFF
 
 
-@pytest.mark.xfail(reason="GH #308")
 def test_compare_pointer_entity_offset(db: EntityDb, types: CvdumpTypesParser):
     """If a pointer variable points at the same offset to the same entity
-    in both binaries, this is a match."""
+    in both binaries, this is a match. (GH #308)"""
     create_matched_variable(db, 0, data_type=CVInfoTypeEnum.T_32PVOID)
     with db.batch() as batch:
         batch.set(ImageId.RECOMP, 6, size=10, type=EntityType.DATA, name="hello")

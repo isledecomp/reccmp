@@ -5,6 +5,7 @@ from reccmp.parser.marker import (
     MarkerType,
     match_marker,
     is_marker_exact,
+    normalize_project_aliases,
 )
 from reccmp.parser.util import (
     is_blank_or_comment,
@@ -147,10 +148,11 @@ def test_get_class_name_none(line: str):
 
 
 variable_name_cases = [
-    # with prefix for easy access
+    # With "g_" prefix, formerly a requirement for variables in reccmp-enabled code.
     ("char* g_test;", "g_test"),
     ("g_test;", "g_test"),
     ("void (*g_test)(int);", "g_test"),
+    ("void (*g_test)(char*, int);", "g_test"),
     ("char g_test[50];", "g_test"),
     ("char g_test[50] = {1234,", "g_test"),
     ("int g_test = 500;", "g_test"),
@@ -158,10 +160,16 @@ variable_name_cases = [
     ("char* hello;", "hello"),
     ("hello;", "hello"),
     ("void (*hello)(int);", "hello"),
+    ("char hello[];", "hello"),
+    ("char hello[][];", "hello"),
     ("char hello[50];", "hello"),
+    ("char hello[10][50];", "hello"),
     ("char hello[50] = {1234,", "hello"),
     ("int hello = 500;", "hello"),
     ("char* gBoring_material_names[2];", "gBoring_material_names"),
+    ("const FloatConstant g_floatConst4096(4096.0f);", "g_floatConst4096"),
+    ("int really::really::qualified::variable hello;", "hello"),
+    ("fully::qualified::type test = 5;", "test"),
 ]
 
 
@@ -213,3 +221,51 @@ def test_marker_trailing_spaces():
     assert marker is not None
     assert marker.offset == 0x1234
     assert marker.extra is None
+
+
+def test_marker_aliases():
+    """Testing with aliases that have been normalized by normalize_project_aliases()"""
+    # No alias
+    marker = match_marker("// FUNC: TEST 0x1234")
+    assert marker and marker.type == MarkerType.UNKNOWN
+
+    # Alias demo
+    marker = match_marker("// FUNC: TEST 0x1234", {"TEST": {"FUNC": "FUNCTION"}})
+    assert marker and marker.type == MarkerType.FUNCTION
+
+    # Aliases are scoped by target
+    marker = match_marker("// FUNC: TEST 0x1234", {"HELLO": {"FUNC": "FUNCTION"}})
+    assert marker and marker.type == MarkerType.UNKNOWN
+
+    # Alias goes nowhere
+    marker = match_marker("// FUNC: TEST 0x1234", {"TEST": {"FUNC": "HELLO"}})
+    assert marker and marker.type == MarkerType.UNKNOWN
+
+    # Double alias not followed
+    marker = match_marker(
+        "// FUNC: TEST 0x1234", {"TEST": {"FUNC": "HELLO", "HELLO": "FUNCTION"}}
+    )
+    assert marker and marker.type == MarkerType.UNKNOWN
+
+
+def test_normalize_project_aliases():
+    assert not normalize_project_aliases({})
+
+    # Normalize target and alias names for lookup
+    assert normalize_project_aliases({"test": {"func": "FUNCTION"}}) == {
+        "TEST": {"FUNC": "FUNCTION"}
+    }
+
+    # Drop empty alias lists
+    assert not normalize_project_aliases({"TEST": {}})
+
+    # Drop aliases that point to nothing
+    assert not normalize_project_aliases({"TEST": {"func": "FUNC"}})
+
+    # Drop aliases that try to reassign a built-in type
+    assert not normalize_project_aliases({"TEST": {"FUNCTION": "GLOBAL"}})
+
+    # Drop duplicated alias
+    assert normalize_project_aliases(
+        {"TEST": {"func": "FUNCTION", "FUNC": "TEMPLATE"}}
+    ) == {"TEST": {"FUNC": "FUNCTION"}}

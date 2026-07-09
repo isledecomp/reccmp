@@ -141,7 +141,7 @@ def _assert_legoanimactorentry(imported_structure: "DataType"):
     assert id_component.getDataType().name == "ulong"
 
 
-verified_types = (
+verified_types = tuple(
     t
     for t in CVInfoTypeEnum
     if CvdumpTypeMap[t].verified and t != CVInfoTypeEnum.T_NOTYPE

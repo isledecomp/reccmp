@@ -513,6 +513,44 @@ def test_members_recursive(parser: CvdumpTypesParser):
     ]
 
 
+@pytest.mark.xfail(reason="Not enabled (yet) for entities that are not arrays.")
+def test_offset_names_for_struct(parser: CvdumpTypesParser):
+    # MxVariable field list
+    assert parser.get_name_for_offset(TK(0x22D4), 0) == "vftable"
+    assert parser.get_name_for_offset(TK(0x22D4), 4) == "m_key.vftable"
+    assert parser.get_name_for_offset(TK(0x22D4), 8) == "m_key.m_id"
+    assert parser.get_name_for_offset(TK(0x22D4), 12) == "m_key.m_data"
+    assert parser.get_name_for_offset(TK(0x22D4), 16) == "m_key.m_length"
+    assert parser.get_name_for_offset(TK(0x22D4), 20) == "m_value.vftable"
+    assert parser.get_name_for_offset(TK(0x22D4), 24) == "m_value.m_id"
+    assert parser.get_name_for_offset(TK(0x22D4), 28) == "m_value.m_data"
+    assert parser.get_name_for_offset(TK(0x22D4), 32) == "m_value.m_length"
+
+    # Sub-members
+    assert parser.get_name_for_offset(TK(0x22D4), 1) == "vftable+1"
+    assert parser.get_name_for_offset(TK(0x22D4), 26) == "m_value.m_id+2"
+
+
+def test_offset_names_for_array(parser: CvdumpTypesParser):
+    assert parser.get_name_for_offset(TK(0x103B), 0) == "[0]"
+    assert parser.get_name_for_offset(TK(0x103B), 4) == "[1]"
+    assert parser.get_name_for_offset(TK(0x103B), 8) == "[2]"
+    assert parser.get_name_for_offset(TK(0x103B), 12) == "[3]"
+
+    # Sub-members
+    assert parser.get_name_for_offset(TK(0x103B), 1) == "[0]+1"
+    assert parser.get_name_for_offset(TK(0x103B), 2) == "[0]+2"
+    assert parser.get_name_for_offset(TK(0x103B), 3) == "[0]+3"
+
+
+def test_offset_name_for_array_of_structs(parser: CvdumpTypesParser):
+    # ROIColorAlias[22], element size 20, total size 440.
+    assert parser.get_name_for_offset(TK(0x19B1), 0) == "[0].m_name"
+    assert parser.get_name_for_offset(TK(0x19B1), 4) == "[0].m_red"
+    assert parser.get_name_for_offset(TK(0x19B1), 20) == "[1].m_name"
+    assert parser.get_name_for_offset(TK(0x19B1), 436) == "[21].m_unk0x10"
+
+
 def test_struct(parser: CvdumpTypesParser):
     """Basic test for converting type into struct.unpack format string."""
     # MxCore: vftable and uint32. The vftable pointer is read as uint32.
@@ -603,6 +641,14 @@ def test_array(parser: CvdumpTypesParser):
         (8, "[2]", CVInfoTypeEnum.T_REAL32),
         (12, "[3]", CVInfoTypeEnum.T_REAL32),
     ]
+
+    # ROIColorAlias[22]
+    color_alias = simplify_scalars(parser.get_scalars(TK(0x19B1)))
+    assert len(color_alias) == 5 * 22  # 5 struct members, 22 elements
+    assert (0, "[0].m_name", CVInfoTypeEnum.T_32PRCHAR) in color_alias
+    assert (4, "[0].m_red", CVInfoTypeEnum.T_INT4) in color_alias
+    assert (20, "[1].m_name", CVInfoTypeEnum.T_32PRCHAR) in color_alias
+    assert (436, "[21].m_unk0x10", CVInfoTypeEnum.T_INT4) in color_alias
 
 
 def test_2d_array(parser: CvdumpTypesParser):
@@ -1195,3 +1241,23 @@ def test_unknown_primitive_type(empty_parser: CvdumpTypesParser):
     empty_parser.read_all(ARRAY_WITH_UNKNOWN_ELEMENT)
     with pytest.raises(CvdumpKeyError):
         empty_parser.get_scalars(TK(0x1000))
+
+
+ARRAY_OF_STRUCT_BITFIELDS = """
+0x1002 : Length = 10, Leaf = 0x1205 LF_BITFIELD
+        bits = 1, starting position = 0, Type = T_UCHAR(0020)
+
+0x1003 : Length = 10, Leaf = 0x1205 LF_BITFIELD
+        bits = 3, starting position = 6, Type = T_UINT4(0075)
+"""
+
+
+def test_bitfields(empty_parser: CvdumpTypesParser):
+    """Make sure we can read a LF_BITFIELD present in LF_FIELDLIST"""
+    empty_parser.read_all(ARRAY_OF_STRUCT_BITFIELDS)
+    assert empty_parser.keys[TK(0x1002)]["bit_start"] == 0
+    assert empty_parser.keys[TK(0x1002)]["bit_count"] == 1
+    assert empty_parser.keys[TK(0x1002)]["bit_type"] == CVInfoTypeEnum.T_UCHAR
+    assert empty_parser.keys[TK(0x1003)]["bit_start"] == 6
+    assert empty_parser.keys[TK(0x1003)]["bit_count"] == 3
+    assert empty_parser.keys[TK(0x1003)]["bit_type"] == CVInfoTypeEnum.T_UINT4

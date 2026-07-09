@@ -1,6 +1,9 @@
-import { ReccmpRegisterEvent } from '../events';
+import { ReccmpRegisterEvent, ReccmpSortColEvent, ReccmpTableEvent, ReccmpToggleExpandedEvent } from '../events';
+
+/** @import { ColumnNames, ReccmpComparedEntity, ReccmpInternalState } from '../types' */
 
 // reccmp-pack-begin
+/** @param {ReccmpComparedEntity} row */
 function countDiffs(row) {
   const { diff = '' } = row;
   if (diff === '') {
@@ -13,6 +16,10 @@ function countDiffs(row) {
   return diffLength === 0 ? '' : `${diffLength} ${diffWord}`;
 }
 
+/**
+ * @param {ReccmpComparedEntity} row
+ * @returns {string}
+ */
 function getMatchPercentText(row) {
   if ('stub' in row) {
     return 'stub';
@@ -25,21 +32,22 @@ function getMatchPercentText(row) {
   return `${(row.matching * 100).toFixed(2)}%`;
 }
 
+/**
+ * @param {ReccmpComparedEntity} obj
+ * @param {boolean} showRecomp
+ * @returns {HTMLTableRowElement}
+ */
 function createDiffRow(obj, showRecomp) {
   let contents;
 
   // If "diff" is undefined or empty, that means
   // there are no diffs for this entity. (GH #201)
-  const { diff = [] } = obj;
+  const { diff = [], matching = 0.0 } = obj;
 
-  if ('stub' in obj) {
+  if (diff.length === 0) {
     contents = document.createElement('div');
     contents.className = 'no-diff';
-    contents.textContent = 'Stub. No diff.';
-  } else if (diff.length === 0) {
-    contents = document.createElement('div');
-    contents.className = 'no-diff';
-    contents.textContent = 'Identical function - no diff';
+    contents.textContent = matching === 1.0 ? 'Identical function - no diff' : 'No diff available';
   } else {
     contents = document.createElement('diff-display');
     contents.dataset.option = '1';
@@ -47,7 +55,7 @@ function createDiffRow(obj, showRecomp) {
   }
 
   const td = document.createElement('td');
-  td.setAttribute('colspan', showRecomp ? 5 : 4);
+  td.setAttribute('colspan', showRecomp ? '5' : '4');
   td.append(contents);
 
   const tr = document.createElement('tr');
@@ -56,7 +64,18 @@ function createDiffRow(obj, showRecomp) {
   return tr;
 }
 
+/**
+ * @param {ReccmpComparedEntity} obj
+ * @param {boolean} showRecomp
+ * @returns {HTMLTableRowElement}
+ */
 function createFuncRow(obj, showRecomp) {
+  /**
+   * @param {string} dataCol
+   * @param {boolean} canCopy
+   * @param {string} textContent
+   * @returns {HTMLTableCellElement}
+   */
   const createColumn = (dataCol, canCopy, textContent) => {
     const td = document.createElement('td');
     td.dataset.col = dataCol;
@@ -73,15 +92,11 @@ function createFuncRow(obj, showRecomp) {
 
   const cols = {
     address: createColumn('address', true, obj.address),
-    recomp: createColumn('recomp', true, obj.recomp),
+    ...(showRecomp && { recomp: createColumn('recomp', true, obj.recomp) }),
     name: createColumn('name', false, obj.name),
     diffs: createColumn('diffs', false, countDiffs(obj)),
     matching: createColumn('matching', false, getMatchPercentText(obj)),
   };
-
-  if (!showRecomp) {
-    delete cols.recomp;
-  }
 
   const tr = document.createElement('tr');
   tr.dataset.address = obj.address;
@@ -89,24 +104,27 @@ function createFuncRow(obj, showRecomp) {
   return tr;
 }
 
+/**
+ * @param {boolean} showRecomp
+ * @param {ColumnNames} sortCol
+ * @param {boolean} sortDesc
+ * @returns {HTMLTableRowElement}
+ */
 function createHeaderRow(showRecomp, sortCol, sortDesc) {
   const cols = {
     address: 'Address',
-    recomp: 'Recomp',
+    ...(showRecomp && { recomp: 'Recomp' }),
     name: 'Name',
     diffs: '',
     matching: 'Matching',
   };
 
-  if (!showRecomp) {
-    delete cols.recomp;
-  }
-
   const headers = Object.entries(cols).map(([key, name]) => {
     if (key === 'diffs') {
+      /** @type {HTMLTableCellElement} */
       const th = document.createElement('th');
       th.dataset.col = 'diffs';
-      th.dataset.noSort = true;
+      th.dataset.noSort = 'true';
       return th;
     }
 
@@ -115,6 +133,7 @@ function createHeaderRow(showRecomp, sortCol, sortDesc) {
       sort_indicator.innerHTML = sortDesc ? '&#9660' : '&#9650';
     }
 
+    /** @type {HTMLTableCellElement} */
     const th = document.createElement('th');
     th.dataset.col = key;
     const div = document.createElement('div');
@@ -135,9 +154,10 @@ class ListingTable extends window.HTMLElement {
     this.innerHTML = '<table id="listing"><thead></thead><tbody></tbody></table>';
 
     this.dispatchEvent(new ReccmpRegisterEvent(this.update.bind(this)));
-    this.dispatchEvent(new CustomEvent('reccmp-table', { bubbles: true, detail: this.setDiffRow.bind(this) }));
+    this.dispatchEvent(new ReccmpTableEvent(this.setDiffRow.bind(this)));
   }
 
+  /** @param {ReccmpInternalState} state */
   update({ currentPage, expanded, showRecomp, sortCol, sortDesc }) {
     const header_row = createHeaderRow(showRecomp, sortCol, sortDesc);
 
@@ -151,41 +171,48 @@ class ListingTable extends window.HTMLElement {
       }
     }
 
-    this.querySelector('thead').replaceChildren(header_row);
-    this.querySelector('tbody').replaceChildren(...rows);
+    const thead = /** @type {HTMLTableSectionElement } */ (this.querySelector('thead'));
+    const tbody = /** @type {HTMLTableSectionElement } */ (this.querySelector('tbody'));
 
-    this.querySelectorAll('th:not([data-no-sort])').forEach((th) => {
-      const col = th.dataset.col;
+    thead.replaceChildren(header_row);
+    tbody.replaceChildren(...rows);
+
+    this.querySelectorAll('th:not([data-no-sort])').forEach((element) => {
+      const th = /** @type {HTMLTableCellElement} */ (element);
+      const col = /** @type {ColumnNames} */ (th.dataset.col);
       if (col) {
         const span = th.querySelector('span');
         if (span) {
           span.addEventListener('click', () => {
-            this.dispatchEvent(new CustomEvent('setSortCol', { bubbles: true, detail: col }));
+            this.dispatchEvent(new ReccmpSortColEvent(col));
           });
         }
       }
     });
 
-    this.querySelectorAll('tr[data-address]').forEach((row) => {
+    this.querySelectorAll('tr[data-address]').forEach((element) => {
+      const row = /** @type {HTMLTableRowElement} */ (element);
       // Clicking the name column toggles the diff detail row.
       // This is added or removed without replacing the entire <tbody>.
-      row.querySelector('td[data-col="name"]').addEventListener('click', () => {
-        this.dispatchEvent(new CustomEvent('toggleExpanded', { bubbles: true, detail: row.dataset.address }));
+      const cell = /** @type {HTMLTableCellElement} */ (row.querySelector('td[data-col="name"]'));
+      cell.addEventListener('click', () => {
+        this.dispatchEvent(new ReccmpToggleExpandedEvent(row.dataset.address ?? ''));
       });
     });
   }
 
+  /** @param {ReccmpInternalState} state */
   setDiffRow({ currentPage, expanded, showRecomp }) {
-    const tbody = this.querySelector('tbody');
+    const tbody = /** @type {HTMLTableSectionElement} */ (this.querySelector('tbody'));
 
     for (const obj of currentPage) {
       const address = obj.address;
-      const funcrow = tbody.querySelector(`tr[data-address="${address}"]`);
+      const funcrow = /** @type {HTMLTableRowElement} */ (tbody.querySelector(`tr[data-address="${address}"]`));
       if (funcrow === null) {
         continue;
       }
 
-      const existing = tbody.querySelector(`tr[data-diff="${address}"]`);
+      const existing = /** @type {HTMLTableRowElement} */ (tbody.querySelector(`tr[data-diff="${address}"]`));
       const isExpanded = existing !== null;
       const shouldExpand = address in expanded;
 
@@ -200,4 +227,4 @@ class ListingTable extends window.HTMLElement {
 }
 
 // reccmp-pack-end
-export default ListingTable;
+export { ListingTable, getMatchPercentText };

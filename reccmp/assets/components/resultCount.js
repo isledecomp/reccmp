@@ -1,3 +1,5 @@
+/** @import { ReccmpInternalState } from '../types' */
+
 import { ReccmpRegisterEvent } from '../events';
 
 // reccmp-pack-begin
@@ -6,8 +8,9 @@ class ResultCount extends window.HTMLElement {
     this.dispatchEvent(new ReccmpRegisterEvent(this.update.bind(this)));
   }
 
+  /** @param {ReccmpInternalState} state */
   update({ results }) {
-    this.textContent = results.length;
+    this.textContent = String(results.length);
   }
 }
 
