@@ -15,7 +15,7 @@ jobs:
         GHIDRA_INSTALL_DIR: '/ghidra'
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
 
     # We cannot reuse the fetch-deps step from the other unit tests because the cache is not shared if different
     # container images are used, see https://github.com/actions/cache/issues/1361#issuecomment-2611294058
