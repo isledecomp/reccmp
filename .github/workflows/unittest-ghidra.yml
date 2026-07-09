@@ -9,7 +9,7 @@ jobs:
 
     container:
       # Note: This version should be kept in sync with the type stubs in /requirements-tests.txt
-      image: blacktop/ghidra:12.1
+      image: blacktop/ghidra:12.1.2
       env:
         # not set by default for some reason
         GHIDRA_INSTALL_DIR: '/ghidra'
