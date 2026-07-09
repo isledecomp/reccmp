@@ -4,4 +4,4 @@ pystache
 pydantic==2.13.4
 ruamel.yaml
 pydemumble==0.0.1
-pyghidra==2.2.0
+pyghidra==3.1.0
