@@ -1,8 +1,13 @@
-from difflib import SequenceMatcher
 from itertools import pairwise
 import itertools
-from typing import Iterable, Iterator, Sequence
+from typing import Iterable, Iterator, Sequence, TYPE_CHECKING
 from reccmp.difflib import DiffOpcode, get_grouped_opcodes
+
+# cydifflib has no type stubs, but we expect it to match the builtin difflib API exactly.
+if TYPE_CHECKING:
+    from difflib import SequenceMatcher
+else:
+    from cydifflib import SequenceMatcher
 
 
 class SequenceMatcherWithPins:
