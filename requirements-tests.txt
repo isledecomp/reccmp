@@ -2,7 +2,7 @@ pytest==9.1.1
 black==26.5.1
 codespell==2.4.2
 pylint==4.0.6
-mypy==2.1.0
+mypy==2.2.0
 types-colorama>=0.4.15.20260508
 # Note: This version should be kept in sync with the docker image in /.github/workflows/unittest-ghidra.yml
 ghidra-stubs==12.1.2
