@@ -1,7 +1,8 @@
-capstone
+capstone==5.0.9
 colorama>=0.4.6
-pystache
+pystache==0.6.8
 pydantic==2.13.4
-ruamel.yaml
+ruamel.yaml==0.19.1
 pydemumble==0.0.1
 pyghidra==3.1.0
+cydifflib==1.2.0
