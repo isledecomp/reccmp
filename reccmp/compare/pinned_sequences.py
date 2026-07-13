@@ -7,6 +7,7 @@ from reccmp.difflib import DiffOpcode, get_grouped_opcodes
 if TYPE_CHECKING:
     from difflib import SequenceMatcher
 else:
+    # better performance than the stock `difflib`
     from cydifflib import SequenceMatcher
 
 
