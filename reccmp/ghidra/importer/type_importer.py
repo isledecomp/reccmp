@@ -22,6 +22,7 @@ from ghidra.program.model.data import (
 )
 
 from reccmp.cvdump.types import (
+    CvdumpKeyError,
     CvdumpParsedType,
     FieldListItem,
     VirtualBasePointer,
@@ -96,8 +97,8 @@ class PdbTypeImporter:
             return self._import_scalar_type(type_index)
 
         try:
-            type_pdb = self.extraction.compare.types.keys[type_index]
-        except KeyError as e:
+            type_pdb = self.extraction.compare.types.from_key(type_index)
+        except CvdumpKeyError as e:
             raise TypeNotFoundError(
                 f"Failed to find referenced type '{type_index:#x}'"
             ) from e
@@ -201,8 +202,13 @@ class PdbTypeImporter:
 
     def _import_enum(self, type_pdb: CvdumpParsedType) -> DataType:
         underlying_type = self.import_pdb_type_into_ghidra(type_pdb["underlying_type"])
-        field_list = self.extraction.compare.types.keys.get(type_pdb["field_list_type"])
-        assert field_list is not None, f"Failed to find field list for enum {type_pdb}"
+        try:
+            field_list = self.extraction.compare.types.from_key(
+                type_pdb["field_list_type"]
+            )
+        except CvdumpKeyError:
+            assert False, f"Failed to find field list for enum {type_pdb}"
+
         type_name: str = type_pdb["name"]
 
         result = self._get_or_create_enum_data_type(
@@ -223,7 +229,7 @@ class PdbTypeImporter:
         slim_for_vbase: bool = False,
     ) -> DataType:
         field_list_type = type_in_pdb["field_list_type"]
-        field_list = self.types.keys[field_list_type]
+        field_list = self.types.from_key(field_list_type)
 
         class_size: int = type_in_pdb["size"]
         raw_name: str = type_in_pdb["name"]
