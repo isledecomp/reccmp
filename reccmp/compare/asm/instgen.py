@@ -9,7 +9,6 @@ from enum import Enum, auto
 from typing import Iterable, Literal, NamedTuple
 from capstone import Cs, CS_ARCH_X86, CS_MODE_16, CS_MODE_32  # type: ignore
 from .const import JUMP_MNEMONICS
-from .types import DisasmLiteInst
 
 
 @cache
@@ -18,6 +17,13 @@ def get_disassembler(is_32: bool = True) -> Cs:
 
 
 DisasmLiteTuple = tuple[int, int, str, str]
+"""Raw tuple returned by capstone's disasm_lite() function.
+The fields are:
+    - address
+    - size (of instruction, in bytes)
+    - mnemonic
+    - op_str (all operands, comma-delimited)
+"""
 
 displacement_regex = re.compile(r".*\+ (0x[0-9a-f]+)\]")
 
@@ -30,7 +36,7 @@ class SectionType(Enum):
 
 class CodeSection(NamedTuple):
     type: Literal[SectionType.CODE]
-    contents: list[DisasmLiteInst]
+    contents: list[DisasmLiteTuple]
 
 
 TabSectionType = Literal[SectionType.DATA_TAB] | Literal[SectionType.ADDR_TAB]
@@ -65,7 +71,7 @@ class InstructGen:
         self.start = start
         self.end = len(blob) + start
         self.section_end: int = self.end
-        self.code_tracks: list[list[DisasmLiteInst]] = []
+        self.code_tracks: list[list[DisasmLiteTuple]] = []
 
         # Todo: Could be refactored later
         self.cur_addr: int = 0
@@ -77,7 +83,7 @@ class InstructGen:
         self.confirmed_addrs: dict[int, SectionType] = {}
         self.analysis()
 
-    def _finish_code_section(self, contents: list[DisasmLiteInst]):
+    def _finish_code_section(self, contents: list[DisasmLiteTuple]):
         self.sections.append(CodeSection(SectionType.CODE, contents))
 
     def _finish_tab_section(self, type_: TabSectionType, stuff: list[tuple[int, int]]):
@@ -140,7 +146,7 @@ class InstructGen:
 
         return new_type
 
-    def _get_code_for(self, addr: int) -> list[DisasmLiteInst]:
+    def _get_code_for(self, addr: int) -> list[DisasmLiteTuple]:
         """Start disassembling at the given address."""
         # If we are reading a code block beyond the first, see if we already
         # have disassembled instructions beginning at the specified address.
@@ -148,7 +154,7 @@ class InstructGen:
         # correct instruction after the jump table's junk instructions.
         for track in self.code_tracks:
             for i, inst in enumerate(track):
-                if inst.address == addr:
+                if inst[0] == addr:
                     return track[i:]
 
         # If we are here, we don't have the instructions.
@@ -160,23 +166,20 @@ class InstructGen:
 
         disassembler = get_disassembler(self.is_32bit)
         blob_cropped = self.blob[addr - self.start :]
-        instructions = [
-            DisasmLiteInst(*inst)
-            for inst in stop_at_int3(disassembler.disasm_lite(blob_cropped, addr))
-        ]
+        instructions = list(stop_at_int3(disassembler.disasm_lite(blob_cropped, addr)))
         self.code_tracks.append(instructions)
         return instructions
 
-    def _handle_jump(self, inst: DisasmLiteInst):
+    def _handle_jump(self, op_str: str):
         # If this is a regular jump and its destination is within the
         # bounds of the binary data (i.e. presumed function size)
         # add it to our list of confirmed addresses.
-        if inst.op_str[0] == "0":
-            value = int(inst.op_str, 16)
+        if op_str[0] == "0":
+            value = int(op_str, 16)
             self._insert_confirmed_addr(value, SectionType.CODE)
 
         # If this is jumping into a table of addresses, save the destination
-        elif (match := displacement_regex.match(inst.op_str)) is not None:
+        elif (match := displacement_regex.match(op_str)) is not None:
             value = int(match.group(1), 16)
             self._insert_confirmed_addr(value, SectionType.ADDR_TAB)
 
@@ -198,7 +201,7 @@ class InstructGen:
                     self.cur_addr += 1
                     break
 
-                for inst in instructions:
+                for _, inst_size, inst_mnemonic, inst_op_str in instructions:
                     # section_end is updated as we read instructions.
                     # If we are into a jump/data table and would read
                     # a junk instruction, stop here.
@@ -207,18 +210,18 @@ class InstructGen:
 
                     # print(f"{inst.address:x} : {inst.mnemonic} {inst.op_str}")
 
-                    if inst.mnemonic in JUMP_MNEMONICS:
-                        self._handle_jump(inst)
+                    if inst_mnemonic in JUMP_MNEMONICS:
+                        self._handle_jump(inst_op_str)
                         # Todo: log calls too (unwind section)
-                    elif inst.mnemonic in ("mov", "movzx"):
+                    elif inst_mnemonic in ("mov", "movzx"):
                         # Todo: maintain pairing of data/jump tables
-                        if (match := displacement_regex.match(inst.op_str)) is not None:
+                        if (match := displacement_regex.match(inst_op_str)) is not None:
                             value = int(match.group(1), 16)
                             self._insert_confirmed_addr(value, SectionType.DATA_TAB)
 
                     # Do this instead of copying instruction address.
                     # If there is only one instruction, we would get stuck here.
-                    self.cur_addr += inst.size
+                    self.cur_addr += inst_size
 
                 # End of for loop on instructions.
                 # We are at the end of the section or the entire function.
@@ -228,7 +231,7 @@ class InstructGen:
                 # Todo: don't need to iter on every instruction here.
                 # They are already in order.
                 instruction_slice = [
-                    inst for inst in instructions if inst.address < self.section_end
+                    inst for inst in instructions if inst[0] < self.section_end
                 ]
                 self._finish_code_section(instruction_slice)
 

@@ -6,7 +6,6 @@ from typing import Callable, Iterator
 from typing_extensions import Buffer
 from reccmp.compare.asm.const import JUMP_MNEMONICS
 from reccmp.compare.asm.instgen import (
-    DisasmLiteInst,
     InstructGen,
     SectionType,
 )
@@ -89,27 +88,22 @@ class UsedAddressCollector:
     def analyze(self, data: Buffer, start_addr: int):
         ig = InstructGen(bytes(data), start_addr, True)
 
-        instructions = (
-            inst
-            for section in ig.sections
-            for inst in section.contents
-            if section.type == SectionType.CODE
-        )
+        for section in ig.sections:
+            if section.type == SectionType.CODE:
+                for inst in section.contents:
+                    inst_mnemonic, inst_op_str = inst[2:]
+                    if inst_mnemonic == "ret":
+                        break
 
-        for inst in instructions:
-            assert isinstance(inst, DisasmLiteInst)
-            if inst.mnemonic == "ret":
-                break
+                    if inst_mnemonic in JUMP_MNEMONICS:
+                        continue
 
-            if inst.mnemonic in JUMP_MNEMONICS:
-                continue
-
-            if inst.mnemonic in ("mov", "fstp"):
-                dst_operand, _, src_operand = inst.op_str.partition(", ")
-                self._append_addrs(dst_operand, True)
-                self._append_addrs(src_operand, False)
-            else:
-                self._append_addrs(inst.op_str, False)
+                    if inst_mnemonic in ("mov", "fstp"):
+                        dst_operand, _, src_operand = inst_op_str.partition(", ")
+                        self._append_addrs(dst_operand, True)
+                        self._append_addrs(src_operand, False)
+                    else:
+                        self._append_addrs(inst_op_str, False)
 
 
 def get_function_sample_size(db: EntityDb, image_id: ImageId, addr: int) -> int:
