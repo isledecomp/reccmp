@@ -116,6 +116,30 @@ def test_create_analysis_strings_do_not_create_substrings(db: EntityDb):
     assert db.get(ImageId.ORIG, 102) is None
 
 
+def test_create_analysis_strings_abutting_strings(db: EntityDb):
+    """Demonstrating that our check for substrings allows strings that are
+    next to each other, separated by the null-terminator."""
+    binfile = Mock(spec=[])
+    # iter_string() hides the null-terminator but it is assumed to be there.
+    binfile.iter_string = Mock(
+        return_value=[(100, "Test"), (105, "Test"), (109, "Test")]
+    )
+    binfile.relocations = set()
+
+    create_analysis_strings(db, ImageId.ORIG, binfile)
+
+    ent = db.get(ImageId.ORIG, 100)
+    assert ent is not None
+    assert ent.get("type") == EntityType.STRING
+
+    ent = db.get(ImageId.ORIG, 105)
+    assert ent is not None
+    assert ent.get("type") == EntityType.STRING
+
+    # Would overlap the null-terminator of the string at address 105.
+    assert db.get(ImageId.ORIG, 109) is None
+
+
 def test_create_analysis_strings_not_relocated(db: EntityDb):
     """Should not add the string if its address is the site of a relocation.
     i.e. We know this is a pointer, despite how it appears."""
