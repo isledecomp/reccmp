@@ -46,9 +46,15 @@ def create_analysis_strings(
     an existing entity. It's possible that some variables or pointers
     will be mistakenly identified as short strings."""
     with db.batch() as batch:
+        last_range = range(0)
         for addr, string in binfile.iter_string(encoding):
             # If the address is the site of a relocation, this is a pointer, not a string.
             if addr in binfile.relocations:
+                continue
+
+            # Don't create an entity for a substring of
+            # the most recently created string.
+            if addr in last_range:
                 continue
 
             if is_likely_latin1(string) and not db.intersects(img_id, addr):
@@ -59,6 +65,7 @@ def create_analysis_strings(
                     name=entity_name_from_string(string),
                     size=len(string) + 1,  # including null-terminator
                 )
+                last_range = range(addr, addr + len(string) + 1)
 
 
 def create_analysis_floats(db: EntityDb, img_id: ImageId, binfile: PEImage):
