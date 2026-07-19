@@ -3,6 +3,7 @@ and type dependency tree walker."""
 
 # pylint:disable=too-many-lines
 # pylint:disable=protected-access
+# TODO: Remove after we no longer access `types_db._keys` directly. See #485.
 
 from struct import calcsize
 from typing import Iterable

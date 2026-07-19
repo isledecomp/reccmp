@@ -8,6 +8,7 @@ from reccmp.cvdump.types import CvdumpTypesParser, FieldListItem, CVInfoTypeEnum
 from reccmp.cvdump.cvinfo import CvdumpTypeKey as TK
 
 # pylint:disable=protected-access
+# TODO: Remove after we no longer access `types_db._keys` directly. See #485.
 
 
 @pytest.fixture(name="db")
