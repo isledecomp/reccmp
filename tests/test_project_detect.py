@@ -1,11 +1,10 @@
 """Tests for the detect_project() function, the main part of the reccmp-project utility."""
 
-import textwrap
-
 from reccmp.project.common import (
     RECCMP_BUILD_CONFIG,
     RECCMP_PROJECT_CONFIG,
     RECCMP_USER_CONFIG,
+    helper_create_project,
 )
 from reccmp.project.config import (
     BuildFile,
@@ -17,18 +16,6 @@ from reccmp.project.detect import (
 )
 from reccmp.formats import PEImage
 from .constants import LEGO1_SHA256
-
-
-def helper_create_project(target_name: str, filename: str, sha256: str) -> str:
-    """Creates YML for a project file with one target using the given parameters."""
-    return textwrap.dedent(f"""\
-    targets:
-      {target_name}:
-        filename: {filename}
-        source-root: sources
-        hash:
-          sha256: {sha256}
-    """)
 
 
 def test_project_original_detection_miss(tmp_path_factory):
