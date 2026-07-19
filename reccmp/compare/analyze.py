@@ -18,6 +18,9 @@ from reccmp.analysis import (
     find_eh_handlers,
     is_likely_latin1,
 )
+from reccmp.analysis.crt_startup import (
+    read_crt_arrays,
+)
 from .db import EntityDb, entity_name_from_string
 from .queries import get_floats_without_data, get_strings_without_data
 
@@ -36,6 +39,23 @@ def match_entry(db: EntityDb, orig_bin: PEImage, recomp_bin: PEImage):
     with db.batch() as batch:
         batch.set(ImageId.RECOMP, recomp_bin.entry, type=EntityType.FUNCTION)
         batch.match(orig_bin.entry, recomp_bin.entry)
+
+
+def create_crt_functions(db: EntityDb, image_id: ImageId, binfile: PEImage):
+    crt_arrays = tuple(read_crt_arrays(db, image_id, binfile))
+
+    with db.batch() as batch:
+        for base_name, array in crt_arrays:
+            if array is None:
+                continue
+
+            for addr in array:
+                batch.set(
+                    image_id,
+                    addr,
+                    type=EntityType.FUNCTION,
+                    name=base_name,
+                )
 
 
 def create_analysis_strings(
