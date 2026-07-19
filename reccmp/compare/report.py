@@ -120,11 +120,6 @@ def report_function_alignment(report: ReccmpStatusReport) -> int:
     return count
 
 
-def report_count_functions(report: ReccmpStatusReport) -> int:
-    """Count of all functions, matched or unmatched, stub or non-stub."""
-    return sum(1 for ent in report.entities.values() if ent.type == EntityType.FUNCTION)
-
-
 def report_function_accuracy(report: ReccmpStatusReport) -> tuple[int, float, float]:
     """Collects the accuracy and effective accuracy of all compared functions in the report.
     Returns (implemented_count, total_accuracy, total_effective_accuracy).
@@ -142,24 +137,6 @@ def report_function_accuracy(report: ReccmpStatusReport) -> tuple[int, float, fl
             total_effective_accuracy += ent.effective_accuracy
 
     return (implemented_count, total_accuracy, total_effective_accuracy)
-
-
-def report_progress_stats(report: ReccmpStatusReport) -> tuple[int, float]:
-    """Count comparable functions in the report and sum their effective-match accuracy.
-
-    Returns (implemented_funcs, raw_accuracy). Stubs and non-FUNCTION entities are excluded.
-    Entities with no recorded type (older reports that did not serialize the field) are
-    treated as functions to preserve backward-compatible behavior."""
-    implemented = 0
-    raw_accuracy = 0.0
-    for entity in report.entities.values():
-        if entity.is_stub:
-            continue
-        if entity.type is not None and entity.type != EntityType.FUNCTION:
-            continue
-        implemented += 1
-        raw_accuracy += entity.effective_accuracy
-    return implemented, raw_accuracy
 
 
 def _get_entity_for_addr(
@@ -200,6 +177,10 @@ def combine_reports(samples: list[ReccmpStatusReport]) -> ReccmpStatusReport:
 
     output = ReccmpStatusReport(filename=samples[0].filename)
 
+    # Use the highest function total across all samples.
+    # Some functions may have been inlined in some reports.
+    output.function_total = max(sample.function_total for sample in samples)
+
     # Combine every orig addr used in any of the reports.
     orig_addr_set = {key for sample in samples for key in sample.entities.keys()}
 
@@ -219,6 +200,10 @@ def combine_reports(samples: list[ReccmpStatusReport]) -> ReccmpStatusReport:
         if not all(e_list[0].recomp_addr == e.recomp_addr for e in e_list):
             output.entities[addr].recomp_addr = None
             output.entities[addr].recomp_addr_various = True
+
+    # Recalculate the count against the functions we actually have.
+    # This may be higher than the count from any one sample.
+    output.update_function_count()
 
     return output
 
@@ -277,6 +262,7 @@ class JSONReportVersion1(BaseModel):
     format: Literal[1]
     timestamp: float
     data: list[JSONEntityVersion1]
+    function_total: int | None
 
 
 MAGIC_STRING_VARIOUS = "various"
@@ -293,7 +279,9 @@ def _serialize_version_1(
             address=f"{addr:#x}",  # prefer dict key over redundant value in entity
             name=e.name,
             matching=e.accuracy,
-            recomp=MAGIC_STRING_VARIOUS if e.recomp_addr_various else f"{e.recomp_addr:#x}",
+            recomp=(
+                MAGIC_STRING_VARIOUS if e.recomp_addr_various else f"{e.recomp_addr:#x}"
+            ),
             stub=e.is_stub,
             library=e.is_library,
             effective=e.is_effective_match,
@@ -304,11 +292,15 @@ def _serialize_version_1(
         if e.is_matched()
     ]
 
+    # Recalculate before freezing the value.
+    report.update_function_count()
+
     return JSONReportVersion1(
         file=report.filename,
         format=1,
         timestamp=report.timestamp.timestamp(),
         data=entities,
+        function_total=report.function_total,
     )
 
 
@@ -318,6 +310,7 @@ def _deserialize_version_1(obj: JSONReportVersion1) -> ReccmpStatusReport:
         timestamp=datetime.fromtimestamp(obj.timestamp),
         from_version=1,
     )
+    report.function_total = obj.function_total or 0
 
     for e in obj.data:
         try:
@@ -347,6 +340,7 @@ def _deserialize_version_1(obj: JSONReportVersion1) -> ReccmpStatusReport:
             recomp_addr_various=various,
         )
 
+    report.update_function_count()
     return report
 
 

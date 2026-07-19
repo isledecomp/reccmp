@@ -25,7 +25,6 @@ from reccmp.compare.report import (
     ReccmpComparedEntity,
     deserialize_reccmp_report,
     serialize_reccmp_report,
-    report_count_functions,
     report_function_alignment,
     report_function_accuracy,
 )
@@ -264,6 +263,12 @@ def main() -> int:
     if args.dump:
         dump_all_matched_functions(report)
 
+    # If we know how many functions are in the file (via analysis with Ghidra or other tools)
+    # we can substitute an alternate value to use when calculating the percentages below.
+    if args.total:
+        # Use the alternate value if it exceeds the number of known functions
+        report.function_total = max(report.function_total, int(args.total))
+
     # Count how many functions have the same virtual address in orig and recomp.
     functions_aligned_count = report_function_alignment(report)
 
@@ -273,7 +278,8 @@ def main() -> int:
     # Print diff summary to terminal
     if not args.silent and args.diff is None:
         for entity in report.entities.values():
-            print_match_oneline(entity, show_both_addrs=args.print_rec_addr)
+            if entity.is_matched():
+                print_match_oneline(entity, show_both_addrs=args.print_rec_addr)
 
     # Compare with saved diff report.
     if args.diff is not None:
@@ -305,13 +311,7 @@ def main() -> int:
     if args.html is not None:
         write_html_report(args.html, report, target_icon)
 
-    function_count = report_count_functions(report)
-
-    # If we know how many functions are in the file (via analysis with Ghidra or other tools)
-    # we can substitute an alternate value to use when calculating the percentages below.
-    if args.total:
-        # Use the alternate value if it exceeds the number of annotated functions
-        function_count = max(function_count, int(args.total))
+    function_count = report.function_total
 
     implemented = implemented_funcs / safe_denominator(function_count) * 100
 

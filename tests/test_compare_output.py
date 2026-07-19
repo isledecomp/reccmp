@@ -14,7 +14,6 @@ from reccmp.compare.report import (
     serialize_reccmp_report,
     report_function_alignment,
     report_function_accuracy,
-    report_progress_stats,
 )
 from reccmp.types import EntityType, ImageId
 from reccmp.cvdump import CvdumpAnalysis
@@ -102,6 +101,7 @@ def test_matched_entity_no_type():
 
     # Skip the entity instead of blowing up. GH #252
     assert not report.entities
+
 
 def test_matched_function_missing_name():
     """We will not compare a function entity without a name."""
@@ -490,8 +490,6 @@ def test_report_function_alignment():
 
 
 def test_report_function_accuracy():
-    """report_function_accuracy and report_progress_stats are similar, so test both here to save space."""
-
     def test_entity(
         addr: int,
         entity_type: EntityType | None,
@@ -518,7 +516,6 @@ def test_report_function_accuracy():
     # Baseline
     report.entities = {}
     assert report_function_accuracy(report) == (0, 0, 0)
-    assert report_progress_stats(report) == (0, 0)
 
     # All matching
     report.entities = dict(
@@ -528,7 +525,6 @@ def test_report_function_accuracy():
         ]
     )
     assert report_function_accuracy(report) == (2, 2.0, 2.0)
-    assert report_progress_stats(report) == (2, 2.0)
 
     # Some diffs
     report.entities = dict(
@@ -538,7 +534,6 @@ def test_report_function_accuracy():
         ]
     )
     assert report_function_accuracy(report) == (2, 1.5, 1.5)
-    assert report_progress_stats(report) == (2, 1.5)
 
     # Effective match
     report.entities = dict(
@@ -548,7 +543,6 @@ def test_report_function_accuracy():
         ]
     )
     assert report_function_accuracy(report) == (2, 1.5, 2.0)
-    assert report_progress_stats(report) == (2, 2.0)
 
     # Stubs ignored
     report.entities = dict(
@@ -558,7 +552,6 @@ def test_report_function_accuracy():
         ]
     )
     assert report_function_accuracy(report) == (1, 0.8, 0.8)
-    assert report_progress_stats(report) == (1, 0.8)
 
     # Vtables ignored
     report.entities = dict(
@@ -567,7 +560,6 @@ def test_report_function_accuracy():
         ]
     )
     assert report_function_accuracy(report) == (0, 0, 0)
-    assert report_progress_stats(report) == (0, 0)
 
     # Assumes type=None is a function.
     # This is to preserve compatibility with files that existed before #392.
@@ -578,4 +570,3 @@ def test_report_function_accuracy():
         ]
     )
     assert report_function_accuracy(report) == (2, 1.5, 1.5)
-    assert report_progress_stats(report) == (2, 1.5)
