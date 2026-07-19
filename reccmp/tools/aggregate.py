@@ -13,7 +13,7 @@ from reccmp.compare.report import (
     ReccmpReportSameSourceError,
     deserialize_reccmp_report,
     serialize_reccmp_report,
-    report_progress_stats,
+    report_function_accuracy,
 )
 
 logger = logging.getLogger(__name__)
@@ -193,20 +193,22 @@ def main():
             write_html_report(args.html, agg_report)
 
         if args.svg is not None:
-            implemented_funcs, raw_accuracy = report_progress_stats(agg_report)
+            implemented_funcs, _, effective_accuracy = report_function_accuracy(
+                agg_report
+            )
             if implemented_funcs == 0:
                 logger.error(
                     "No comparable functions in aggregate report; skipping SVG."
                 )
             else:
-                total_funcs = max(implemented_funcs, args.total or 0)
+                total_funcs = max(agg_report.function_total, args.total or 0)
                 gen_svg(
                     args.svg,
                     agg_report.filename,
                     args.svg_icon,
                     implemented_funcs,
                     total_funcs,
-                    raw_accuracy,
+                    effective_accuracy,
                 )
 
     # If --diff has at least one file and we aggregated some samples this run, diff the first file and the aggregate.
