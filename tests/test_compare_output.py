@@ -567,7 +567,7 @@ def test_report_function_accuracy():
     assert report_function_accuracy(report) == (0, 0, 0)
     assert report_progress_stats(report) == (0, 0)
 
-    # Progress stats assumes type=None is a function.
+    # Assumes type=None is a function.
     # This is to preserve compatibility with files that existed before #392.
     report.entities = dict(
         [
@@ -575,5 +575,5 @@ def test_report_function_accuracy():
             test_entity(1, None, 0.5),
         ]
     )
-    assert report_function_accuracy(report) == (1, 1.0, 1.0)
+    assert report_function_accuracy(report) == (2, 1.5, 1.5)
     assert report_progress_stats(report) == (2, 1.5)

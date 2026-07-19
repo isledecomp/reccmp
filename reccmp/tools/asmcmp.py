@@ -25,6 +25,7 @@ from reccmp.compare.report import (
     ReccmpComparedEntity,
     deserialize_reccmp_report,
     serialize_reccmp_report,
+    report_count_functions,
     report_function_alignment,
     report_function_accuracy,
     format_address,
@@ -274,7 +275,7 @@ def main() -> int:
     functions_aligned_count = report_function_alignment(report)
 
     # Number of functions compared (i.e. excluding stubs)
-    function_count, _, total_effective_accuracy = report_function_accuracy(report)
+    implemented_funcs, _, total_effective_accuracy = report_function_accuracy(report)
 
     # Print diff summary to terminal
     if not args.silent and args.diff is None:
@@ -311,10 +312,7 @@ def main() -> int:
     if args.html is not None:
         write_html_report(args.html, report, target_icon)
 
-    implemented_funcs = function_count
-
-    # Add known but unmatched functions to our count
-    function_count += compare.count_unmatched_functions()
+    function_count = report_count_functions(report)
 
     # If we know how many functions are in the file (via analysis with Ghidra or other tools)
     # we can substitute an alternate value to use when calculating the percentages below.
