@@ -363,9 +363,7 @@ class Compare:
                 )
                 continue
 
-            orig = resolve_vtable_slot(
-                self._db, ImageId.ORIG, self.orig_bin, raw_orig
-            )
+            orig = resolve_vtable_slot(self._db, ImageId.ORIG, self.orig_bin, raw_orig)
             recomp = resolve_vtable_slot(
                 self._db, ImageId.RECOMP, self.recomp_bin, raw_recomp
             )

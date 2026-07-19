@@ -736,7 +736,7 @@ class PEImage(Image):
         instruction in the function is a jmp to the address in .idata.
         Search .text to find these functions."""
 
-        thunks = []
+        thunks: list[tuple[int, int]] = []
         # Read the incremental-link thunk table at the start of .text.
         # Entries are 5-byte jmps, optionally padded with int3 (0xCC) bytes.
         # Terminated by a big block of 0xcc padding bytes before the first

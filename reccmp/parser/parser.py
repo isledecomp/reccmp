@@ -527,7 +527,7 @@ class DecompParser:
                 # because it would have been handled already.
                 synthetic_name = get_synthetic_name(line)
                 if synthetic_name is None:
-                    self._syntax_error(ParserError.BAD_NAMEREF)
+                    self._syntax_error(AlertCode.BAD_NAMEREF)
                     return
                 self.function_sig = synthetic_name
                 self._function_starts_here()
@@ -586,11 +586,14 @@ class DecompParser:
                 self._function_done()
             elif self.function_sig.endswith(");"):
                 # Detect forward reference or declaration
-                self._syntax_error(ParserError.NO_IMPLEMENTATION)
+                self._syntax_error(AlertCode.NO_IMPLEMENTATION)
 
         elif self.state == ReaderState.IN_FUNC:
             if line_strip.startswith("}") and (
-                (self.curly_indent_stops < len(line) and line[self.curly_indent_stops] == "}")
+                (
+                    self.curly_indent_stops < len(line)
+                    and line[self.curly_indent_stops] == "}"
+                )
                 or line_strip == "}"
             ):
                 self._function_done()

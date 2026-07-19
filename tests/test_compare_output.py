@@ -337,7 +337,9 @@ def test_compare_vtable_match():
 
     with get_db(compare).batch() as batch:
         # Create vtable and single function. Match to create in both address spaces.
-        batch.set(ImageId.RECOMP, 0x1000, type=EntityType.FUNCTION, name="hello", size=1)
+        batch.set(
+            ImageId.RECOMP, 0x1000, type=EntityType.FUNCTION, name="hello", size=1
+        )
         batch.set(ImageId.RECOMP, 0x1004, type=EntityType.VTABLE, name="test", size=4)
         batch.match(0x1000, 0x1000)
         batch.match(0x1004, 0x1004)
@@ -373,8 +375,20 @@ def test_compare_vtable_diff():
     vtable_addr1000 = b"\x00\x10\x00\x00"
     vtable_addr1004 = b"\x04\x10\x00\x00"
     vtable_addr1008 = b"\x08\x10\x00\x00"
-    orig_mem = b"\x00" * 0x1000 + functions + vtable_addr1008 + (vtable_addr1000 * 30) + vtable_addr1004
-    recomp_mem = b"\x00" * 0x1000 + functions + vtable_addr1004 + (vtable_addr1000 * 30) + vtable_addr1008
+    orig_mem = (
+        b"\x00" * 0x1000
+        + functions
+        + vtable_addr1008
+        + (vtable_addr1000 * 30)
+        + vtable_addr1004
+    )
+    recomp_mem = (
+        b"\x00" * 0x1000
+        + functions
+        + vtable_addr1004
+        + (vtable_addr1000 * 30)
+        + vtable_addr1008
+    )
 
     orig_bin = RawImage.from_memory(orig_mem)
     recomp_bin = RawImage.from_memory(recomp_mem)
@@ -384,12 +398,18 @@ def test_compare_vtable_diff():
 
     with get_db(compare).batch() as batch:
         # Create vtable and single function. Match to create in both address spaces.
-        batch.set(ImageId.RECOMP, 0x1000, type=EntityType.FUNCTION, name="func0", size=1)
-        batch.set(ImageId.RECOMP, 0x1004, type=EntityType.FUNCTION, name="func1", size=1)
-        batch.set(ImageId.RECOMP, 0x1008, type=EntityType.FUNCTION, name="func2", size=1)
+        batch.set(
+            ImageId.RECOMP, 0x1000, type=EntityType.FUNCTION, name="func0", size=1
+        )
+        batch.set(
+            ImageId.RECOMP, 0x1004, type=EntityType.FUNCTION, name="func1", size=1
+        )
+        batch.set(
+            ImageId.RECOMP, 0x1008, type=EntityType.FUNCTION, name="func2", size=1
+        )
         batch.set(
             ImageId.RECOMP,
-            0x100c,
+            0x100C,
             type=EntityType.VTABLE,
             name="hello",
             size=len(orig_mem) - len(functions) - 0x1000,
@@ -397,7 +417,7 @@ def test_compare_vtable_diff():
         batch.match(0x1000, 0x1000)
         batch.match(0x1004, 0x1004)
         batch.match(0x1008, 0x1008)
-        batch.match(0x100c, 0x100c)
+        batch.match(0x100C, 0x100C)
 
     report = to_report(compare)
     assert len(report.entities) == 4
@@ -502,12 +522,7 @@ def test_compare_vtable_null_orig_slot():
     """Literal NULL slots in the orig vtable (MSVC cannot emit mid-table NULLs)."""
 
     orig_mem = b"\x00\x00\x00\x00" + b"\x04\x00\x00\x00" + b"\xc3\x00\x00\x00"
-    recomp_mem = (
-        b"\xcc" * 4
-        + b"\xde\xad\xbe\xef"
-        + b"\x08\x00\x00\x00"
-        + b"\xc3"
-    )
+    recomp_mem = b"\xcc" * 4 + b"\xde\xad\xbe\xef" + b"\x08\x00\x00\x00" + b"\xc3"
 
     orig_bin = RawImage.from_memory(orig_mem)
     recomp_bin = RawImage.from_memory(recomp_mem)

@@ -42,9 +42,7 @@ def is_plausible_vtable_target(binfile: Image, addr: int) -> bool:
     return data[0] in (0xE9, 0x55, 0x6A, 0x83, 0x8B, 0xC3, 0x33, 0x56, 0x57, 0x51, 0x53)
 
 
-def effective_orig_vtable_size(
-    binfile: Image, orig_addr: int, read_size: int
-) -> int:
+def effective_orig_vtable_size(binfile: Image, orig_addr: int, read_size: int) -> int:
     """Trim comparison past the last plausible orig vtable slot.
 
     Recompiled vtables are often longer than the original (extra inherited tail).
@@ -100,10 +98,7 @@ def resolve_vtable_slot(
                 ref_addr = entity.get(ref_key)
                 if isinstance(ref_addr, int):
                     target = db.get(image_id, ref_addr, exact=True)
-                    if (
-                        target is not None
-                        and target.entity_type == EntityType.FUNCTION
-                    ):
+                    if target is not None and target.entity_type == EntityType.FUNCTION:
                         return target
                     addr = ref_addr
                     continue

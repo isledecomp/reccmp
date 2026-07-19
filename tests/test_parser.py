@@ -251,16 +251,14 @@ def test_implicit_lookup_by_name(parser):
 
 
 def test_function_skips_clang_format_directive_after_marker(parser):
-    parser.read(
-        """\
+    parser.read("""\
         // FUNCTION: TEST 0x1234
         // clang-format off
         int test_function()
         {
             return 1;
         }
-        """
-    )
+        """)
     assert parser.state == ReaderState.SEARCH
     assert len(parser.functions) == 1
     assert parser.functions[0].lookup_by_name is False
@@ -282,16 +280,14 @@ def test_function_with_spaces(parser):
 
 
 def test_multiline_function_signature(parser):
-    parser.read(
-        """\
+    parser.read("""\
         // FUNCTION: TEST 0x1234
         void __fastcall VeryLongFunctionNameWithManyArgs(
             void* self, int a, int b, int c, int d, int e)
         {
             return;
         }
-        """
-    )
+        """)
     assert parser.state == ReaderState.SEARCH
     assert len(parser.functions) == 1
     assert parser.functions[0].lookup_by_name is False
