@@ -114,7 +114,7 @@ def report_function_alignment(report: ReccmpStatusReport) -> int:
     the address is the same in both binaries."""
     count = 0
     for ent in report.entities.values():
-        if ent.type == EntityType.FUNCTION and ent.orig_addr == ent.recomp_addr:
+        if ent.is_function() and ent.orig_addr == ent.recomp_addr:
             count += 1
 
     return count
