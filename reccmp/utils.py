@@ -284,7 +284,7 @@ def diff_json_display(show_both_addrs: bool = False, is_plain: bool = False):
             # We are using the original address as the key.
             # A function being renamed is not of interest here.
             name = new.name
-            recomp_addr = new.recomp_addr or "n/a"
+            recomp_addr = f"{new.recomp_addr:#x}" if new.recomp_addr else "n/a"
 
         if saved is not None:
             old_pct = (
@@ -299,9 +299,9 @@ def diff_json_display(show_both_addrs: bool = False, is_plain: bool = False):
                 name = saved.name
 
         if show_both_addrs:
-            addr_string = f"{orig_addr} / {recomp_addr:10}"
+            addr_string = f"{orig_addr:#x} / {recomp_addr:10}"
         else:
-            addr_string = orig_addr
+            addr_string = f"{orig_addr:#x}"
 
         # The ANSI codes from colorama counted towards string length,
         # so displaying this as an ascii-like spreadsheet

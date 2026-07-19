@@ -33,10 +33,7 @@ def to_report(compare: Compare) -> ReccmpStatusReport:
     """Creates a ReccmpStatusReport using the current reccmp state,
     serializes to JSON text, then deserializes back to a new report object.
     The goal is to see the state of the data after serialization."""
-    report = ReccmpStatusReport(filename=compare.target_id)
-    for match in compare.compare_all():
-        report.add_match(match)
-
+    report = compare.to_report()
     json_text = serialize_reccmp_report(report, diff_included=True)
     return deserialize_reccmp_report(json_text)
 
@@ -101,10 +98,10 @@ def test_matched_entity_no_type():
         batch.set(ImageId.RECOMP, 0, name="test", size=1)
         batch.match(0, 0)
 
-    with pytest.raises(AssertionError):
-        # TODO: We could skip the entity instead of blowing up. GH #252
-        to_report(compare)
+    report = to_report(compare)
 
+    # Skip the entity instead of blowing up. GH #252
+    assert not report.entities
 
 def test_matched_function_missing_name():
     """We will not compare a function entity without a name."""
@@ -153,7 +150,7 @@ def test_compare_function():
     report = to_report(compare)
     assert len(report.entities) == 1
 
-    e = report.entities["0x0"]
+    e = report.entities[0]
     assert e is not None
     assert e.accuracy == 1.0
     assert e.is_stub is False
@@ -162,8 +159,8 @@ def test_compare_function():
     assert e.type == EntityType.FUNCTION
 
     # String representation of address. No padding.
-    assert e.orig_addr == "0x0"
-    assert e.recomp_addr == "0x0"
+    assert e.orig_addr == 0
+    assert e.recomp_addr == 0
 
     # No diff generated for a match
     udiff = get_udiff(e)
@@ -188,7 +185,7 @@ def test_compare_function_stub():
     report = to_report(compare)
     assert len(report.entities) == 1
 
-    e = report.entities["0x0"]
+    e = report.entities[0]
     assert e is not None
     assert e.accuracy == 0.0
     assert e.is_stub is True
@@ -218,7 +215,7 @@ def test_compare_function_diff():
     report = to_report(compare)
     assert len(report.entities) == 1
 
-    e = report.entities["0x0"]
+    e = report.entities[0]
     assert e is not None
     assert e.accuracy == 0.0
     assert e.is_effective_match is False
@@ -248,7 +245,7 @@ def test_compare_function_effective_match():
     report = to_report(compare)
     assert len(report.entities) == 1
 
-    e = report.entities["0x0"]
+    e = report.entities[0]
     assert e is not None
     # Should retain non-effective accuracy.
     assert e.accuracy != 1.0
@@ -300,7 +297,7 @@ def test_compare_function_diff_context():
     report = to_report(compare)
     assert len(report.entities) == 1
 
-    e = report.entities["0x0"]
+    e = report.entities[0]
     assert e is not None
     assert e.accuracy != 1.0
     assert e.is_effective_match is False
@@ -351,7 +348,7 @@ def test_compare_vtable_match():
     report = to_report(compare)
     assert len(report.entities) == 2
 
-    e = report.entities["0x1"]
+    e = report.entities[1]
     assert e is not None
     assert e.accuracy == 1.0
 
@@ -408,7 +405,7 @@ def test_compare_vtable_diff():
     report = to_report(compare)
     assert len(report.entities) == 4
 
-    e = report.entities["0xc"]
+    e = report.entities[12]
     assert e is not None
     assert e.accuracy != 1.0
 
@@ -440,7 +437,7 @@ def test_aggregate_workflow():
 
     report = to_report(compare)
     assert len(report.entities) == 1
-    entity = report.entities["0x0"]
+    entity = report.entities[0]
 
     # The function matches, it has no diff data.
     assert entity.udiff is None
@@ -454,12 +451,12 @@ def test_aggregate_workflow():
 def test_report_function_alignment():
     def test_entity(
         orig_addr: int, recomp_addr: int, entity_type: EntityType
-    ) -> tuple[str, ReccmpComparedEntity]:
+    ) -> tuple[int, ReccmpComparedEntity]:
         return (
-            hex(orig_addr),
+            orig_addr,
             ReccmpComparedEntity(
-                orig_addr=hex(orig_addr),
-                recomp_addr=hex(recomp_addr),
+                orig_addr=orig_addr,
+                recomp_addr=recomp_addr,
                 name="hello",
                 accuracy=1.0,
                 type=entity_type,
@@ -502,12 +499,12 @@ def test_report_function_accuracy():
         *,
         effective: bool = False,
         stub: bool = False,
-    ) -> tuple[str, ReccmpComparedEntity]:
+    ) -> tuple[int, ReccmpComparedEntity]:
         return (
-            hex(addr),
+            addr,
             ReccmpComparedEntity(
-                orig_addr=hex(addr),
-                recomp_addr=hex(addr),
+                orig_addr=addr,
+                recomp_addr=addr,
                 name="hello",
                 accuracy=accuracy,
                 type=entity_type,
@@ -572,7 +569,7 @@ def test_report_function_accuracy():
     assert report_function_accuracy(report) == (0, 0, 0)
     assert report_progress_stats(report) == (0, 0)
 
-    # Progress stats assumes type=None is a function.
+    # Assumes type=None is a function.
     # This is to preserve compatibility with files that existed before #392.
     report.entities = dict(
         [
@@ -580,5 +577,5 @@ def test_report_function_accuracy():
             test_entity(1, None, 0.5),
         ]
     )
-    assert report_function_accuracy(report) == (1, 1.0, 1.0)
+    assert report_function_accuracy(report) == (2, 1.5, 1.5)
     assert report_progress_stats(report) == (2, 1.5)

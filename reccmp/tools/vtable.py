@@ -73,14 +73,15 @@ def main():
 
     for tbl_match in engine.compare_vtables():
         vtable_count += 1
-        if tbl_match.ratio < 1:
+        if tbl_match.accuracy < 1:
             problem_count += 1
 
-            udiff = raw_diff_to_udiff(tbl_match.result.diff)
+            assert tbl_match.rdiff is not None
+            udiff = raw_diff_to_udiff(tbl_match.rdiff)
 
             print(
                 tbl_match.name,
-                f": orig 0x{tbl_match.orig_addr:x}, recomp 0x{tbl_match.recomp_addr:x}",
+                f": orig {tbl_match.orig_addr}, recomp {tbl_match.recomp_addr}",
             )
             show_vtable_diff(udiff, args.verbose)
             print()
@@ -98,7 +99,7 @@ def main():
 
         diff = engine.compare_address(fun_match.orig_addr)
         assert diff is not None
-        if diff.ratio < 1.0:
+        if diff.accuracy < 1.0:
             problem_count += 1
             print(
                 f"Problem with adjuster thunk {fun_match.name} (0x{fun_match.orig_addr:x} / 0x{fun_match.recomp_addr:x})"

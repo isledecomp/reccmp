@@ -1,10 +1,10 @@
 from datetime import datetime
 from dataclasses import dataclass
-from typing import Literal, Iterable, Iterator
+from typing import Callable, Literal, Iterable, Iterator
 from pydantic import BaseModel, ValidationError
 from pydantic_core import from_json
 from reccmp.types import EntityType
-from .diff import CombinedDiffOutput, DiffReport, RawDiffOutput, raw_diff_to_udiff
+from .diff import CombinedDiffOutput, RawDiffOutput, raw_diff_to_udiff
 
 
 class ReccmpReportDeserializeError(Exception):
@@ -18,18 +18,29 @@ class ReccmpReportSameSourceError(Exception):
 @dataclass
 class ReccmpComparedEntity:
     # pylint:disable=too-many-instance-attributes
-    orig_addr: str
+    orig_addr: int
     name: str
     accuracy: float
     # Version 1 files have no type, so it is optional.
     type: EntityType | None = None
-    recomp_addr: str | None = None
+    recomp_addr: int | None = None
     is_effective_match: bool = False
     is_stub: bool = False
+    is_library: bool = False
     rdiff: RawDiffOutput | None = None
 
     # Legacy field for importing version 1 files (aggregate).
     udiff: CombinedDiffOutput | None = None
+
+    recomp_addr_various: bool = False
+
+    def is_matched(self) -> bool:
+        return self.recomp_addr is not None or self.recomp_addr_various
+
+    def is_function(self) -> bool:
+        """Entities without a type (derived from older reports that did not
+        serialize this field) are considered functions to maintain compatibility."""
+        return self.type is None or self.type == EntityType.FUNCTION
 
     @property
     def effective_accuracy(self) -> float:
@@ -37,19 +48,24 @@ class ReccmpComparedEntity:
 
 
 class ReccmpStatusReport:
-    # The filename of the original binary.
-    # This is here to avoid comparing reports derived from different files.
-    # TODO: in the future, we may want to use the hash instead
     filename: str
+    """The filename of the original binary.
+    This is here to avoid comparing reports derived from different files.
+    TODO: in the future, we may want to use the hash instead"""
 
-    # Creation date of the report file.
     timestamp: datetime
+    """Creation date of the report file."""
 
-    # Using orig addr as the key.
-    entities: dict[str, ReccmpComparedEntity]
+    entities: dict[int, ReccmpComparedEntity]
+    """Using orig addr as the key."""
 
-    # Only set during deserialize.
     from_version: int | None
+    """Only set during deserialize. (Not used yet)"""
+
+    function_total: int = 0
+    """Function count used to determine progress percentage and other statistics.
+    We can compute this value from the report's entities or use a user-provided value.
+    We will use whichever is higher so progress cannot exceed 100%."""
 
     def __init__(
         self,
@@ -66,24 +82,31 @@ class ReccmpStatusReport:
 
         self.entities = {}
 
-    def add_match(self, match: DiffReport):
-        orig_addr = f"0x{match.orig_addr:x}"
-        recomp_addr = f"0x{match.recomp_addr:x}"
-
-        self.entities[orig_addr] = ReccmpComparedEntity(
-            orig_addr=orig_addr,
-            name=match.name,
-            type=match.match_type,
-            accuracy=match.ratio,
-            recomp_addr=recomp_addr,
-            is_effective_match=match.is_effective_match,
-            is_stub=match.is_stub,
-            rdiff=match.result.diff,
-        )
+    def add_match(self, match: ReccmpComparedEntity):
+        self.entities[match.orig_addr] = match
 
     def has_same_source(self, other: "ReccmpStatusReport") -> bool:
         """Were both reports derived from the same reccmp target?"""
         return self.filename.lower() == other.filename.lower()
+
+    def update_function_count(self) -> None:
+        counted_type = sum(1 for ent in self.entities.values() if ent.is_function())
+        self.function_total = max(self.function_total, counted_type)
+
+    def filter_entities(
+        self, filter_fn: Callable[[ReccmpComparedEntity], bool]
+    ) -> None:
+        # Set the count in case it has never been set.
+        self.update_function_count()
+
+        filtered = [key for key, value in self.entities.items() if filter_fn(value)]
+
+        for key in filtered:
+            del self.entities[key]
+
+        # Manually decrease it because recalculating will use
+        # the higher of either the previous or current count.
+        self.function_total -= len(filtered)
 
 
 def report_function_alignment(report: ReccmpStatusReport) -> int:
@@ -97,23 +120,28 @@ def report_function_alignment(report: ReccmpStatusReport) -> int:
     return count
 
 
+def report_count_functions(report: ReccmpStatusReport) -> int:
+    """Count of all functions, matched or unmatched, stub or non-stub."""
+    return sum(1 for ent in report.entities.values() if ent.type == EntityType.FUNCTION)
+
+
 def report_function_accuracy(report: ReccmpStatusReport) -> tuple[int, float, float]:
     """Collects the accuracy and effective accuracy of all compared functions in the report.
-    Returns (function_count, total_accuracy, total_effective_accuracy).
+    Returns (implemented_count, total_accuracy, total_effective_accuracy).
     Stubs are not compared so they are excluded.
-    The accuracy scores are raw score values. Divide by the function_count to get the percentage.
+    The accuracy scores are raw score values. Divide by the implemented_count to get the percentage.
     """
-    function_count = 0
+    implemented_count = 0
     total_accuracy = 0.0
     total_effective_accuracy = 0.0
 
     for ent in report.entities.values():
-        if ent.type == EntityType.FUNCTION and not ent.is_stub:
-            function_count += 1
+        if ent.is_function() and ent.is_matched() and not ent.is_stub:
+            implemented_count += 1
             total_accuracy += ent.accuracy
             total_effective_accuracy += ent.effective_accuracy
 
-    return (function_count, total_accuracy, total_effective_accuracy)
+    return (implemented_count, total_accuracy, total_effective_accuracy)
 
 
 def report_progress_stats(report: ReccmpStatusReport) -> tuple[int, float]:
@@ -135,7 +163,7 @@ def report_progress_stats(report: ReccmpStatusReport) -> tuple[int, float]:
 
 
 def _get_entity_for_addr(
-    samples: Iterable[ReccmpStatusReport], addr: str
+    samples: Iterable[ReccmpStatusReport], addr: int
 ) -> Iterator[ReccmpComparedEntity]:
     """Helper to return entities from xreports that have the given address."""
     for sample in samples:
@@ -189,7 +217,8 @@ def combine_reports(samples: list[ReccmpStatusReport]) -> ReccmpStatusReport:
         # Keep the recomp_addr if it is the same across all samples.
         # i.e. to detect where function alignment ends
         if not all(e_list[0].recomp_addr == e.recomp_addr for e in e_list):
-            output.entities[addr].recomp_addr = "various"
+            output.entities[addr].recomp_addr = None
+            output.entities[addr].recomp_addr_various = True
 
     return output
 
@@ -236,6 +265,7 @@ class JSONEntityVersion1:
     # Optional fields
     recomp: str | None = None
     stub: bool = False
+    library: bool = False
     effective: bool = False
     diff: CombinedDiffOutput | None = None
     # EntityType as int. Older reports do not include this field.
@@ -249,22 +279,29 @@ class JSONReportVersion1(BaseModel):
     data: list[JSONEntityVersion1]
 
 
+MAGIC_STRING_VARIOUS = "various"
+"""reccmp-aggregate uses this to indicate an entity whose recomp addr varied between the sample reports."""
+
+
 def _serialize_version_1(
-    report: ReccmpStatusReport, diff_included: bool = False
+    report: ReccmpStatusReport,
+    diff_included: bool = False,
 ) -> JSONReportVersion1:
     """The JSON report can exclude the diff to make deserialization faster."""
     entities = [
         JSONEntityVersion1(
-            address=addr,  # prefer dict key over redundant value in entity
+            address=f"{addr:#x}",  # prefer dict key over redundant value in entity
             name=e.name,
             matching=e.accuracy,
-            recomp=e.recomp_addr,
+            recomp=MAGIC_STRING_VARIOUS if e.recomp_addr_various else f"{e.recomp_addr:#x}",
             stub=e.is_stub,
+            library=e.is_library,
             effective=e.is_effective_match,
             diff=get_udiff_for_entity(e) if diff_included else None,
             type=int(e.type) if e.type is not None else None,
         )
         for addr, e in report.entities.items()
+        if e.is_matched()
     ]
 
     return JSONReportVersion1(
@@ -288,15 +325,26 @@ def _deserialize_version_1(obj: JSONReportVersion1) -> ReccmpStatusReport:
         except ValueError:
             entity_type = None
 
-        report.entities[e.address] = ReccmpComparedEntity(
-            orig_addr=e.address,
+        orig_addr = int(e.address, 16)
+
+        if e.recomp == MAGIC_STRING_VARIOUS:
+            recomp_addr = None
+            various = True
+        else:
+            recomp_addr = int(e.recomp, 16) if e.recomp is not None else None
+            various = False
+
+        report.entities[orig_addr] = ReccmpComparedEntity(
+            orig_addr=orig_addr,
             name=e.name,
             accuracy=e.matching,
             type=entity_type,
-            recomp_addr=e.recomp,
+            recomp_addr=recomp_addr,
             is_stub=e.stub,
+            is_library=bool(e.library),
             is_effective_match=e.effective,
             udiff=e.diff,
+            recomp_addr_various=various,
         )
 
     return report
@@ -306,12 +354,13 @@ def deserialize_reccmp_report(json_str: str) -> ReccmpStatusReport:
     try:
         obj = JSONReportVersion1.model_validate(from_json(json_str))
         return _deserialize_version_1(obj)
-    except ValidationError as ex:
+    except (ValidationError, ValueError) as ex:
         raise ReccmpReportDeserializeError from ex
 
 
 def serialize_reccmp_report(
-    report: ReccmpStatusReport, diff_included: bool = False
+    report: ReccmpStatusReport,
+    diff_included: bool = False,
 ) -> str:
     """Create a JSON string for the report so it can be written to a file."""
     now = datetime.now().replace(microsecond=0)
