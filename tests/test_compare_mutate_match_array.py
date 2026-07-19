@@ -7,6 +7,9 @@ from reccmp.compare.db import EntityDb
 from reccmp.cvdump.types import CvdumpTypesParser, FieldListItem, CVInfoTypeEnum
 from reccmp.cvdump.cvinfo import CvdumpTypeKey as TK
 
+# pylint:disable=protected-access
+# TODO: Remove after we no longer access `types_db._keys` directly. See #485.
+
 
 @pytest.fixture(name="db")
 def fixture_db() -> EntityDb:
@@ -42,7 +45,7 @@ def name_for_address(
 
 def test_match_array(db: EntityDb, types_db: CvdumpTypesParser):
     """Should rename the entity for the array and create a new entity for the second member."""
-    types_db.keys[TK(0x1000)] = {
+    types_db._keys[TK(0x1000)] = {
         "type": "LF_ARRAY",
         "array_type": CVInfoTypeEnum.T_REAL32,
         "size": 8,
@@ -117,12 +120,12 @@ def test_match_array_type_is_scalar(db: EntityDb):
 def test_match_array_type_is_struct(db: EntityDb, types_db: CvdumpTypesParser):
     """Should have no effect if the data_type key is not an array.
     We do not currently populate entities for struct members."""
-    types_db.keys[TK(0x1000)] = {
+    types_db._keys[TK(0x1000)] = {
         "type": "LF_STRUCTURE",
         "field_list_type": TK(0x1001),
         "size": 8,
     }
-    types_db.keys[TK(0x1001)] = {
+    types_db._keys[TK(0x1001)] = {
         "type": "LF_FIELDLIST",
         "members": [
             FieldListItem(offset=0, name="hello", type=CVInfoTypeEnum.T_REAL32),
@@ -153,7 +156,7 @@ def test_match_array_type_is_struct(db: EntityDb, types_db: CvdumpTypesParser):
 def test_match_array_type_orig_smaller(db: EntityDb, types_db: CvdumpTypesParser):
     """Should not create entities on the orig side if the array is known to be smaller.
     (i.e. if another DATA entity is in the way.)"""
-    types_db.keys[TK(0x1000)] = {
+    types_db._keys[TK(0x1000)] = {
         "type": "LF_ARRAY",
         "array_type": CVInfoTypeEnum.T_REAL32,
         "size": 8,
@@ -184,17 +187,17 @@ def test_match_array_type_orig_smaller(db: EntityDb, types_db: CvdumpTypesParser
 
 def test_match_array_array_of_structs(db: EntityDb, types_db: CvdumpTypesParser):
     """If the type is an array of structs, create entities for one level of struct members."""
-    types_db.keys[TK(0x1000)] = {
+    types_db._keys[TK(0x1000)] = {
         "type": "LF_ARRAY",
         "array_type": TK(0x1001),
         "size": 16,
     }
-    types_db.keys[TK(0x1001)] = {
+    types_db._keys[TK(0x1001)] = {
         "type": "LF_STRUCTURE",
         "field_list_type": TK(0x1002),
         "size": 8,
     }
-    types_db.keys[TK(0x1002)] = {
+    types_db._keys[TK(0x1002)] = {
         "type": "LF_FIELDLIST",
         "members": [
             FieldListItem(offset=0, name="hello", type=CVInfoTypeEnum.T_REAL32),
@@ -227,12 +230,12 @@ def test_match_array_array_of_structs(db: EntityDb, types_db: CvdumpTypesParser)
 
 def test_match_array_array_of_arrays(db: EntityDb, types_db: CvdumpTypesParser):
     """For a multi-dimensional array, create entities for one level."""
-    types_db.keys[TK(0x1000)] = {
+    types_db._keys[TK(0x1000)] = {
         "type": "LF_ARRAY",
         "array_type": TK(0x1001),
         "size": 16,
     }
-    types_db.keys[TK(0x1001)] = {
+    types_db._keys[TK(0x1001)] = {
         "type": "LF_ARRAY",
         "array_type": CVInfoTypeEnum.T_REAL32,
         "size": 8,
@@ -263,29 +266,29 @@ def test_match_array_array_of_arrays(db: EntityDb, types_db: CvdumpTypesParser):
 
 def test_match_array_array_of_structs_limit(db: EntityDb, types_db: CvdumpTypesParser):
     """Does not create entities for offsets more than one level beyond the main entity."""
-    types_db.keys[TK(0x1000)] = {
+    types_db._keys[TK(0x1000)] = {
         "type": "LF_ARRAY",
         "array_type": TK(0x1001),
         "size": 16,
     }
-    types_db.keys[TK(0x1001)] = {
+    types_db._keys[TK(0x1001)] = {
         "type": "LF_STRUCTURE",
         "field_list_type": TK(0x1002),
         "size": 8,
     }
-    types_db.keys[TK(0x1002)] = {
+    types_db._keys[TK(0x1002)] = {
         "type": "LF_FIELDLIST",
         "members": [
             FieldListItem(offset=0, name="hello", type=TK(0x1003)),
             FieldListItem(offset=4, name="world", type=TK(0x1003)),
         ],
     }
-    types_db.keys[TK(0x1003)] = {
+    types_db._keys[TK(0x1003)] = {
         "type": "LF_STRUCTURE",
         "field_list_type": TK(0x1004),
         "size": 4,
     }
-    types_db.keys[TK(0x1004)] = {
+    types_db._keys[TK(0x1004)] = {
         "type": "LF_FIELDLIST",
         "members": [
             FieldListItem(offset=0, name="x", type=CVInfoTypeEnum.T_SHORT),
@@ -322,17 +325,17 @@ def test_match_array_array_of_union_structs(db: EntityDb, types_db: CvdumpTypesP
     - We create offset entities for unions, as with a struct or multidimensional array
     - We will not create entities deeper than the second level (in this case, array -> union)
     """
-    types_db.keys[TK(0x1000)] = {
+    types_db._keys[TK(0x1000)] = {
         "type": "LF_ARRAY",
         "array_type": TK(0x1001),
         "size": 8,
     }
-    types_db.keys[TK(0x1001)] = {
+    types_db._keys[TK(0x1001)] = {
         "type": "LF_UNION",
         "field_list_type": TK(0x1002),
         "size": 4,
     }
-    types_db.keys[TK(0x1002)] = {
+    types_db._keys[TK(0x1002)] = {
         "type": "LF_FIELDLIST",
         "members": [
             FieldListItem(offset=0, name="hello", type=TK(0x1003)),
@@ -341,12 +344,12 @@ def test_match_array_array_of_union_structs(db: EntityDb, types_db: CvdumpTypesP
     }
     # These values will not be accessed because we do not completely flatten the structure.
     # But they are here to provide a complete example of type data.
-    types_db.keys[TK(0x1003)] = {
+    types_db._keys[TK(0x1003)] = {
         "type": "LF_STRUCTURE",
         "field_list_type": TK(0x1004),
         "size": 4,
     }
-    types_db.keys[TK(0x1004)] = {
+    types_db._keys[TK(0x1004)] = {
         "type": "LF_FIELDLIST",
         "members": [
             FieldListItem(offset=0, name="a", type=CVInfoTypeEnum.T_CHAR),
@@ -377,17 +380,17 @@ def test_match_array_array_of_union_structs(db: EntityDb, types_db: CvdumpTypesP
 
 def test_match_array_of_struct_bitfield(db: EntityDb, types_db: CvdumpTypesParser):
     """Verify comparing an array of struct bitfields uses the underlying type of the bitfield"""
-    types_db.keys[TK(0x1000)] = {
+    types_db._keys[TK(0x1000)] = {
         "type": "LF_ARRAY",
         "array_type": TK(0x1001),
         "size": 4 * 8,
     }
-    types_db.keys[TK(0x1001)] = {
+    types_db._keys[TK(0x1001)] = {
         "type": "LF_STRUCTURE",
         "field_list_type": TK(0x1002),
         "size": 8,
     }
-    types_db.keys[TK(0x1002)] = {
+    types_db._keys[TK(0x1002)] = {
         "type": "LF_FIELDLIST",
         "members": [
             FieldListItem(offset=0, name="v0", type=CVInfoTypeEnum.T_UINT4),
@@ -395,13 +398,13 @@ def test_match_array_of_struct_bitfield(db: EntityDb, types_db: CvdumpTypesParse
             FieldListItem(offset=4, name="bit1", type=TK(0x1004)),
         ],
     }
-    types_db.keys[TK(0x1003)] = {
+    types_db._keys[TK(0x1003)] = {
         "type": "LF_BITFIELD",
         "bit_start": 0,
         "bit_count": 1,
         "bit_type": CVInfoTypeEnum.T_UCHAR,
     }
-    types_db.keys[TK(0x1004)] = {
+    types_db._keys[TK(0x1004)] = {
         "type": "LF_BITFIELD",
         "bit_start": 1,
         "bit_count": 1,

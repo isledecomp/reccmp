@@ -28,7 +28,9 @@ logger = logging.getLogger(__name__)
 def load_cvdump_types(cvdump_analysis: CvdumpAnalysis, types: CvdumpTypesParser):
     # TODO: Populate the universal type database here when this exists. (#106)
     # For now, just copy the keys into another CvdumpTypesParser so we can use its API.
-    types.keys.update(cvdump_analysis.types.keys)
+    # pylint:disable=protected-access
+    types._raw.update(cvdump_analysis.types._raw)
+    types._keys.update(cvdump_analysis.types._keys)
     types.alerted_types = cvdump_analysis.types.alerted_types
 
 
