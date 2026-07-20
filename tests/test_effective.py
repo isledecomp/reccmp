@@ -45,7 +45,9 @@ def test_rename_multiple_live_ranges():
 
 
 def test_rename_through_push_call():
-    """An argument computed in different registers and pushed for a call."""
+    """An argument computed in different registers and pushed for a call.
+    Rejected for now: without per-callsite ABI metadata the callee could be
+    thiscall, so a divergent ecx at the call may be the receiver."""
     orig = [
         "mov eax, dword ptr [esi + 4]",
         "push eax",
@@ -60,7 +62,7 @@ def test_rename_through_push_call():
         "add esp, 4",
         "ret",
     ]
-    assert verify_effective_match(orig, recomp) is True
+    assert verify_effective_match(orig, recomp) is False
 
 
 def test_rename_in_memory_operand():
@@ -81,7 +83,10 @@ def test_rename_in_memory_operand():
 
 
 def test_rename_loop_body():
-    """A renamed counter surviving a compare and backward jump."""
+    """A renamed counter surviving a compare and backward jump.
+    Rejected for now: the return type is unknown, so a divergent eax at ret
+    must be assumed to be a differing return value. Return-type metadata
+    from the PDB is needed to prove the function void."""
     orig = [
         "xor eax, eax",
         "add eax, 1",
@@ -96,7 +101,7 @@ def test_rename_loop_body():
         "jl -0x5",
         "ret",
     ]
-    assert verify_effective_match(orig, recomp) is True
+    assert verify_effective_match(orig, recomp) is False
 
 
 # --- Register renaming (negative) ------------------------------------------
@@ -170,7 +175,9 @@ def test_reject_swapped_cmp_same_jump():
 
 
 def test_swapped_cmp_with_rename():
-    """Condition normalization composes with register renaming."""
+    """Condition normalization composes with register renaming, but the
+    divergent eax at ret is rejected until return-type metadata can prove
+    the function does not return an integer."""
     orig = [
         "mov eax, dword ptr [ebp - 4]",
         "cmp eax, dword ptr [ebp - 8]",
@@ -183,7 +190,7 @@ def test_swapped_cmp_with_rename():
         "jle 0x10",
         "ret",
     ]
-    assert verify_effective_match(orig, recomp) is True
+    assert verify_effective_match(orig, recomp) is False
 
 
 def test_reject_flags_consumed_after_divergence():
@@ -357,8 +364,9 @@ def test_identical_sequences_match():
 
 
 def test_void_return_rename_consumed_by_store():
-    """A void setter: the renamed registers hold different (dead) values at
-    ret, but both were consumed by the matched store. (Imperialism 0x41b400)"""
+    """A void setter leaves different (dead) values in eax at ret. Without
+    the PDB return type this must be treated as a possible integer return:
+    rejected. (Imperialism 0x41b400; recoverable with type metadata.)"""
     orig = [
         "mov eax, dword ptr [g_pContext (DATA)]",
         "mov ecx, dword ptr [esp + 4]",
@@ -371,13 +379,13 @@ def test_void_return_rename_consumed_by_store():
         "mov dword ptr [ecx + 0x84], eax",
         "ret",
     ]
-    assert verify_effective_match(orig, recomp) is True
+    assert verify_effective_match(orig, recomp) is False
 
 
 def test_partial_register_return_with_dead_upper_bits():
-    """A function returning a 16-bit value in ax: the upper bits of eax
-    differ (stale movsx vs. arithmetic leftovers) but are dead.
-    (Imperialism 0x5128f0)"""
+    """A function returning a 16-bit value in ax with differing stale upper
+    bits. Without the PDB return type the full eax must match: rejected.
+    (Imperialism 0x5128f0; recoverable with type metadata.)"""
     orig = [
         "sub eax, 6",
         "movsx eax, ax",
@@ -390,7 +398,7 @@ def test_partial_register_return_with_dead_upper_bits():
         "mov ax, word ptr [ecx*2 + g_lookup (DATA)]",
         "ret",
     ]
-    assert verify_effective_match(orig, recomp) is True
+    assert verify_effective_match(orig, recomp) is False
 
 
 # --- Phase 6: frame slots, callee-save substitution, length differences ----
@@ -484,21 +492,18 @@ def test_callee_save_substitution_requires_matching_pop():
 
 def test_one_sided_redundant_copy():
     """The recomp emits an extra register-to-register copy: instruction
-    counts differ, but the extra copy has no observable effect."""
+    counts differ, but the extra copy has no observable effect and the
+    copied-through value is consumed by the matched store."""
     import difflib
 
     orig = [
         "mov eax, dword ptr [esi]",
-        "push eax",
-        "call <OFFSET1>",
-        "ret",
+        "mov dword ptr [edi], eax",
     ]
     recomp = [
         "mov ecx, dword ptr [esi]",
         "mov eax, ecx",
-        "push eax",
-        "call <OFFSET1>",
-        "ret",
+        "mov dword ptr [edi], eax",
     ]
     codes = difflib.SequenceMatcher(None, orig, recomp).get_opcodes()
     assert verify_effective_match(orig, recomp, codes) is True
@@ -517,5 +522,75 @@ def test_one_sided_store_rejected():
         "mov dword ptr [edi], 0",
         "push eax",
     ]
+    codes = difflib.SequenceMatcher(None, orig, recomp).get_opcodes()
+    assert verify_effective_match(orig, recomp, codes) is False
+
+
+# --- Adversarial counterexamples from review -------------------------------
+
+
+def test_reject_different_thiscall_receiver():
+    """The call target matches but ecx (the potential thiscall receiver)
+    differs: the receiver is the entire semantic difference."""
+    orig = [
+        "mov ecx, dword ptr [g_objectA (DATA)]",
+        "call TView::RefreshControl (FUNCTION)",
+        "ret",
+    ]
+    recomp = [
+        "mov ecx, dword ptr [g_objectB (DATA)]",
+        "call TView::RefreshControl (FUNCTION)",
+        "ret",
+    ]
+    assert verify_effective_match(orig, recomp) is False
+
+
+def test_reject_divergent_value_escaping_through_branch():
+    """Linear execution must not let a later overwrite hide a divergence
+    that escapes through a jump: the fallthrough arm returns 1 vs 2."""
+    orig = [
+        "cmp ecx, 0",
+        "je 0x6",
+        "mov eax, 1",
+        "jmp 0x2",
+        "mov eax, 3",
+        "ret",
+    ]
+    recomp = [
+        "cmp ecx, 0",
+        "je 0x6",
+        "mov eax, 2",
+        "jmp 0x2",
+        "mov eax, 3",
+        "ret",
+    ]
+    assert verify_effective_match(orig, recomp) is False
+
+
+def test_reject_one_sided_return_value():
+    """An unmatched `mov eax, 1` before ret is a differing return value,
+    not dead code."""
+    import difflib
+
+    orig = ["ret"]
+    recomp = ["mov eax, 1", "ret"]
+    codes = difflib.SequenceMatcher(None, orig, recomp).get_opcodes()
+    assert verify_effective_match(orig, recomp, codes) is False
+
+
+def test_reject_callee_saved_clobber_hidden_by_containment():
+    """esi vs edi clobbered with a consumed value: callee-saved registers
+    are externally observable and must match exactly at ret."""
+    orig = ["mov esi, ecx", "mov dword ptr [esi], 0", "ret"]
+    recomp = ["mov edi, ecx", "mov dword ptr [edi], 0", "ret"]
+    assert verify_effective_match(orig, recomp) is False
+
+
+def test_reject_one_sided_faulting_load():
+    """An unmatched memory load may fault even if its result is dead."""
+    import difflib
+
+    orig = ["mov eax, 1", "ret"]
+    recomp = ["mov ecx, dword ptr [<OFFSET1>]", "mov eax, 1", "ret"]
     codes = difflib.SequenceMatcher(None, orig, recomp).get_opcodes()
     assert verify_effective_match(orig, recomp, codes) is False

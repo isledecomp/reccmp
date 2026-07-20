@@ -691,8 +691,8 @@ def test_relocate_rejects_x87_reorder():
 def test_relocate_across_forward_jcc_with_addresses():
     """A store may cross a forward conditional jump whose target lies
     within the crossed region (both placements execute it on both paths),
-    plus a push (which writes below the stack pointer) and an aliasing-free
-    inc. Requires instruction addresses. (Imperialism 0x4dd1b0)"""
+    plus an inc that is provably disjoint through the lea-resolved base.
+    Requires instruction addresses. (Imperialism 0x4dd1b0 shape)"""
     orig_asm = [
         "lea esi, [ebx + 0x1c6]",
         "mov ax, word ptr [esi + 0x8a]",
@@ -700,9 +700,7 @@ def test_relocate_across_forward_jcc_with_addresses():
         "mov word ptr [esi], ax",
         "jne 0x7",
         "inc word ptr [ebx + 0xb0]",
-        "push edi",
         "mov ecx, ebx",
-        "call dword ptr [esp + 0x14]",
     ]
     recomp_asm = [
         "lea esi, [ebx + 0x1c6]",
@@ -710,12 +708,10 @@ def test_relocate_across_forward_jcc_with_addresses():
         "cmp ax, 0xffff",
         "jne 0x7",
         "inc word ptr [ebx + 0xb0]",
-        "push edi",
         "mov ecx, ebx",
         "mov word ptr [esi], ax",
-        "call dword ptr [esp + 0x14]",
     ]
-    orig_addrs = [0, 6, 13, 17, 20, 22, 29, 30, 32]
+    orig_addrs = [0, 6, 13, 17, 20, 22, 29]
 
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
     codes = diff.get_opcodes()
@@ -778,8 +774,8 @@ def test_relocate_rejects_jcc_target_beyond_move():
 
 
 def test_relocate_store_across_push():
-    """A push writes below the stack pointer: an object-member store can
-    cross it."""
+    """A store through an unknown pointer must not cross a push: nothing
+    proves the pointer cannot equal the pushed slot's address."""
     orig_asm = [
         "mov dword ptr [esi + 8], eax",
         "push ecx",
@@ -793,7 +789,7 @@ def test_relocate_store_across_push():
         "call <OFFSET1>",
     ]
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
-    assert find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm) is True
+    assert find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm) is False
 
 
 def test_relocate_rejects_esp_read_across_push():

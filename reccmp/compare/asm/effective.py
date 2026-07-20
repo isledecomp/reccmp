@@ -142,8 +142,6 @@ class SideState:
     flags: Value = ("init", "flags")
     fpu_flags: Value = ("init", "fpuflags")
     x87: X87Stack = field(default_factory=X87Stack)
-    # The value eax held at each `ret`, validated at the end of the run.
-    retvals: list[Value] = field(default_factory=list)
     # Frame-slot alpha-renaming: negative ebp displacements are replaced by
     # slot ids assigned in first-use order, so the two sides may lay out
     # their locals differently. Validated by _slots_consistent at the end.
@@ -195,9 +193,15 @@ _WIDTHS = {"byte": 1, "word": 2, "dword": 4, "qword": 8, "tbyte": 10}
 
 @dataclass
 class Context:
+    # pylint: disable=too-many-instance-attributes
     gen: int = 0  # memory generation, shared by both sides
     bump_requested: bool = False
-    matched: list[Value] = field(default_factory=list)
+    # Every symbolic node (including subexpressions) of every expression
+    # that was proven equal across the two sides. Divergent register values
+    # are only excused when they appear in this set (they were consumed by
+    # something matched). matched_ids memoizes the DAG walk by identity.
+    matched_nodes: set[Value] = field(default_factory=set)
+    matched_ids: set[int] = field(default_factory=set)
     # Memoization for _tree_size, keyed by object identity. The keepalive
     # list pins the measured tuples so their ids cannot be recycled.
     size_cache: dict[int, int] = field(default_factory=dict)
@@ -208,6 +212,22 @@ class Context:
     # Pending callee-save register substitutions: (orig family, recomp
     # family, stack slot address) pushed but not yet popped.
     save_stack: list[tuple[str, str, Value]] = field(default_factory=list)
+    # Which acceptance features fired, for debug/audit logging.
+    categories: set[str] = field(default_factory=set)
+
+    def add_matched(self, value) -> None:
+        stack = [value]
+        while stack:
+            node = stack.pop()
+            if not isinstance(node, tuple):
+                continue
+            key = id(node)
+            if key in self.matched_ids:
+                continue
+            self.matched_ids.add(key)
+            self.keepalive.append(node)
+            self.matched_nodes.add(node)
+            stack.extend(node)
 
 
 # Symbolic values are DAGs (a register value can feed several later values),
@@ -563,12 +583,19 @@ def execute(
         state.write_reg("ebp", ("load", ebp, "stack", ctx.gen))
         state.write_reg("esp", esp_add(ebp, 4))
     elif mnemonic == "call" and len(ops) == 1:
-        obs.append(("call", read_operand(state, ctx, ops[0])))
-        # The callee may take args in registers (thiscall/fastcall use ecx
-        # and edx; both are also clobbered). Requiring ecx/edx equality at
-        # every call would reject renames of dead caller-saved temps, so we
-        # only require what flows into the call via checked channels (stack
-        # pushes and memory). eax/ecx/edx come back as fresh paired values.
+        # Without ABI metadata the callee may take arguments in ecx
+        # (thiscall) or ecx+edx (fastcall), so both must match exactly.
+        # This conservatively rejects renames of dead caller-saved temps
+        # that happen to be live-in-name at a call; recovering those needs
+        # per-callsite convention data from the PDB.
+        obs.append(
+            (
+                "call",
+                read_operand(state, ctx, ops[0]),
+                state.read_reg("ecx"),
+                state.read_reg("edx"),
+            )
+        )
         for reg in ("eax", "ecx", "edx"):
             state.write_reg(reg, ("callret", idx, reg))
         state.write_reg("esp", ("callesp", idx))
@@ -577,13 +604,22 @@ def execute(
         ctx.bump_requested = True
     elif mnemonic == "ret":
         obs.append(("retstack", ins.raw_operands, state.x87.state_key()[1:]))
+        # Externally observable machine state at return must match exactly:
+        # the callee-saved registers and the stack pointer...
+        obs.append(
+            (
+                "retsaved",
+                tuple(state.regs[f] for f in ("b", "si", "di", "bp", "sp")),
+            )
+        )
         if state.x87.known:
             # x87 return value: st(0) must match; eax is scratch.
             obs.append(("retfpu", state.x87.known[0]))
         else:
-            # A possible integer return value: validated at the end of the
-            # run, when the full set of matched expressions is known.
-            state.retvals.append(state.read_reg("eax"))
+            # ...and, since the return type is unknown, so must eax.
+            # (A void function whose dead eax differs is rejected until
+            # return-type metadata from the PDB can prove it dead.)
+            obs.append(("retval", state.read_reg("eax")))
     elif mnemonic in JCC_MNEMONICS and len(ops) == 1:
         pred = canon_condition(JCC_MNEMONICS[mnemonic], state.flags)
         obs.append(("branch", pred, ins.raw_operands[0]))
@@ -755,15 +791,15 @@ def resync(states: tuple[SideState, SideState], idx: int, ctx: Context) -> None:
     ctx.bump_requested = True
 
 
-def _contained(value: Value, matched_repr: str) -> bool:
-    return repr(value) in matched_repr
+def _contained(value: Value, ctx: Context) -> bool:
+    return value in ctx.matched_nodes
 
 
-def _dead_or_contained(value: Value, matched_repr: str) -> bool:
-    return _is_scratch(value) or _contained(value, matched_repr)
+def _dead_or_contained(value: Value, ctx: Context) -> bool:
+    return _is_scratch(value) or _contained(value, ctx)
 
 
-def _ins_split_ok(value_o: Value, value_r: Value, matched_repr: str) -> bool:
+def _ins_split_ok(value_o: Value, value_r: Value, ctx: Context) -> bool:
     """A 16/8-bit result inserted into dead upper bits on both sides:
     the inserted part must be identical; the surrounding old bits are
     garbage as long as they came from consumed computations."""
@@ -775,29 +811,45 @@ def _ins_split_ok(value_o: Value, value_r: Value, matched_repr: str) -> bool:
         and value_o[0] == value_r[0]
         and str(value_o[0]).startswith("ins_")
         and value_o[2] == value_r[2]
-        and _dead_or_contained(value_o[1], matched_repr)
-        and _dead_or_contained(value_r[1], matched_repr)
+        and _dead_or_contained(value_o[1], ctx)
+        and _dead_or_contained(value_r[1], ctx)
     )
-
-
-def _retval_ok(value_o: Value, value_r: Value, matched_repr: str) -> bool:
-    """Is the eax divergence at a `ret` acceptable? Since the return type is
-    unknown, a differing eax is allowed only when the difference is provably
-    dead data: untouched/clobbered scratch, values that were consumed by a
-    matched expression (a void function's leftovers), or stale upper bits
-    around an identical partial-register result."""
-    if value_o == value_r:
-        return True
-    if _is_scratch(value_o) or _is_scratch(value_r):
-        return True
-    if _ins_split_ok(value_o, value_r, matched_repr):
-        return True
-    return _contained(value_o, matched_repr) and _contained(value_r, matched_repr)
 
 
 # Caller-saved register families: dead at function end (eax is separately
 # checked as the return value at every `ret`).
 CALLER_SAVED = ("a", "c", "d")
+
+# Observable tags of instructions that may transfer control locally.
+CONTROL_TAGS = frozenset(
+    {"branch", "jmp", "jmpind", "loop", "loope", "loopne", "jcxz", "jecxz"}
+)
+
+
+def _divergences_justified(ctx: Context, orig: SideState, recomp: SideState) -> bool:
+    """At a control transfer, the current state escapes the linear flow.
+    Every divergent register or x87 slot must already be justified: proven
+    equal (consumed by a matched expression), inserted-part equal, or
+    untouched scratch. A later overwrite on the fallthrough path must not
+    be allowed to hide a real divergence that a jump path can observe."""
+    for family in FAMILIES:
+        value_o, value_r = orig.regs[family], recomp.regs[family]
+        if value_o == value_r:
+            continue
+        if _ins_split_ok(value_o, value_r, ctx):
+            continue
+        for value in (value_o, value_r):
+            if _is_scratch(value):
+                continue
+            if not _contained(value, ctx):
+                return False
+    if len(orig.x87.known) != len(recomp.x87.known):
+        return False
+    for slot_o, slot_r in zip(orig.x87.known, recomp.x87.known):
+        if slot_o != slot_r:
+            if not (_contained(slot_o, ctx) and _contained(slot_r, ctx)):
+                return False
+    return True
 
 
 def _is_scratch(value: Value) -> bool:
@@ -848,19 +900,42 @@ def _aligned_lines(
 
 
 def _one_sided_ok(state: SideState, ctx: Context, idx: int, line: str) -> bool:
-    """Execute an instruction that exists on only one side. It is
-    acceptable only if it has no observable effect: no store, call,
-    branch or return. Its register/flag results simply flow into that
-    side's state (typically a redundant copy whose value the end-of-run
-    dead-value analysis must then account for)."""
+    """Execute an instruction that exists on only one side. Only a strict
+    whitelist of provably unobservable, non-faulting instructions is
+    allowed: nop, register-to-register mov, and lea (which computes an
+    address without accessing memory). Anything that touches memory, the
+    stack, x87, or that may trap is a real difference."""
     if DATA_LINE_RE.match(line):
+        return False
+    try:
+        ins = parse_instruction(line)
+    except (Reject, IndexError, KeyError, ValueError, TypeError):
+        return False
+    ops = ins.operands
+    allowed = (
+        ins.mnemonic == "nop"
+        or (
+            ins.mnemonic == "mov"
+            and len(ops) == 2
+            and ops[0][0] == "reg"
+            and ops[1][0] == "reg"
+        )
+        or (
+            ins.mnemonic == "lea"
+            and len(ops) == 2
+            and ops[0][0] == "reg"
+            and ops[1][0] == "mem"
+        )
+    )
+    if not allowed:
         return False
     obs: list = []
     try:
-        execute(state, ctx, idx, parse_instruction(line), obs)
+        execute(state, ctx, idx, ins, obs)
         guard_state_size(state, ctx)
     except (Reject, IndexError, KeyError, ValueError, TypeError):
         return False
+    ctx.categories.add("one_sided_dead_copy")
     return not obs
 
 
@@ -1010,7 +1085,8 @@ def verify_effective_match(
 
             if obs_o != obs_r:
                 return False
-            ctx.matched.extend(obs_o)
+            for entry in obs_o:
+                ctx.add_matched(entry)
 
             # The same value written by both sides in this step (even to
             # different registers) is proven correspondence: remember it so
@@ -1028,40 +1104,45 @@ def verify_effective_match(
             ]
             for value in written_o:
                 if value in written_r:
-                    ctx.matched.append(value)
+                    ctx.add_matched(value)
+
+            # Linear execution is only valid while control stays linear:
+            # whenever control may transfer (a branch), any divergence in
+            # the current state escapes to the target, so it must already
+            # be justified here — not by a later overwrite on the
+            # fallthrough path.
+            if any(entry[0] in CONTROL_TAGS for entry in obs_o):
+                if not _divergences_justified(ctx, orig, recomp):
+                    return False
 
             if ctx.bump_requested:
                 ctx.gen += 1
 
-        # Values still diverged at the end must be dead. We accept a
-        # divergent register only if both of its values were consumed by
-        # something that was proven equal across the two sides (e.g. the
-        # operands of a canonicalized compare, or a value stored to memory).
+        # Values still diverged at the end must be dead. Callee-saved
+        # registers and the stack pointer are externally observable machine
+        # state and must match exactly; a divergent caller-saved register
+        # is accepted only if both of its values were consumed by something
+        # that was proven equal across the two sides.
         for family in FAMILIES:
             if orig.regs[family] == recomp.regs[family]:
-                ctx.matched.append(orig.regs[family])
+                ctx.add_matched(orig.regs[family])
         for slot_o, slot_r in zip(orig.x87.known, recomp.x87.known):
             if slot_o == slot_r:
-                ctx.matched.append(slot_o)
-
-        matched_repr = "\n".join(repr(m) for m in ctx.matched)
+                ctx.add_matched(slot_o)
 
         for family in FAMILIES:
             value_o, value_r = orig.regs[family], recomp.regs[family]
             if value_o == value_r:
                 continue
-            if _ins_split_ok(value_o, value_r, matched_repr):
-                continue
-            allow_scratch = family in CALLER_SAVED
-            for value in (value_o, value_r):
-                if allow_scratch and _is_scratch(value):
-                    continue
-                if not _contained(value, matched_repr):
-                    return False
-
-        for value_o, value_r in zip(orig.retvals, recomp.retvals):
-            if not _retval_ok(value_o, value_r, matched_repr):
+            if family not in CALLER_SAVED:
                 return False
+            if _ins_split_ok(value_o, value_r, ctx):
+                continue
+            for value in (value_o, value_r):
+                if _is_scratch(value):
+                    continue
+                if not _contained(value, ctx):
+                    return False
 
         # Every callee-save substitution must have been balanced by its pop,
         # and any frame-slot renaming must describe a consistent layout.
@@ -1069,19 +1150,17 @@ def verify_effective_match(
             return False
         if not _slots_consistent(orig, recomp):
             return False
+
+        if orig.x87.state_key()[1:] != recomp.x87.state_key()[1:]:
+            return False
+        if len(orig.x87.known) != len(recomp.x87.known):
+            return False
+        for slot_o, slot_r in zip(orig.x87.known, recomp.x87.known):
+            if slot_o != slot_r:
+                if not (_contained(slot_o, ctx) and _contained(slot_r, ctx)):
+                    return False
     except (Reject, RecursionError):
         return False
-
-    if orig.x87.state_key()[1:] != recomp.x87.state_key()[1:]:
-        return False
-    if len(orig.x87.known) != len(recomp.x87.known):
-        return False
-    for slot_o, slot_r in zip(orig.x87.known, recomp.x87.known):
-        if slot_o != slot_r:
-            if not (
-                _contained(slot_o, matched_repr) and _contained(slot_r, matched_repr)
-            ):
-                return False
 
     return True
 
@@ -1397,17 +1476,11 @@ def _mem_disjoint(a: tuple, b: tuple) -> bool:
             return True
         if a_stack and b_stack:
             return False
-        stack_kind = a_stack or b_stack
         other = _flatten_mem(b_addr if a_stack else a_addr)
-        if _is_pure_global(other):
-            # A stack slot never overlaps a named global.
-            return True
-        if stack_kind == "push":
-            # A push writes to fresh space below the stack pointer, where no
-            # other live memory (heap, globals, caller stack, locals) can
-            # be. Only another stack-pointer-derived access could reach it.
-            return not any(_stack_rooted(v) for v, _ in other[2])
-        return False
+        # A stack slot never overlaps a named global. An access through an
+        # unknown pointer, however, must be assumed to alias the stack:
+        # nothing proves an incoming pointer cannot equal the slot address.
+        return _is_pure_global(other)
 
     a_mem = _flatten_mem(a_addr)
     b_mem = _flatten_mem(b_addr)

@@ -1,3 +1,4 @@
+import logging
 from typing import Sequence
 
 from reccmp.compare.asm.effective import (
@@ -10,6 +11,24 @@ from reccmp.compare.asm.effective import (
 )
 from reccmp.compare.asm.parse import AsmExcerpt
 from reccmp.compare.pinned_sequences import DiffOpcode
+
+logger = logging.getLogger(__name__)
+
+# Alignment padding emitted between functions. int3 traps if executed, so
+# it is only trimmed as trailing padding behind an instruction that does
+# not fall through — never excused as a one-sided instruction.
+_PADDING = ("nop", "int3")
+
+
+def _trim_padding(asm: list[str]) -> list[str]:
+    """Strip trailing nop/int3 alignment padding, but only behind an
+    instruction that does not fall through into it."""
+    end = len(asm)
+    while end > 0 and asm[end - 1] in _PADDING:
+        end -= 1
+    if 0 < end < len(asm) and asm[end - 1].partition(" ")[0] in ("ret", "jmp"):
+        return asm[:end]
+    return asm
 
 
 def find_effective_match(
@@ -31,20 +50,29 @@ def find_effective_match(
     `orig_addrs` (optional) provides the virtual address of each orig line;
     with it, a relocation may cross a forward conditional jump whose target
     lies within the crossed region."""
-    # Plain lockstep pairing first: for equal-length sequences the diff's
-    # insert/delete blocks can misalign lines that pair up fine positionally.
-    if verify_effective_match(orig_asm, recomp_asm):
+    # Plain lockstep pairing first (with trailing alignment padding
+    # trimmed): for equal-length sequences the diff's insert/delete blocks
+    # can misalign lines that pair up fine positionally.
+    trimmed_orig = _trim_padding(orig_asm)
+    trimmed_recomp = _trim_padding(recomp_asm)
+    if verify_effective_match(trimmed_orig, trimmed_recomp):
+        if len(trimmed_orig) != len(orig_asm) or len(trimmed_recomp) != len(recomp_asm):
+            logger.debug("effective match: lockstep (padding trimmed)")
+        else:
+            logger.debug("effective match: lockstep")
         return True
 
     # Diff-aligned pairing: handles length differences (one-sided entries
-    # for instructions with no observable effect, e.g. nop padding or a
-    # redundant copy) and transposed independent lines.
+    # for whitelisted unobservable instructions, e.g. a redundant
+    # register copy) and transposed independent lines.
     if verify_effective_match(orig_asm, recomp_asm, codes):
+        logger.debug("effective match: diff-aligned")
         return True
 
     reordered = undo_relocations(codes, orig_asm, recomp_asm, orig_addrs)
-    if reordered is not None:
-        return verify_effective_match(orig_asm, reordered)
+    if reordered is not None and verify_effective_match(orig_asm, reordered):
+        logger.debug("effective match: instruction relocation")
+        return True
 
     return False
 
