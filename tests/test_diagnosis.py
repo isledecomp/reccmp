@@ -2,7 +2,11 @@
 
 from difflib import SequenceMatcher
 
-from reccmp.compare.asm.effective import CallAbi, FunctionMetadata
+from reccmp.compare.asm.effective import (
+    CallAbi,
+    FunctionMetadata,
+    _diagnostic_summaries,
+)
 from reccmp.compare.asm.fixes import analyze_effective_match
 from reccmp.compare.asm.instgen import InstructionMeta
 from reccmp.compare.diagnosis import ComparisonAnalysis, ComparisonStatus
@@ -261,3 +265,10 @@ def test_unsupported_instruction_is_inconclusive():
 def test_reason_order_is_deterministic():
     result = ComparisonAnalysis.effective({"padding", "dead_operation"})
     assert result.effective_reasons == ("dead_operation", "padding")
+
+
+def test_colliding_symbolic_summaries_are_disambiguated():
+    orig, recomp = _diagnostic_summaries(("poison", 1), ("poison", 2))
+    assert orig.startswith("poison#")
+    assert recomp.startswith("poison#")
+    assert orig != recomp

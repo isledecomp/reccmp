@@ -30,6 +30,7 @@ from __future__ import annotations
 
 # pylint: disable=too-many-lines
 
+import hashlib
 import re
 from dataclasses import dataclass, field
 from functools import cache
@@ -427,6 +428,34 @@ def _symbolic_summary(value, depth: int = 0) -> str:
     return f"{tag}:{','.join(children)}" if children else tag
 
 
+def _symbolic_fingerprint(value) -> str:
+    """Bounded deterministic identity for two values with the same summary."""
+    digest = hashlib.blake2s(digest_size=4)
+    pending = [value]
+    visited = 0
+    while pending and visited < 256:
+        node = pending.pop()
+        visited += 1
+        if isinstance(node, tuple):
+            digest.update(f"tuple:{len(node)}:".encode())
+            pending.extend(reversed(node))
+        else:
+            digest.update(f"{type(node).__name__}:{node!s}:".encode())
+    if pending:
+        digest.update(b"truncated")
+    return digest.hexdigest()
+
+
+def _diagnostic_summaries(value_o, value_r) -> tuple[str, str]:
+    """Readable summaries, disambiguated when shortening hides a difference."""
+    summary_o = _symbolic_summary(value_o)
+    summary_r = _symbolic_summary(value_r)
+    if value_o != value_r and summary_o == summary_r:
+        summary_o += f"#{_symbolic_fingerprint(value_o)}"
+        summary_r += f"#{_symbolic_fingerprint(value_r)}"
+    return summary_o, summary_r
+
+
 def _memory_facts(op) -> dict[str, str | int | bool | None]:
     """Primitive address components from one parsed memory operand."""
     if op[0] != "mem":
@@ -585,17 +614,20 @@ def _record_observable_difference(
         registers = _checked_call_registers(ctx, ins_o)
         for position, register in enumerate(registers, start=2):
             if first_o[position] != first_r[position]:
+                value_o, value_r = _diagnostic_summaries(
+                    first_o[position], first_r[position]
+                )
                 recorder.record_difference(
                     "call_argument",
                     index_o,
                     index_r,
                     {
                         "register": register,
-                        "value": _symbolic_summary(first_o[position]),
+                        "value": value_o,
                     },
                     {
                         "register": register,
-                        "value": _symbolic_summary(first_r[position]),
+                        "value": value_r,
                     },
                 )
                 return
@@ -609,12 +641,13 @@ def _record_observable_difference(
             )
             return
         if first_o[3] != first_r[3]:
+            value_o, value_r = _diagnostic_summaries(first_o[3], first_r[3])
             recorder.record_difference(
                 "memory_value",
                 index_o,
                 index_r,
-                {"value": _symbolic_summary(first_o[3])},
-                {"value": _symbolic_summary(first_r[3])},
+                {"value": value_o},
+                {"value": value_r},
             )
             return
 
@@ -623,12 +656,13 @@ def _record_observable_difference(
         predicate_o = first_o[1] if tag_o == "branch" else None
         predicate_r = first_r[1] if tag_r == "branch" else None
         if predicate_o != predicate_r:
+            value_o, value_r = _diagnostic_summaries(predicate_o, predicate_r)
             recorder.record_difference(
                 "branch_condition",
                 index_o,
                 index_r,
-                {"predicate": _symbolic_summary(predicate_o)},
-                {"predicate": _symbolic_summary(predicate_r)},
+                {"predicate": value_o},
+                {"predicate": value_r},
             )
             return
         target_o = _target_index(recorder, "orig", meta_o)
@@ -647,21 +681,23 @@ def _record_observable_difference(
             continue
         if entry_o and entry_r and entry_o[0] == entry_r[0]:
             if entry_o[0] in ("retval", "retfpu"):
+                value_o, value_r = _diagnostic_summaries(entry_o[1], entry_r[1])
                 recorder.record_difference(
                     "return_value",
                     index_o,
                     index_r,
-                    {"value": _symbolic_summary(entry_o[1])},
-                    {"value": _symbolic_summary(entry_r[1])},
+                    {"value": value_o},
+                    {"value": value_r},
                 )
                 return
             if entry_o[0] in ("retsaved", "retstack"):
+                value_o, value_r = _diagnostic_summaries(entry_o, entry_r)
                 recorder.record_difference(
                     "preserved_state",
                     index_o,
                     index_r,
-                    {"value": _symbolic_summary(entry_o)},
-                    {"value": _symbolic_summary(entry_r)},
+                    {"value": value_o},
+                    {"value": value_r},
                 )
                 return
     recorder.mark_inconclusive("analysis_limit")
@@ -1772,12 +1808,13 @@ def verify_effective_match(
                 continue
             if family not in CALLER_SAVED:
                 if recorder is not None:
+                    summary_o, summary_r = _diagnostic_summaries(value_o, value_r)
                     recorder.record_difference(
                         "preserved_state",
                         last_index_o,
                         last_index_r,
-                        {"register": family, "value": _symbolic_summary(value_o)},
-                        {"register": family, "value": _symbolic_summary(value_r)},
+                        {"register": family, "value": summary_o},
+                        {"register": family, "value": summary_r},
                     )
                 return False
             if _ins_split_ok(value_o, value_r, ctx):
