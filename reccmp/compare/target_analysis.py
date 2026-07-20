@@ -197,6 +197,11 @@ def _load_cvdump(
             "full",
         )
 
+    cached_full: CvdumpParser | None = cache.load("cvdump-full", pdb_fingerprint)
+    if cached_full is not None:
+        logger.debug("Reusing cached full cvdump analysis for targeted comparison")
+        return cached_full, pdb_fingerprint, "full"
+
     cvdump = _load_base_cvdump(target.recompiled_pdb, cache, pdb_fingerprint)
     symbols_by_address = codebase.symbols_for_offsets(orig_addrs)
     symbol_hints = {

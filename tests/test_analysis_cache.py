@@ -6,7 +6,13 @@ from reccmp.analysis_cache import (
     fingerprint_files,
     fingerprint_text_files,
 )
+from reccmp.compare.target_analysis import _load_cvdump
+from reccmp.cvdump.parser import CvdumpParser
 from reccmp.formats import TextFile
+from reccmp.parser import DecompCodebase
+from reccmp.project.detect import GhidraConfig, RecCmpTarget, ReportConfig
+
+from .raw_image import RawImage
 
 
 def test_cache_hit_and_fingerprint_invalidation(tmp_path: Path):
@@ -60,3 +66,45 @@ def test_text_file_fingerprint_is_deterministic_and_contextual():
     expected = fingerprint_text_files([first, second], context="TEST")
     assert fingerprint_text_files([second, first], context="TEST") == expected
     assert fingerprint_text_files([first, second], context="OTHER") != expected
+
+
+def test_targeted_analysis_reuses_cached_full_cvdump(tmp_path: Path):
+    cache = AnalysisCache(tmp_path / "cache")
+    cached = CvdumpParser()
+    cache.store("cvdump-full", "pdb-fingerprint", cached)
+    target = RecCmpTarget(
+        target_id="TEST",
+        filename="TEST.exe",
+        sha256="",
+        encoding="utf-8",
+        source_paths=(),
+        ghidra_config=GhidraConfig(),
+        report_config=ReportConfig(),
+        original_path=tmp_path / "TEST.exe",
+        recompiled_path=tmp_path / "build" / "TEST.exe",
+        recompiled_pdb=tmp_path / "build" / "TEST.pdb",
+    )
+
+    with (
+        patch(
+            "reccmp.compare.target_analysis.fingerprint_files",
+            return_value="pdb-fingerprint",
+        ),
+        patch(
+            "reccmp.compare.target_analysis._load_base_cvdump",
+            side_effect=AssertionError("base cvdump should not be loaded"),
+        ),
+    ):
+        result, fingerprint, scope = _load_cvdump(
+            target,
+            RawImage.from_memory(),
+            DecompCodebase([], "TEST"),
+            (0x401000,),
+            (),
+            cache,
+            use_cache=True,
+        )
+
+    assert isinstance(result, CvdumpParser)
+    assert fingerprint == "pdb-fingerprint"
+    assert scope == "full"
