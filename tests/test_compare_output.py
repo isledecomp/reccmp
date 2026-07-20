@@ -297,7 +297,10 @@ def test_compare_function_diff_context():
     e = report.entities[0]
     assert e is not None
     assert e.accuracy != 1.0
-    assert e.is_effective_match is False
+    # `lea ecx, [ecx]` (a no-op) and `xor eax, eax` swapped positions across
+    # the nop padding: both orders compute the same final state, which the
+    # relational verifier recognizes as an effective match.
+    assert e.is_effective_match is True
 
     udiff = get_udiff(e)
     assert udiff is not None

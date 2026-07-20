@@ -1,6 +1,7 @@
 import re
 from typing import Sequence
 
+from reccmp.compare.asm.effective import verify_effective_match
 from reccmp.compare.asm.parse import AsmExcerpt
 from reccmp.compare.pinned_sequences import DiffOpcode
 
@@ -20,12 +21,17 @@ ALLOWED_JUMP_SWAPS = (
 )
 
 
-def jump_swap_ok(a: str, b: str) -> bool:
+def jump_swap_ok(a: str, b: str, cmp_instruction: str = "cmp") -> bool:
     """For the instructions a,b, are they both jump instructions
-    that are compatible with a swapped cmp operand order?"""
+    that are compatible with a swapped cmp operand order?
+    `test` is commutative: swapping its operands does not change the flags,
+    so only an identical jump is compatible (jg/jl would change behavior)."""
     # Grab the mnemonic
     jmp_a, _, __ = a.partition(" ")
     jmp_b, _, __ = b.partition(" ")
+
+    if cmp_instruction == "test":
+        return jmp_a == jmp_b and jmp_a.startswith("j")
 
     return (jmp_a, jmp_b) in ALLOWED_JUMP_SWAPS
 
@@ -108,7 +114,7 @@ def patch_mov_compare_jmp(
         or not recomp[cmp_index - 1].startswith("mov")
         or
         # if the last lines are not a compatible jump difference
-        not jump_swap_ok(orig[cmp_index + 1], recomp[cmp_index + 1])
+        not jump_swap_ok(orig[cmp_index + 1], recomp[cmp_index + 1], cmp_instruction)
     ):
         return set()
 
@@ -220,7 +226,7 @@ def patch_compare_jmp(
         not recomp[cmp_index].startswith(cmp_instruction)
         or
         # if the last lines are not a compatible jump difference
-        not jump_swap_ok(orig[cmp_index + 1], recomp[cmp_index + 1])
+        not jump_swap_ok(orig[cmp_index + 1], recomp[cmp_index + 1], cmp_instruction)
     ):
         return set()
 
@@ -378,6 +384,52 @@ def is_commutative_x87_chain_swap(orig_asm: list[str], recomp_asm: list[str]) ->
     )
 
 
+_REG_ALIASES: dict[str, tuple[str, ...]] = {}
+for _r in "abcd":
+    _fam = (f"e{_r}x", f"{_r}x", f"{_r}l", f"{_r}h")
+    for _n in _fam:
+        _REG_ALIASES[_n] = _fam
+for _r2 in ("si", "di", "bp", "sp"):
+    _fam2 = (f"e{_r2}", _r2)
+    for _n in _fam2:
+        _REG_ALIASES[_n] = _fam2
+
+
+def _register_reused_later(asm: list[str], start: int, reg: str) -> bool:
+    """Textual liveness scan: is `reg` (or an aliasing sub-register) read
+    at or after `start`, before being redefined? Conservative: any
+    appearance that is not a plain redefinition counts as a use."""
+    aliases = _REG_ALIASES.get(reg)
+    if aliases is None:
+        return False
+    pattern = re.compile(r"\b(?:" + "|".join(aliases) + r")\b")
+    for line in asm[start:]:
+        mnemonic, _, op_str = line.partition(" ")
+        first, _, rest = op_str.partition(", ")
+        if (
+            mnemonic in ("mov", "lea", "pop")
+            and first == reg
+            and not pattern.search(rest)
+        ):
+            return False
+        if pattern.search(line):
+            return True
+    return False
+
+
+def _mov_temp_is_dead(
+    orig_asm: list[str], recomp_asm: list[str], i: int, j: int
+) -> bool:
+    """For a mov/cmp/jmp patch with the mov at orig index i / recomp index j:
+    the swap is only sound if the mov's destination register is dead after
+    the jump. (GH: reusing the temp after the branch changes behavior.)"""
+    orig_reg = orig_asm[i].partition(" ")[2].partition(",")[0].strip()
+    recomp_reg = recomp_asm[j].partition(" ")[2].partition(",")[0].strip()
+    return not _register_reused_later(
+        orig_asm, i + 3, orig_reg
+    ) and not _register_reused_later(recomp_asm, j + 3, recomp_reg)
+
+
 def patch_cmp_swaps(
     codes: Sequence[DiffOpcode], orig_asm: list[str], recomp_asm: list[str]
 ) -> set[int]:
@@ -412,6 +464,16 @@ def patch_cmp_swaps(
                     orig_asm[i : i + additonal_lines_to_include],
                     recomp_asm[j : j + additonal_lines_to_include],
                 )
+                # The mov/cmp/jmp patch loads different values into the
+                # temporary register on each side, so it is only valid
+                # if the register is not read again after the jump.
+                if (
+                    len(this_patch_lines) > 0
+                    and fn in (patch_mov_cmp_jmp, patch_mov_test_jmp)
+                    and not _mov_temp_is_dead(orig_asm, recomp_asm, i, j)
+                ):
+                    this_patch_lines = set()
+
                 # if we have fixed lines by this patcher, add them to the combined `fixed_lines`
                 if len(this_patch_lines) > 0:
                     fixed_lines.update([j + x for x in this_patch_lines])
@@ -440,52 +502,6 @@ def effective_match_possible(orig_asm: list[str], recomp_asm: list[str]) -> bool
 
 def find_regs_used(inst: str) -> list[str]:
     return REG_FIND.findall(inst)
-
-
-def find_regs_changed(a: str, b: str) -> list[tuple[str, str]]:
-    """For instructions a, b, return the pairs of registers that were used.
-    This is not a very precise way to compare the instructions, so it depends
-    on the input being two instructions that would match *except* for
-    the register choice."""
-    return list(zip(REG_FIND.findall(a), REG_FIND.findall(b)))
-
-
-def bad_register_swaps(
-    swaps: set[int], orig_asm: list[str], recomp_asm: list[str]
-) -> set[int]:
-    """The list of recomp indices in `swaps` tells which instructions are
-    a match for orig except for the registers used. From that list, check
-    whether a register swap should not be allowed.
-    For now, this means checking for `push` instructions where the register
-    was not used in any other register swaps on previous instructions."""
-    rejects = set()
-
-    # Foreach `push` instruction where we have excused the diff
-    pushes = [j for j in swaps if recomp_asm[j].startswith("push")]
-
-    for j in pushes:
-        okay = False
-        # Get the operands in each
-        reg = (orig_asm[j].partition(" ")[2], recomp_asm[j].partition(" ")[2])
-        # If this isn't a register at all, ignore it
-        try:
-            int(reg[0], 16)
-            continue
-        except ValueError:
-            pass
-
-        # For every other excused diff that is *not* a push:
-        # Assumes same index in orig as in recomp, but so does our naive match
-        for k in swaps.difference(pushes):
-            changed_regs = find_regs_changed(orig_asm[k], recomp_asm[k])
-            if reg in changed_regs or reg[::-1] in changed_regs:
-                okay = True
-                break
-
-        if not okay:
-            rejects.add(j)
-
-    return rejects
 
 
 # Instructions that result in a change to the first operand
@@ -570,36 +586,6 @@ BYTE_REGS = ("ah", "al", "bh", "bl", "ch", "cl", "dh", "dl")
 REGISTER_SET = set(reg for reg in (DWORD_REGS + WORD_REGS + BYTE_REGS))
 
 
-def naive_register_replacement(orig_asm: list[str], recomp_asm: list[str]) -> set[int]:
-    """Replace all registers of the same size with a placeholder string.
-    After doing that, compare orig and recomp again.
-    Return indices from recomp that are now equal to the same index in orig.
-    This requires orig and recomp to have the same number of instructions,
-    but this is already a requirement for effective match."""
-    orig_raw = "\n".join(orig_asm)
-    recomp_raw = "\n".join(recomp_asm)
-
-    # TODO: hardly the most elegant way to do this.
-    for rdw in DWORD_REGS:
-        orig_raw = orig_raw.replace(rdw, "~reg4")
-        recomp_raw = recomp_raw.replace(rdw, "~reg4")
-
-    for rw in WORD_REGS:
-        orig_raw = orig_raw.replace(rw, "~reg2")
-        recomp_raw = recomp_raw.replace(rw, "~reg2")
-
-    for rb in BYTE_REGS:
-        orig_raw = orig_raw.replace(rb, "~reg1")
-        recomp_raw = recomp_raw.replace(rb, "~reg1")
-
-    orig_scrubbed = orig_raw.split("\n")
-    recomp_scrubbed = recomp_raw.split("\n")
-
-    return {
-        j for j in range(len(recomp_scrubbed)) if orig_scrubbed[j] == recomp_scrubbed[j]
-    }
-
-
 def find_effective_match(
     codes: Sequence[DiffOpcode], orig_asm: list[str], recomp_asm: list[str]
 ) -> bool:
@@ -608,15 +594,18 @@ def find_effective_match(
     if not effective_match_possible(orig_asm, recomp_asm):
         return False
 
+    # The relational verifier proves equivalence modulo register allocation,
+    # commutative-operand order and inverted compare/jump conditions.
+    if verify_effective_match(orig_asm, recomp_asm):
+        return True
+
     # Whole-function check: commutative x87 operand-chain swap.
+    # (Usually subsumed by the verifier; kept for chains it cannot model.)
     if is_commutative_x87_chain_swap(orig_asm, recomp_asm):
         return True
 
-    already_equal = {
-        j for code, _, __, j1, j2 in codes for j in range(j1, j2) if code == "equal"
-    }
-
-    # We need to come up with some answer for each of these lines
+    # Fallback for instruction-scheduling differences, which the lockstep
+    # verifier cannot prove, possibly combined with local swap patches.
     recomp_lines_disputed = {
         j
         for code, _, __, j1, j2 in codes
@@ -625,19 +614,9 @@ def find_effective_match(
     }
 
     cmp_swaps = patch_cmp_swaps(codes, orig_asm, recomp_asm)
-    # This naive result includes lines that already match, so remove those
-    naive_swaps = naive_register_replacement(orig_asm, recomp_asm).difference(
-        already_equal
-    )
     relocates = relocate_instructions(codes, orig_asm, recomp_asm)
 
-    bad_swaps = bad_register_swaps(naive_swaps, orig_asm, recomp_asm)
-
-    corrections = set().union(
-        naive_swaps.difference(bad_swaps),
-        cmp_swaps,
-        relocates,
-    )
+    corrections = cmp_swaps.union(relocates)
 
     return corrections.issuperset(recomp_lines_disputed)
 

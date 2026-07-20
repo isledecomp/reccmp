@@ -1,5 +1,4 @@
 import difflib
-import pytest
 from reccmp.compare.asm.fixes import (
     find_effective_match,
     patch_compare_jmp,
@@ -19,13 +18,28 @@ def test_fix_cmp_jmp():
 
 
 def test_fix_test_jmp():
+    """`test` is commutative: swapping its operands produces identical flags.
+    An identical jump is therefore an effective match..."""
+    orig_asm = ["mov eax, 1", "mov ebx, 2", "test eax, ebx", "jg 0x1"]
+    recomp_asm = ["mov eax, 1", "mov ebx, 2", "test ebx, eax", "jg 0x1"]
+
+    diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
+    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+
+    assert is_effective is True
+
+
+def test_fix_test_jmp_inverted_jump_invalid():
+    """...but an inverted jump is not. Because the flags are the same either
+    way, jg and jl react differently to them. (This was previously accepted:
+    a false positive of the swapped-cmp patch.)"""
     orig_asm = ["mov eax, 1", "mov ebx, 2", "test eax, ebx", "jg 0x1"]
     recomp_asm = ["mov eax, 1", "mov ebx, 2", "test ebx, eax", "jl 0x1"]
 
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
     is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
-    assert is_effective is True
+    assert is_effective is False
 
 
 def test_fix_mov_cmp_jmp_mem_with_different_operands():
@@ -265,9 +279,9 @@ def test_fix_mov_imul_swap_valid():
 
 
 def test_fix_mov_imul_single_operand_imul():
-    """Should not crash with IndexError if single operand IMUL is used.
-    The destination is presumed to be EAX/AX/AL, so this example could be considered a match.
-    """
+    """Single-operand IMUL multiplies into AX (for a word operand), and
+    multiplication is commutative, so loading the other factor first is an
+    effective match."""
 
     orig_asm = [
         "mov ax, word ptr [ebp - 0x4]",
@@ -281,7 +295,7 @@ def test_fix_mov_imul_single_operand_imul():
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
     is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
-    assert is_effective is False
+    assert is_effective is True
 
 
 def test_fix_mov_add_swap_valid():
@@ -371,7 +385,6 @@ def test_fix_mov_add_invalid_dest():
     assert is_effective is False
 
 
-@pytest.mark.xfail(reason="Limitation of naive_register_replacement")
 def test_this_should_not_be_marked_as_effective():
     """The instructions `mov eax, 0` and `mov ecx, 1` cannot have their registers swapped."""
 
@@ -404,7 +417,6 @@ def test_this_should_not_be_marked_as_effective():
     assert is_effective is False
 
 
-@pytest.mark.xfail(reason="Limitation of fix_mov_cmp_jmp")
 def test_fix_mov_cmp_jmp_unsafe_intermediate_reuse():
     # These are NOT equivalent since eax is used after the jmp
     orig_asm = [
