@@ -598,3 +598,118 @@ def test_commutative_x87_chain_swap_mov_after_fld_invalid():
 
     diff = difflib.SequenceMatcher(None, orig, recomp)
     assert find_effective_match(diff.get_opcodes(), orig, recomp) is False
+
+
+# The following tests cover the dependency-aware relocate_instructions:
+# an instruction may only move across instructions it does not depend on.
+
+
+def _diff_and_match(orig_asm: list[str], recomp_asm: list[str]) -> bool:
+    diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
+    return find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+
+
+def test_relocate_independent_load():
+    """Two independent loads scheduled in opposite order."""
+    orig_asm = [
+        "mov eax, dword ptr [ebp - 4]",
+        "mov ecx, dword ptr [ebp - 8]",
+        "push ecx",
+        "push eax",
+        "call <OFFSET1>",
+    ]
+    recomp_asm = [
+        "mov ecx, dword ptr [ebp - 8]",
+        "mov eax, dword ptr [ebp - 4]",
+        "push ecx",
+        "push eax",
+        "call <OFFSET1>",
+    ]
+    assert _diff_and_match(orig_asm, recomp_asm) is True
+
+
+def test_relocate_rejects_store_across_aliasing_load():
+    """A store may not move across a load of the same address."""
+    orig_asm = [
+        "mov dword ptr [ebp - 4], eax",
+        "mov ecx, dword ptr [ebp - 4]",
+        "push ecx",
+        "push esi",
+    ]
+    recomp_asm = [
+        "mov ecx, dword ptr [ebp - 4]",
+        "mov dword ptr [ebp - 4], eax",
+        "push ecx",
+        "push esi",
+    ]
+    assert _diff_and_match(orig_asm, recomp_asm) is False
+
+
+def test_relocate_store_across_disjoint_frame_slot():
+    """Stores to provably distinct ebp frame slots may reorder."""
+    orig_asm = [
+        "mov dword ptr [ebp - 4], eax",
+        "mov dword ptr [ebp - 8], ecx",
+        "push esi",
+        "push edi",
+    ]
+    recomp_asm = [
+        "mov dword ptr [ebp - 8], ecx",
+        "mov dword ptr [ebp - 4], eax",
+        "push esi",
+        "push edi",
+    ]
+    assert _diff_and_match(orig_asm, recomp_asm) is True
+
+
+def test_relocate_rejects_move_across_call():
+    """A call is a barrier: memory and registers may change."""
+    orig_asm = [
+        "mov eax, dword ptr [g_state (DATA)]",
+        "call <OFFSET1>",
+        "push eax",
+        "push esi",
+    ]
+    recomp_asm = [
+        "call <OFFSET1>",
+        "mov eax, dword ptr [g_state (DATA)]",
+        "push eax",
+        "push esi",
+    ]
+    assert _diff_and_match(orig_asm, recomp_asm) is False
+
+
+def test_relocate_rejects_flags_consumed_after_move():
+    """Both the moved instruction and a crossed instruction write flags,
+    and a jump reads them afterward: the move changes the branch."""
+    orig_asm = [
+        "cmp eax, 1",
+        "add ecx, 2",
+        "je 0x8",
+        "push esi",
+    ]
+    recomp_asm = [
+        "add ecx, 2",
+        "cmp eax, 1",
+        "je 0x8",
+        "push esi",
+    ]
+    assert _diff_and_match(orig_asm, recomp_asm) is False
+
+
+def test_relocate_rejects_x87_reorder():
+    """x87 instructions depend on the fp stack order: fadd and fmul on
+    st(0) do not commute with each other."""
+    orig_asm = [
+        "fadd dword ptr [g_floatA (DATA)]",
+        "fmul dword ptr [g_floatB (DATA)]",
+        "pop esi",
+        "pop edi",
+    ]
+    recomp_asm = [
+        "fmul dword ptr [g_floatB (DATA)]",
+        "fadd dword ptr [g_floatA (DATA)]",
+        "pop esi",
+        "pop edi",
+    ]
+    assert _diff_and_match(orig_asm, recomp_asm) is False

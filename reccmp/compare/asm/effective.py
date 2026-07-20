@@ -28,8 +28,11 @@ whole function is rejected (not an effective match).
 
 from __future__ import annotations
 
+# pylint: disable=too-many-lines
+
 import re
 from dataclasses import dataclass, field
+from functools import cache
 
 # A symbolic value. Nested tuples of str/int; compared structurally.
 Value = tuple
@@ -138,6 +141,8 @@ class SideState:
     flags: Value = ("init", "flags")
     fpu_flags: Value = ("init", "fpuflags")
     x87: X87Stack = field(default_factory=X87Stack)
+    # The value eax held at each `ret`, validated at the end of the run.
+    retvals: list[Value] = field(default_factory=list)
 
     def read_reg(self, name: str) -> Value:
         family, part = REGISTERS[name]
@@ -510,7 +515,9 @@ def execute(
             # x87 return value: st(0) must match; eax is scratch.
             obs.append(("retfpu", state.x87.known[0]))
         else:
-            obs.append(("retval", state.read_reg("eax")))
+            # A possible integer return value: validated at the end of the
+            # run, when the full set of matched expressions is known.
+            state.retvals.append(state.read_reg("eax"))
     elif mnemonic in JCC_MNEMONICS and len(ops) == 1:
         pred = canon_condition(JCC_MNEMONICS[mnemonic], state.flags)
         obs.append(("branch", pred, ins.raw_operands[0]))
@@ -682,6 +689,42 @@ def _contained(value: Value, matched_repr: str) -> bool:
     return repr(value) in matched_repr
 
 
+def _dead_or_contained(value: Value, matched_repr: str) -> bool:
+    return _is_scratch(value) or _contained(value, matched_repr)
+
+
+def _ins_split_ok(value_o: Value, value_r: Value, matched_repr: str) -> bool:
+    """A 16/8-bit result inserted into dead upper bits on both sides:
+    the inserted part must be identical; the surrounding old bits are
+    garbage as long as they came from consumed computations."""
+    return (
+        isinstance(value_o, tuple)
+        and isinstance(value_r, tuple)
+        and len(value_o) == 3
+        and len(value_r) == 3
+        and value_o[0] == value_r[0]
+        and str(value_o[0]).startswith("ins_")
+        and value_o[2] == value_r[2]
+        and _dead_or_contained(value_o[1], matched_repr)
+        and _dead_or_contained(value_r[1], matched_repr)
+    )
+
+
+def _retval_ok(value_o: Value, value_r: Value, matched_repr: str) -> bool:
+    """Is the eax divergence at a `ret` acceptable? Since the return type is
+    unknown, a differing eax is allowed only when the difference is provably
+    dead data: untouched/clobbered scratch, values that were consumed by a
+    matched expression (a void function's leftovers), or stale upper bits
+    around an identical partial-register result."""
+    if value_o == value_r:
+        return True
+    if _is_scratch(value_o) or _is_scratch(value_r):
+        return True
+    if _ins_split_ok(value_o, value_r, matched_repr):
+        return True
+    return _contained(value_o, matched_repr) and _contained(value_r, matched_repr)
+
+
 # Caller-saved register families: dead at function end (eax is separately
 # checked as the return value at every `ret`).
 CALLER_SAVED = ("a", "c", "d")
@@ -730,6 +773,8 @@ def verify_effective_match(orig_asm: list[str], recomp_asm: list[str]) -> bool:
                 obs_o: list = []
                 obs_r: list = []
                 ctx.bump_requested = False
+                before_o = dict(orig.regs)
+                before_r = dict(recomp.regs)
                 execute(orig, ctx, idx, ins_o, obs_o)
                 execute(recomp, ctx, idx, ins_r, obs_r)
             except (Reject, IndexError, KeyError, ValueError, TypeError):
@@ -744,20 +789,28 @@ def verify_effective_match(orig_asm: list[str], recomp_asm: list[str]) -> bool:
             guard_state_size(orig, ctx)
             guard_state_size(recomp, ctx)
 
-            if len(obs_o) != len(obs_r):
+            if obs_o != obs_r:
                 return False
-            for entry_o, entry_r in zip(obs_o, obs_r):
-                if entry_o == entry_r:
-                    ctx.matched.append(entry_o)
-                    continue
-                # The return value in eax only matters if the function
-                # returns an integer. If either side left eax untouched
-                # (or holding a call's leftover), it evidently does not.
-                if entry_o[0] == entry_r[0] == "retval" and (
-                    _is_scratch(entry_o[1]) or _is_scratch(entry_r[1])
-                ):
-                    continue
-                return False
+            ctx.matched.extend(obs_o)
+
+            # The same value written by both sides in this step (even to
+            # different registers) is proven correspondence: remember it so
+            # that dead leftovers of its computation are recognized at the
+            # end of the run.
+            written_o = [
+                value
+                for family, value in orig.regs.items()
+                if value is not before_o[family]
+            ]
+            written_r = [
+                value
+                for family, value in recomp.regs.items()
+                if value is not before_r[family]
+            ]
+            for value in written_o:
+                if value in written_r:
+                    ctx.matched.append(value)
+
             if ctx.bump_requested:
                 ctx.gen += 1
 
@@ -778,12 +831,18 @@ def verify_effective_match(orig_asm: list[str], recomp_asm: list[str]) -> bool:
             value_o, value_r = orig.regs[family], recomp.regs[family]
             if value_o == value_r:
                 continue
+            if _ins_split_ok(value_o, value_r, matched_repr):
+                continue
             allow_scratch = family in CALLER_SAVED
             for value in (value_o, value_r):
                 if allow_scratch and _is_scratch(value):
                     continue
                 if not _contained(value, matched_repr):
                     return False
+
+        for value_o, value_r in zip(orig.retvals, recomp.retvals):
+            if not _retval_ok(value_o, value_r, matched_repr):
+                return False
     except (Reject, RecursionError):
         return False
 
@@ -798,4 +857,255 @@ def verify_effective_match(orig_asm: list[str], recomp_asm: list[str]) -> bool:
             ):
                 return False
 
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Per-line effect summaries for dependency-aware instruction relocation
+
+
+@dataclass(frozen=True)
+class LineEffects:
+    """Conservative summary of one instruction's reads and writes, used to
+    decide whether two instructions may be reordered."""
+
+    # pylint: disable=too-many-instance-attributes
+
+    regs_read: frozenset = frozenset()
+    regs_written: frozenset = frozenset()
+    reads_flags: bool = False
+    writes_flags: bool = False
+    mem_reads: tuple = ()
+    mem_writes: tuple = ()
+    x87: bool = False
+    barrier: bool = False
+
+
+BARRIER = LineEffects(barrier=True)
+
+# Memory access descriptor: (reg families with scale, displacement, symbols,
+# width in bytes or None). STACK_ACCESS marks a push/pop slot: somewhere on
+# the stack, so it aliases everything except named globals.
+STACK_ACCESS = ("stack",)
+
+_WIDTHS = {"byte": 1, "word": 2, "dword": 4, "qword": 8, "tbyte": 10}
+
+_RMW_BINOPS = frozenset(
+    {"add", "sub", "and", "or", "xor", "shl", "shr", "sar", "rol", "ror", "adc", "sbb"}
+)
+_X87_MEM_WRITERS = frozenset({"fst", "fstp", "fist", "fistp", "fnstcw", "fbstp"})
+
+
+def _mem_descriptor(op) -> tuple:
+    _, size, _, reg_terms, disp, syms = op
+    families = tuple(sorted((REGISTERS[reg][0], scale) for reg, scale in reg_terms))
+    return (families, disp, syms, _WIDTHS.get(size))
+
+
+@cache
+def line_effects(line: str) -> LineEffects:
+    """Effect summary for one sanitized instruction. Anything not modeled
+    (calls, jumps, string ops, unparseable text) is a scheduling barrier."""
+    # pylint: disable=too-many-branches,too-many-statements,too-many-return-statements
+    if DATA_LINE_RE.match(line):
+        return BARRIER
+    try:
+        ins = parse_instruction(line)
+    except (Reject, IndexError, KeyError, ValueError):
+        return BARRIER
+    if ins.prefix:
+        return BARRIER
+
+    mnemonic = ins.mnemonic
+    ops = ins.operands
+
+    regs_read: set = set()
+    regs_written: set = set()
+    mem_reads: list = []
+    mem_writes: list = []
+    x87 = mnemonic.startswith("f")
+    reads_flags = False
+    writes_flags = False
+
+    def use(op, write: bool = False) -> None:
+        kind = op[0]
+        if kind == "reg":
+            (regs_written if write else regs_read).add(REGISTERS[op[1]][0])
+        elif kind == "mem":
+            for reg, _ in op[3]:
+                regs_read.add(REGISTERS[reg][0])
+            (mem_writes if write else mem_reads).append(_mem_descriptor(op))
+        elif kind not in ("imm", "sym", "st"):
+            raise Reject
+
+    try:
+        if mnemonic in ("mov", "movsx", "movzx") and len(ops) == 2:
+            use(ops[1])
+            use(ops[0], write=True)
+        elif mnemonic == "lea" and len(ops) == 2 and ops[1][0] == "mem":
+            for reg, _ in ops[1][3]:
+                regs_read.add(REGISTERS[reg][0])
+            use(ops[0], write=True)
+        elif mnemonic in _RMW_BINOPS and len(ops) == 2:
+            use(ops[0])
+            use(ops[0], write=True)
+            use(ops[1])
+            writes_flags = True
+            reads_flags = mnemonic in ("adc", "sbb")
+        elif mnemonic == "imul" and len(ops) == 3:
+            use(ops[0], write=True)
+            use(ops[1])
+            use(ops[2])
+            writes_flags = True
+        elif mnemonic == "imul" and len(ops) == 2:
+            use(ops[0])
+            use(ops[0], write=True)
+            use(ops[1])
+            writes_flags = True
+        elif mnemonic in ("inc", "dec", "neg", "not") and len(ops) == 1:
+            use(ops[0])
+            use(ops[0], write=True)
+            writes_flags = mnemonic != "not"
+        elif mnemonic in ("cmp", "test") and len(ops) == 2:
+            use(ops[0])
+            use(ops[1])
+            writes_flags = True
+        elif mnemonic in ("mul", "imul", "div", "idiv") and len(ops) == 1:
+            use(ops[0])
+            regs_read.update(("a", "d"))
+            regs_written.update(("a", "d"))
+            writes_flags = True
+        elif mnemonic == "cdq":
+            regs_read.add("a")
+            regs_written.add("d")
+        elif mnemonic == "cwde":
+            regs_read.add("a")
+            regs_written.add("a")
+        elif mnemonic == "sahf":
+            regs_read.add("a")
+            writes_flags = True
+        elif mnemonic == "lahf":
+            regs_written.add("a")
+            reads_flags = True
+        elif mnemonic == "push" and len(ops) == 1:
+            use(ops[0])
+            regs_read.add("sp")
+            regs_written.add("sp")
+            mem_writes.append(STACK_ACCESS)
+        elif mnemonic == "pop" and len(ops) == 1:
+            use(ops[0], write=True)
+            regs_read.add("sp")
+            regs_written.add("sp")
+            mem_reads.append(STACK_ACCESS)
+        elif mnemonic.startswith("set") and mnemonic[3:] in CC_CANON and len(ops) == 1:
+            use(ops[0], write=True)
+            reads_flags = True
+        elif mnemonic in ("nop", "int3"):
+            pass
+        elif mnemonic in JCC_MNEMONICS or mnemonic in ("loop", "loope", "loopne"):
+            return LineEffects(reads_flags=True, barrier=True)
+        elif mnemonic in ("call", "ret"):
+            # Calls clobber the flags; at ret they are dead.
+            return LineEffects(writes_flags=True, barrier=True)
+        elif x87:
+            for op in ops:
+                if op[0] == "mem":
+                    use(op, write=mnemonic in _X87_MEM_WRITERS)
+            if mnemonic == "fnstsw":
+                regs_written.add("a")
+        else:
+            return BARRIER
+    except (Reject, IndexError, KeyError):
+        return BARRIER
+
+    return LineEffects(
+        regs_read=frozenset(regs_read),
+        regs_written=frozenset(regs_written),
+        reads_flags=reads_flags,
+        writes_flags=writes_flags,
+        mem_reads=tuple(mem_reads),
+        mem_writes=tuple(mem_writes),
+        x87=x87,
+        barrier=False,
+    )
+
+
+def _is_pure_global(desc: tuple) -> bool:
+    return desc is not STACK_ACCESS and not desc[0] and bool(desc[2])
+
+
+def _mem_disjoint(a: tuple, b: tuple) -> bool:
+    """Can the two memory accesses be proven non-overlapping?"""
+    # pylint: disable=too-many-return-statements
+    if STACK_ACCESS in (a, b):
+        other = b if a == STACK_ACCESS else a
+        # The stack never overlaps a named global.
+        return other != STACK_ACCESS and _is_pure_global(other)
+
+    a_regs, a_disp, a_syms, a_width = a
+    b_regs, b_disp, b_syms, b_width = b
+
+    # Identical register terms and symbols: the register-conflict check in
+    # effects_conflict guarantees that no crossed instruction writes a
+    # register the moved access reads, so both accesses compute their base
+    # from the same register values and differ only by displacement.
+    # (This covers ebp frame slots and e.g. member stores through esi.)
+    if a_regs == b_regs and a_syms == b_syms:
+        if a_width is None or b_width is None:
+            return False
+        return a_disp + a_width <= b_disp or b_disp + b_width <= a_disp
+
+    frame_a = a_regs == (("bp", 1),) and not a_syms
+    frame_b = b_regs == (("bp", 1),) and not b_syms
+
+    # An ebp frame slot cannot overlap a named global.
+    if (frame_a and _is_pure_global(b)) or (frame_b and _is_pure_global(a)):
+        return True
+
+    if _is_pure_global(a) and _is_pure_global(b) and a_syms != b_syms:
+        # Two different named globals do not overlap.
+        return True
+
+    return False
+
+
+def effects_conflict(moved: LineEffects, other: LineEffects) -> bool:
+    """True if the moved instruction cannot be reordered across `other`."""
+    # pylint: disable=too-many-return-statements
+    if moved.barrier or other.barrier:
+        return True
+    if moved.regs_written & (other.regs_read | other.regs_written):
+        return True
+    if moved.regs_read & other.regs_written:
+        return True
+    if moved.writes_flags and other.reads_flags:
+        return True
+    if moved.reads_flags and other.writes_flags:
+        return True
+    # x87 instructions depend on the fp stack order.
+    if moved.x87 and other.x87:
+        return True
+    for access in moved.mem_writes:
+        for against in other.mem_reads + other.mem_writes:
+            if not _mem_disjoint(access, against):
+                return True
+    for access in moved.mem_reads:
+        for against in other.mem_writes:
+            if not _mem_disjoint(access, against):
+                return True
+    return False
+
+
+def flags_dead_at(asm: list[str], start: int) -> bool:
+    """Are the CPU flags provably dead (rewritten before being read) from
+    line `start` onward?"""
+    for line in asm[start:]:
+        effects = line_effects(line)
+        if effects.reads_flags:
+            return False
+        if effects.writes_flags:
+            return True
+        if effects.barrier:
+            # Unknown control flow: assume the flags could be read.
+            return False
     return True

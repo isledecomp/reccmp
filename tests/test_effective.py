@@ -354,3 +354,40 @@ def test_identical_sequences_match():
         "ret",
     ]
     assert verify_effective_match(orig, list(orig)) is True
+
+
+def test_void_return_rename_consumed_by_store():
+    """A void setter: the renamed registers hold different (dead) values at
+    ret, but both were consumed by the matched store. (Imperialism 0x41b400)"""
+    orig = [
+        "mov eax, dword ptr [g_pContext (DATA)]",
+        "mov ecx, dword ptr [esp + 4]",
+        "mov dword ptr [eax + 0x84], ecx",
+        "ret",
+    ]
+    recomp = [
+        "mov ecx, dword ptr [g_pContext (DATA)]",
+        "mov eax, dword ptr [esp + 4]",
+        "mov dword ptr [ecx + 0x84], eax",
+        "ret",
+    ]
+    assert verify_effective_match(orig, recomp) is True
+
+
+def test_partial_register_return_with_dead_upper_bits():
+    """A function returning a 16-bit value in ax: the upper bits of eax
+    differ (stale movsx vs. arithmetic leftovers) but are dead.
+    (Imperialism 0x5128f0)"""
+    orig = [
+        "sub eax, 6",
+        "movsx eax, ax",
+        "mov ax, word ptr [eax*2 + g_lookup (DATA)]",
+        "ret",
+    ]
+    recomp = [
+        "sub eax, 6",
+        "movsx ecx, ax",
+        "mov ax, word ptr [ecx*2 + g_lookup (DATA)]",
+        "ret",
+    ]
+    assert verify_effective_match(orig, recomp) is True

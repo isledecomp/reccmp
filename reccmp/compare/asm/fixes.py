@@ -1,11 +1,14 @@
 import re
 from typing import Sequence
 
-from reccmp.compare.asm.effective import verify_effective_match
+from reccmp.compare.asm.effective import (
+    effects_conflict,
+    flags_dead_at,
+    line_effects,
+    verify_effective_match,
+)
 from reccmp.compare.asm.parse import AsmExcerpt
 from reccmp.compare.pinned_sequences import DiffOpcode
-
-REG_FIND = re.compile(r"(?: |\[)(e?[a-d]x|e?[s,d]i|[a-d][l,h]|e?[b,s]p)")
 
 ALLOWED_JUMP_SWAPS = (
     ("ja", "jb"),
@@ -500,23 +503,6 @@ def effective_match_possible(orig_asm: list[str], recomp_asm: list[str]) -> bool
     return True
 
 
-def find_regs_used(inst: str) -> list[str]:
-    return REG_FIND.findall(inst)
-
-
-# Instructions that result in a change to the first operand
-MODIFIER_INSTRUCTIONS = ("adc", "add", "lea", "mov", "neg", "sbb", "sub", "pop", "xor")
-
-
-def instruction_alters_regs(inst: str, regs: set[str]) -> bool:
-    mnemonic, _, op_str = inst.partition(" ")
-    first_operand, _, __ = op_str.partition(", ")
-
-    return (mnemonic in MODIFIER_INSTRUCTIONS and first_operand in regs) or (
-        mnemonic == "call" and "eax" in regs
-    )
-
-
 def _is_relocatable(instr: str) -> bool:
     """
     Excludes certain instructions whose relocation will always change the logic
@@ -538,12 +524,17 @@ def relocate_instructions(
     into recomp, according to the diff opcodes. Using this list, match up
     any pairs of instructions that we assume to be relocated and return
     the indices in recomp where this has occurred.
-    This function has many limitations and could be improved. See: GH #324.
+
+    A move is only accepted when the instruction is independent of every
+    instruction it crosses: no register read/write conflicts, no flag
+    dependencies, no possibly-aliasing memory access, no x87 stack
+    interaction and no control-flow barrier in between. (GH #324)
     """
-    deletes = {
+    # Sorted for deterministic matching when several identical lines
+    # could pair up. (GH #324)
+    deletes = sorted(
         i for code, i1, i2, _, __ in codes for i in range(i1, i2) if code == "delete"
-    }
-    # Using list instead of set to preserve ordering.
+    )
     # `i1` is the index of the orig_asm list where this line will be inserted.
     # This is not necessarily equal to `j1`, the index of the inserted line in recomp_asm.
     # Therefore we need to save `i1` so that we verify each line between the start and end of the move. (GH #332)
@@ -560,22 +551,35 @@ def relocate_instructions(
         line = recomp_asm[j]
         if not _is_relocatable(line):
             continue
-        recomp_regs_used = set(find_regs_used(line))
+        moved = line_effects(line)
+        if moved.barrier:
+            continue
         for i in deletes:
             # Check for exact match.
-            if orig_asm[i] == line:
-                # To account for a move in either direction:
-                # the deleted line can precede or follow the inserted line.
-                reloc_start = min(i, orig_dest)
-                reloc_end = max(i, orig_dest)
+            if orig_asm[i] != line:
+                continue
+            # To account for a move in either direction:
+            # the deleted line can precede or follow the inserted line.
+            reloc_start = min(i, orig_dest)
+            reloc_end = max(i, orig_dest)
 
-                if not any(
-                    instruction_alters_regs(orig_asm[k], recomp_regs_used)
-                    for k in range(reloc_start, reloc_end)
-                ):
-                    relocated.add(j)
-                    deletes.remove(i)
-                    break
+            crossed = [orig_asm[k] for k in range(reloc_start, reloc_end) if k != i]
+            if any(effects_conflict(moved, line_effects(other)) for other in crossed):
+                continue
+
+            # If both the moved instruction and a crossed instruction write
+            # the flags, the move changes which value the flags hold at the
+            # end of the region: the flags must be dead there.
+            if moved.writes_flags and any(
+                line_effects(other).writes_flags for other in crossed
+            ):
+                after = reloc_end + 1 if reloc_end == i else reloc_end
+                if not flags_dead_at(orig_asm, after):
+                    continue
+
+            relocated.add(j)
+            deletes.remove(i)
+            break
 
     return relocated
 
