@@ -249,9 +249,9 @@ class JSONEntityVersion1:
     matching: float
     # Optional fields
     recomp: str | None = None
-    stub: bool = False
-    library: bool = False
-    effective: bool = False
+    stub: bool | None = False
+    library: bool | None = False
+    effective: bool | None = False
     diff: CombinedDiffOutput | None = None
     # EntityType as int. Older reports do not include this field.
     type: int | None = None
@@ -262,7 +262,8 @@ class JSONReportVersion1(BaseModel):
     format: Literal[1]
     timestamp: float
     data: list[JSONEntityVersion1]
-    function_total: int | None
+    # Did not exist before July 2026.
+    function_total: int | None = None
 
 
 MAGIC_STRING_VARIOUS = "various"
@@ -333,9 +334,9 @@ def _deserialize_version_1(obj: JSONReportVersion1) -> ReccmpStatusReport:
             accuracy=e.matching,
             type=entity_type,
             recomp_addr=recomp_addr,
-            is_stub=e.stub,
+            is_stub=bool(e.stub),
             is_library=bool(e.library),
-            is_effective_match=e.effective,
+            is_effective_match=bool(e.effective),
             udiff=e.diff,
             recomp_addr_various=various,
         )
@@ -357,8 +358,6 @@ def serialize_reccmp_report(
     diff_included: bool = False,
 ) -> str:
     """Create a JSON string for the report so it can be written to a file."""
-    now = datetime.now().replace(microsecond=0)
-    report.timestamp = now
     obj = _serialize_version_1(report, diff_included=diff_included)
 
     return obj.model_dump_json(exclude_defaults=True)

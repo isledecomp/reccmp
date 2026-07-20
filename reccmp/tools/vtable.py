@@ -81,7 +81,7 @@ def main():
 
             print(
                 tbl_match.name,
-                f": orig {tbl_match.orig_addr}, recomp {tbl_match.recomp_addr}",
+                f": orig {tbl_match.orig_addr:#x}, recomp {tbl_match.recomp_addr:#x}",
             )
             show_vtable_diff(udiff, args.verbose)
             print()
@@ -102,7 +102,7 @@ def main():
         if diff.accuracy < 1.0:
             problem_count += 1
             print(
-                f"Problem with adjuster thunk {fun_match.name} (0x{fun_match.orig_addr:x} / 0x{fun_match.recomp_addr:x})"
+                f"Problem with adjuster thunk {fun_match.name} ({fun_match.orig_addr:#x} / {fun_match.recomp_addr:#x})"
             )
 
     return 1 if problem_count > 0 else 0
