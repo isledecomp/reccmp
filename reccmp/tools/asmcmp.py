@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 import argparse
@@ -19,7 +18,8 @@ from reccmp.utils import (
 )
 
 from reccmp.compare import Compare
-from reccmp.compare.diff import DiffReport, raw_diff_to_udiff
+from reccmp.compare.db import ReccmpEntity
+from reccmp.compare.diff import raw_diff_to_udiff
 from reccmp.compare.report import (
     ReccmpStatusReport,
     ReccmpComparedEntity,
@@ -50,20 +50,21 @@ def gen_json(json_file: str, json_str: str):
         f.write(json_str)
 
 
-def print_match_verbose(match: DiffReport, show_both_addrs: bool = False):
-    percenttext = percent_string(match.effective_ratio, match.is_effective_match)
+def print_match_verbose(match: ReccmpComparedEntity, show_both_addrs: bool = False):
+    percenttext = percent_string(match.effective_accuracy, match.is_effective_match)
 
     if show_both_addrs:
-        addrs = f"0x{match.orig_addr:x} / 0x{match.recomp_addr:x}"
+        addrs = f"{match.orig_addr:#x} / {match.recomp_addr:#x}"
     else:
-        addrs = hex(match.orig_addr)
+        addrs = f"{match.orig_addr:#x}"
 
-    grouped_diff = match.match_type != EntityType.VTABLE
-    udiff = raw_diff_to_udiff(match.result.diff, grouped=grouped_diff)
+    grouped_diff = match.type != EntityType.VTABLE
+    assert match.rdiff is not None
+    udiff = raw_diff_to_udiff(match.rdiff, grouped=grouped_diff)
 
-    if match.effective_ratio == 1.0:
+    if match.effective_accuracy == 1.0:
         ok_text = reccmp.color.Fore.GREEN + "✨ OK! ✨" + reccmp.color.Style.RESET_ALL
-        if match.ratio == 1.0:
+        if match.accuracy == 1.0:
             print(f"{addrs}: {match.name} 100% match.\n\n{ok_text}\n\n")
         else:
             print_combined_diff(udiff, show_both_addrs)
@@ -84,9 +85,9 @@ def print_match_oneline(match: ReccmpComparedEntity, show_both_addrs: bool = Fal
     percenttext = percent_string(match.effective_accuracy, match.is_effective_match)
 
     if show_both_addrs:
-        addrs = f"{match.orig_addr} / {match.recomp_addr}"
+        addrs = f"{match.orig_addr:#x} / {match.recomp_addr:#x}"
     else:
-        addrs = match.orig_addr
+        addrs = f"{match.orig_addr:#x}"
 
     if match.is_stub:
         print(f"  {match.name} ({addrs}) is a stub.")
@@ -178,29 +179,43 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def dump_all_matched_functions(matches: Sequence[DiffReport]):
+def dump_all_matched_functions(report: ReccmpStatusReport):
     logger.info("Creating assembly dump files.")
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    orig_order = sorted(matches, key=lambda m: m.orig_addr)
-    recomp_order = sorted(matches, key=lambda m: m.recomp_addr)
 
-    with open(f"reccmp-{timestamp}-orig.txt", "w+", encoding="utf-8") as f:
-        for match in orig_order:
-            f.write(f"; {match.name}\n")
-            for addr, line in match.result.diff.orig_inst:
-                if addr:
-                    f.write(f"{addr:10}: {line}\n")
-                else:
-                    f.write(f"        : {line}\n")
+    # Extract instructions from each compared entity in both address spaces.
+    orig_items = [
+        (entity.orig_addr, entity.name, entity.rdiff.orig_inst)
+        for entity in report.entities.values()
+        if entity.recomp_addr is not None and entity.rdiff is not None
+    ]
 
-    with open(f"reccmp-{timestamp}-recomp.txt", "w+", encoding="utf-8") as f:
-        for match in recomp_order:
-            f.write(f"; {match.name}\n")
-            for addr, line in match.result.diff.recomp_inst:
-                if addr:
-                    f.write(f"{addr:10}: {line}\n")
-                else:
-                    f.write(f"        : {line}\n")
+    # mypy: recomp_addr can be None, but not for the matched entities we are reviewing.
+    recomp_items = [
+        (entity.recomp_addr, entity.name, entity.rdiff.recomp_inst)
+        for entity in report.entities.values()
+        if entity.recomp_addr is not None and entity.rdiff is not None
+    ]
+
+    # Sort by each binary's address order
+    orig_items.sort(key=lambda v: v[0])
+    recomp_items.sort(key=lambda v: v[0])
+
+    orig_filename = f"reccmp-{timestamp}-orig.txt"
+    recomp_filename = f"reccmp-{timestamp}-recomp.txt"
+
+    for filename, vitals in (
+        (orig_filename, orig_items),
+        (recomp_filename, recomp_items),
+    ):
+        with open(filename, "w+", encoding="utf-8") as f:
+            for _, name, instructions in vitals:
+                f.write(f"; {name}\n")
+                for addr, line in instructions:
+                    if addr:
+                        f.write(f"{addr:10}: {line}\n")
+                    else:
+                        f.write(f"        : {line}\n")
 
 
 def main() -> int:
@@ -231,37 +246,40 @@ def main() -> int:
 
     ### Compare everything.
 
-    compared = list(compare.compare_all())
+    def entity_filter(entity: ReccmpEntity) -> bool:
+        if (
+            entity.entity_type == EntityType.FUNCTION
+            and entity.name in target.report_config.ignore_functions
+        ):
+            return False
+
+        if args.nolib and entity.get("library"):
+            return False
+
+        return True
+
+    report = compare.to_report(entity_filter)
 
     if args.dump:
-        dump_all_matched_functions(compared)
+        dump_all_matched_functions(report)
 
-    report = ReccmpStatusReport(filename=target.original_path.name)
-
-    # Build report:
-    for match in compared:
-        # if we are ignoring this function, skip to next one and don't add it to the entities list
-        if (
-            match.match_type == EntityType.FUNCTION
-            and match.name in target.report_config.ignore_functions
-        ):
-            continue
-
-        if args.nolib and match.is_library:
-            continue
-
-        report.add_match(match)
+    # If we know how many functions are in the file (via analysis with Ghidra or other tools)
+    # we can substitute an alternate value to use when calculating the percentages below.
+    if args.total:
+        # Use the alternate value if it exceeds the number of known functions
+        report.function_total = max(report.function_total, int(args.total))
 
     # Count how many functions have the same virtual address in orig and recomp.
     functions_aligned_count = report_function_alignment(report)
 
     # Number of functions compared (i.e. excluding stubs)
-    function_count, _, total_effective_accuracy = report_function_accuracy(report)
+    implemented_funcs, _, total_effective_accuracy = report_function_accuracy(report)
 
     # Print diff summary to terminal
     if not args.silent and args.diff is None:
         for entity in report.entities.values():
-            print_match_oneline(entity, show_both_addrs=args.print_rec_addr)
+            if entity.is_matched():
+                print_match_oneline(entity, show_both_addrs=args.print_rec_addr)
 
     # Compare with saved diff report.
     if args.diff is not None:
@@ -293,16 +311,7 @@ def main() -> int:
     if args.html is not None:
         write_html_report(args.html, report, target_icon)
 
-    implemented_funcs = function_count
-
-    # Add known but unmatched functions to our count
-    function_count += compare.count_unmatched_functions()
-
-    # If we know how many functions are in the file (via analysis with Ghidra or other tools)
-    # we can substitute an alternate value to use when calculating the percentages below.
-    if args.total:
-        # Use the alternate value if it exceeds the number of annotated functions
-        function_count = max(function_count, int(args.total))
+    function_count = report.function_total
 
     implemented = implemented_funcs / safe_denominator(function_count) * 100
 
