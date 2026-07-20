@@ -3,6 +3,6 @@ colorama>=0.4.6
 pystache==0.6.8
 pydantic==2.13.4
 ruamel.yaml==0.19.1
-pydemumble==0.0.1
+pydemumble==0.1.1.post1
 pyghidra==3.1.0
 cydifflib==1.2.0
