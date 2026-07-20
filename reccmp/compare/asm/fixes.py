@@ -31,7 +31,15 @@ def find_effective_match(
     `orig_addrs` (optional) provides the virtual address of each orig line;
     with it, a relocation may cross a forward conditional jump whose target
     lies within the crossed region."""
+    # Plain lockstep pairing first: for equal-length sequences the diff's
+    # insert/delete blocks can misalign lines that pair up fine positionally.
     if verify_effective_match(orig_asm, recomp_asm):
+        return True
+
+    # Diff-aligned pairing: handles length differences (one-sided entries
+    # for instructions with no observable effect, e.g. nop padding or a
+    # redundant copy) and transposed independent lines.
+    if verify_effective_match(orig_asm, recomp_asm, codes):
         return True
 
     reordered = undo_relocations(codes, orig_asm, recomp_asm, orig_addrs)

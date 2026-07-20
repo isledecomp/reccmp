@@ -135,6 +135,7 @@ class X87Stack:
 
 @dataclass
 class SideState:
+    # pylint: disable=too-many-instance-attributes
     regs: dict[str, Value] = field(
         default_factory=lambda: {f: ("init", f) for f in FAMILIES}
     )
@@ -143,6 +144,29 @@ class SideState:
     x87: X87Stack = field(default_factory=X87Stack)
     # The value eax held at each `ret`, validated at the end of the run.
     retvals: list[Value] = field(default_factory=list)
+    # Frame-slot alpha-renaming: negative ebp displacements are replaced by
+    # slot ids assigned in first-use order, so the two sides may lay out
+    # their locals differently. Validated by _slots_consistent at the end.
+    slot_map: dict[int, int | None] = field(default_factory=dict)
+    slot_accesses: list[tuple[int, int | None]] = field(default_factory=list)
+    slots_escaped: bool = False
+    rename_slots: bool = True
+
+    def slot_ref(self, disp: int, size: str, write: bool) -> Value | int:
+        """Canonical key for a frame-local access. A slot becomes renamable
+        only when its first access is a write (a proper lifetime start);
+        a slot that is read first would let two different uninitialized
+        locals appear equal, so it keeps its raw displacement."""
+        self.slot_accesses.append((disp, _WIDTHS.get(size)))
+        if disp not in self.slot_map:
+            if write:
+                self.slot_map[disp] = sum(
+                    1 for v in self.slot_map.values() if v is not None
+                )
+            else:
+                self.slot_map[disp] = None
+        slot = self.slot_map[disp]
+        return disp if slot is None else ("slot", slot)
 
     def read_reg(self, name: str) -> Value:
         family, part = REGISTERS[name]
@@ -181,6 +205,9 @@ class Context:
     # When not None, every memory access performed by execute() is recorded
     # here as ("r"|"w", address value, width, is_stack_slot).
     trace: list | None = None
+    # Pending callee-save register substitutions: (orig family, recomp
+    # family, stack slot address) pushed but not yet popped.
+    save_stack: list[tuple[str, str, Value]] = field(default_factory=list)
 
 
 # Symbolic values are DAGs (a register value can feed several later values),
@@ -302,15 +329,34 @@ def parse_instruction(line: str) -> Instruction:
 # Symbolic execution of one side
 
 
-def mem_address(state: SideState, op) -> Value:
-    _, _, seg, reg_terms, disp, syms = op
+def mem_address(
+    state: SideState, op, escape: bool = False, write: bool = False
+) -> Value:
+    # pylint: disable=too-many-boolean-expressions
+    _, size, seg, reg_terms, disp, syms = op
+    disp_key: Value | int = disp
+    if (
+        state.rename_slots
+        and not seg
+        and not syms
+        and disp < 0
+        and any(reg == "ebp" for reg, _ in reg_terms)
+        and _stack_rooted(state.regs["bp"])
+    ):
+        if not escape and reg_terms == [("ebp", 1)]:
+            # A plain frame-local slot: alpha-renamable across the sides.
+            disp_key = state.slot_ref(disp, size, write)
+        else:
+            # The slot's address escapes (lea) or the access is indexed
+            # (a local array): renaming frame slots is no longer safe.
+            state.slots_escaped = True
     terms = tuple(
         sorted(
             ((state.read_reg(reg), scale) for reg, scale in reg_terms),
             key=repr,
         )
     )
-    return ("mem", seg, terms, disp, syms)
+    return ("mem", seg, terms, disp_key, syms)
 
 
 def read_operand(state: SideState, ctx: Context, op) -> Value:
@@ -336,7 +382,7 @@ def write_operand(state: SideState, ctx: Context, op, value: Value, obs: list) -
     if kind == "reg":
         state.write_reg(op[1], value)
     elif kind == "mem":
-        address = mem_address(state, op)
+        address = mem_address(state, op, write=True)
         if ctx.trace is not None:
             ctx.trace.append(("w", address, _WIDTHS.get(op[1]), False))
         obs.append(("store", address, op[1], value))
@@ -423,7 +469,9 @@ def execute(
         value = (mnemonic, width, read_operand(state, ctx, src))
         write_operand(state, ctx, ops[0], value, obs)
     elif mnemonic == "lea" and len(ops) == 2 and ops[1][0] == "mem":
-        write_operand(state, ctx, ops[0], ("addr", mem_address(state, ops[1])), obs)
+        write_operand(
+            state, ctx, ops[0], ("addr", mem_address(state, ops[1], escape=True)), obs
+        )
     elif mnemonic == "xchg" and len(ops) == 2:
         a = read_operand(state, ctx, ops[0])
         b = read_operand(state, ctx, ops[1])
@@ -686,6 +734,10 @@ def fully_synced(orig: SideState, recomp: SideState) -> bool:
         and orig.flags == recomp.flags
         and orig.fpu_flags == recomp.fpu_flags
         and orig.x87.state_key() == recomp.x87.state_key()
+        # An unsupported-but-identical instruction accesses the same textual
+        # frame slots on both sides, so any slot renaming so far must be
+        # the identity for the states to be concretely identical.
+        and orig.slot_map == recomp.slot_map
     )
 
 
@@ -766,12 +818,148 @@ def _is_scratch(value: Value) -> bool:
     )
 
 
-def verify_effective_match(orig_asm: list[str], recomp_asm: list[str]) -> bool:
+CALLEE_SAVED = ("b", "si", "di")
+
+
+def _aligned_lines(
+    codes, orig_asm: list[str], recomp_asm: list[str]
+) -> list[tuple[str | None, str | None]] | None:
+    """Pair up the two sequences for lockstep verification. Without diff
+    opcodes, the sequences must have equal length. With them, unmatched
+    insertions/deletions become one-sided entries, which the verifier only
+    accepts for instructions with no observable effect (e.g. a redundant
+    register copy one compiler emitted and the other did not)."""
+    if codes is None:
+        if len(orig_asm) != len(recomp_asm):
+            return None
+        return list(zip(orig_asm, recomp_asm))
+    result: list[tuple[str | None, str | None]] = []
+    for tag, i1, i2, j1, j2 in codes:
+        if tag in ("equal", "replace"):
+            paired = min(i2 - i1, j2 - j1)
+            result.extend(zip(orig_asm[i1 : i1 + paired], recomp_asm[j1 : j1 + paired]))
+            result.extend((line, None) for line in orig_asm[i1 + paired : i2])
+            result.extend((None, line) for line in recomp_asm[j1 + paired : j2])
+        elif tag == "delete":
+            result.extend((line, None) for line in orig_asm[i1:i2])
+        elif tag == "insert":
+            result.extend((None, line) for line in recomp_asm[j1:j2])
+    return result
+
+
+def _one_sided_ok(state: SideState, ctx: Context, idx: int, line: str) -> bool:
+    """Execute an instruction that exists on only one side. It is
+    acceptable only if it has no observable effect: no store, call,
+    branch or return. Its register/flag results simply flow into that
+    side's state (typically a redundant copy whose value the end-of-run
+    dead-value analysis must then account for)."""
+    if DATA_LINE_RE.match(line):
+        return False
+    obs: list = []
+    try:
+        execute(state, ctx, idx, parse_instruction(line), obs)
+        guard_state_size(state, ctx)
+    except (Reject, IndexError, KeyError, ValueError, TypeError):
+        return False
+    return not obs
+
+
+def _callee_save_swap(ctx: Context, ins_o, ins_r, obs_o, obs_r, orig, recomp) -> bool:
+    # pylint: disable=too-many-arguments,too-many-positional-arguments
+    # pylint: disable=too-many-boolean-expressions
+    """Detect a balanced callee-save substitution: one side saves and
+    restores e.g. esi where the other uses edi. The pushed values are the
+    untouched initial registers, so the stores differ; treat the pair as
+    bookkeeping and make the matching pops restore the initial values."""
+    if ins_o.mnemonic != ins_r.mnemonic:
+        return False
+    if (
+        ins_o.mnemonic == "push"
+        and len(obs_o) == 1
+        and len(obs_r) == 1
+        and obs_o[0][0] == obs_r[0][0] == "store"
+        and obs_o[0][1] == obs_r[0][1]
+        and obs_o[0][3][0] == obs_r[0][3][0] == "init"
+        and obs_o[0][3][1] in CALLEE_SAVED
+        and obs_r[0][3][1] in CALLEE_SAVED
+        and obs_o[0][3] != obs_r[0][3]
+    ):
+        ctx.save_stack.append((obs_o[0][3][1], obs_r[0][3][1], obs_o[0][1]))
+        return True
+    if (
+        ins_o.mnemonic == "pop"
+        and ctx.save_stack
+        and ins_o.operands
+        and ins_r.operands
+        and ins_o.operands[0][0] == "reg"
+        and ins_r.operands[0][0] == "reg"
+    ):
+        family_o = REGISTERS[ins_o.operands[0][1]][0]
+        family_r = REGISTERS[ins_r.operands[0][1]][0]
+        saved_o, saved_r, slot_addr = ctx.save_stack[-1]
+        popped = orig.regs.get(family_o)
+        if (
+            (saved_o, saved_r) == (family_o, family_r)
+            and isinstance(popped, tuple)
+            and popped
+            and popped[0] == "load"
+            and popped[1] == slot_addr
+        ):
+            ctx.save_stack.pop()
+            orig.regs[family_o] = ("init", family_o)
+            recomp.regs[family_r] = ("init", family_r)
+            return True
+    return False
+
+
+def _slots_consistent(orig: SideState, recomp: SideState) -> bool:
+    """Validate the frame-slot alpha-renaming: the two sides must map the
+    same slot ids in the same order, and — when the layouts actually differ
+    — every slot must be a self-contained region (known widths, no overlap
+    between distinct slots, no escaped frame addresses)."""
+    orig_disps = [
+        d
+        for d, slot in sorted(
+            orig.slot_map.items(), key=lambda kv: (kv[1] is None, kv[1] or 0)
+        )
+        if slot is not None
+    ]
+    recomp_disps = [
+        d
+        for d, slot in sorted(
+            recomp.slot_map.items(), key=lambda kv: (kv[1] is None, kv[1] or 0)
+        )
+        if slot is not None
+    ]
+    if len(orig_disps) != len(recomp_disps):
+        return False
+    if orig_disps == recomp_disps:
+        # No renaming took place; nothing to prove.
+        return True
+    if orig.slots_escaped or recomp.slots_escaped:
+        return False
+    for state in (orig, recomp):
+        widths: dict[int, int] = {}
+        for disp, width in state.slot_accesses:
+            if width is None:
+                return False
+            widths[disp] = max(width, widths.get(disp, 0))
+        spans = sorted(widths.items())
+        for (d1, w1), (d2, _) in zip(spans, spans[1:]):
+            if d1 + w1 > d2:
+                return False
+    return True
+
+
+def verify_effective_match(
+    orig_asm: list[str], recomp_asm: list[str], codes=None
+) -> bool:
     """True if the two instruction sequences can be proven equivalent
-    modulo register allocation, commutative-operand order and inverted
-    compare/jump conditions."""
-    # pylint: disable=too-many-branches,too-many-return-statements
-    if len(orig_asm) != len(recomp_asm):
+    modulo register allocation, frame-slot layout, commutative-operand
+    order and inverted compare/jump conditions."""
+    # pylint: disable=too-many-branches,too-many-return-statements,too-many-statements
+    aligned = _aligned_lines(codes, orig_asm, recomp_asm)
+    if aligned is None:
         return False
 
     orig = SideState()
@@ -779,7 +967,15 @@ def verify_effective_match(orig_asm: list[str], recomp_asm: list[str]) -> bool:
     ctx = Context()
 
     try:
-        for idx, (line_o, line_r) in enumerate(zip(orig_asm, recomp_asm)):
+        for idx, (line_o, line_r) in enumerate(aligned):
+            if line_o is None or line_r is None:
+                side = recomp if line_o is None else orig
+                line = line_r if line_o is None else line_o
+                assert line is not None
+                if not _one_sided_ok(side, ctx, idx, line):
+                    return False
+                continue
+
             if DATA_LINE_RE.match(line_o) or DATA_LINE_RE.match(line_r):
                 if line_o != line_r:
                     return False
@@ -806,6 +1002,11 @@ def verify_effective_match(orig_asm: list[str], recomp_asm: list[str]) -> bool:
 
             guard_state_size(orig, ctx)
             guard_state_size(recomp, ctx)
+
+            if _callee_save_swap(ctx, ins_o, ins_r, obs_o, obs_r, orig, recomp):
+                if ctx.bump_requested:
+                    ctx.gen += 1
+                continue
 
             if obs_o != obs_r:
                 return False
@@ -861,6 +1062,13 @@ def verify_effective_match(orig_asm: list[str], recomp_asm: list[str]) -> bool:
         for value_o, value_r in zip(orig.retvals, recomp.retvals):
             if not _retval_ok(value_o, value_r, matched_repr):
                 return False
+
+        # Every callee-save substitution must have been balanced by its pop,
+        # and any frame-slot renaming must describe a consistent layout.
+        if ctx.save_stack:
+            return False
+        if not _slots_consistent(orig, recomp):
+            return False
     except (Reject, RecursionError):
         return False
 
@@ -1047,7 +1255,7 @@ def sequence_effects(asm: list[str]) -> list[LineEffects] | None:
     """Symbolically execute one instruction sequence and return a per-line
     effect summary with memory addresses resolved to symbolic values.
     Returns None if the sequence cannot be analyzed at all."""
-    state = SideState()
+    state = SideState(rename_slots=False)
     ctx = Context()
     result = []
     try:

@@ -391,3 +391,131 @@ def test_partial_register_return_with_dead_upper_bits():
         "ret",
     ]
     assert verify_effective_match(orig, recomp) is True
+
+
+# --- Phase 6: frame slots, callee-save substitution, length differences ----
+
+
+def test_frame_slot_renaming():
+    """The same local lives at a different ebp offset in each build."""
+    orig = [
+        "mov dword ptr [ebp - 4], eax",
+        "mov ecx, dword ptr [ebp - 4]",
+        "push ecx",
+        "call <OFFSET1>",
+    ]
+    recomp = [
+        "mov dword ptr [ebp - 8], eax",
+        "mov ecx, dword ptr [ebp - 8]",
+        "push ecx",
+        "call <OFFSET1>",
+    ]
+    assert verify_effective_match(orig, recomp) is True
+
+
+def test_frame_slot_renaming_rejects_overlap():
+    """Renamed slots must not overlap: [ebp-6] and [ebp-4] dwords do."""
+    orig = [
+        "mov dword ptr [ebp - 8], eax",
+        "mov dword ptr [ebp - 4], ecx",
+        "mov edx, dword ptr [ebp - 8]",
+        "push edx",
+    ]
+    recomp = [
+        "mov dword ptr [ebp - 6], eax",
+        "mov dword ptr [ebp - 4], ecx",
+        "mov edx, dword ptr [ebp - 6]",
+        "push edx",
+    ]
+    assert verify_effective_match(orig, recomp) is False
+
+
+def test_frame_slot_read_first_not_renamed():
+    """A local that is read before being written holds unknown data; two
+    different offsets must not be treated as the same slot."""
+    orig = ["mov eax, dword ptr [ebp - 4]", "push eax"]
+    recomp = ["mov eax, dword ptr [ebp - 8]", "push eax"]
+    assert verify_effective_match(orig, recomp) is False
+
+
+def test_frame_slot_renaming_rejects_escaped_address():
+    """Once a frame address escapes via lea, renaming is off."""
+    orig = [
+        "mov dword ptr [ebp - 4], eax",
+        "lea ecx, [ebp - 4]",
+        "push ecx",
+        "call <OFFSET1>",
+    ]
+    recomp = [
+        "mov dword ptr [ebp - 8], eax",
+        "lea ecx, [ebp - 8]",
+        "push ecx",
+        "call <OFFSET1>",
+    ]
+    assert verify_effective_match(orig, recomp) is False
+
+
+def test_callee_save_register_substitution():
+    """One build preserves and uses esi where the other picked edi."""
+    orig = [
+        "push esi",
+        "mov esi, ecx",
+        "mov eax, dword ptr [esi + 4]",
+        "pop esi",
+        "ret",
+    ]
+    recomp = [
+        "push edi",
+        "mov edi, ecx",
+        "mov eax, dword ptr [edi + 4]",
+        "pop edi",
+        "ret",
+    ]
+    assert verify_effective_match(orig, recomp) is True
+
+
+def test_callee_save_substitution_requires_matching_pop():
+    """push esi vs push edi as a call argument is a real difference:
+    the caller-saved values differ and no balanced pop follows."""
+    orig = ["push esi", "call <OFFSET1>", "ret"]
+    recomp = ["push edi", "call <OFFSET1>", "ret"]
+    assert verify_effective_match(orig, recomp) is False
+
+
+def test_one_sided_redundant_copy():
+    """The recomp emits an extra register-to-register copy: instruction
+    counts differ, but the extra copy has no observable effect."""
+    import difflib
+
+    orig = [
+        "mov eax, dword ptr [esi]",
+        "push eax",
+        "call <OFFSET1>",
+        "ret",
+    ]
+    recomp = [
+        "mov ecx, dword ptr [esi]",
+        "mov eax, ecx",
+        "push eax",
+        "call <OFFSET1>",
+        "ret",
+    ]
+    codes = difflib.SequenceMatcher(None, orig, recomp).get_opcodes()
+    assert verify_effective_match(orig, recomp, codes) is True
+    # Without the diff opcodes, unequal lengths cannot be aligned.
+    assert verify_effective_match(orig, recomp) is False
+
+
+def test_one_sided_store_rejected():
+    """An unmatched instruction with an observable effect (a store) is a
+    real difference."""
+    import difflib
+
+    orig = ["mov eax, dword ptr [esi]", "push eax"]
+    recomp = [
+        "mov eax, dword ptr [esi]",
+        "mov dword ptr [edi], 0",
+        "push eax",
+    ]
+    codes = difflib.SequenceMatcher(None, orig, recomp).get_opcodes()
+    assert verify_effective_match(orig, recomp, codes) is False
