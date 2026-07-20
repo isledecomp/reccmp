@@ -44,7 +44,7 @@ def sample_rdiff() -> RawDiffOutput:
 
 
 def sample_udiff() -> CombinedDiffOutput:
-    """Returns unified diff with type for mypy coercion."""
+    """Returns unified diff with type for mypy coersion."""
     return [
         (
             "@@ -0x0,1 +0x0,1 @@",
@@ -58,6 +58,7 @@ def test_deserialize_empty_report():
     report = deserialize_reccmp_report(create_json())
     assert report.filename == "test.exe"
     assert report.from_version == 1
+    assert report.function_total == 0
     assert not report.entities
 
 
@@ -71,6 +72,9 @@ def test_deserialize_one_entity():
     assert e.orig_addr == 0x100
     assert e.name == "test"
     assert e.accuracy == 1.0
+
+    # Presumed to be a function because no entity type is set.
+    assert e.is_function()
 
 
 def test_deserialize_if_missing_required_fields():
@@ -90,6 +94,7 @@ def test_deserialize_defaults_for_optional_fields():
     assert e.type is None
     assert e.recomp_addr is None
     assert e.is_stub is False
+    assert e.is_library is False
     assert e.is_effective_match is False
     assert e.udiff is None
     assert e.recomp_addr_varies is False
@@ -98,10 +103,9 @@ def test_deserialize_defaults_for_optional_fields():
     assert e.rdiff is None
 
 
-@pytest.mark.xfail(reason="TODO")
 def test_deserialize_explicit_null_fields():
     """Can use implicit or explicit null for optional fields."""
-    for field in ("recomp", "stub", "effective", "diff", "type"):
+    for field in ("recomp", "stub", "library", "effective", "diff", "type"):
         entity = create_entity()
         entity[field] = None
         report = deserialize_reccmp_report(create_json([entity]))
@@ -110,8 +114,33 @@ def test_deserialize_explicit_null_fields():
         assert e.type is None
         assert e.recomp_addr is None
         assert e.is_stub is False
+        assert e.is_library is False
         assert e.is_effective_match is False
         assert e.udiff is None
+
+
+def test_deserialize_null_type_presumed_function():
+    """We began to store the entity type in serialized reports starting with #392.
+    If the type is null, we assume the entity is a function."""
+    entity = create_entity(recomp="0x100", matching=0.5)
+    report = deserialize_reccmp_report(create_json([entity]))
+    e = report.entities[0x100]
+
+    assert e.type is None
+    assert e.is_function() is True
+    assert report.function_total == 1
+
+
+@pytest.mark.xfail(reason="Potential improvement.")
+def test_deserialize_guess_vtable_type():
+    """Reasonable assumption about entity type (if it is None) using the entity's name"""
+    entity = create_entity(name="Pizza::`vftable'", recomp="0x100", matching=0.5)
+    report = deserialize_reccmp_report(create_json([entity]))
+    e = report.entities[0x100]
+
+    assert e.type is None
+    assert e.is_function() is False
+    assert report.function_total == 0
 
 
 def test_deserialize_valid_type():
@@ -156,6 +185,7 @@ def test_deserialize_recomp_addr_varies():
 
     assert e.recomp_addr is None
     assert e.recomp_addr_varies is True
+    assert e.is_matched() is True
 
 
 def test_deserialize_recomp_addr_various_exact():
@@ -166,6 +196,35 @@ def test_deserialize_recomp_addr_various_exact():
             deserialize_reccmp_report(create_json([entity]))
 
 
+def test_deserialize_null_function_total():
+    """If `function_total` is null or not set, recalculate by counting
+    the function entities in the report."""
+    entities = [
+        create_entity(address="0x100", recomp="0x100"),
+        create_entity(address="0x200", recomp="0x200", type=int(EntityType.VTABLE)),
+    ]
+    report = deserialize_reccmp_report(create_json(entities, function_total=None))
+    assert report.function_total == 1
+
+
+def test_deserialize_function_total_lower_than_count():
+    """Count the number of function entities when deserializing.
+    Use this value or the report's serialized count, whichever is higher."""
+    entities = [
+        create_entity(address="0x100", recomp="0x100"),
+        create_entity(address="0x200", recomp="0x200"),
+    ]
+    report = deserialize_reccmp_report(create_json(entities, function_total=1))
+    assert report.function_total == 2
+
+
+def test_deserialize_function_total_higher_than_count():
+    """Do not overwrite the serialized function total if it is higher than the count."""
+    entities = [create_entity(recomp="0x100")]
+    report = deserialize_reccmp_report(create_json(entities, function_total=100))
+    assert report.function_total == 100
+
+
 def test_serialize_empty():
     filename = "test.exe"
     report = ReccmpStatusReport(filename=filename)
@@ -173,6 +232,7 @@ def test_serialize_empty():
 
     assert obj["file"] == filename
     assert obj["format"] == 1
+    assert obj["function_total"] == 0
 
     # No entities
     assert not obj["data"]
@@ -251,7 +311,6 @@ def test_serialize_excludes_defaults():
     assert "type" not in entity
 
 
-@pytest.mark.xfail(reason="TODO: Serialize changes report timestamp")
 def test_serialize_existing_timestamp():
     """Serialize the timestamp captured when the report object was created.
     Do not use a new timestamp when preparing the JSON string."""
@@ -265,6 +324,20 @@ def test_serialize_existing_timestamp():
     assert report.timestamp == then
 
 
+def test_serialize_updates_function_total():
+    """Recalculate the function count before serializing."""
+    report = ReccmpStatusReport(filename="test.exe")
+    report.entities[0x100] = ReccmpComparedEntity(
+        orig_addr=0x100, name="test", accuracy=1.0, recomp_addr=0x100
+    )
+    assert report.function_total == 0
+
+    obj = json.loads(serialize_reccmp_report(report))
+
+    assert report.function_total == 1
+    assert obj["function_total"] == 1
+
+
 def test_serialize_recomp_addr_varies():
     """An entity created with `reccmp-aggregate` that does not have
     a fixed recomp addr should use the magic string `various`."""
@@ -276,3 +349,17 @@ def test_serialize_recomp_addr_varies():
     obj = json.loads(serialize_reccmp_report(report))
     [entity] = obj["data"]
     assert entity["recomp"] == "various"
+
+
+def test_serialize_omits_unmatched_entities():
+    """Version 1 reports contain only matched entities."""
+    report = ReccmpStatusReport(filename="test.exe")
+    report.entities[0x100] = ReccmpComparedEntity(
+        orig_addr=0x100, name="test", accuracy=1.0
+    )
+
+    obj = json.loads(serialize_reccmp_report(report))
+    assert not obj["data"]
+
+    # The unmatched entity is still counted for the function total.
+    assert obj["function_total"] == 1
