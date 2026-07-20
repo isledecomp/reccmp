@@ -114,7 +114,7 @@ class FunctionComparator:
                 self.types.get_name_for_offset,
             ),
             is_32bit=self.is_32bit,
-            collect_meta=True,
+            collect_meta=False,
         )
         self.recomp_sanitize = ParseAsm(
             addr_test=create_valid_addr_lookup(
@@ -127,7 +127,7 @@ class FunctionComparator:
                 self.types.get_name_for_offset,
             ),
             is_32bit=self.is_32bit,
-            collect_meta=True,
+            collect_meta=False,
         )
 
     def _source_ref_of_recomp_addr(self, recomp_addr: int | None) -> str | None:
@@ -138,7 +138,13 @@ class FunctionComparator:
             return None
         return f"{path_line_pair[0].name}:{path_line_pair[1]}"
 
-    def compare_function(self, match: ReccmpMatch) -> EntityCompareResult:
+    def compare_function(
+        self,
+        match: ReccmpMatch,
+        *,
+        include_diff: bool = True,
+        include_exact_diff: bool = True,
+    ) -> EntityCompareResult:
         # Detect when the recomp function size would cause us to read
         # enough bytes from the original function that we cross into
         # the next annotated function.
@@ -189,22 +195,15 @@ class FunctionComparator:
             orig_combined, recomp_combined, line_annotations
         )
 
-        orig_meta = [
-            self.orig_sanitize.meta.get(addr) if addr is not None else None
-            for addr, _ in orig_combined
-        ]
-        recomp_meta = [
-            self.recomp_sanitize.meta.get(addr) if addr is not None else None
-            for addr, _ in recomp_combined
-        ]
-
         return self._compare_function_assembly(
             orig_combined,
             recomp_combined,
             split_points,
-            self._function_metadata(match),
-            orig_meta,
-            recomp_meta,
+            match=match,
+            orig_raw=orig_raw,
+            recomp_raw=recomp_raw,
+            include_diff=include_diff,
+            include_exact_diff=include_exact_diff,
         )
 
     # ------------------------------------------------------------------
@@ -327,22 +326,60 @@ class FunctionComparator:
         orig: AsmExcerpt,
         recomp: AsmExcerpt,
         split_points: list[tuple[int, int]],
+        *,
+        match: ReccmpMatch | None = None,
+        orig_raw: bytes | None = None,
+        recomp_raw: bytes | None = None,
+        include_diff: bool = True,
+        include_exact_diff: bool = True,
         metadata: FunctionMetadata | None = None,
         orig_meta: list[InstructionMeta | None] | None = None,
         recomp_meta: list[InstructionMeta | None] | None = None,
     ) -> EntityCompareResult:
-        # pylint: disable=too-many-positional-arguments
+        # pylint: disable=too-many-arguments,too-many-positional-arguments
         # Detach addresses from asm lines for the text diff.
         orig_asm = [x[1] for x in orig]
         recomp_asm = [x[1] for x in recomp]
 
         diff = SequenceMatcherWithPins(orig_asm, recomp_asm, split_points)
 
-        if diff.ratio() == 1.0:
+        ratio = diff.ratio()
+        opcodes = diff.get_opcodes()
+        if ratio == 1.0:
             analysis = ComparisonAnalysis.exact()
         else:
+            if metadata is None and match is not None:
+                metadata = self._function_metadata(match)
+            if orig_meta is None and orig_raw is not None:
+                orig_meta_by_addr = self.orig_sanitize.collect_instruction_meta(
+                    orig_raw,
+                    (
+                        match.orig_addr
+                        if match is not None
+                        else (orig[0][0] if orig and orig[0][0] is not None else 0)
+                    ),
+                )
+                orig_meta = [
+                    orig_meta_by_addr.get(addr) if addr is not None else None
+                    for addr, _ in orig
+                ]
+            if recomp_meta is None and recomp_raw is not None:
+                recomp_meta_by_addr = self.recomp_sanitize.collect_instruction_meta(
+                    recomp_raw,
+                    (
+                        match.recomp_addr
+                        if match is not None
+                        else (
+                            recomp[0][0] if recomp and recomp[0][0] is not None else 0
+                        )
+                    ),
+                )
+                recomp_meta = [
+                    recomp_meta_by_addr.get(addr) if addr is not None else None
+                    for addr, _ in recomp
+                ]
             analysis = analyze_effective_match(
-                diff.get_opcodes(),
+                opcodes,
                 orig_asm,
                 recomp_asm,
                 orig_addrs=[x[0] for x in orig],
@@ -351,6 +388,9 @@ class FunctionComparator:
                 recomp_addrs=[x[0] for x in recomp],
                 recomp_meta=recomp_meta,
             )
+
+        if not include_diff or (ratio == 1.0 and not include_exact_diff):
+            return EntityCompareResult(match_ratio=ratio, analysis=analysis)
 
         # Convert the addresses to hex string for the diff output
         orig_for_printing = [
@@ -373,11 +413,11 @@ class FunctionComparator:
 
         return EntityCompareResult(
             diff=RawDiffOutput(
-                codes=diff.get_opcodes(),
+                codes=opcodes,
                 orig_inst=orig_for_printing,
                 recomp_inst=recomp_for_printing,
             ),
-            match_ratio=diff.ratio(),
+            match_ratio=ratio,
             analysis=analysis,
         )
 

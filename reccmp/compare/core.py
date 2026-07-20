@@ -2,7 +2,7 @@ import logging
 import difflib
 import struct
 from itertools import zip_longest
-from typing import Callable, Iterator
+from typing import Callable, Iterable, Iterator
 from typing_extensions import Self
 from reccmp.project.detect import RecCmpTarget
 from reccmp.compare.diff import EntityCompareResult, RawDiffOutput
@@ -275,7 +275,9 @@ class Compare:
         compare.run()
         return compare
 
-    def _compare_vtable(self, match: ReccmpMatch) -> EntityCompareResult:
+    def _compare_vtable(
+        self, match: ReccmpMatch, *, include_diff: bool = True
+    ) -> EntityCompareResult:
         recomp_size = match.any_size(ImageId.RECOMP)
 
         # The vtable size should always be a multiple of 4 because that
@@ -398,10 +400,14 @@ class Compare:
         ).get_opcodes()
 
         return EntityCompareResult(
-            diff=RawDiffOutput(
-                codes=opcodes,
-                orig_inst=orig_text,
-                recomp_inst=recomp_text,
+            diff=(
+                RawDiffOutput(
+                    codes=opcodes,
+                    orig_inst=orig_text,
+                    recomp_inst=recomp_text,
+                )
+                if include_diff
+                else RawDiffOutput()
             ),
             match_ratio=ratio,
             analysis=(
@@ -442,7 +448,13 @@ class Compare:
             is_library=ent.get("library", False),
         )
 
-    def _compare_match(self, match: ReccmpMatch) -> ReccmpComparedEntity | None:
+    def _compare_match(
+        self,
+        match: ReccmpMatch,
+        *,
+        include_diff: bool = True,
+        include_exact_diff: bool = True,
+    ) -> ReccmpComparedEntity | None:
         """Router for comparison type"""
 
         if match.size is None or match.any_size() == 0:
@@ -458,11 +470,15 @@ class Compare:
         if match.entity_type in (EntityType.FUNCTION, EntityType.VTORDISP):
             # Thunks are excluded from comparison. They always match 100% because
             # they are paired up using the destination of their JMP instruction.
-            result = self.function_comparator.compare_function(match)
+            result = self.function_comparator.compare_function(
+                match,
+                include_diff=include_diff,
+                include_exact_diff=include_exact_diff,
+            )
             output_type = EntityType.FUNCTION
 
         elif match.entity_type == EntityType.VTABLE:
-            result = self._compare_vtable(match)
+            result = self._compare_vtable(match, include_diff=include_diff)
             output_type = EntityType.VTABLE
 
         else:
@@ -497,15 +513,61 @@ class Compare:
     def get_variables(self) -> Iterator[ReccmpMatch]:
         return self._db.get_matches_by_type(EntityType.DATA)
 
-    def compare_address(self, addr: int) -> ReccmpComparedEntity | None:
+    def compare_address(
+        self,
+        addr: int,
+        *,
+        include_diff: bool = True,
+        include_exact_diff: bool = True,
+    ) -> ReccmpComparedEntity | None:
         match = self._db.get_one_match(addr)
         if match is None:
             return None
 
-        return self._compare_match(match)
+        return self._compare_match(
+            match,
+            include_diff=include_diff,
+            include_exact_diff=include_exact_diff,
+        )
+
+    def compare_addresses(
+        self,
+        orig_addrs: Iterable[int] = (),
+        recomp_addrs: Iterable[int] = (),
+        *,
+        include_diff: bool = True,
+        include_exact_diff: bool = True,
+    ) -> Iterable[ReccmpComparedEntity]:
+        """Compare a selected set of matches from either address space.
+
+        A match requested through both address spaces is emitted once, ordered
+        by original address. Unknown and non-comparable addresses are omitted.
+        """
+        selected: dict[int, ReccmpMatch] = {}
+        for addr in orig_addrs:
+            match = self._db.get_one_match(addr)
+            if match is not None:
+                selected[match.orig_addr] = match
+        for addr in recomp_addrs:
+            entity = self._db.get(ImageId.RECOMP, addr)
+            if isinstance(entity, ReccmpMatch):
+                selected[entity.orig_addr] = entity
+
+        for orig_addr in sorted(selected):
+            diff = self._compare_match(
+                selected[orig_addr],
+                include_diff=include_diff,
+                include_exact_diff=include_exact_diff,
+            )
+            if diff is not None:
+                yield diff
 
     def compare_all(
-        self, filter_fn: Callable[[ReccmpEntity], bool] | None = None
+        self,
+        filter_fn: Callable[[ReccmpEntity], bool] | None = None,
+        *,
+        include_diff: bool = True,
+        include_exact_diff: bool = True,
     ) -> Iterator[ReccmpComparedEntity]:
         for ent in self._db.all(ImageId.ORIG):
             if ent.entity_type not in (
@@ -515,33 +577,57 @@ class Compare:
             ):
                 continue
 
-            # Should filter matched and unmatched entities
-            # so our counts are accurate.
             if filter_fn and not filter_fn(ent):
                 continue
 
             if ent.recomp_addr is not None:
-                # mypy coercion.
                 assert isinstance(ent, ReccmpMatch)
-                diff = self._compare_match(ent)
+                diff = self._compare_match(
+                    ent,
+                    include_diff=include_diff,
+                    include_exact_diff=include_exact_diff,
+                )
             else:
                 diff = self._compare_non_match(ent)
 
             if diff is not None:
                 yield diff
 
-    def compare_vtables(self) -> Iterator[ReccmpComparedEntity]:
+    def compare_functions(
+        self, *, include_diff: bool = True, include_exact_diff: bool = True
+    ) -> Iterable[ReccmpComparedEntity]:
+        for match in self.get_functions():
+            diff = self._compare_match(
+                match,
+                include_diff=include_diff,
+                include_exact_diff=include_exact_diff,
+            )
+            if diff is not None:
+                yield diff
+
+    def compare_vtables(
+        self, *, include_diff: bool = True
+    ) -> Iterable[ReccmpComparedEntity]:
         for match in self.get_vtables():
-            diff = self._compare_match(match)
+            diff = self._compare_match(match, include_diff=include_diff)
             if diff is not None:
                 yield diff
 
     def to_report(
-        self, filename: str, filter_fn: Callable[[ReccmpEntity], bool] | None = None
+        self,
+        filename: str,
+        filter_fn: Callable[[ReccmpEntity], bool] | None = None,
+        *,
+        include_diff: bool = True,
+        include_exact_diff: bool = True,
     ) -> ReccmpStatusReport:
         """Creates a ReccmpStatusReport using the current reccmp state."""
         report = ReccmpStatusReport(filename=filename)
-        for match in self.compare_all(filter_fn):
+        for match in self.compare_all(
+            filter_fn,
+            include_diff=include_diff,
+            include_exact_diff=include_exact_diff,
+        ):
             report.add_match(match)
 
         return report

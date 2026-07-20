@@ -1,6 +1,6 @@
 """Testing the output from the compare core: entity vital information and the diff report."""
 
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 import pytest
 from reccmp.compare import Compare
 from reccmp.compare.db import EntityDb
@@ -54,6 +54,97 @@ def test_empty():
     # Nothing there.
     report = to_report(compare)
     assert len(report.entities) == 0
+
+
+def test_compare_selected_addresses_from_both_images():
+    orig_bin = RawImage.from_memory(b"\x90\xc3")
+    recomp_bin = RawImage.from_memory(b"\x90\x90\xc3")
+    pdb = Mock(spec=CvdumpAnalysis)
+    compare = Compare(orig_bin, recomp_bin, pdb, "HELLO")
+
+    with get_db(compare).batch() as batch:
+        batch.set(ImageId.ORIG, 0, type=EntityType.FUNCTION, name="first", size=1)
+        batch.set(ImageId.RECOMP, 0, type=EntityType.FUNCTION, name="first", size=1)
+        batch.set(ImageId.ORIG, 1, type=EntityType.FUNCTION, name="second", size=1)
+        batch.set(ImageId.RECOMP, 2, type=EntityType.FUNCTION, name="second", size=1)
+        batch.match(0, 0)
+        batch.match(1, 2)
+
+    selected = list(
+        compare.compare_addresses(
+            orig_addrs=[1, 0, 0xFFFF],
+            recomp_addrs=[0, 2, 0xFFFF],
+            include_diff=False,
+        )
+    )
+
+    assert [match.orig_addr for match in selected] == [0, 1]
+    assert all(match.rdiff is not None for match in selected)
+    assert all(
+        not match.rdiff.orig_inst for match in selected if match.rdiff is not None
+    )
+    assert all(
+        not match.rdiff.recomp_inst for match in selected if match.rdiff is not None
+    )
+
+
+def test_exact_comparison_skips_detailed_instruction_metadata():
+    orig_bin = RawImage.from_memory(b"\x90")
+    recomp_bin = RawImage.from_memory(b"\x90")
+    pdb = Mock(spec=CvdumpAnalysis)
+    compare = Compare(orig_bin, recomp_bin, pdb, "HELLO")
+
+    with get_db(compare).batch() as batch:
+        batch.set(ImageId.RECOMP, 0, type=EntityType.FUNCTION, name="test", size=1)
+        batch.match(0, 0)
+
+    with (
+        patch.object(
+            compare.function_comparator.orig_sanitize, "collect_instruction_meta"
+        ) as orig_meta,
+        patch.object(
+            compare.function_comparator.recomp_sanitize, "collect_instruction_meta"
+        ) as recomp_meta,
+    ):
+        match = compare.compare_address(0, include_diff=False)
+
+    assert match is not None
+    assert match.analysis == ComparisonAnalysis.exact()
+    orig_meta.assert_not_called()
+    recomp_meta.assert_not_called()
+
+
+def test_nonexact_comparison_collects_detailed_instruction_metadata():
+    orig_bin = RawImage.from_memory(b"\x90")
+    recomp_bin = RawImage.from_memory(b"\xc3")
+    pdb = Mock(spec=CvdumpAnalysis)
+    compare = Compare(orig_bin, recomp_bin, pdb, "HELLO")
+
+    with get_db(compare).batch() as batch:
+        batch.set(ImageId.RECOMP, 0, type=EntityType.FUNCTION, name="test", size=1)
+        batch.match(0, 0)
+
+    orig_collect = compare.function_comparator.orig_sanitize.collect_instruction_meta
+    recomp_collect = (
+        compare.function_comparator.recomp_sanitize.collect_instruction_meta
+    )
+    with (
+        patch.object(
+            compare.function_comparator.orig_sanitize,
+            "collect_instruction_meta",
+            wraps=orig_collect,
+        ) as orig_meta,
+        patch.object(
+            compare.function_comparator.recomp_sanitize,
+            "collect_instruction_meta",
+            wraps=recomp_collect,
+        ) as recomp_meta,
+    ):
+        match = compare.compare_address(0, include_diff=False)
+
+    assert match is not None
+    orig_meta.assert_called_once()
+    recomp_meta.assert_called_once()
 
 
 def test_not_matched():

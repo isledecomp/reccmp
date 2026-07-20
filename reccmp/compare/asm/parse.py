@@ -12,6 +12,7 @@ from typing_extensions import Buffer
 from .const import JUMP_MNEMONICS, SINGLE_OPERAND_INSTS
 from .instgen import (
     DisasmLiteTuple,
+    FuncSection,
     InstructGen,
     InstructionMeta,
     SectionType,
@@ -59,6 +60,7 @@ class ParseAsm:
         # Structured capstone facts for the most recent parse_asm() call,
         # keyed by instruction address. Populated when collect_meta is set.
         self.meta: dict[int, InstructionMeta] = {}
+        self._sections: list[FuncSection] = []
 
     def reset(self):
         self.replacements = {}
@@ -210,11 +212,12 @@ class ParseAsm:
         asm: AsmExcerpt = []
 
         ig = InstructGen(bytes(data), start_addr, self.is_32bit)
+        self._sections = ig.sections
 
         if self.collect_meta:
-            self.meta = collect_instruction_meta(
-                bytes(data), start_addr, ig.sections, self.is_32bit
-            )
+            self.collect_instruction_meta(data, start_addr)
+        else:
+            self.meta = {}
 
         for section in ig.sections:
             if section.type == SectionType.CODE:
@@ -257,3 +260,17 @@ class ParseAsm:
                     asm.append((ofs, hex(b)))
 
         return asm
+
+    def collect_instruction_meta(
+        self, data: Buffer, start_addr: int
+    ) -> dict[int, InstructionMeta]:
+        """Collect detailed facts for the most recently parsed instruction stream.
+
+        Text sanitization only needs Capstone's lightweight mode.  Callers that
+        discover a non-exact stream can opt into detail mode afterward without
+        making exact functions pay for a second disassembly.
+        """
+        self.meta = collect_instruction_meta(
+            bytes(data), start_addr, self._sections, self.is_32bit
+        )
+        return self.meta

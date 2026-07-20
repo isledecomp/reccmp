@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 import argparse
@@ -127,6 +128,22 @@ def parse_args() -> argparse.Namespace:
         help="Print assembly diff for specific function (original file's offset)",
     )
     parser.add_argument(
+        "--orig-address",
+        metavar="<offset>",
+        type=virtual_address,
+        action="append",
+        default=[],
+        help="Compare only this original address (repeatable).",
+    )
+    parser.add_argument(
+        "--recomp-address",
+        metavar="<offset>",
+        type=virtual_address,
+        action="append",
+        default=[],
+        help="Compare only this recompiled address (repeatable).",
+    )
+    parser.add_argument(
         "--json",
         metavar="<file>",
         help="Generate JSON file with match summary",
@@ -249,7 +266,7 @@ def main() -> int:
         print_match_verbose(match, show_both_addrs=args.print_rec_addr)
         return 0
 
-    ### Compare everything.
+    ### Compare selected entities or everything.
 
     def entity_filter(entity: ReccmpEntity) -> bool:
         if (
@@ -263,9 +280,29 @@ def main() -> int:
 
         return True
 
-    report = compare.to_report(
-        filename=target.original_path.name, filter_fn=entity_filter
+    selected = bool(args.orig_address or args.recomp_address)
+    include_diff = bool(
+        args.dump
+        or args.html is not None
+        or (args.json is not None and not args.json_diet)
     )
+    if selected:
+        report = ReccmpStatusReport(filename=target.original_path.name)
+        for entity in compare.compare_addresses(
+            args.orig_address,
+            args.recomp_address,
+            include_diff=include_diff,
+            include_exact_diff=bool(args.dump),
+        ):
+            report.add_match(entity)
+        report.asmcmp_filtering(args.nolib, target.report_config.ignore_functions)
+    else:
+        report = compare.to_report(
+            filename=target.original_path.name,
+            filter_fn=entity_filter,
+            include_diff=include_diff,
+            include_exact_diff=bool(args.dump),
+        )
 
     if args.dump:
         dump_all_matched_functions(report)
@@ -321,6 +358,9 @@ def main() -> int:
 
     if args.html is not None:
         write_html_report(args.html, report, target_icon)
+
+    if selected:
+        return 0
 
     report.update_function_count()
     function_count = report.function_count
