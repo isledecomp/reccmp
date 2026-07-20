@@ -80,6 +80,7 @@ def main():
     engine = Compare.from_target(target)
 
     name_filter = args.filter.lower() if args.filter else None
+    engine.report_vtable_size_warnings(name_filter)
 
     for tbl_match in engine.compare_vtables():
         if (
