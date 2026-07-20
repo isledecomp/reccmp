@@ -451,7 +451,7 @@ class Compare:
                 continue
 
             if ent.recomp_addr is not None:
-                # mypy coersion.
+                # mypy coercion.
                 assert isinstance(ent, ReccmpMatch)
                 diff = self._compare_match(ent)
             else:

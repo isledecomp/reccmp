@@ -44,7 +44,7 @@ def sample_rdiff() -> RawDiffOutput:
 
 
 def sample_udiff() -> CombinedDiffOutput:
-    """Returns unified diff with type for mypy coersion."""
+    """Returns unified diff with type for mypy coercion."""
     return [
         (
             "@@ -0x0,1 +0x0,1 @@",
