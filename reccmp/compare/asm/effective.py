@@ -35,6 +35,7 @@ from dataclasses import dataclass, field
 from functools import cache
 from typing import Callable
 
+from reccmp.compare.diagnosis import AnalysisRecorder
 from reccmp.compare.asm.instgen import InstructionMeta
 
 # A symbolic value. Nested tuples of str/int; compared structurally.
@@ -250,6 +251,8 @@ class Context:
     categories: set[str] = field(default_factory=set)
     # PDB-derived return-type and callee-convention facts, if available.
     metadata: FunctionMetadata | None = None
+    # Structured evidence sink for the current verifier strategy.
+    recorder: AnalysisRecorder | None = None
 
     def add_matched(self, value) -> None:
         stack = [value]
@@ -386,6 +389,282 @@ def parse_instruction(line: str) -> Instruction:
         mnemonic, _, op_str = op_str.partition(" ")
     raw = tuple(split_operands(op_str)) if op_str else ()
     return Instruction(mnemonic, prefix, tuple(parse_operand(t) for t in raw), raw)
+
+
+def _clean_symbol(text: str) -> str:
+    """Sanitized symbol without the display-only entity annotation."""
+    return re.sub(r"\s+\((?:DATA|STRING|FLOAT|FUNCTION|IMPORT)\)$", "", text)
+
+
+def _symbolic_summary(value, depth: int = 0) -> str:
+    # pylint: disable=too-many-return-statements
+    """Small stable rendering for diagnosis; never expands the whole DAG."""
+    if not isinstance(value, tuple) or not value:
+        return str(value)
+    tag = str(value[0])
+    if tag == "imm" and len(value) > 1:
+        return str(value[1])
+    if tag == "sym" and len(value) > 1:
+        return _clean_symbol(str(value[1]))
+    if tag == "init" and len(value) > 1:
+        return f"initial:{value[1]}"
+    if tag == "load" and len(value) > 1:
+        return f"load:{_symbolic_summary(value[1], depth + 1)}"
+    if tag == "mem" and len(value) >= 5:
+        symbols = value[4]
+        if symbols:
+            return _clean_symbol(str(symbols[0][1]))
+        terms = value[2]
+        base = _symbolic_summary(terms[0][0], depth + 1) if terms else "absolute"
+        return f"{base}{int(value[3]):+d}"
+    if depth >= 1:
+        return tag
+    children = [
+        _symbolic_summary(child, depth + 1)
+        for child in value[1:3]
+        if isinstance(child, tuple)
+    ]
+    return f"{tag}:{','.join(children)}" if children else tag
+
+
+def _memory_facts(op) -> dict[str, str | int | bool | None]:
+    """Primitive address components from one parsed memory operand."""
+    if op[0] != "mem":
+        return {
+            "base_register": None,
+            "index_register": None,
+            "scale": 1,
+            "displacement": 0,
+            "symbol": None,
+        }
+    reg_terms = op[3]
+    base = next((reg for reg, scale in reg_terms if scale == 1), None)
+    index = next((reg for reg, scale in reg_terms if reg != base or scale != 1), None)
+    index_scale = next((scale for reg, scale in reg_terms if reg == index), 1)
+    symbols = op[5]
+    symbol = None
+    if symbols:
+        symbol = " + ".join(
+            ("-" if sign < 0 else "") + _clean_symbol(str(name))
+            for sign, name in symbols
+        )
+    return {
+        "base_register": base,
+        "index_register": index,
+        "scale": index_scale,
+        "displacement": op[4],
+        "symbol": symbol,
+    }
+
+
+def _target_facts(
+    ins: Instruction, meta: InstructionMeta | None, target_index: int | None = None
+) -> dict[str, str | int | bool | None]:
+    target_name = None
+    if ins.raw_operands:
+        raw = ins.raw_operands[0]
+        if not raw.startswith(("0x", "-0x")):
+            target_name = _clean_symbol(raw)
+    return {
+        "target": meta.branch_target if meta is not None else None,
+        "target_name": target_name,
+        "target_instruction_index": target_index,
+    }
+
+
+def _target_index(
+    recorder: AnalysisRecorder | None,
+    which: str,
+    meta: InstructionMeta | None,
+) -> int | None:
+    if recorder is None or meta is None or meta.branch_target is None:
+        return None
+    addrs = recorder.orig_addrs if which == "orig" else recorder.recomp_addrs
+    if addrs is None:
+        return None
+    try:
+        return addrs.index(meta.branch_target)
+    except ValueError:
+        return None
+
+
+def _checked_call_registers(ctx: Context, ins: Instruction) -> list[str]:
+    abi = None
+    if ctx.metadata is not None and ctx.metadata.call_abi is not None:
+        if ins.operands and ins.operands[0][0] == "sym":
+            abi = ctx.metadata.call_abi(ins.operands[0][1])
+    registers = []
+    if abi is None or abi.uses_ecx:
+        registers.append("ecx")
+    if abi is None or abi.uses_edx:
+        registers.append("edx")
+    return registers
+
+
+def _record_operand_candidate(
+    ctx: Context,
+    index_o: int,
+    index_r: int,
+    ins_o: Instruction,
+    ins_r: Instruction,
+) -> None:
+    recorder = ctx.recorder
+    if recorder is None or ins_o.mnemonic != ins_r.mnemonic:
+        return
+    if ins_o.mnemonic in JCC_MNEMONICS or ins_o.mnemonic.startswith("loop"):
+        return
+    for op_o, op_r in zip(ins_o.operands, ins_r.operands):
+        if op_o == op_r:
+            continue
+        if op_o[0] == op_r[0] == "mem":
+            facts_o, facts_r = _memory_facts(op_o), _memory_facts(op_r)
+            if facts_o != facts_r:
+                recorder.record_difference(
+                    "memory_address",
+                    index_o,
+                    index_r,
+                    facts_o,
+                    facts_r,
+                    candidate=True,
+                )
+                return
+        if op_o[0] == op_r[0] == "imm":
+            recorder.record_difference(
+                "immediate_value",
+                index_o,
+                index_r,
+                {"value": op_o[1]},
+                {"value": op_r[1]},
+                candidate=True,
+            )
+            return
+        if op_o[0] == op_r[0] == "sym":
+            recorder.record_difference(
+                "symbol_resolution",
+                index_o,
+                index_r,
+                {"symbol": _clean_symbol(str(op_o[1]))},
+                {"symbol": _clean_symbol(str(op_r[1]))},
+                candidate=True,
+            )
+            return
+
+
+def _record_observable_difference(
+    ctx: Context,
+    index_o: int,
+    index_r: int,
+    ins_o: Instruction,
+    ins_r: Instruction,
+    obs_o: list,
+    obs_r: list,
+    meta_o: InstructionMeta | None,
+    meta_r: InstructionMeta | None,
+) -> None:
+    # pylint: disable=too-many-arguments,too-many-positional-arguments
+    # pylint: disable=too-many-return-statements
+    """Classify the first differing observable at a trusted paired point."""
+    recorder = ctx.recorder
+    if recorder is None or recorder.difference is not None:
+        return
+    first_o: tuple = obs_o[0] if obs_o else ()
+    first_r: tuple = obs_r[0] if obs_r else ()
+    tag_o = first_o[0] if first_o else None
+    tag_r = first_r[0] if first_r else None
+
+    if tag_o == tag_r == "call":
+        if first_o[1] != first_r[1]:
+            recorder.record_difference(
+                "call_target",
+                index_o,
+                index_r,
+                _target_facts(ins_o, meta_o),
+                _target_facts(ins_r, meta_r),
+            )
+            return
+        registers = _checked_call_registers(ctx, ins_o)
+        for position, register in enumerate(registers, start=2):
+            if first_o[position] != first_r[position]:
+                recorder.record_difference(
+                    "call_argument",
+                    index_o,
+                    index_r,
+                    {
+                        "register": register,
+                        "value": _symbolic_summary(first_o[position]),
+                    },
+                    {
+                        "register": register,
+                        "value": _symbolic_summary(first_r[position]),
+                    },
+                )
+                return
+
+    if tag_o == tag_r == "store":
+        if first_o[1] != first_r[1]:
+            facts_o = _memory_facts(ins_o.operands[0]) if ins_o.operands else {}
+            facts_r = _memory_facts(ins_r.operands[0]) if ins_r.operands else {}
+            recorder.record_difference(
+                "memory_address", index_o, index_r, facts_o, facts_r
+            )
+            return
+        if first_o[3] != first_r[3]:
+            recorder.record_difference(
+                "memory_value",
+                index_o,
+                index_r,
+                {"value": _symbolic_summary(first_o[3])},
+                {"value": _symbolic_summary(first_r[3])},
+            )
+            return
+
+    branch_tags = CONTROL_TAGS - {"jmpind"}
+    if tag_o in branch_tags and tag_r in branch_tags:
+        predicate_o = first_o[1] if tag_o == "branch" else None
+        predicate_r = first_r[1] if tag_r == "branch" else None
+        if predicate_o != predicate_r:
+            recorder.record_difference(
+                "branch_condition",
+                index_o,
+                index_r,
+                {"predicate": _symbolic_summary(predicate_o)},
+                {"predicate": _symbolic_summary(predicate_r)},
+            )
+            return
+        target_o = _target_index(recorder, "orig", meta_o)
+        target_r = _target_index(recorder, "recomp", meta_r)
+        recorder.record_difference(
+            "branch_target",
+            index_o,
+            index_r,
+            _target_facts(ins_o, meta_o, target_o),
+            _target_facts(ins_r, meta_r, target_r),
+        )
+        return
+
+    for entry_o, entry_r in zip(obs_o, obs_r):
+        if entry_o == entry_r:
+            continue
+        if entry_o and entry_r and entry_o[0] == entry_r[0]:
+            if entry_o[0] in ("retval", "retfpu"):
+                recorder.record_difference(
+                    "return_value",
+                    index_o,
+                    index_r,
+                    {"value": _symbolic_summary(entry_o[1])},
+                    {"value": _symbolic_summary(entry_r[1])},
+                )
+                return
+            if entry_o[0] in ("retsaved", "retstack"):
+                recorder.record_difference(
+                    "preserved_state",
+                    index_o,
+                    index_r,
+                    {"value": _symbolic_summary(entry_o)},
+                    {"value": _symbolic_summary(entry_r)},
+                )
+                return
+    recorder.mark_inconclusive("analysis_limit")
 
 
 # ---------------------------------------------------------------------------
@@ -1019,9 +1298,7 @@ _META_STEP_BLACKLIST = frozenset(
 )
 
 
-def _meta_step(
-    orig: SideState, recomp: SideState, meta, ctx: Context, idx: int
-) -> bool:
+def _meta_step(orig: SideState, recomp: SideState, meta, idx: int) -> bool:
     """Step both sides over an identical instruction outside the symbolic
     model, using capstone's structured facts about it. Sound only when the
     instruction touches nothing but registers and flags: every register it
@@ -1073,7 +1350,6 @@ def _meta_step(
         orig.flags = recomp.flags = ("metastep_flags", idx)
         orig.carry = recomp.carry = ("metastep_cf", idx)
 
-    ctx.categories.add("meta_step")
     return True
 
 
@@ -1113,7 +1389,7 @@ def _one_sided_ok(state: SideState, ctx: Context, idx: int, line: str) -> bool:
         guard_state_size(state, ctx)
     except (Reject, IndexError, KeyError, ValueError, TypeError):
         return False
-    ctx.categories.add("one_sided_dead_copy")
+    ctx.categories.add("dead_operation")
     return not obs
 
 
@@ -1241,12 +1517,62 @@ def _slots_consistent(orig: SideState, recomp: SideState) -> bool:
     return True
 
 
+def _uses_frame_slot_layout(orig: SideState, recomp: SideState) -> bool:
+    orig_slots = sorted(d for d, slot in orig.slot_map.items() if slot is not None)
+    recomp_slots = sorted(d for d, slot in recomp.slot_map.items() if slot is not None)
+    return bool(orig_slots or recomp_slots) and orig_slots != recomp_slots
+
+
+def _commutative_swap_used(
+    before_o: SideState,
+    before_r: SideState,
+    ctx: Context,
+    ins_o: Instruction,
+    ins_r: Instruction,
+) -> bool:
+    # pylint: disable=too-many-return-statements
+    """Whether this paired operation became equal only after swapping inputs."""
+    if ins_o.mnemonic != ins_r.mnemonic:
+        return False
+    try:
+        for operand_o, operand_r in zip(ins_o.operands, ins_r.operands):
+            if operand_o[0] == operand_r[0] == "mem":
+                terms_o = operand_o[3]
+                terms_r = operand_r[3]
+                if terms_o != terms_r and sorted(terms_o) == sorted(terms_r):
+                    if mem_address(before_o, operand_o) == mem_address(
+                        before_r, operand_r
+                    ):
+                        return True
+        if ins_o.mnemonic in COMMUTATIVE_BINOPS and len(ins_o.operands) == 2:
+            if len(ins_r.operands) != 2:
+                return False
+            a_o = read_operand(before_o, ctx, ins_o.operands[0])
+            b_o = read_operand(before_o, ctx, ins_o.operands[1])
+            a_r = read_operand(before_r, ctx, ins_r.operands[0])
+            b_r = read_operand(before_r, ctx, ins_r.operands[1])
+            return a_o == b_r and b_o == a_r and (a_o != a_r or b_o != b_r)
+        if ins_o.mnemonic in ("fadd", "fmul", "fiadd", "fimul"):
+            if len(ins_o.operands) != 1 or len(ins_r.operands) != 1:
+                return False
+            a_o = before_o.x87.read(0)
+            b_o = read_operand(before_o, ctx, ins_o.operands[0])
+            a_r = before_r.x87.read(0)
+            b_r = read_operand(before_r, ctx, ins_r.operands[0])
+            return a_o == b_r and b_o == a_r and (a_o != a_r or b_o != b_r)
+    except (Reject, IndexError, KeyError, ValueError, TypeError):
+        return False
+    return False
+
+
 def verify_effective_match(
     orig_asm: list[str],
     recomp_asm: list[str],
     codes=None,
     metadata: FunctionMetadata | None = None,
     orig_meta: list[InstructionMeta | None] | None = None,
+    recomp_meta: list[InstructionMeta | None] | None = None,
+    recorder: AnalysisRecorder | None = None,
 ) -> bool:
     """True if the two instruction sequences can be proven equivalent
     modulo register allocation, frame-slot layout, commutative-operand
@@ -1257,16 +1583,22 @@ def verify_effective_match(
     be stepped over precisely instead of requiring full synchronization."""
     # pylint: disable=too-many-branches,too-many-return-statements,too-many-statements
     # pylint: disable=too-many-locals
+    # pylint: disable=too-many-arguments,too-many-positional-arguments
     aligned = _aligned_indices(codes, len(orig_asm), len(recomp_asm))
     if aligned is None:
+        if recorder is not None:
+            recorder.mark_inconclusive("alignment_failure")
         return False
 
     orig = SideState()
     recomp = SideState()
-    ctx = Context(metadata=metadata)
+    ctx = Context(metadata=metadata, recorder=recorder)
+    last_index_o: int | None = None
+    last_index_r: int | None = None
 
     try:
         for idx, (index_o, index_r) in enumerate(aligned):
+            last_index_o, last_index_r = index_o, index_r
             line_o = orig_asm[index_o] if index_o is not None else None
             line_r = recomp_asm[index_r] if index_r is not None else None
             if line_o is None or line_r is None:
@@ -1274,6 +1606,10 @@ def verify_effective_match(
                 line = line_r if line_o is None else line_o
                 assert line is not None
                 if not _one_sided_ok(side, ctx, idx, line):
+                    if recorder is not None:
+                        recorder.mark_inconclusive(
+                            "alignment_failure", index_o, index_r
+                        )
                     return False
                 continue
 
@@ -1282,14 +1618,18 @@ def verify_effective_match(
                     return False
                 continue
 
+            assert index_o is not None and index_r is not None
             try:
                 ins_o = parse_instruction(line_o)
                 ins_r = parse_instruction(line_r)
+                _record_operand_candidate(ctx, index_o, index_r, ins_o, ins_r)
                 obs_o: list = []
                 obs_r: list = []
                 ctx.bump_requested = False
                 before_o = dict(orig.regs)
                 before_r = dict(recomp.regs)
+                state_before_o = _clone_state(orig)
+                state_before_r = _clone_state(recomp)
                 execute(orig, ctx, idx, ins_o, obs_o)
                 execute(recomp, ctx, idx, ins_r, obs_r)
             except (Reject, IndexError, KeyError, ValueError, TypeError):
@@ -1298,16 +1638,30 @@ def verify_effective_match(
                 # its precise effects are known (capstone metadata) or the
                 # two symbolic states are fully synchronized.
                 if line_o != line_r:
+                    if recorder is not None:
+                        recorder.mark_inconclusive(
+                            "unsupported_instruction", index_o, index_r
+                        )
                     return False
-                meta = (
+                meta_o = (
                     orig_meta[index_o]
                     if orig_meta is not None and index_o is not None
                     else None
                 )
-                if meta is not None and _meta_step(orig, recomp, meta, ctx, idx):
+                meta_r = (
+                    recomp_meta[index_r]
+                    if recomp_meta is not None and index_r is not None
+                    else None
+                )
+                meta = meta_o or meta_r
+                if meta is not None and _meta_step(orig, recomp, meta, idx):
                     _bump_linear_memory(ctx)
                     continue
                 if not fully_synced(orig, recomp):
+                    if recorder is not None:
+                        recorder.mark_inconclusive(
+                            "unsupported_instruction", index_o, index_r
+                        )
                     return False
                 resync((orig, recomp), idx, ctx)
                 _bump_linear_memory(ctx)
@@ -1322,6 +1676,27 @@ def verify_effective_match(
                 continue
 
             if obs_o != obs_r:
+                meta_o = (
+                    orig_meta[index_o]
+                    if orig_meta is not None and index_o is not None
+                    else None
+                )
+                meta_r = (
+                    recomp_meta[index_r]
+                    if recomp_meta is not None and index_r is not None
+                    else None
+                )
+                _record_observable_difference(
+                    ctx,
+                    index_o,
+                    index_r,
+                    ins_o,
+                    ins_r,
+                    obs_o,
+                    obs_r,
+                    meta_o,
+                    meta_r,
+                )
                 return False
             _invalidate_save_slots(ctx, obs_o)
             for entry in obs_o:
@@ -1344,6 +1719,27 @@ def verify_effective_match(
             for value in written_o:
                 if value in written_r:
                     ctx.add_matched(value)
+            if any(
+                family_o != family_r and value_o == value_r
+                for family_o, value_o in orig.regs.items()
+                if value_o is not before_o[family_o]
+                for family_r, value_r in recomp.regs.items()
+                if value_r is not before_r[family_r]
+            ):
+                ctx.categories.add("register_allocation")
+            if _commutative_swap_used(
+                state_before_o, state_before_r, ctx, ins_o, ins_r
+            ):
+                ctx.categories.add("commutative_order")
+            if (
+                any(entry[0] == "branch" for entry in obs_o)
+                and obs_o == obs_r
+                and (
+                    ins_o.mnemonic != ins_r.mnemonic
+                    or state_before_o.flags != state_before_r.flags
+                )
+            ):
+                ctx.categories.add("condition_inversion")
 
             # Linear execution is only valid while control stays linear:
             # whenever control may transfer (a branch), any divergence in
@@ -1369,26 +1765,48 @@ def verify_effective_match(
             if slot_o == slot_r:
                 ctx.add_matched(slot_o)
 
+        dead_register_difference = False
         for family in FAMILIES:
             value_o, value_r = orig.regs[family], recomp.regs[family]
             if value_o == value_r:
                 continue
             if family not in CALLER_SAVED:
+                if recorder is not None:
+                    recorder.record_difference(
+                        "preserved_state",
+                        last_index_o,
+                        last_index_r,
+                        {"register": family, "value": _symbolic_summary(value_o)},
+                        {"register": family, "value": _symbolic_summary(value_r)},
+                    )
                 return False
             if _ins_split_ok(value_o, value_r, ctx):
+                dead_register_difference = True
                 continue
             for value in (value_o, value_r):
                 if _is_scratch(value):
+                    dead_register_difference = True
                     continue
                 if not _contained(value, ctx):
+                    if recorder is not None:
+                        recorder.mark_inconclusive("analysis_limit")
                     return False
+                dead_register_difference = True
+        if dead_register_difference and "register_allocation" not in ctx.categories:
+            ctx.categories.add("dead_operation")
 
         # Every callee-save substitution must have been balanced by its pop,
         # and any frame-slot renaming must describe a consistent layout.
         if ctx.save_stack:
+            if recorder is not None:
+                recorder.mark_inconclusive("analysis_limit")
             return False
         if not _slots_consistent(orig, recomp):
+            if recorder is not None:
+                recorder.mark_inconclusive("analysis_limit")
             return False
+        if _uses_frame_slot_layout(orig, recomp):
+            ctx.categories.add("frame_slot_layout")
 
         if orig.x87.state_key()[1:] != recomp.x87.state_key()[1:]:
             return False
@@ -1399,8 +1817,12 @@ def verify_effective_match(
                 if not (_contained(slot_o, ctx) and _contained(slot_r, ctx)):
                     return False
     except (Reject, RecursionError):
+        if recorder is not None:
+            recorder.mark_inconclusive("analysis_limit")
         return False
 
+    if recorder is not None:
+        recorder.reasons.update(ctx.categories)
     return True
 
 
@@ -1973,6 +2395,7 @@ def verify_cfg_effective_match(
     metadata: FunctionMetadata | None = None,
     orig_meta: list[InstructionMeta | None] | None = None,
     recomp_meta: list[InstructionMeta | None] | None = None,
+    recorder: AnalysisRecorder | None = None,
 ) -> bool:
     """CFG-aware verification: split both sequences into basic blocks
     (which must be structurally identical under the line pairing), then
@@ -1991,8 +2414,37 @@ def verify_cfg_effective_match(
         or len(recomp_targets) != total
         or total == 0
     ):
+        if recorder is not None:
+            recorder.mark_inconclusive("alignment_failure")
         return False
     if orig_targets != recomp_targets:
+        if recorder is not None:
+            differing = next(
+                (
+                    index
+                    for index, pair in enumerate(zip(orig_targets, recomp_targets))
+                    if pair[0] != pair[1]
+                ),
+                None,
+            )
+            if differing is not None:
+                meta_o = orig_meta[differing] if orig_meta is not None else None
+                meta_r = recomp_meta[differing] if recomp_meta is not None else None
+                recorder.record_difference(
+                    "branch_target",
+                    differing,
+                    differing,
+                    _target_facts(
+                        parse_instruction(orig_asm[differing]),
+                        meta_o,
+                        orig_targets[differing],
+                    ),
+                    _target_facts(
+                        parse_instruction(recomp_asm[differing]),
+                        meta_r,
+                        recomp_targets[differing],
+                    ),
+                )
         return False
 
     def classify(asm: list[str]) -> list[str]:
@@ -2013,16 +2465,22 @@ def verify_cfg_effective_match(
 
     kinds = classify(orig_asm)
     if kinds != classify(recomp_asm):
+        if recorder is not None:
+            recorder.mark_inconclusive("unsupported_control_flow")
         return False
     leaders = {0}
     for i in range(total):
         target = orig_targets[i]
         if target is not None:
             if not 0 <= target < total:
+                if recorder is not None:
+                    recorder.mark_inconclusive("unsupported_control_flow")
                 return False
             if kinds[target] == "data":
                 # A control-flow edge into bytes classified as a table is an
                 # inconsistent disassembly, not a block this verifier can run.
+                if recorder is not None:
+                    recorder.mark_inconclusive("unsupported_control_flow")
                 return False
             leaders.add(target)
         if kinds[i] in ("jcc", "jmp", "ret", "data") and i + 1 < total:
@@ -2062,7 +2520,7 @@ def verify_cfg_effective_match(
     def run_block(block: int) -> bool:
         flow = _clone_cfg_state(entry[block])
         orig_state, recomp_state = flow.orig, flow.recomp
-        ctx = Context(gen=flow.memory, metadata=metadata)
+        ctx = Context(gen=flow.memory, metadata=metadata, recorder=recorder)
         for i in range(order[block], ends[block]):
             line_o, line_r = orig_asm[i], recomp_asm[i]
             if kinds[i] == "data":
@@ -2072,22 +2530,31 @@ def verify_cfg_effective_match(
             try:
                 ins_o = parse_instruction(line_o)
                 ins_r = parse_instruction(line_r)
+                _record_operand_candidate(ctx, i, i, ins_o, ins_r)
                 obs_o: list = []
                 obs_r: list = []
                 ctx.bump_requested = False
+                before_o = dict(orig_state.regs)
+                before_r = dict(recomp_state.regs)
+                state_before_o = _clone_state(orig_state)
+                state_before_r = _clone_state(recomp_state)
                 execute(orig_state, ctx, i, ins_o, obs_o)
                 execute(recomp_state, ctx, i, ins_r, obs_r)
             except (Reject, IndexError, KeyError, ValueError, TypeError):
                 if line_o != line_r:
+                    if recorder is not None:
+                        recorder.mark_inconclusive("unsupported_instruction", i, i)
                     return False
                 meta_o = orig_meta[i] if orig_meta is not None else None
                 meta_r = recomp_meta[i] if recomp_meta is not None else None
                 if _same_meta_effects(meta_o, meta_r) and _meta_step(
-                    orig_state, recomp_state, meta_o, ctx, i
+                    orig_state, recomp_state, meta_o, i
                 ):
                     ctx.gen = ("cfg_mem_meta", i)
                     continue
                 if not fully_synced(orig_state, recomp_state):
+                    if recorder is not None:
+                        recorder.mark_inconclusive("unsupported_instruction", i, i)
                     return False
                 resync((orig_state, recomp_state), i, ctx)
                 ctx.gen = ("cfg_mem_resync", i)
@@ -2107,15 +2574,51 @@ def verify_cfg_effective_match(
                             entries[k] = (*obs_entry[:-1], ("L", starts[target]))
 
             if obs_o != obs_r:
+                meta_o = orig_meta[i] if orig_meta is not None else None
+                meta_r = recomp_meta[i] if recomp_meta is not None else None
+                _record_observable_difference(
+                    ctx,
+                    i,
+                    i,
+                    ins_o,
+                    ins_r,
+                    obs_o,
+                    obs_r,
+                    meta_o,
+                    meta_r,
+                )
                 return False
             _invalidate_save_slots(ctx, obs_o)
             for obs_entry in obs_o:
                 ctx.add_matched(obs_entry)
+            if any(
+                family_o != family_r and value_o == value_r
+                for family_o, value_o in orig_state.regs.items()
+                if value_o is not before_o[family_o]
+                for family_r, value_r in recomp_state.regs.items()
+                if value_r is not before_r[family_r]
+            ):
+                ctx.categories.add("register_allocation")
+            if _commutative_swap_used(
+                state_before_o, state_before_r, ctx, ins_o, ins_r
+            ):
+                ctx.categories.add("commutative_order")
+            if (
+                any(entry[0] == "branch" for entry in obs_o)
+                and obs_o == obs_r
+                and (
+                    ins_o.mnemonic != ins_r.mnemonic
+                    or state_before_o.flags != state_before_r.flags
+                )
+            ):
+                ctx.categories.add("condition_inversion")
             # We do not yet pair jump-table destinations. A computed jump
             # therefore cannot be justified by this CFG proof. The lockstep
             # verifier still handles identical/converged cases before this
             # path is attempted.
             if any(obs_entry[0] == "jmpind" for obs_entry in obs_o):
+                if recorder is not None:
+                    recorder.mark_inconclusive("unsupported_control_flow")
                 return False
 
             # A direct edge outside the excerpt exposes the complete machine
@@ -2123,6 +2626,8 @@ def verify_cfg_effective_match(
             # both unconditional exits and the taken edge of a conditional.
             if kinds[i] in ("jmp", "jcc") and target is None:
                 if not _converged(orig_state, recomp_state):
+                    if recorder is not None:
+                        recorder.mark_inconclusive("unsupported_control_flow")
                     return False
             if ctx.bump_requested:
                 ctx.gen = ("cfg_mem_write", i)
@@ -2138,6 +2643,8 @@ def verify_cfg_effective_match(
             return False
 
         outgoing = _CfgState(orig_state, recomp_state, ctx.gen)
+        if recorder is not None:
+            recorder.reasons.update(ctx.categories)
         # Propagate to successors.
         for successor in successors(block):
             if successor not in entry:
@@ -2146,6 +2653,8 @@ def verify_cfg_effective_match(
             else:
                 joined = _join_states(entry[successor], outgoing, successor)
                 if joined is None:
+                    if recorder is not None:
+                        recorder.mark_inconclusive("unsupported_control_flow")
                     return False
                 if not _states_equal(joined, entry[successor]):
                     entry[successor] = joined
@@ -2157,9 +2666,13 @@ def verify_cfg_effective_match(
             block = pending.pop()
             visits += 1
             if visits > 8 * len(order) + 64:
+                if recorder is not None:
+                    recorder.mark_inconclusive("analysis_limit")
                 return False
             if not run_block(block):
                 return False
     except (Reject, RecursionError):
+        if recorder is not None:
+            recorder.mark_inconclusive("analysis_limit")
         return False
     return True

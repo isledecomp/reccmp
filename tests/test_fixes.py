@@ -1,5 +1,10 @@
 import difflib
-from reccmp.compare.asm.fixes import find_effective_match
+from reccmp.compare.asm.fixes import analyze_effective_match
+
+
+def is_effective_match(*args, **kwargs) -> bool:
+    """Boolean assertion helper for the semantic regression corpus."""
+    return analyze_effective_match(*args, **kwargs).is_effective
 
 
 def test_fix_cmp_jmp():
@@ -7,7 +12,7 @@ def test_fix_cmp_jmp():
     recomp_asm = ["mov eax, 1", "mov ebx, 2", "cmp ebx, eax", "jl 0x1"]
 
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
-    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+    is_effective = is_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
     assert is_effective is True
 
@@ -19,7 +24,7 @@ def test_fix_test_jmp():
     recomp_asm = ["mov eax, 1", "mov ebx, 2", "test ebx, eax", "jg 0x1"]
 
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
-    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+    is_effective = is_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
     assert is_effective is True
 
@@ -32,7 +37,7 @@ def test_fix_test_jmp_inverted_jump_invalid():
     recomp_asm = ["mov eax, 1", "mov ebx, 2", "test ebx, eax", "jl 0x1"]
 
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
-    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+    is_effective = is_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
     assert is_effective is False
 
@@ -51,7 +56,7 @@ def test_fix_mov_cmp_jmp_mem_with_different_operands():
     ]
 
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
-    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+    is_effective = is_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
     assert is_effective is False
 
@@ -70,7 +75,7 @@ def test_fix_mov_cmp_jmp_mem_with_non_matching_jmp():
     ]
 
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
-    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+    is_effective = is_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
     assert is_effective is False
 
@@ -89,7 +94,7 @@ def test_fix_mov_cmp_jmp_mem_with_non_matching_jmp_2():
     ]
 
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
-    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+    is_effective = is_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
     assert is_effective is False
 
@@ -108,7 +113,7 @@ def test_fix_mov_cmp_jmp_mem_valid():
     ]
 
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
-    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+    is_effective = is_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
     assert is_effective is True
 
@@ -127,7 +132,7 @@ def test_fix_mov_test_jmp_mem_valid():
     ]
 
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
-    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+    is_effective = is_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
     assert is_effective is True
 
@@ -150,7 +155,7 @@ def test_fix_fld_fmul_valid():
     ]
 
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
-    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+    is_effective = is_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
     assert is_effective is True
 
@@ -164,7 +169,7 @@ def test_fix_fld_fadd_fsub():
     recomp_asm = ["fld dword ptr [ebp - 8]", "fsub dword ptr [ebp - 0x18]"]
 
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
-    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+    is_effective = is_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
     assert is_effective is False
 
@@ -179,7 +184,7 @@ def test_fix_fld_fadd_with_instruction_between():
     recomp_asm = ["fld dword ptr [ebp - 8]", "fadd dword ptr [ebp - 0x18]"]
 
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
-    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+    is_effective = is_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
     assert is_effective is False
 
@@ -198,7 +203,7 @@ def test_fix_fld_fadd_with_instruction_between():
     ]
 
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
-    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+    is_effective = is_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
     assert is_effective is True
 
@@ -217,7 +222,7 @@ def test_fix_fld_fmul_invalid_duplication():
     ]
 
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
-    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+    is_effective = is_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
     assert is_effective is False
 
@@ -234,7 +239,7 @@ def test_fix_fld_fmul_invalid_diff_operands():
     ]
 
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
-    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+    is_effective = is_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
     assert is_effective is False
 
@@ -251,7 +256,7 @@ def test_fix_fld_fsub_invalid():
     ]
 
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
-    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+    is_effective = is_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
     assert is_effective is False
 
@@ -268,7 +273,7 @@ def test_fix_mov_imul_swap_valid():
     ]
 
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
-    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+    is_effective = is_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
     assert is_effective is True
 
@@ -288,7 +293,7 @@ def test_fix_mov_imul_single_operand_imul():
     ]
 
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
-    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+    is_effective = is_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
     assert is_effective is True
 
@@ -305,7 +310,7 @@ def test_fix_mov_add_swap_valid():
     ]
 
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
-    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+    is_effective = is_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
     assert is_effective is True
 
@@ -322,7 +327,7 @@ def test_fix_mov_add_swap_with_literal_valid():
     ]
 
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
-    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+    is_effective = is_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
     assert is_effective is True
 
@@ -339,7 +344,7 @@ def test_fix_mov_add_swap_on_stack_invalid():
     ]
 
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
-    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+    is_effective = is_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
     # Pretty sure this is actually safe, but not implemented
     assert is_effective is False
@@ -357,7 +362,7 @@ def test_fix_mov_sub_swap_invalid():
     ]
 
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
-    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+    is_effective = is_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
     # Like the add/imul tests except subtraction is NOT commutative
     assert is_effective is False
@@ -375,7 +380,7 @@ def test_fix_mov_add_invalid_dest():
     ]
 
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
-    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+    is_effective = is_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
     assert is_effective is False
 
@@ -407,7 +412,7 @@ def test_this_should_not_be_marked_as_effective():
     ]
 
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
-    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+    is_effective = is_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
     assert is_effective is False
 
@@ -428,7 +433,7 @@ def test_fix_mov_cmp_jmp_unsafe_intermediate_reuse():
     ]
 
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
-    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+    is_effective = is_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
     assert is_effective is False
 
@@ -455,7 +460,7 @@ def test_and_swap_not_allowed():
     ]
 
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
-    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+    is_effective = is_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
     assert is_effective is False
 
@@ -465,7 +470,7 @@ def test_recomp_shorter_than_orig():
     orig = ["mov eax, 1", "mov ebx, 2", "cmp eax, ebx", "jg 0x1"]
     recomp = ["mov eax, 1", "mov ebx, 2"]
     diff = difflib.SequenceMatcher(None, orig, recomp)
-    assert find_effective_match(diff.get_opcodes(), orig, recomp) is False
+    assert is_effective_match(diff.get_opcodes(), orig, recomp) is False
 
 
 # The following tests cover the commutative x87 operand-chain swap: MSVC
@@ -499,8 +504,7 @@ def test_commutative_x87_chain_swap_valid():
     address-load movs transpose: an effective match."""
     diff = difflib.SequenceMatcher(None, X87_CHAIN_ORIG, X87_CHAIN_RECOMP)
     assert (
-        find_effective_match(diff.get_opcodes(), X87_CHAIN_ORIG, X87_CHAIN_RECOMP)
-        is True
+        is_effective_match(diff.get_opcodes(), X87_CHAIN_ORIG, X87_CHAIN_RECOMP) is True
     )
 
 
@@ -510,7 +514,7 @@ def test_commutative_x87_chain_swap_fsub_invalid():
     recomp[5] = "fsub dword ptr [ecx*4 + g_skillTableA (DATA)]"
 
     diff = difflib.SequenceMatcher(None, X87_CHAIN_ORIG, recomp)
-    assert find_effective_match(diff.get_opcodes(), X87_CHAIN_ORIG, recomp) is False
+    assert is_effective_match(diff.get_opcodes(), X87_CHAIN_ORIG, recomp) is False
 
 
 def test_commutative_x87_chain_swap_mov_not_transposed():
@@ -519,7 +523,7 @@ def test_commutative_x87_chain_swap_mov_not_transposed():
     recomp[0] = "mov eax, dword ptr [ecx + 0xa0]"
 
     diff = difflib.SequenceMatcher(None, X87_CHAIN_ORIG, recomp)
-    assert find_effective_match(diff.get_opcodes(), X87_CHAIN_ORIG, recomp) is False
+    assert is_effective_match(diff.get_opcodes(), X87_CHAIN_ORIG, recomp) is False
 
 
 def test_commutative_x87_chain_swap_x87_instruction_between():
@@ -539,7 +543,7 @@ def test_commutative_x87_chain_swap_x87_instruction_between():
     ]
 
     diff = difflib.SequenceMatcher(None, orig, recomp)
-    assert find_effective_match(diff.get_opcodes(), orig, recomp) is False
+    assert is_effective_match(diff.get_opcodes(), orig, recomp) is False
 
 
 def test_commutative_x87_chain_swap_index_registers_stay():
@@ -549,7 +553,7 @@ def test_commutative_x87_chain_swap_index_registers_stay():
     recomp[3] = "fld dword ptr [eax*4 + g_skillTableB (DATA)]"
 
     diff = difflib.SequenceMatcher(None, X87_CHAIN_ORIG, recomp)
-    assert find_effective_match(diff.get_opcodes(), X87_CHAIN_ORIG, recomp) is False
+    assert is_effective_match(diff.get_opcodes(), X87_CHAIN_ORIG, recomp) is False
 
 
 def test_commutative_x87_chain_swap_mov_after_fld_invalid():
@@ -570,7 +574,7 @@ def test_commutative_x87_chain_swap_mov_after_fld_invalid():
     ]
 
     diff = difflib.SequenceMatcher(None, orig, recomp)
-    assert find_effective_match(diff.get_opcodes(), orig, recomp) is False
+    assert is_effective_match(diff.get_opcodes(), orig, recomp) is False
 
 
 # The following tests cover the dependency-aware relocate_instructions:
@@ -579,7 +583,7 @@ def test_commutative_x87_chain_swap_mov_after_fld_invalid():
 
 def _diff_and_match(orig_asm: list[str], recomp_asm: list[str]) -> bool:
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
-    return find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+    return is_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
 
 
 def test_relocate_independent_load():
@@ -718,9 +722,9 @@ def test_relocate_across_forward_jcc_with_addresses():
 
     # Without addresses the jump displacement cannot be resolved: the jcc
     # stays a barrier and the match is conservatively rejected.
-    assert find_effective_match(codes, orig_asm, recomp_asm) is False
+    assert is_effective_match(codes, orig_asm, recomp_asm) is False
     assert (
-        find_effective_match(codes, orig_asm, recomp_asm, orig_addrs=orig_addrs) is True
+        is_effective_match(codes, orig_asm, recomp_asm, orig_addrs=orig_addrs) is True
     )
 
 
@@ -741,7 +745,7 @@ def test_relocate_rejects_backward_jcc():
     orig_addrs = [0, 6, 8, 14]
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
     assert (
-        find_effective_match(
+        is_effective_match(
             diff.get_opcodes(), orig_asm, recomp_asm, orig_addrs=orig_addrs
         )
         is False
@@ -766,7 +770,7 @@ def test_relocate_rejects_jcc_target_beyond_move():
     orig_addrs = [0, 6, 8, 14]
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
     assert (
-        find_effective_match(
+        is_effective_match(
             diff.get_opcodes(), orig_asm, recomp_asm, orig_addrs=orig_addrs
         )
         is False
@@ -789,7 +793,7 @@ def test_relocate_store_across_push():
         "call <OFFSET1>",
     ]
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
-    assert find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm) is False
+    assert is_effective_match(diff.get_opcodes(), orig_asm, recomp_asm) is False
 
 
 def test_relocate_rejects_esp_read_across_push():
@@ -807,4 +811,4 @@ def test_relocate_rejects_esp_read_across_push():
         "call <OFFSET1>",
     ]
     diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
-    assert find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm) is False
+    assert is_effective_match(diff.get_opcodes(), orig_asm, recomp_asm) is False

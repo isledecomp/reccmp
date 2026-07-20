@@ -2,6 +2,7 @@ import dataclasses
 from typing import Iterable, Sequence
 from typing_extensions import NotRequired, TypedDict
 from reccmp.difflib import DiffOpcode, get_grouped_opcodes
+from reccmp.compare.diagnosis import ComparisonAnalysis, ComparisonStatus
 
 CombinedDiffInput = list[tuple[str, str]]
 
@@ -16,8 +17,14 @@ class RawDiffOutput:
 @dataclasses.dataclass
 class EntityCompareResult:
     diff: RawDiffOutput = dataclasses.field(default_factory=RawDiffOutput)
-    is_effective_match: bool = False
     match_ratio: float = 0.0
+    analysis: ComparisonAnalysis = dataclasses.field(
+        default_factory=lambda: ComparisonAnalysis.inconclusive("analysis_limit")
+    )
+
+    @property
+    def is_effective_match(self) -> bool:
+        return self.analysis.status == ComparisonStatus.EFFECTIVE
 
 
 class MatchingOrMismatchingBlock(TypedDict):

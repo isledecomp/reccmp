@@ -13,6 +13,11 @@ from reccmp.compare.asm.effective import (
 )
 from reccmp.compare.asm.instgen import InstructionMeta
 from reccmp.compare.asm.parse import AsmExcerpt
+from reccmp.compare.diagnosis import (
+    AnalysisRecorder,
+    ComparisonAnalysis,
+    ComparisonStatus,
+)
 from reccmp.compare.pinned_sequences import DiffOpcode
 
 logger = logging.getLogger(__name__)
@@ -34,8 +39,9 @@ def _trim_padding(asm: list[str]) -> list[str]:
     return asm
 
 
-def find_effective_match(  # pylint: disable=too-many-arguments
+def analyze_effective_match(  # pylint: disable=too-many-arguments
     # pylint: disable=too-many-positional-arguments
+    # pylint: disable=too-many-return-statements
     codes: Sequence[DiffOpcode],
     orig_asm: list[str],
     recomp_asm: list[str],
@@ -44,9 +50,8 @@ def find_effective_match(  # pylint: disable=too-many-arguments
     orig_meta: list[InstructionMeta | None] | None = None,
     recomp_addrs: Sequence[int | None] | None = None,
     recomp_meta: list[InstructionMeta | None] | None = None,
-) -> bool:
-    """Check whether the two sequences of instructions are an effective match.
-    Meaning: do they differ only by instruction order or register selection?
+) -> ComparisonAnalysis:
+    """Canonical semantic analysis of two sanitized instruction streams.
 
     The relational verifier (see effective.py) proves equivalence modulo
     register allocation, commutative-operand order and inverted compare/jump
@@ -60,59 +65,105 @@ def find_effective_match(  # pylint: disable=too-many-arguments
     lies within the crossed region. `metadata` (optional) provides
     PDB-derived return-type and callee-convention facts that widen what
     the verifier can prove."""
+    if orig_asm == recomp_asm:
+        return ComparisonAnalysis.exact()
+
+    orig_addr_list = list(orig_addrs) if orig_addrs is not None else None
+    recomp_addr_list = list(recomp_addrs) if recomp_addrs is not None else None
+
+    def new_recorder() -> AnalysisRecorder:
+        return AnalysisRecorder(orig_addr_list, recomp_addr_list)
+
     # Plain lockstep pairing first (with trailing alignment padding
     # trimmed): for equal-length sequences the diff's insert/delete blocks
     # can misalign lines that pair up fine positionally.
     trimmed_orig = _trim_padding(orig_asm)
     trimmed_recomp = _trim_padding(recomp_asm)
+    padding = len(trimmed_orig) != len(orig_asm) or len(trimmed_recomp) != len(
+        recomp_asm
+    )
     trimmed_meta = orig_meta[: len(trimmed_orig)] if orig_meta is not None else None
+    trimmed_recomp_meta = (
+        recomp_meta[: len(trimmed_recomp)] if recomp_meta is not None else None
+    )
+    relocation_normalized = undo_relocations(codes, orig_asm, recomp_asm, orig_addrs)
+    lockstep = new_recorder()
     if verify_effective_match(
-        trimmed_orig, trimmed_recomp, metadata=metadata, orig_meta=trimmed_meta
+        trimmed_orig,
+        trimmed_recomp,
+        metadata=metadata,
+        orig_meta=trimmed_meta,
+        recomp_meta=trimmed_recomp_meta,
+        recorder=lockstep,
     ):
-        if len(trimmed_orig) != len(orig_asm) or len(trimmed_recomp) != len(recomp_asm):
+        if padding:
             logger.debug("effective match: lockstep (padding trimmed)")
         else:
             logger.debug("effective match: lockstep")
-        return True
+        extra_reasons = {"padding"} if padding else set()
+        if relocation_normalized is not None:
+            extra_reasons.add("instruction_reorder")
+        return lockstep.effective_analysis(extra_reasons)
 
     # Diff-aligned pairing: handles length differences (one-sided entries
     # for whitelisted unobservable instructions, e.g. a redundant
     # register copy) and transposed independent lines.
+    diff_aligned = new_recorder()
     if verify_effective_match(
-        orig_asm, recomp_asm, codes, metadata=metadata, orig_meta=orig_meta
+        orig_asm,
+        recomp_asm,
+        codes,
+        metadata=metadata,
+        orig_meta=orig_meta,
+        recomp_meta=recomp_meta,
+        recorder=diff_aligned,
     ):
         logger.debug("effective match: diff-aligned")
-        return True
+        return diff_aligned.effective_analysis()
 
-    reordered = undo_relocations(codes, orig_asm, recomp_asm, orig_addrs)
-    if reordered is not None and verify_effective_match(
-        orig_asm, reordered, metadata=metadata
+    relocation = new_recorder()
+    if relocation_normalized is not None and verify_effective_match(
+        orig_asm, relocation_normalized, metadata=metadata, recorder=relocation
     ):
         logger.debug("effective match: instruction relocation")
-        return True
+        return relocation.effective_analysis({"instruction_reorder"})
 
     # CFG-aware verification: needs branch targets for both sides.
     orig_targets = _branch_targets(trimmed_orig, orig_addrs, orig_meta)
     recomp_targets = _branch_targets(trimmed_recomp, recomp_addrs, recomp_meta)
-    if (
-        orig_targets is not None
-        and recomp_targets is not None
-        and verify_cfg_effective_match(
+    cfg = new_recorder()
+    cfg_attempted = orig_targets is not None and recomp_targets is not None
+    if orig_targets is not None and recomp_targets is not None:
+        cfg_effective = verify_cfg_effective_match(
             trimmed_orig,
             trimmed_recomp,
             orig_targets,
             recomp_targets,
             metadata=metadata,
             orig_meta=trimmed_meta,
-            recomp_meta=(
-                recomp_meta[: len(trimmed_recomp)] if recomp_meta is not None else None
-            ),
+            recomp_meta=trimmed_recomp_meta,
+            recorder=cfg,
         )
-    ):
+    else:
+        cfg_effective = False
+    if cfg_effective:
         logger.debug("effective match: cfg")
-        return True
+        return cfg.effective_analysis({"padding"} if padding else ())
 
-    return False
+    # Only positional lockstep and the paired CFG establish trusted program
+    # points. Diff alignment and relocation are proof-only strategies.
+    if cfg_attempted and cfg.best_difference is not None:
+        return cfg.failure_analysis()
+    if lockstep.best_difference is not None:
+        return lockstep.failure_analysis()
+    if not cfg_attempted:
+        cfg.mark_inconclusive("missing_metadata")
+    inconclusive = cfg if cfg.inconclusive_reason is not None else lockstep
+    if inconclusive.inconclusive_reason is None:
+        inconclusive.mark_inconclusive("analysis_limit")
+    analysis = inconclusive.failure_analysis()
+    assert analysis.status == ComparisonStatus.INCONCLUSIVE
+    return analysis
 
 
 def _branch_targets(

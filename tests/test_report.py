@@ -1,11 +1,21 @@
 """Reccmp reports: files that contain the comparison result from asmcmp."""
 
+import json
 import pytest
 from reccmp.compare.report import (
     ReccmpStatusReport,
     ReccmpComparedEntity,
     combine_reports,
+    deserialize_reccmp_report,
+    serialize_reccmp_report,
+    ReccmpReportDeserializeError,
     ReccmpReportSameSourceError,
+)
+from reccmp.compare.diagnosis import (
+    ComparisonAnalysis,
+    ComparisonDifference,
+    ComparisonStatus,
+    DifferenceSide,
 )
 from reccmp.types import EntityType
 
@@ -17,7 +27,14 @@ def create_report(
     report = ReccmpStatusReport(filename="test.exe")
     if entities is not None:
         for addr, accuracy in entities:
-            report.entities[addr] = ReccmpComparedEntity(addr, "test", accuracy)
+            analysis = (
+                ComparisonAnalysis.exact()
+                if accuracy == 1.0
+                else ComparisonAnalysis.inconclusive("analysis_limit")
+            )
+            report.entities[addr] = ReccmpComparedEntity(
+                addr, "test", accuracy, analysis=analysis
+            )
 
     return report
 
@@ -86,7 +103,7 @@ def test_aggregate_100_over_effective():
     """Prefer 100% match over effective."""
     x = create_report([(100, 0.9)])
     y = create_report([(100, 1.0)])
-    x.entities[100].is_effective_match = True
+    x.entities[100].analysis = ComparisonAnalysis.effective({"register_allocation"})
 
     combined = combine_reports([x, y])
     assert combined.entities[100].is_effective_match is False
@@ -96,7 +113,7 @@ def test_aggregate_effective_over_any():
     """Prefer effective match over any accuracy."""
     x = create_report([(100, 0.5)])
     y = create_report([(100, 0.6)])
-    x.entities[100].is_effective_match = True
+    x.entities[100].analysis = ComparisonAnalysis.effective({"register_allocation"})
     # Y has higher accuracy score, but we could not confirm an effective match.
 
     combined = combine_reports([x, y])
@@ -139,6 +156,88 @@ def test_same_source():
     for x in reports:
         assert x.has_same_source(report_hello) is False
         assert report_hello.has_same_source(x) is False
+
+
+def test_structured_comparison_schema_round_trip():
+    report = ReccmpStatusReport(filename="test.exe")
+    analyses = [
+        ComparisonAnalysis.exact(),
+        ComparisonAnalysis.effective({"padding", "register_allocation"}),
+        ComparisonAnalysis.mismatch(
+            ComparisonDifference(
+                "memory_address",
+                DifferenceSide(
+                    12,
+                    0x401234,
+                    {
+                        "base_register": "esi",
+                        "index_register": None,
+                        "scale": 1,
+                        "displacement": 0x98,
+                        "symbol": None,
+                    },
+                ),
+                DifferenceSide(
+                    13,
+                    0x501234,
+                    {
+                        "base_register": "esi",
+                        "index_register": None,
+                        "scale": 1,
+                        "displacement": 0x9C,
+                        "symbol": None,
+                    },
+                ),
+            )
+        ),
+        ComparisonAnalysis.inconclusive("unsupported_control_flow"),
+    ]
+    for index, analysis in enumerate(analyses):
+        address = 0x400000 + index
+        report.entities[address] = ReccmpComparedEntity(
+            address,
+            f"function_{index}",
+            0.5,
+            recomp_addr=address,
+            analysis=analysis,
+        )
+
+    serialized = serialize_reccmp_report(report)
+    value = json.loads(serialized)
+    assert all("comparison" in entity for entity in value["data"])
+    assert all("effective" not in entity for entity in value["data"])
+    assert value["data"][1]["comparison"] == {
+        "status": "effective",
+        "effective_reasons": ["register_allocation", "padding"],
+        "difference": None,
+        "inconclusive_reason": None,
+        "inconclusive_location": None,
+    }
+
+    restored = deserialize_reccmp_report(serialized)
+    restored_analyses = [entity.analysis for entity in restored.entities.values()]
+    assert [analysis.status for analysis in restored_analyses] == list(ComparisonStatus)
+    assert restored_analyses[2].difference == analyses[2].difference
+
+
+def test_old_effective_boolean_schema_is_rejected():
+    old_report = json.dumps(
+        {
+            "file": "test.exe",
+            "format": 1,
+            "timestamp": 0,
+            "data": [
+                {
+                    "address": "0x400000",
+                    "name": "test",
+                    "matching": 0.5,
+                    "effective": True,
+                }
+            ],
+        }
+    )
+    with pytest.raises(ReccmpReportDeserializeError):
+        deserialize_reccmp_report(old_report)
 
 
 def test_aggregate_recomp_addr():

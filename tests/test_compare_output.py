@@ -15,6 +15,7 @@ from reccmp.compare.report import (
     report_function_alignment,
     report_function_accuracy,
 )
+from reccmp.compare.diagnosis import ComparisonAnalysis
 from reccmp.types import EntityType, ImageId
 from reccmp.cvdump import CvdumpAnalysis
 from .raw_image import RawImage
@@ -40,7 +41,7 @@ def to_report(compare: Compare) -> ReccmpStatusReport:
 def get_udiff(entity: ReccmpComparedEntity) -> CombinedDiffOutput | None:
     """This is here for mypy type coercion and to protect against
     changes to the ReccmpStatusReport structure."""
-    return entity.udiff
+    return entity.report_diff
 
 
 def test_empty():
@@ -471,7 +472,7 @@ def test_compare_vtable_thunk_resolution():
 
     report = to_report(compare)
 
-    e = report.entities["0xc"]
+    e = report.entities[0xC]
     assert e is not None
     # Without thunk resolution the slot would mismatch (thunk vs function).
     assert e.accuracy == 1.0
@@ -516,7 +517,7 @@ def test_compare_vtable_thunk_chain_resolution():
 
     report = to_report(compare)
 
-    e = report.entities["0x3c"]
+    e = report.entities[0x3C]
     assert e is not None
     assert e.accuracy == 1.0
 
@@ -543,7 +544,7 @@ def test_compare_vtable_null_orig_slot():
 
     report = to_report(compare)
 
-    e = report.entities["0x0"]
+    e = report.entities[0]
     assert e is not None
     assert e.accuracy == 1.0
 
@@ -567,7 +568,7 @@ def test_aggregate_workflow():
     entity = report.entities[0]
 
     # The function matches, it has no diff data.
-    assert entity.udiff is None
+    assert entity.report_diff is None
     assert entity.rdiff is None
 
     # We should be able to serialize with and without diff data.
@@ -634,7 +635,15 @@ def test_report_function_accuracy():
                 accuracy=accuracy,
                 type=entity_type,
                 is_stub=stub,
-                is_effective_match=effective,
+                analysis=(
+                    ComparisonAnalysis.effective({"register_allocation"})
+                    if effective
+                    else (
+                        ComparisonAnalysis.exact()
+                        if accuracy == 1.0
+                        else ComparisonAnalysis.inconclusive("analysis_limit")
+                    )
+                ),
             ),
         )
 

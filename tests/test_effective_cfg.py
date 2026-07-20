@@ -7,7 +7,7 @@ from reccmp.compare.asm.effective import (
     verify_cfg_effective_match,
     verify_effective_match,
 )
-from reccmp.compare.asm.fixes import find_effective_match
+from reccmp.compare.asm.fixes import analyze_effective_match
 from reccmp.compare.asm.instgen import InstructionMeta
 
 
@@ -146,7 +146,7 @@ def test_cfg_canonicalizes_branch_displacements():
     assert verify_cfg_effective_match(orig, recomp, targets, targets, metadata) is True
 
 
-def test_find_effective_match_uses_structured_branch_targets():
+def test_analysis_uses_structured_branch_targets():
     """The wrapper threads both address spaces into the private CFG proof."""
     orig = ["cmp ecx, 0", "je 0x2", "inc edx", "ret"]
     recomp = ["cmp ecx, 0", "je 0x20", "inc edx", "ret"]
@@ -173,7 +173,7 @@ def test_find_effective_match_uses_structured_branch_targets():
     recomp_meta = [None, jump_meta(0x2002, 0x2005), None, None]
     codes = SequenceMatcher(None, orig, recomp).get_opcodes()
     assert (
-        find_effective_match(
+        analyze_effective_match(
             codes,
             orig,
             recomp,
@@ -182,7 +182,7 @@ def test_find_effective_match_uses_structured_branch_targets():
             metadata=FunctionMetadata(return_kind="void"),
             orig_meta=orig_meta,
             recomp_meta=recomp_meta,
-        )
+        ).is_effective
         is True
     )
 

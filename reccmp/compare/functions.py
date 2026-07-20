@@ -6,7 +6,7 @@ from typing import Callable, Iterator
 from reccmp.compare.lines import LinesDb
 from reccmp.compare.pinned_sequences import SequenceMatcherWithPins
 from reccmp.compare.asm.effective import CallAbi, FunctionMetadata
-from reccmp.compare.asm.fixes import assert_fixup, find_effective_match
+from reccmp.compare.asm.fixes import analyze_effective_match, assert_fixup
 from reccmp.compare.asm.instgen import InstructionMeta
 from reccmp.compare.asm.parse import AsmExcerpt, ParseAsm
 from reccmp.compare.asm.replacement import (
@@ -14,6 +14,7 @@ from reccmp.compare.asm.replacement import (
 )
 from reccmp.compare.db import EntityDb, ReccmpMatch
 from reccmp.compare.diff import EntityCompareResult, RawDiffOutput
+from reccmp.compare.diagnosis import ComparisonAnalysis
 from reccmp.compare.event import ReccmpEvent, ReccmpReportProtocol
 from reccmp.cvdump.analysis import CvdumpNode
 from reccmp.cvdump.cvinfo import CvdumpTypeKey, CvdumpTypeMap
@@ -337,10 +338,10 @@ class FunctionComparator:
 
         diff = SequenceMatcherWithPins(orig_asm, recomp_asm, split_points)
 
-        if diff.ratio() != 1.0:
-            # Check whether we can resolve register swaps which are actually
-            # perfect matches modulo compiler entropy.
-            is_effective = find_effective_match(
+        if diff.ratio() == 1.0:
+            analysis = ComparisonAnalysis.exact()
+        else:
+            analysis = analyze_effective_match(
                 diff.get_opcodes(),
                 orig_asm,
                 recomp_asm,
@@ -350,8 +351,6 @@ class FunctionComparator:
                 recomp_addrs=[x[0] for x in recomp],
                 recomp_meta=recomp_meta,
             )
-        else:
-            is_effective = False
 
         # Convert the addresses to hex string for the diff output
         orig_for_printing = [
@@ -378,8 +377,8 @@ class FunctionComparator:
                 orig_inst=orig_for_printing,
                 recomp_inst=recomp_for_printing,
             ),
-            is_effective_match=is_effective,
             match_ratio=diff.ratio(),
+            analysis=analysis,
         )
 
     def _collect_line_annotations(self, recomp: AsmExcerpt) -> list[ReccmpMatch]:

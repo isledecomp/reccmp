@@ -6,6 +6,7 @@ from typing import Callable, Iterator
 from typing_extensions import Self
 from reccmp.project.detect import RecCmpTarget
 from reccmp.compare.diff import EntityCompareResult, RawDiffOutput
+from reccmp.compare.diagnosis import ComparisonAnalysis
 from reccmp.parser.marker import ProjectAliases, normalize_project_aliases
 from reccmp.dir import source_code_search
 from reccmp.compare.functions import FunctionComparator
@@ -403,6 +404,11 @@ class Compare:
                 recomp_inst=recomp_text,
             ),
             match_ratio=ratio,
+            analysis=(
+                ComparisonAnalysis.exact()
+                if ratio == 1.0
+                else ComparisonAnalysis.inconclusive("analysis_limit")
+            ),
         )
 
     def _compare_non_match(self, ent: ReccmpEntity) -> ReccmpComparedEntity | None:
@@ -471,7 +477,7 @@ class Compare:
             accuracy=result.match_ratio,
             type=output_type,
             recomp_addr=match.recomp_addr,
-            is_effective_match=result.is_effective_match,
+            analysis=result.analysis,
             is_stub=match.get("stub", False),
             is_library=match.get("library", False),
             rdiff=result.diff,

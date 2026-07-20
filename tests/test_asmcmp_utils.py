@@ -1,5 +1,6 @@
 from reccmp.utils import entity_diff_change, ReccmpDiffJudgement
 from reccmp.compare.report import ReccmpComparedEntity
+from reccmp.compare.diagnosis import ComparisonAnalysis
 
 
 def entity(
@@ -7,12 +8,21 @@ def entity(
 ) -> ReccmpComparedEntity:
     """Helper to create entities with dummy values for required fields: address, name.
     The only relevant fields are: accuracy, is_stub, is_effective_match"""
+    analysis = (
+        ComparisonAnalysis.effective({"register_allocation"})
+        if is_effective_match
+        else (
+            ComparisonAnalysis.exact()
+            if accuracy == 1.0
+            else ComparisonAnalysis.inconclusive("analysis_limit")
+        )
+    )
     return ReccmpComparedEntity(
         orig_addr=0x400000,
         name="Test",
         accuracy=accuracy,
         is_stub=is_stub,
-        is_effective_match=is_effective_match,
+        analysis=analysis,
     )
 
 
