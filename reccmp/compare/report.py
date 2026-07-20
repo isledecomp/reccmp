@@ -333,24 +333,22 @@ def _side_json(side: DifferenceSide) -> dict[str, object]:
 
 
 def _analysis_json(analysis: ComparisonAnalysis) -> dict[str, object]:
-    difference = None
+    value: dict[str, object] = {"status": analysis.status.value}
+    if analysis.effective_reasons:
+        value["effective_reasons"] = list(analysis.effective_reasons)
     if analysis.difference is not None:
-        difference = {
+        value["difference"] = {
             "kind": analysis.difference.kind,
             "orig": _side_json(analysis.difference.orig),
             "recomp": _side_json(analysis.difference.recomp),
         }
-    return {
-        "status": analysis.status.value,
-        "effective_reasons": list(analysis.effective_reasons),
-        "difference": difference,
-        "inconclusive_reason": analysis.inconclusive_reason,
-        "inconclusive_location": (
-            _side_json(analysis.inconclusive_location)
-            if analysis.inconclusive_location is not None
-            else None
-        ),
-    }
+    if analysis.inconclusive_reason is not None:
+        value["inconclusive_reason"] = analysis.inconclusive_reason
+    if analysis.inconclusive_location is not None:
+        value["inconclusive_location"] = _side_json(
+            analysis.inconclusive_location
+        )
+    return value
 
 
 MAGIC_STRING_VARIOUS = "various"

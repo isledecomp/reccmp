@@ -209,9 +209,12 @@ def test_structured_comparison_schema_round_trip():
     assert value["data"][1]["comparison"] == {
         "status": "effective",
         "effective_reasons": ["register_allocation", "padding"],
-        "difference": None,
-        "inconclusive_reason": None,
-        "inconclusive_location": None,
+    }
+    assert value["data"][0]["comparison"] == {"status": "exact"}
+    assert set(value["data"][2]["comparison"]) == {"status", "difference"}
+    assert value["data"][3]["comparison"] == {
+        "status": "inconclusive",
+        "inconclusive_reason": "unsupported_control_flow",
     }
 
     restored = deserialize_reccmp_report(serialized)
