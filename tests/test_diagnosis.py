@@ -92,6 +92,26 @@ def test_commutative_order_reason():
     assert result.effective_reasons == ("commutative_order",)
 
 
+def test_associative_add_order_reason():
+    result = analyze(
+        [
+            "mov eax, dword ptr [g_a (DATA)]",
+            "add eax, dword ptr [g_b (DATA)]",
+            "add eax, dword ptr [g_c (DATA)]",
+            "ret",
+        ],
+        [
+            "mov eax, dword ptr [g_a (DATA)]",
+            "add eax, dword ptr [g_c (DATA)]",
+            "add eax, dword ptr [g_b (DATA)]",
+            "ret",
+        ],
+        metadata=FunctionMetadata(return_kind="i32"),
+    )
+    assert result.status == ComparisonStatus.EFFECTIVE
+    assert result.effective_reasons == ("commutative_order",)
+
+
 def test_commutative_address_term_order_reason():
     result = analyze(
         ["mov eax, dword ptr [eax + edx]", "ret"],

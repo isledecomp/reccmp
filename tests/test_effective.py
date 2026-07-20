@@ -229,6 +229,97 @@ def test_commutative_add_operand_swap():
     assert verify_effective_match(orig, recomp) is True
 
 
+def test_associative_add_reduction_order():
+    """VC5 may schedule the same member-value reduction in a different order."""
+    orig = [
+        "mov ecx, dword ptr [ecx + 0x894]",
+        "xor eax, eax",
+        "test ecx, ecx",
+        "je 0x37",
+        "mov edx, dword ptr [ecx + 0x114]",
+        "mov eax, dword ptr [ecx + 0x110]",
+        "push esi",
+        "mov esi, dword ptr [edx + 0x44]",
+        "mov eax, dword ptr [eax + 0x44]",
+        "mov edx, dword ptr [ecx + 0x108]",
+        "add eax, esi",
+        "mov esi, dword ptr [edx + 0x44]",
+        "mov edx, dword ptr [ecx + 0x10c]",
+        "mov ecx, dword ptr [ecx + 0x104]",
+        "add eax, esi",
+        "mov esi, dword ptr [edx + 0x44]",
+        "mov edx, dword ptr [ecx + 0x44]",
+        "add eax, esi",
+        "add eax, edx",
+        "pop esi",
+        "ret",
+    ]
+    recomp = [
+        "mov ecx, dword ptr [ecx + 0x894]",
+        "xor eax, eax",
+        "test ecx, ecx",
+        "je 0x37",
+        "mov edx, dword ptr [ecx + 0x110]",
+        "mov eax, dword ptr [ecx + 0x114]",
+        "push esi",
+        "mov esi, dword ptr [edx + 0x44]",
+        "mov eax, dword ptr [eax + 0x44]",
+        "mov edx, dword ptr [ecx + 0x10c]",
+        "add eax, esi",
+        "mov esi, dword ptr [edx + 0x44]",
+        "mov edx, dword ptr [ecx + 0x108]",
+        "mov ecx, dword ptr [ecx + 0x104]",
+        "add eax, esi",
+        "mov esi, dword ptr [edx + 0x44]",
+        "mov edx, dword ptr [ecx + 0x44]",
+        "add eax, esi",
+        "add eax, edx",
+        "pop esi",
+        "ret",
+    ]
+    assert (
+        verify_effective_match(
+            orig, recomp, metadata=FunctionMetadata(return_kind="i32")
+        )
+        is True
+    )
+
+
+def test_reject_associative_add_reorder_when_carry_is_consumed():
+    """Equal sums do not imply equal carry from differently grouped final adds."""
+    orig = [
+        "mov eax, dword ptr [g_a (DATA)]",
+        "add eax, dword ptr [g_b (DATA)]",
+        "add eax, dword ptr [g_c (DATA)]",
+        "adc edx, 0",
+        "mov dword ptr [esi], edx",
+    ]
+    recomp = [
+        "mov eax, dword ptr [g_a (DATA)]",
+        "add eax, dword ptr [g_c (DATA)]",
+        "add eax, dword ptr [g_b (DATA)]",
+        "adc edx, 0",
+        "mov dword ptr [esi], edx",
+    ]
+    assert verify_effective_match(orig, recomp) is False
+
+
+def test_reject_associative_add_reorder_when_condition_reads_flags():
+    orig = [
+        "mov eax, dword ptr [g_a (DATA)]",
+        "add eax, dword ptr [g_b (DATA)]",
+        "add eax, dword ptr [g_c (DATA)]",
+        "jb 0x10",
+    ]
+    recomp = [
+        "mov eax, dword ptr [g_a (DATA)]",
+        "add eax, dword ptr [g_c (DATA)]",
+        "add eax, dword ptr [g_b (DATA)]",
+        "jb 0x10",
+    ]
+    assert verify_effective_match(orig, recomp) is False
+
+
 def test_reject_noncommutative_sub_swap():
     orig = [
         "mov eax, dword ptr [ebp - 4]",

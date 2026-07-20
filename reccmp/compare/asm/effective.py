@@ -75,6 +75,7 @@ NUM_RE = re.compile(r"^-?(?:0x[0-9a-f]+|\d+)$")
 ST_RE = re.compile(r"^st(?:\((\d)\))?$")
 
 COMMUTATIVE_BINOPS = {"add", "and", "or", "xor", "imul"}
+ASSOCIATIVE_COMMUTATIVE_BINOPS = {"add"}
 ORDERED_BINOPS = {"sub", "shl", "shr", "sar", "rol", "ror"}
 CARRY_BINOPS = {"adc", "sbb"}
 
@@ -100,6 +101,28 @@ X87_UNARY = {"fchs", "fabs", "fsqrt", "frndint", "fcos", "fsin", "ftan", "f2xm1"
 def _vsort(a: Value, b: Value) -> tuple[Value, Value]:
     """Canonical order for the operands of a commutative operation."""
     return (a, b) if repr(a) <= repr(b) else (b, a)
+
+
+def _commutative_result(mnemonic: str, a: Value, b: Value) -> Value:
+    """Canonicalize a commutative integer result.
+
+    Integer addition is associative modulo the destination width, so flatten
+    nested additions before sorting their leaves.  Flags and carry are kept as
+    binary expressions by execute(): reassociation can change the flags from
+    the final physical add even when the destination value is equal.
+    """
+    if mnemonic not in ASSOCIATIVE_COMMUTATIVE_BINOPS:
+        return (mnemonic, *_vsort(a, b))
+
+    terms: list[Value] = []
+    pending = [a, b]
+    while pending:
+        value = pending.pop()
+        if isinstance(value, tuple) and value and value[0] == mnemonic:
+            pending.extend(value[1:])
+        else:
+            terms.append(value)
+    return (mnemonic, *sorted(terms, key=repr))
 
 
 @dataclass
@@ -876,7 +899,7 @@ def execute(
         if mnemonic == "xor" and a == b:
             value = ("imm", 0)
         else:
-            value = (mnemonic, *pair)
+            value = _commutative_result(mnemonic, a, b)
         write_operand(state, ctx, ops[0], value, obs)
         state.flags = ("flags", mnemonic, *pair)
         # and/or/xor clear CF; add/imul produce a carry-out.
@@ -1559,7 +1582,7 @@ def _uses_frame_slot_layout(orig: SideState, recomp: SideState) -> bool:
     return bool(orig_slots or recomp_slots) and orig_slots != recomp_slots
 
 
-def _commutative_swap_used(
+def _commutative_order_used(
     before_o: SideState,
     before_r: SideState,
     ctx: Context,
@@ -1567,7 +1590,7 @@ def _commutative_swap_used(
     ins_r: Instruction,
 ) -> bool:
     # pylint: disable=too-many-return-statements
-    """Whether this paired operation became equal only after swapping inputs."""
+    """Whether this paired operation needed commutative-order normalization."""
     if ins_o.mnemonic != ins_r.mnemonic:
         return False
     try:
@@ -1587,7 +1610,15 @@ def _commutative_swap_used(
             b_o = read_operand(before_o, ctx, ins_o.operands[1])
             a_r = read_operand(before_r, ctx, ins_r.operands[0])
             b_r = read_operand(before_r, ctx, ins_r.operands[1])
-            return a_o == b_r and b_o == a_r and (a_o != a_r or b_o != b_r)
+            if a_o == b_r and b_o == a_r and (a_o != a_r or b_o != b_r):
+                return True
+            if ins_o.mnemonic in ASSOCIATIVE_COMMUTATIVE_BINOPS:
+                pair_o = _vsort(a_o, b_o)
+                pair_r = _vsort(a_r, b_r)
+                return pair_o != pair_r and _commutative_result(
+                    ins_o.mnemonic, a_o, b_o
+                ) == _commutative_result(ins_r.mnemonic, a_r, b_r)
+            return False
         if ins_o.mnemonic in ("fadd", "fmul", "fiadd", "fimul"):
             if len(ins_o.operands) != 1 or len(ins_r.operands) != 1:
                 return False
@@ -1763,7 +1794,7 @@ def verify_effective_match(
                 if value_r is not before_r[family_r]
             ):
                 ctx.categories.add("register_allocation")
-            if _commutative_swap_used(
+            if _commutative_order_used(
                 state_before_o, state_before_r, ctx, ins_o, ins_r
             ):
                 ctx.categories.add("commutative_order")
@@ -2636,7 +2667,7 @@ def verify_cfg_effective_match(
                 if value_r is not before_r[family_r]
             ):
                 ctx.categories.add("register_allocation")
-            if _commutative_swap_used(
+            if _commutative_order_used(
                 state_before_o, state_before_r, ctx, ins_o, ins_r
             ):
                 ctx.categories.add("commutative_order")
