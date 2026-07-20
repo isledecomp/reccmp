@@ -141,6 +141,11 @@ class SideState:
     )
     flags: Value = ("init", "flags")
     fpu_flags: Value = ("init", "fpuflags")
+    # The carry flag is tracked separately from the other integer flags:
+    # inc/dec preserve CF while rewriting the rest, so a single combined
+    # flag value would let e.g. `cmp a, b; inc ecx; adc ...` erase a
+    # CF difference introduced by swapped cmp operands.
+    carry: Value = ("init", "carry")
     x87: X87Stack = field(default_factory=X87Stack)
     # Frame-slot alpha-renaming: negative ebp displacements are replaced by
     # slot ids assigned in first-use order, so the two sides may lay out
@@ -209,9 +214,10 @@ class Context:
     # When not None, every memory access performed by execute() is recorded
     # here as ("r"|"w", address value, width, is_stack_slot).
     trace: list | None = None
-    # Pending callee-save register substitutions: (orig family, recomp
-    # family, stack slot address) pushed but not yet popped.
-    save_stack: list[tuple[str, str, Value]] = field(default_factory=list)
+    # Pending callee-save register substitutions: mutable records
+    # [orig family, recomp family, stack slot address, still_valid].
+    # A potentially aliasing write to the slot clears still_valid.
+    save_stack: list[list] = field(default_factory=list)
     # Which acceptance features fired, for debug/audit logging.
     categories: set[str] = field(default_factory=set)
 
@@ -251,7 +257,7 @@ def _tree_size(value, ctx: Context) -> int:
 
 
 def guard_state_size(state: SideState, ctx: Context) -> None:
-    for value in (*state.regs.values(), state.flags, state.fpu_flags):
+    for value in (*state.regs.values(), state.flags, state.carry, state.fpu_flags):
         if _tree_size(value, ctx) > VALUE_SIZE_LIMIT:
             raise Reject
     for value in state.x87.known:
@@ -376,6 +382,10 @@ def mem_address(
             key=repr,
         )
     )
+    if escape and any(_stack_rooted(value) for value, _ in terms):
+        # A stack address escapes into a register: pointers derived from it
+        # could reach frame slots or saved registers on the stack.
+        state.slots_escaped = True
     return ("mem", seg, terms, disp_key, syms)
 
 
@@ -431,9 +441,14 @@ def esp_add(value: Value, delta: int) -> Value:
     return ("spadd", value, delta)
 
 
-def canon_condition(cc: str, flags: Value) -> Value:
+# Condition codes whose outcome depends on the carry flag.
+CF_CONDITIONS = frozenset({"b", "ae", "a", "be"})
+
+
+def canon_condition(cc: str, state: SideState) -> Value:
     """Canonical predicate for a condition code applied to a flag state, so
     that `cmp a, b` + jg equals `cmp b, a` + jl."""
+    flags = state.flags
     entry = CC_CANON.get(cc)
     if entry is not None and isinstance(flags, tuple) and flags[0] == "cmp":
         pred, swap = entry
@@ -441,6 +456,10 @@ def canon_condition(cc: str, flags: Value) -> Value:
         if pred in ("eq", "ne"):
             return (pred, _vsort(a, b))
         return (pred, b, a) if swap else (pred, a, b)
+    if cc in CF_CONDITIONS:
+        # The carry flag may have a different (older) producer than the
+        # rest of the flags.
+        return ("cc", cc, flags, state.carry)
     return ("cc", cc, flags)
 
 
@@ -507,6 +526,11 @@ def execute(
             value = (mnemonic, *pair)
         write_operand(state, ctx, ops[0], value, obs)
         state.flags = ("flags", mnemonic, *pair)
+        # and/or/xor clear CF; add/imul produce a carry-out.
+        if mnemonic in ("and", "or", "xor"):
+            state.carry = ("cf0",)
+        else:
+            state.carry = ("carry", mnemonic, *pair)
     elif mnemonic == "imul" and len(ops) == 3:
         value = (
             "imul3",
@@ -515,40 +539,48 @@ def execute(
         )
         write_operand(state, ctx, ops[0], value, obs)
         state.flags = ("flags", *value)
+        state.carry = ("carry", *value)
     elif mnemonic in ORDERED_BINOPS and len(ops) == 2:
         a = read_operand(state, ctx, ops[0])
         b = read_operand(state, ctx, ops[1])
         value = ("imm", 0) if (mnemonic == "sub" and a == b) else (mnemonic, a, b)
         write_operand(state, ctx, ops[0], value, obs)
         state.flags = ("flags", mnemonic, a, b)
+        # The borrow out of sub is the unsigned comparison of its operands.
+        state.carry = ("lt_u", a, b) if mnemonic == "sub" else ("carry", mnemonic, a, b)
     elif mnemonic in CARRY_BINOPS and len(ops) == 2:
         a = read_operand(state, ctx, ops[0])
         b = read_operand(state, ctx, ops[1])
-        value = (mnemonic, a, b, state.flags)
+        value = (mnemonic, a, b, state.carry)
         write_operand(state, ctx, ops[0], value, obs)
         state.flags = ("flags", *value)
+        state.carry = ("carry", *value)
     elif mnemonic in ("inc", "dec", "neg", "not") and len(ops) == 1:
         value = (mnemonic, read_operand(state, ctx, ops[0]))
         write_operand(state, ctx, ops[0], value, obs)
+        # inc/dec rewrite the flags but preserve CF; not touches nothing.
         if mnemonic != "not":
             state.flags = ("flags", *value)
+        if mnemonic == "neg":
+            state.carry = ("carry", *value)
     elif mnemonic == "cmp" and len(ops) == 2:
-        state.flags = (
-            "cmp",
-            read_operand(state, ctx, ops[0]),
-            read_operand(state, ctx, ops[1]),
-        )
+        a = read_operand(state, ctx, ops[0])
+        b = read_operand(state, ctx, ops[1])
+        state.flags = ("cmp", a, b)
+        state.carry = ("lt_u", a, b)
     elif mnemonic == "test" and len(ops) == 2:
         state.flags = (
             "test",
             *_vsort(read_operand(state, ctx, ops[0]), read_operand(state, ctx, ops[1])),
         )
+        state.carry = ("cf0",)
     elif mnemonic in ("mul", "imul") and len(ops) == 1:
         acc, hi = _mul_registers(ops[0])
         pair = _vsort(state.read_reg(acc), read_operand(state, ctx, ops[0]))
         state.write_reg(acc, (mnemonic, "lo", *pair))
         state.write_reg(hi, (mnemonic, "hi", *pair))
         state.flags = ("flags", mnemonic, *pair)
+        state.carry = ("carry", mnemonic, *pair)
     elif mnemonic in ("div", "idiv") and len(ops) == 1:
         acc, hi = _mul_registers(ops[0])
         divisor = read_operand(state, ctx, ops[0])
@@ -556,12 +588,14 @@ def execute(
         state.write_reg(acc, (mnemonic, "quot", dividend, divisor))
         state.write_reg(hi, (mnemonic, "rem", dividend, divisor))
         state.flags = ("undef_flags", idx)
+        state.carry = ("undef_cf", idx)
     elif mnemonic == "cdq":
         state.write_reg("edx", ("cdq", state.read_reg("eax")))
     elif mnemonic == "cwde":
         state.write_reg("eax", ("cwde", state.read_reg("ax")))
     elif mnemonic == "sahf":
         state.flags = ("sahf", state.read_reg("ah"))
+        state.carry = ("sahf_cf", state.read_reg("ah"))
     elif mnemonic == "push" and len(ops) == 1:
         value = read_operand(state, ctx, ops[0])
         new_esp = esp_add(state.read_reg("esp"), -4)
@@ -600,6 +634,7 @@ def execute(
             state.write_reg(reg, ("callret", idx, reg))
         state.write_reg("esp", ("callesp", idx))
         state.flags = ("callflags", idx)
+        state.carry = ("callcf", idx)
         state.x87 = X87Stack(epoch=idx + 1)
         ctx.bump_requested = True
     elif mnemonic == "ret":
@@ -621,7 +656,7 @@ def execute(
             # return-type metadata from the PDB can prove it dead.)
             obs.append(("retval", state.read_reg("eax")))
     elif mnemonic in JCC_MNEMONICS and len(ops) == 1:
-        pred = canon_condition(JCC_MNEMONICS[mnemonic], state.flags)
+        pred = canon_condition(JCC_MNEMONICS[mnemonic], state)
         obs.append(("branch", pred, ins.raw_operands[0]))
     elif mnemonic == "jmp" and len(ops) == 1:
         if ops[0][0] == "mem":
@@ -633,10 +668,10 @@ def execute(
         if mnemonic.startswith("loop"):
             state.write_reg("ecx", ("loopdec", state.read_reg("ecx")))
     elif mnemonic.startswith("set") and mnemonic[3:] in CC_CANON and len(ops) == 1:
-        pred = canon_condition(mnemonic[3:], state.flags)
+        pred = canon_condition(mnemonic[3:], state)
         write_operand(state, ctx, ops[0], ("setcc", pred), obs)
     elif mnemonic.startswith("cmov") and mnemonic[4:] in JCC_MNEMONICS.values():
-        pred = canon_condition(mnemonic[4:], state.flags)
+        pred = canon_condition(mnemonic[4:], state)
         value = (
             "cmov",
             pred,
@@ -659,6 +694,7 @@ def execute(
             state.regs["c"] = ("strres", idx, "c")
         if mnemonic.startswith(("scas", "cmps")):
             state.flags = ("strflags", idx)
+            state.carry = ("strcf", idx)
         if writes_memory:
             ctx.bump_requested = True
     elif mnemonic in ("nop", "int3"):
@@ -786,6 +822,7 @@ def resync(states: tuple[SideState, SideState], idx: int, ctx: Context) -> None:
         for family in FAMILIES:
             state.regs[family] = ("resync", idx, family)
         state.flags = ("resync_flags", idx)
+        state.carry = ("resync_cf", idx)
         state.fpu_flags = ("resync_fpuflags", idx)
         state.x87.known = [("resync_st", idx, i) for i in range(len(state.x87.known))]
     ctx.bump_requested = True
@@ -959,7 +996,8 @@ def _callee_save_swap(ctx: Context, ins_o, ins_r, obs_o, obs_r, orig, recomp) ->
         and obs_r[0][3][1] in CALLEE_SAVED
         and obs_o[0][3] != obs_r[0][3]
     ):
-        ctx.save_stack.append((obs_o[0][3][1], obs_r[0][3][1], obs_o[0][1]))
+        ctx.save_stack.append([obs_o[0][3][1], obs_r[0][3][1], obs_o[0][1], True])
+        ctx.categories.add("callee_save_substitution")
         return True
     if (
         ins_o.mnemonic == "pop"
@@ -971,14 +1009,24 @@ def _callee_save_swap(ctx: Context, ins_o, ins_r, obs_o, obs_r, orig, recomp) ->
     ):
         family_o = REGISTERS[ins_o.operands[0][1]][0]
         family_r = REGISTERS[ins_r.operands[0][1]][0]
-        saved_o, saved_r, slot_addr = ctx.save_stack[-1]
-        popped = orig.regs.get(family_o)
+        saved_o, saved_r, slot_addr, valid = ctx.save_stack[-1]
+        popped_o = orig.regs.get(family_o)
+        popped_r = recomp.regs.get(family_r)
         if (
             (saved_o, saved_r) == (family_o, family_r)
-            and isinstance(popped, tuple)
-            and popped
-            and popped[0] == "load"
-            and popped[1] == slot_addr
+            and valid
+            # A frame address that escaped could have reached the saved
+            # slot through a pointer we cannot see.
+            and not orig.slots_escaped
+            and not recomp.slots_escaped
+            and isinstance(popped_o, tuple)
+            and popped_o
+            and popped_o[0] == "load"
+            and popped_o[1] == slot_addr
+            and isinstance(popped_r, tuple)
+            and popped_r
+            and popped_r[0] == "load"
+            and popped_r[1] == slot_addr
         ):
             ctx.save_stack.pop()
             orig.regs[family_o] = ("init", family_o)
@@ -987,7 +1035,27 @@ def _callee_save_swap(ctx: Context, ins_o, ins_r, obs_o, obs_r, orig, recomp) ->
     return False
 
 
+def _invalidate_save_slots(ctx: Context, obs: list) -> None:
+    """Any store that cannot be proven disjoint from a pending callee-save
+    slot invalidates that record: the pop can no longer be trusted to
+    restore the pushed value."""
+    if not ctx.save_stack:
+        return
+    for entry in obs:
+        if entry[0] != "store":
+            continue
+        address, size = entry[1], entry[2]
+        if size == "stack":
+            access: tuple = (address, 4, "push")
+        else:
+            access = (address, _WIDTHS.get(size), False)
+        for record in ctx.save_stack:
+            if record[3] and not _mem_disjoint((record[2], 4, "pop"), access):
+                record[3] = False
+
+
 def _slots_consistent(orig: SideState, recomp: SideState) -> bool:
+    # pylint: disable=too-many-return-statements
     """Validate the frame-slot alpha-renaming: the two sides must map the
     same slot ids in the same order, and — when the layouts actually differ
     — every slot must be a self-contained region (known widths, no overlap
@@ -1014,12 +1082,18 @@ def _slots_consistent(orig: SideState, recomp: SideState) -> bool:
     if orig.slots_escaped or recomp.slots_escaped:
         return False
     for state in (orig, recomp):
-        widths: dict[int, int] = {}
+        widths: dict[int, set] = {}
         for disp, width in state.slot_accesses:
             if width is None:
                 return False
-            widths[disp] = max(width, widths.get(disp, 0))
-        spans = sorted(widths.items())
+            widths.setdefault(disp, set()).add(width)
+        # Every renamed slot must be accessed with a single width: a byte
+        # write followed by a dword read would pull the remaining bytes
+        # from different (uninitialized) stack locations on each side.
+        for accessed in widths.values():
+            if len(accessed) != 1:
+                return False
+        spans = sorted((disp, next(iter(ws))) for disp, ws in widths.items())
         for (d1, w1), (d2, _) in zip(spans, spans[1:]):
             if d1 + w1 > d2:
                 return False
@@ -1085,6 +1159,7 @@ def verify_effective_match(
 
             if obs_o != obs_r:
                 return False
+            _invalidate_save_slots(ctx, obs_o)
             for entry in obs_o:
                 ctx.add_matched(entry)
 
@@ -1326,6 +1401,7 @@ def _havoc(state: SideState, idx: int) -> None:
     for family in FAMILIES:
         state.regs[family] = ("havoc", idx, family)
     state.flags = ("havoc_flags", idx)
+    state.carry = ("havoc_cf", idx)
     state.fpu_flags = ("havoc_fpuflags", idx)
     state.x87 = X87Stack(epoch=-idx - 1)
 

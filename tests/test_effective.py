@@ -594,3 +594,45 @@ def test_reject_one_sided_faulting_load():
     recomp = ["mov ecx, dword ptr [<OFFSET1>]", "mov eax, 1", "ret"]
     codes = difflib.SequenceMatcher(None, orig, recomp).get_opcodes()
     assert verify_effective_match(orig, recomp, codes) is False
+
+
+def test_reject_callee_save_slot_clobbered():
+    """The saved-register slot is overwritten before the pop: both sides
+    restore 0, so the two functions clobber different physical registers."""
+    orig = ["push esi", "mov dword ptr [esp], 0", "pop esi", "ret"]
+    recomp = ["push edi", "mov dword ptr [esp], 0", "pop edi", "ret"]
+    assert verify_effective_match(orig, recomp) is False
+
+
+def test_reject_partial_frame_slot_initialization():
+    """Only one byte of the renamed slot is initialized; the upper three
+    bytes of the dword read come from different stack locations."""
+    orig = [
+        "mov byte ptr [ebp - 4], 1",
+        "mov eax, dword ptr [ebp - 4]",
+        "ret",
+    ]
+    recomp = [
+        "mov byte ptr [ebp - 8], 1",
+        "mov eax, dword ptr [ebp - 8]",
+        "ret",
+    ]
+    assert verify_effective_match(orig, recomp) is False
+
+
+def test_reject_carry_flag_survives_inc():
+    """Swapping cmp operands changes CF. inc preserves CF, so the adc
+    consumes the differing carry even though the other flags are rewritten."""
+    orig = [
+        "cmp eax, ebx",
+        "inc ecx",
+        "adc edx, 0",
+        "mov dword ptr [esi], edx",
+    ]
+    recomp = [
+        "cmp ebx, eax",
+        "inc ecx",
+        "adc edx, 0",
+        "mov dword ptr [esi], edx",
+    ]
+    assert verify_effective_match(orig, recomp) is False
