@@ -10,6 +10,7 @@ from reccmp.compare.asm.effective import (
     sequence_effects,
     verify_effective_match,
 )
+from reccmp.compare.asm.instgen import InstructionMeta
 from reccmp.compare.asm.parse import AsmExcerpt
 from reccmp.compare.pinned_sequences import DiffOpcode
 
@@ -32,12 +33,13 @@ def _trim_padding(asm: list[str]) -> list[str]:
     return asm
 
 
-def find_effective_match(
+def find_effective_match(  # pylint: disable=too-many-positional-arguments
     codes: Sequence[DiffOpcode],
     orig_asm: list[str],
     recomp_asm: list[str],
     orig_addrs: Sequence[int | None] | None = None,
     metadata: FunctionMetadata | None = None,
+    orig_meta: list[InstructionMeta | None] | None = None,
 ) -> bool:
     """Check whether the two sequences of instructions are an effective match.
     Meaning: do they differ only by instruction order or register selection?
@@ -59,7 +61,10 @@ def find_effective_match(
     # can misalign lines that pair up fine positionally.
     trimmed_orig = _trim_padding(orig_asm)
     trimmed_recomp = _trim_padding(recomp_asm)
-    if verify_effective_match(trimmed_orig, trimmed_recomp, metadata=metadata):
+    trimmed_meta = orig_meta[: len(trimmed_orig)] if orig_meta is not None else None
+    if verify_effective_match(
+        trimmed_orig, trimmed_recomp, metadata=metadata, orig_meta=trimmed_meta
+    ):
         if len(trimmed_orig) != len(orig_asm) or len(trimmed_recomp) != len(recomp_asm):
             logger.debug("effective match: lockstep (padding trimmed)")
         else:
@@ -69,7 +74,9 @@ def find_effective_match(
     # Diff-aligned pairing: handles length differences (one-sided entries
     # for whitelisted unobservable instructions, e.g. a redundant
     # register copy) and transposed independent lines.
-    if verify_effective_match(orig_asm, recomp_asm, codes, metadata=metadata):
+    if verify_effective_match(
+        orig_asm, recomp_asm, codes, metadata=metadata, orig_meta=orig_meta
+    ):
         logger.debug("effective match: diff-aligned")
         return True
 

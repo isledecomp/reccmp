@@ -4,10 +4,22 @@ switch statements and local jump/call destinations."""
 import re
 import bisect
 import struct
+from dataclasses import dataclass
 from functools import cache
 from enum import Enum, auto
 from typing import Iterable, Literal, NamedTuple
-from capstone import Cs, CS_ARCH_X86, CS_MODE_16, CS_MODE_32  # type: ignore
+from capstone import (  # type: ignore
+    CS_ARCH_X86,
+    CS_GRP_BRANCH_RELATIVE,
+    CS_GRP_CALL,
+    CS_GRP_JUMP,
+    CS_GRP_RET,
+    CS_MODE_16,
+    CS_MODE_32,
+    Cs,
+    CsError,
+)
+from capstone import x86_const  # type: ignore
 from .const import JUMP_MNEMONICS
 
 
@@ -270,3 +282,92 @@ class InstructGen:
 
                 self._finish_tab_section(SectionType.DATA_TAB, data_table)
                 self.cur_addr = self.section_end
+
+
+@cache
+def get_detail_disassembler(is_32: bool = True) -> Cs:
+    disassembler = Cs(CS_ARCH_X86, CS_MODE_32 if is_32 else CS_MODE_16)
+    disassembler.detail = True
+    return disassembler
+
+
+@dataclass(frozen=True)
+class InstructionMeta:
+    """Structured facts about one instruction, captured from capstone's
+    detail mode at disassembly time: register accesses including implicit
+    ones, flags effects, memory access, control-flow class and the branch
+    target. Consumed privately by the effective-match verifier."""
+
+    # pylint: disable=too-many-instance-attributes
+
+    address: int
+    size: int
+    mnemonic: str
+    regs_read: tuple[str, ...]
+    regs_written: tuple[str, ...]
+    reads_flags: bool
+    writes_flags: bool
+    accesses_memory: bool
+    is_jump: bool
+    is_call: bool
+    is_ret: bool
+    branch_target: int | None
+
+
+# EFLAGS "test" bits mean the instruction reads that flag; everything else
+# in the mask (modify/set/reset/undefined) is a write.
+_EFLAGS_READ_MASK = 0
+for _name in dir(x86_const):
+    if _name.startswith("X86_EFLAGS_TEST_"):
+        _EFLAGS_READ_MASK |= getattr(x86_const, _name)
+
+
+def collect_instruction_meta(
+    blob: bytes, start: int, sections: list[FuncSection], is_32bit: bool = True
+) -> dict[int, InstructionMeta]:
+    """Disassemble the code sections again in detail mode and return a
+    per-address map of structured instruction facts."""
+    result: dict[int, InstructionMeta] = {}
+    disassembler = get_detail_disassembler(is_32bit)
+
+    for section in sections:
+        if section.type != SectionType.CODE or not section.contents:
+            continue
+        first = section.contents[0][0]
+        last = section.contents[-1]
+        code = blob[first - start : last[0] + last[1] - start]
+
+        for insn in disassembler.disasm(code, first):
+            try:
+                read_ids, write_ids = insn.regs_access()
+            except CsError:
+                continue
+
+            is_jump = insn.group(CS_GRP_JUMP)
+            is_call = insn.group(CS_GRP_CALL)
+            branch_target = None
+            operands = insn.operands
+            if (
+                (is_jump or is_call)
+                and insn.group(CS_GRP_BRANCH_RELATIVE)
+                and len(operands) == 1
+                and operands[0].type == x86_const.X86_OP_IMM
+            ):
+                branch_target = operands[0].imm
+
+            result[insn.address] = InstructionMeta(
+                address=insn.address,
+                size=insn.size,
+                mnemonic=insn.mnemonic,
+                regs_read=tuple(sorted(insn.reg_name(r) for r in read_ids)),
+                regs_written=tuple(sorted(insn.reg_name(r) for r in write_ids)),
+                reads_flags=bool(insn.eflags & _EFLAGS_READ_MASK),
+                writes_flags=bool(insn.eflags & ~_EFLAGS_READ_MASK),
+                accesses_memory=any(op.type == x86_const.X86_OP_MEM for op in operands),
+                is_jump=is_jump,
+                is_call=is_call,
+                is_ret=insn.group(CS_GRP_RET),
+                branch_target=branch_target,
+            )
+
+    return result

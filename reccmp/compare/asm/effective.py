@@ -35,6 +35,8 @@ from dataclasses import dataclass, field
 from functools import cache
 from typing import Callable
 
+from reccmp.compare.asm.instgen import InstructionMeta
+
 # A symbolic value. Nested tuples of str/int; compared structurally.
 Value = tuple
 
@@ -950,30 +952,121 @@ def _is_scratch(value: Value) -> bool:
 CALLEE_SAVED = ("b", "si", "di")
 
 
-def _aligned_lines(
-    codes, orig_asm: list[str], recomp_asm: list[str]
-) -> list[tuple[str | None, str | None]] | None:
-    """Pair up the two sequences for lockstep verification. Without diff
-    opcodes, the sequences must have equal length. With them, unmatched
-    insertions/deletions become one-sided entries, which the verifier only
-    accepts for instructions with no observable effect (e.g. a redundant
-    register copy one compiler emitted and the other did not)."""
+def _aligned_indices(
+    codes, orig_len: int, recomp_len: int
+) -> list[tuple[int | None, int | None]] | None:
+    """Pair up the two sequences (by index) for lockstep verification.
+    Without diff opcodes, the sequences must have equal length. With them,
+    unmatched insertions/deletions become one-sided entries, which the
+    verifier only accepts for whitelisted unobservable instructions."""
     if codes is None:
-        if len(orig_asm) != len(recomp_asm):
+        if orig_len != recomp_len:
             return None
-        return list(zip(orig_asm, recomp_asm))
-    result: list[tuple[str | None, str | None]] = []
+        return [(i, i) for i in range(orig_len)]
+    result: list[tuple[int | None, int | None]] = []
     for tag, i1, i2, j1, j2 in codes:
         if tag in ("equal", "replace"):
             paired = min(i2 - i1, j2 - j1)
-            result.extend(zip(orig_asm[i1 : i1 + paired], recomp_asm[j1 : j1 + paired]))
-            result.extend((line, None) for line in orig_asm[i1 + paired : i2])
-            result.extend((None, line) for line in recomp_asm[j1 + paired : j2])
+            result.extend(zip(range(i1, i1 + paired), range(j1, j1 + paired)))
+            result.extend((i, None) for i in range(i1 + paired, i2))
+            result.extend((None, j) for j in range(j1 + paired, j2))
         elif tag == "delete":
-            result.extend((line, None) for line in orig_asm[i1:i2])
+            result.extend((i, None) for i in range(i1, i2))
         elif tag == "insert":
-            result.extend((None, line) for line in recomp_asm[j1:j2])
+            result.extend((None, j) for j in range(j1, j2))
     return result
+
+
+# Mnemonics with implicit memory or environment effects that capstone's
+# operand list does not surface. Never stepped over via metadata.
+_META_STEP_BLACKLIST = frozenset(
+    {
+        "xlatb",
+        "pusha",
+        "pushal",
+        "pushad",
+        "popa",
+        "popal",
+        "popad",
+        "pushf",
+        "pushfd",
+        "popf",
+        "popfd",
+        "enter",
+        "leave",
+        "int",
+        "int1",
+        "int3",
+        "into",
+        "syscall",
+        "sysenter",
+        "iret",
+        "iretd",
+        "cpuid",
+        "rdtsc",
+        "in",
+        "out",
+        "hlt",
+    }
+)
+
+
+def _meta_step(
+    orig: SideState, recomp: SideState, meta, ctx: Context, idx: int
+) -> bool:
+    """Step both sides over an identical instruction outside the symbolic
+    model, using capstone's structured facts about it. Sound only when the
+    instruction touches nothing but registers and flags: every register it
+    reads must be cross-equal, and every register it writes gets a fresh
+    paired value. Anything with memory access, control flow, x87, or
+    unmapped registers falls back to the full-synchronization rule."""
+    # pylint: disable=too-many-return-statements,too-many-boolean-expressions
+    if (
+        meta.accesses_memory
+        or meta.is_jump
+        or meta.is_call
+        or meta.is_ret
+        or meta.mnemonic in _META_STEP_BLACKLIST
+        or meta.mnemonic.startswith(("f", "rep"))
+    ):
+        return False
+
+    read_families: set[str] = set()
+    written_families: set[str] = set()
+    for names, families in (
+        (meta.regs_read, read_families),
+        (meta.regs_written, written_families),
+    ):
+        for name in names:
+            if name == "eflags":
+                continue
+            if name not in REGISTERS:
+                # x87/MMX/SSE or segment registers: not modeled.
+                return False
+            family, part = REGISTERS[name]
+            families.add(family)
+            if part != "r32" and families is written_families:
+                # A partial-register write preserves the remaining bits,
+                # so the family must already agree for the fresh paired
+                # value to be sound.
+                read_families.add(family)
+
+    for family in read_families:
+        if orig.regs[family] != recomp.regs[family]:
+            return False
+    if meta.reads_flags and (orig.flags != recomp.flags or orig.carry != recomp.carry):
+        return False
+
+    for family in written_families:
+        value = ("metastep", idx, family)
+        orig.regs[family] = value
+        recomp.regs[family] = value
+    if meta.writes_flags:
+        orig.flags = recomp.flags = ("metastep_flags", idx)
+        orig.carry = recomp.carry = ("metastep_cf", idx)
+
+    ctx.categories.add("meta_step")
+    return True
 
 
 def _one_sided_ok(state: SideState, ctx: Context, idx: int, line: str) -> bool:
@@ -1145,12 +1238,18 @@ def verify_effective_match(
     recomp_asm: list[str],
     codes=None,
     metadata: FunctionMetadata | None = None,
+    orig_meta: list[InstructionMeta | None] | None = None,
 ) -> bool:
     """True if the two instruction sequences can be proven equivalent
     modulo register allocation, frame-slot layout, commutative-operand
-    order and inverted compare/jump conditions."""
+    order and inverted compare/jump conditions.
+
+    `orig_meta` (optional, aligned with orig_asm) provides structured
+    capstone facts; with them, an unmodeled register-only instruction can
+    be stepped over precisely instead of requiring full synchronization."""
     # pylint: disable=too-many-branches,too-many-return-statements,too-many-statements
-    aligned = _aligned_lines(codes, orig_asm, recomp_asm)
+    # pylint: disable=too-many-locals
+    aligned = _aligned_indices(codes, len(orig_asm), len(recomp_asm))
     if aligned is None:
         return False
 
@@ -1159,7 +1258,9 @@ def verify_effective_match(
     ctx = Context(metadata=metadata)
 
     try:
-        for idx, (line_o, line_r) in enumerate(aligned):
+        for idx, (index_o, index_r) in enumerate(aligned):
+            line_o = orig_asm[index_o] if index_o is not None else None
+            line_r = recomp_asm[index_r] if index_r is not None else None
             if line_o is None or line_r is None:
                 side = recomp if line_o is None else orig
                 line = line_r if line_o is None else line_o
@@ -1184,9 +1285,21 @@ def verify_effective_match(
                 execute(orig, ctx, idx, ins_o, obs_o)
                 execute(recomp, ctx, idx, ins_r, obs_r)
             except (Reject, IndexError, KeyError, ValueError, TypeError):
-                # Unsupported or malformed instruction: only allowed if both
-                # sides are textually identical and semantically synchronized.
-                if line_o != line_r or not fully_synced(orig, recomp):
+                # Unsupported or malformed instruction: only allowed if
+                # both sides are textually identical, and then only when
+                # its precise effects are known (capstone metadata) or the
+                # two symbolic states are fully synchronized.
+                if line_o != line_r:
+                    return False
+                meta = (
+                    orig_meta[index_o]
+                    if orig_meta is not None and index_o is not None
+                    else None
+                )
+                if meta is not None and _meta_step(orig, recomp, meta, ctx, idx):
+                    ctx.gen += 1
+                    continue
+                if not fully_synced(orig, recomp):
                     return False
                 resync((orig, recomp), idx, ctx)
                 ctx.gen += 1

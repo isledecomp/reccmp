@@ -10,7 +10,13 @@ import re
 from functools import cache
 from typing_extensions import Buffer
 from .const import JUMP_MNEMONICS, SINGLE_OPERAND_INSTS
-from .instgen import DisasmLiteTuple, InstructGen, SectionType
+from .instgen import (
+    DisasmLiteTuple,
+    InstructGen,
+    InstructionMeta,
+    SectionType,
+    collect_instruction_meta,
+)
 from .replacement import AddrTestProtocol, NameReplacementProtocol
 
 AsmExcerpt = list[tuple[int | None, str]]
@@ -34,19 +40,25 @@ def from_hex(string: str) -> int | None:
 
 
 class ParseAsm:
+    # pylint: disable=too-many-instance-attributes
     def __init__(
         self,
         addr_test: AddrTestProtocol | None = None,
         name_lookup: NameReplacementProtocol | None = None,
         is_32bit: bool = True,
+        collect_meta: bool = False,
     ) -> None:
         self.addr_test = addr_test
         self.name_lookup = name_lookup
         self.is_32bit = is_32bit
+        self.collect_meta = collect_meta
 
         self.replacements: dict[int, str] = {}
         self.indirect_replacements: dict[int, str] = {}
         self.number_placeholders = True
+        # Structured capstone facts for the most recent parse_asm() call,
+        # keyed by instruction address. Populated when collect_meta is set.
+        self.meta: dict[int, InstructionMeta] = {}
 
     def reset(self):
         self.replacements = {}
@@ -198,6 +210,11 @@ class ParseAsm:
         asm: AsmExcerpt = []
 
         ig = InstructGen(bytes(data), start_addr, self.is_32bit)
+
+        if self.collect_meta:
+            self.meta = collect_instruction_meta(
+                bytes(data), start_addr, ig.sections, self.is_32bit
+            )
 
         for section in ig.sections:
             if section.type == SectionType.CODE:

@@ -7,6 +7,7 @@ from reccmp.compare.lines import LinesDb
 from reccmp.compare.pinned_sequences import SequenceMatcherWithPins
 from reccmp.compare.asm.effective import CallAbi, FunctionMetadata
 from reccmp.compare.asm.fixes import assert_fixup, find_effective_match
+from reccmp.compare.asm.instgen import InstructionMeta
 from reccmp.compare.asm.parse import AsmExcerpt, ParseAsm
 from reccmp.compare.asm.replacement import (
     create_name_lookup,
@@ -112,6 +113,7 @@ class FunctionComparator:
                 self.types.get_name_for_offset,
             ),
             is_32bit=self.is_32bit,
+            collect_meta=True,
         )
         self.recomp_sanitize = ParseAsm(
             addr_test=create_valid_addr_lookup(
@@ -185,11 +187,17 @@ class FunctionComparator:
             orig_combined, recomp_combined, line_annotations
         )
 
+        orig_meta = [
+            self.orig_sanitize.meta.get(addr) if addr is not None else None
+            for addr, _ in orig_combined
+        ]
+
         return self._compare_function_assembly(
             orig_combined,
             recomp_combined,
             split_points,
             self._function_metadata(match),
+            orig_meta,
         )
 
     # ------------------------------------------------------------------
@@ -313,6 +321,7 @@ class FunctionComparator:
         recomp: AsmExcerpt,
         split_points: list[tuple[int, int]],
         metadata: FunctionMetadata | None = None,
+        orig_meta: "list[InstructionMeta | None] | None" = None,
     ) -> EntityCompareResult:
         # Detach addresses from asm lines for the text diff.
         orig_asm = [x[1] for x in orig]
@@ -329,6 +338,7 @@ class FunctionComparator:
                 recomp_asm,
                 orig_addrs=[x[0] for x in orig],
                 metadata=metadata,
+                orig_meta=orig_meta,
             )
         else:
             is_effective = False
