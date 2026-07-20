@@ -636,3 +636,104 @@ def test_reject_carry_flag_survives_inc():
         "mov dword ptr [esi], edx",
     ]
     assert verify_effective_match(orig, recomp) is False
+
+
+# --- PDB metadata: return kinds and callee conventions ---------------------
+
+from reccmp.compare.asm.effective import CallAbi, FunctionMetadata
+
+
+def test_void_return_accepted_with_metadata():
+    """The void setter rename rejects without type info, but the PDB
+    return type proves eax is dead at ret."""
+    orig = [
+        "mov eax, dword ptr [g_pContext (DATA)]",
+        "mov ecx, dword ptr [esp + 4]",
+        "mov dword ptr [eax + 0x84], ecx",
+        "ret",
+    ]
+    recomp = [
+        "mov ecx, dword ptr [g_pContext (DATA)]",
+        "mov eax, dword ptr [esp + 4]",
+        "mov dword ptr [ecx + 0x84], eax",
+        "ret",
+    ]
+    assert verify_effective_match(orig, recomp) is False
+    metadata = FunctionMetadata(return_kind="void")
+    assert verify_effective_match(orig, recomp, metadata=metadata) is True
+
+
+def test_i16_return_accepts_dead_upper_bits():
+    """With a 16-bit return type, only ax must match at ret; the stale
+    upper bits of eax may differ."""
+    orig = [
+        "sub eax, 6",
+        "movsx eax, ax",
+        "mov ax, word ptr [eax*2 + g_lookup (DATA)]",
+        "ret",
+    ]
+    recomp = [
+        "sub eax, 6",
+        "movsx ecx, ax",
+        "mov ax, word ptr [ecx*2 + g_lookup (DATA)]",
+        "ret",
+    ]
+    assert verify_effective_match(orig, recomp) is False
+    metadata = FunctionMetadata(return_kind="i16")
+    assert verify_effective_match(orig, recomp, metadata=metadata) is True
+
+
+def test_i16_return_still_compares_ax():
+    """The 16-bit return kind must still reject a differing ax."""
+    orig = ["mov ax, word ptr [g_first (DATA)]", "ret"]
+    recomp = ["mov ax, word ptr [g_second (DATA)]", "ret"]
+    metadata = FunctionMetadata(return_kind="i16")
+    assert verify_effective_match(orig, recomp, metadata=metadata) is False
+
+
+def test_cdecl_call_ignores_dead_ecx():
+    """A cdecl callee takes no register arguments: the renamed temp that
+    happens to be live-in-name in ecx at the call is dead."""
+    orig = [
+        "mov eax, dword ptr [esi + 4]",
+        "push eax",
+        "call Helper (FUNCTION)",
+        "add esp, 4",
+        "ret",
+    ]
+    recomp = [
+        "mov ecx, dword ptr [esi + 4]",
+        "push ecx",
+        "call Helper (FUNCTION)",
+        "add esp, 4",
+        "ret",
+    ]
+    assert verify_effective_match(orig, recomp) is False
+    cdecl = CallAbi(uses_ecx=False, uses_edx=False)
+    metadata = FunctionMetadata(
+        return_kind="i32", call_abi={"Helper (FUNCTION)": cdecl}.get
+    )
+    # eax at ret is the callee's identical result, so the return kind
+    # does not matter here; the dead ecx at the call does.
+    assert verify_effective_match(orig, recomp, metadata=metadata) is True
+
+
+def test_thiscall_receiver_still_compared_with_metadata():
+    """A thiscall callee reads ecx: the differing receiver must reject
+    even when the convention is known."""
+    orig = [
+        "mov ecx, dword ptr [g_objectA (DATA)]",
+        "call TView::RefreshControl (FUNCTION)",
+        "ret",
+    ]
+    recomp = [
+        "mov ecx, dword ptr [g_objectB (DATA)]",
+        "call TView::RefreshControl (FUNCTION)",
+        "ret",
+    ]
+    thiscall = CallAbi(uses_ecx=True, uses_edx=False)
+    metadata = FunctionMetadata(
+        return_kind="void",
+        call_abi={"TView::RefreshControl (FUNCTION)": thiscall}.get,
+    )
+    assert verify_effective_match(orig, recomp, metadata=metadata) is False

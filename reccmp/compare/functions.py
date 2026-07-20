@@ -1,10 +1,11 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cache
 import struct
 from itertools import pairwise
 from typing import Callable, Iterator
 from reccmp.compare.lines import LinesDb
 from reccmp.compare.pinned_sequences import SequenceMatcherWithPins
+from reccmp.compare.asm.effective import CallAbi, FunctionMetadata
 from reccmp.compare.asm.fixes import assert_fixup, find_effective_match
 from reccmp.compare.asm.parse import AsmExcerpt, ParseAsm
 from reccmp.compare.asm.replacement import (
@@ -13,13 +14,34 @@ from reccmp.compare.asm.replacement import (
 from reccmp.compare.db import EntityDb, ReccmpMatch
 from reccmp.compare.diff import EntityCompareResult, RawDiffOutput
 from reccmp.compare.event import ReccmpEvent, ReccmpReportProtocol
-from reccmp.cvdump.types import CvdumpTypesParser
+from reccmp.cvdump.analysis import CvdumpNode
+from reccmp.cvdump.cvinfo import CvdumpTypeKey, CvdumpTypeMap
+from reccmp.cvdump.demangler import parse_function_signature
+from reccmp.cvdump.types import CvdumpKeyError, CvdumpTypesParser
+from reccmp.types import EntityType
 from reccmp.formats.exceptions import (
     InvalidVirtualAddressError,
     InvalidVirtualReadError,
 )
 from reccmp.formats import Image, PEImage
 from reccmp.types import ImageId
+
+# Register-argument usage by PDB calling convention. cdecl and stdcall
+# take all arguments on the stack; thiscall reads the receiver from ecx;
+# fastcall reads its first two register-sized arguments from ecx and edx.
+_CALL_ABI_BY_CONVENTION = {
+    "C Near": CallAbi(uses_ecx=False, uses_edx=False),
+    "STD Near": CallAbi(uses_ecx=False, uses_edx=False),
+    "ThisCall": CallAbi(uses_ecx=True, uses_edx=False),
+    "Fast Near": CallAbi(uses_ecx=True, uses_edx=True),
+    # Conventions as recovered from decorated names.
+    "cdecl": CallAbi(uses_ecx=False, uses_edx=False),
+    "stdcall": CallAbi(uses_ecx=False, uses_edx=False),
+    "thiscall": CallAbi(uses_ecx=True, uses_edx=False),
+    "fastcall": CallAbi(uses_ecx=True, uses_edx=True),
+}
+
+_RETURN_KIND_BY_SIZE = {1: "i8", 2: "i16", 4: "i32", 8: "i64"}
 
 
 def has_asserts(image: Image) -> bool:
@@ -74,8 +96,13 @@ class FunctionComparator:
     report: ReccmpReportProtocol
     types: CvdumpTypesParser
     is_32bit: bool = True
+    # PDB function nodes keyed by recomp address, used to derive return
+    # kinds and callee register-argument conventions for the effective-match
+    # verifier. Optional: without it the verifier stays fully conservative.
+    func_nodes: dict[int, CvdumpNode] = field(default_factory=dict)
 
     def __post_init__(self):
+        self._call_abi_cache: dict[str, CallAbi | None] | None = None
         self.orig_sanitize = ParseAsm(
             addr_test=create_valid_addr_lookup(self.db, ImageId.ORIG, self.orig_bin),
             name_lookup=create_name_lookup(
@@ -159,7 +186,109 @@ class FunctionComparator:
         )
 
         return self._compare_function_assembly(
-            orig_combined, recomp_combined, split_points
+            orig_combined,
+            recomp_combined,
+            split_points,
+            self._function_metadata(match),
+        )
+
+    # ------------------------------------------------------------------
+    # PDB-derived metadata for the effective-match verifier
+
+    def _return_kind_of_type(self, type_key: CvdumpTypeKey) -> str:
+        # pylint: disable=too-many-return-statements
+        """Reduce a PDB return type to the register footprint of the
+        returned value. Unknown or by-value aggregate returns stay
+        "unknown", which makes the verifier compare eax exactly."""
+        for _ in range(8):
+            if type_key.is_scalar():
+                scalar = CvdumpTypeMap.get(type_key)
+                if scalar is None:
+                    return "unknown"
+                if scalar.name == "T_VOID":
+                    return "void"
+                if scalar.pointer is not None:
+                    return "i32"
+                if scalar.name.startswith("T_REAL"):
+                    return "float"
+                return _RETURN_KIND_BY_SIZE.get(scalar.size, "unknown")
+            try:
+                obj = self.types.from_key(type_key)
+            except CvdumpKeyError:
+                return "unknown"
+            leaf = obj.get("type")
+            if leaf == "LF_POINTER":
+                return "i32"
+            if leaf == "LF_ENUM" and "underlying_type" in obj:
+                type_key = obj["underlying_type"]
+                continue
+            if leaf == "LF_MODIFIER" and "modifies" in obj:
+                type_key = obj["modifies"]
+                continue
+            return "unknown"
+        return "unknown"
+
+    def _signature_of_node(self, node: CvdumpNode) -> tuple[str, CallAbi | None]:
+        """(return kind, register-argument ABI) for one function node.
+        Prefers the PDB TYPES record; falls back to the decorated name,
+        which encodes the convention and return type even when the PDB
+        (like Imperialism's) carries no type records at all."""
+        return_kind = "unknown"
+        abi = None
+        if node.symbol_entry is not None:
+            try:
+                func = self.types.from_key(node.symbol_entry.func_type)
+                abi = _CALL_ABI_BY_CONVENTION.get(func.get("call_type", ""))
+                if "return_type" in func:
+                    return_kind = self._return_kind_of_type(func["return_type"])
+            except CvdumpKeyError:
+                pass
+        if (return_kind == "unknown" or abi is None) and node.decorated_name:
+            mangled = parse_function_signature(node.decorated_name)
+            if return_kind == "unknown":
+                return_kind = mangled.return_kind
+            if abi is None and mangled.convention is not None:
+                abi = _CALL_ABI_BY_CONVENTION.get(mangled.convention)
+        return (return_kind, abi)
+
+    def _call_abi_map(self) -> dict[str, CallAbi | None]:
+        """Map from a sanitized call-target name (as the diff displays it)
+        to the callee's register-argument usage. A name shared by several
+        functions with conflicting conventions resolves to None (unknown)."""
+        if self._call_abi_cache is not None:
+            return self._call_abi_cache
+        result: dict[str, CallAbi | None] = {}
+        for entity in self.db.get_all():
+            if entity.entity_type != EntityType.FUNCTION:
+                continue
+            recomp_addr = entity.recomp_addr
+            if recomp_addr is None:
+                continue
+            node = self.func_nodes.get(recomp_addr)
+            if node is None:
+                continue
+            name = entity.match_name()
+            if name is None:
+                continue
+            _, abi = self._signature_of_node(node)
+            if name in result and result[name] != abi:
+                result[name] = None
+            else:
+                result[name] = abi
+        self._call_abi_cache = result
+        return result
+
+    def _function_metadata(self, match: ReccmpMatch) -> FunctionMetadata | None:
+        if not self.func_nodes:
+            return None
+        return_kind = "unknown"
+        node = self.func_nodes.get(match.recomp_addr)
+        if node is not None:
+            return_kind, _ = self._signature_of_node(node)
+        abi_map = self._call_abi_map()
+        return FunctionMetadata(
+            return_kind=return_kind,
+            call_abi=abi_map.get,
         )
 
     @staticmethod
@@ -183,6 +312,7 @@ class FunctionComparator:
         orig: AsmExcerpt,
         recomp: AsmExcerpt,
         split_points: list[tuple[int, int]],
+        metadata: FunctionMetadata | None = None,
     ) -> EntityCompareResult:
         # Detach addresses from asm lines for the text diff.
         orig_asm = [x[1] for x in orig]
@@ -198,6 +328,7 @@ class FunctionComparator:
                 orig_asm,
                 recomp_asm,
                 orig_addrs=[x[0] for x in orig],
+                metadata=metadata,
             )
         else:
             is_effective = False

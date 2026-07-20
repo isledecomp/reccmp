@@ -3,6 +3,7 @@ from typing import Sequence
 
 from reccmp.compare.asm.effective import (
     JCC_MNEMONICS,
+    FunctionMetadata,
     LineEffects,
     effects_conflict,
     flags_dead_at,
@@ -36,6 +37,7 @@ def find_effective_match(
     orig_asm: list[str],
     recomp_asm: list[str],
     orig_addrs: Sequence[int | None] | None = None,
+    metadata: FunctionMetadata | None = None,
 ) -> bool:
     """Check whether the two sequences of instructions are an effective match.
     Meaning: do they differ only by instruction order or register selection?
@@ -49,13 +51,15 @@ def find_effective_match(
 
     `orig_addrs` (optional) provides the virtual address of each orig line;
     with it, a relocation may cross a forward conditional jump whose target
-    lies within the crossed region."""
+    lies within the crossed region. `metadata` (optional) provides
+    PDB-derived return-type and callee-convention facts that widen what
+    the verifier can prove."""
     # Plain lockstep pairing first (with trailing alignment padding
     # trimmed): for equal-length sequences the diff's insert/delete blocks
     # can misalign lines that pair up fine positionally.
     trimmed_orig = _trim_padding(orig_asm)
     trimmed_recomp = _trim_padding(recomp_asm)
-    if verify_effective_match(trimmed_orig, trimmed_recomp):
+    if verify_effective_match(trimmed_orig, trimmed_recomp, metadata=metadata):
         if len(trimmed_orig) != len(orig_asm) or len(trimmed_recomp) != len(recomp_asm):
             logger.debug("effective match: lockstep (padding trimmed)")
         else:
@@ -65,12 +69,14 @@ def find_effective_match(
     # Diff-aligned pairing: handles length differences (one-sided entries
     # for whitelisted unobservable instructions, e.g. a redundant
     # register copy) and transposed independent lines.
-    if verify_effective_match(orig_asm, recomp_asm, codes):
+    if verify_effective_match(orig_asm, recomp_asm, codes, metadata=metadata):
         logger.debug("effective match: diff-aligned")
         return True
 
     reordered = undo_relocations(codes, orig_asm, recomp_asm, orig_addrs)
-    if reordered is not None and verify_effective_match(orig_asm, reordered):
+    if reordered is not None and verify_effective_match(
+        orig_asm, reordered, metadata=metadata
+    ):
         logger.debug("effective match: instruction relocation")
         return True
 

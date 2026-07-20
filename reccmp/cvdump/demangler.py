@@ -145,3 +145,115 @@ def demangle_vtable_ourselves(symbol: str) -> str:
         return t[1] + "::" + t[0] + "::`vftable'"
 
     return t[0] + "::`vftable'"
+
+
+class FunctionSignatureInfo(NamedTuple):
+    """Calling convention and return-value register footprint recovered
+    from a decorated name. Either field may be unknown."""
+
+    return_kind: str  # void / i8 / i16 / i32 / i64 / float / unknown
+    convention: str | None  # cdecl / stdcall / thiscall / fastcall / None
+
+
+_MANGLED_CONVENTIONS = {
+    "A": "cdecl",
+    "B": "cdecl",
+    "E": "thiscall",
+    "F": "thiscall",
+    "G": "stdcall",
+    "H": "stdcall",
+    "I": "fastcall",
+    "J": "fastcall",
+}
+
+# Member-function access codes: does the calling convention follow
+# directly (static) or after a cv-qualifier character?
+_MEMBER_STATIC = set("CDKLST")
+_MEMBER_NONSTATIC = set("ABEFIJMNQRUV")
+
+_MANGLED_RETURN_KINDS = {
+    "X": "void",
+    "C": "i8",
+    "D": "i8",
+    "E": "i8",
+    "F": "i16",
+    "G": "i16",
+    "H": "i32",
+    "I": "i32",
+    "J": "i32",
+    "K": "i32",
+    "M": "float",
+    "N": "float",
+    "O": "float",
+}
+
+
+def _mangled_return_kind(code: str) -> str:
+    if not code:
+        return "unknown"
+    if code[0] == "_":
+        return {"_N": "i8", "_J": "i64", "_K": "i64", "_W": "i16"}.get(
+            code[:2], "unknown"
+        )
+    if code[0] in "PQRSA":
+        # Pointers and references return in eax.
+        return "i32"
+    if code.startswith("W4"):
+        # Enumerations have a 4-byte underlying type.
+        return "i32"
+    return _MANGLED_RETURN_KINDS.get(code[0], "unknown")
+
+
+def parse_function_signature(symbol: str) -> FunctionSignatureInfo:
+    """Recover the calling convention and return kind from a decorated
+    function name. Anything unrecognized degrades to unknown."""
+    # pylint: disable=too-many-return-statements
+    unknown = FunctionSignatureInfo("unknown", None)
+    if not symbol:
+        return unknown
+
+    if not symbol.startswith("?"):
+        # C-style decoration: _name (cdecl), _name@N (stdcall), @name@N
+        # (fastcall). No return-type information.
+        if symbol.startswith("_"):
+            if "@" in symbol[1:]:
+                return FunctionSignatureInfo("unknown", "stdcall")
+            return FunctionSignatureInfo("unknown", "cdecl")
+        if symbol.startswith("@") and "@" in symbol[1:]:
+            return FunctionSignatureInfo("unknown", "fastcall")
+        return unknown
+
+    if "?$" in symbol:
+        # Template arguments embed "@@", which breaks the simple split.
+        return unknown
+
+    _, sep, code = symbol.partition("@@")
+    if not sep or not code:
+        return unknown
+
+    if code[0] == "Y":
+        # Global function: Y <convention> <return type> <args> Z
+        if len(code) < 3:
+            return unknown
+        convention = _MANGLED_CONVENTIONS.get(code[1])
+        return FunctionSignatureInfo(_mangled_return_kind(code[2:]), convention)
+
+    if code[0] in _MEMBER_STATIC:
+        if len(code) < 3:
+            return unknown
+        convention = _MANGLED_CONVENTIONS.get(code[1])
+        return FunctionSignatureInfo(_mangled_return_kind(code[2:]), convention)
+
+    if code[0] in _MEMBER_NONSTATIC:
+        # Access code, then a cv-qualifier (A-D), then the convention.
+        if len(code) < 4 or code[1] not in "ABCD":
+            return unknown
+        convention = _MANGLED_CONVENTIONS.get(code[2])
+        rest = code[3:]
+        if rest.startswith("@"):
+            # Constructors and destructors have no return type; MSVC
+            # returns `this` from a constructor, so leave it unknown.
+            return FunctionSignatureInfo("unknown", convention)
+        return FunctionSignatureInfo(_mangled_return_kind(rest), convention)
+
+    return unknown

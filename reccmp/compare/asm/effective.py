@@ -33,6 +33,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from functools import cache
+from typing import Callable
 
 # A symbolic value. Nested tuples of str/int; compared structurally.
 Value = tuple
@@ -196,6 +197,31 @@ class SideState:
 _WIDTHS = {"byte": 1, "word": 2, "dword": 4, "qword": 8, "tbyte": 10}
 
 
+@dataclass(frozen=True)
+class CallAbi:
+    """Which registers a callee reads as arguments. Derived from the PDB
+    calling convention: cdecl/stdcall use neither, thiscall reads ecx,
+    fastcall reads ecx and edx."""
+
+    uses_ecx: bool
+    uses_edx: bool
+
+
+@dataclass(frozen=True)
+class FunctionMetadata:
+    """Optional PDB-derived facts that widen what the verifier can prove.
+
+    return_kind: how the compared function returns its result —
+    "void" (eax is dead at ret), "i8"/"i16" (only al/ax matter),
+    "i32", "i64" (edx:eax), "float" (st0), or "unknown" (exact eax).
+
+    call_abi: resolves a sanitized call-target name to the callee's
+    register-argument usage; None means unknown (compare ecx and edx)."""
+
+    return_kind: str = "unknown"
+    call_abi: Callable[[str], CallAbi | None] | None = None
+
+
 @dataclass
 class Context:
     # pylint: disable=too-many-instance-attributes
@@ -220,6 +246,8 @@ class Context:
     save_stack: list[list] = field(default_factory=list)
     # Which acceptance features fired, for debug/audit logging.
     categories: set[str] = field(default_factory=set)
+    # PDB-derived return-type and callee-convention facts, if available.
+    metadata: FunctionMetadata | None = None
 
     def add_matched(self, value) -> None:
         stack = [value]
@@ -495,6 +523,7 @@ STRING_OPS = {
 def execute(
     state: SideState, ctx: Context, idx: int, ins: Instruction, obs: list
 ) -> None:
+    # pylint: disable=too-many-locals
     # pylint: disable=too-many-branches,too-many-statements
     mnemonic = ins.mnemonic
     ops = ins.operands
@@ -617,19 +646,20 @@ def execute(
         state.write_reg("ebp", ("load", ebp, "stack", ctx.gen))
         state.write_reg("esp", esp_add(ebp, 4))
     elif mnemonic == "call" and len(ops) == 1:
-        # Without ABI metadata the callee may take arguments in ecx
-        # (thiscall) or ecx+edx (fastcall), so both must match exactly.
-        # This conservatively rejects renames of dead caller-saved temps
-        # that happen to be live-in-name at a call; recovering those needs
-        # per-callsite convention data from the PDB.
-        obs.append(
-            (
-                "call",
-                read_operand(state, ctx, ops[0]),
-                state.read_reg("ecx"),
-                state.read_reg("edx"),
-            )
-        )
+        # The callee may take arguments in ecx (thiscall) or ecx+edx
+        # (fastcall). When per-callsite convention data from the PDB is
+        # available and says a register is unused, its (dead) value need
+        # not match; otherwise it must match exactly.
+        abi = None
+        if ctx.metadata is not None and ctx.metadata.call_abi is not None:
+            if ops[0][0] == "sym":
+                abi = ctx.metadata.call_abi(ops[0][1])
+        entry = ["call", read_operand(state, ctx, ops[0])]
+        if abi is None or abi.uses_ecx:
+            entry.append(state.read_reg("ecx"))
+        if abi is None or abi.uses_edx:
+            entry.append(state.read_reg("edx"))
+        obs.append(tuple(entry))
         for reg in ("eax", "ecx", "edx"):
             state.write_reg(reg, ("callret", idx, reg))
         state.write_reg("esp", ("callesp", idx))
@@ -640,20 +670,30 @@ def execute(
     elif mnemonic == "ret":
         obs.append(("retstack", ins.raw_operands, state.x87.state_key()[1:]))
         # Externally observable machine state at return must match exactly:
-        # the callee-saved registers and the stack pointer...
+        # the callee-saved registers, the stack pointer, and the return
+        # value as determined by the function's return kind. Without
+        # return-type metadata from the PDB, eax must match exactly.
         obs.append(
             (
                 "retsaved",
                 tuple(state.regs[f] for f in ("b", "si", "di", "bp", "sp")),
             )
         )
-        if state.x87.known:
+        kind = ctx.metadata.return_kind if ctx.metadata is not None else "unknown"
+        if kind == "void":
+            pass
+        elif kind == "float":
+            obs.append(("retfpu", state.x87.read(0)))
+        elif kind == "i8":
+            obs.append(("retval", state.read_reg("al")))
+        elif kind == "i16":
+            obs.append(("retval", state.read_reg("ax")))
+        elif kind == "i64":
+            obs.append(("retval", state.read_reg("eax"), state.read_reg("edx")))
+        elif state.x87.known:
             # x87 return value: st(0) must match; eax is scratch.
             obs.append(("retfpu", state.x87.known[0]))
         else:
-            # ...and, since the return type is unknown, so must eax.
-            # (A void function whose dead eax differs is rejected until
-            # return-type metadata from the PDB can prove it dead.)
             obs.append(("retval", state.read_reg("eax")))
     elif mnemonic in JCC_MNEMONICS and len(ops) == 1:
         pred = canon_condition(JCC_MNEMONICS[mnemonic], state)
@@ -1101,7 +1141,10 @@ def _slots_consistent(orig: SideState, recomp: SideState) -> bool:
 
 
 def verify_effective_match(
-    orig_asm: list[str], recomp_asm: list[str], codes=None
+    orig_asm: list[str],
+    recomp_asm: list[str],
+    codes=None,
+    metadata: FunctionMetadata | None = None,
 ) -> bool:
     """True if the two instruction sequences can be proven equivalent
     modulo register allocation, frame-slot layout, commutative-operand
@@ -1113,7 +1156,7 @@ def verify_effective_match(
 
     orig = SideState()
     recomp = SideState()
-    ctx = Context()
+    ctx = Context(metadata=metadata)
 
     try:
         for idx, (line_o, line_r) in enumerate(aligned):

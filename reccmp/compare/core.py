@@ -149,6 +149,16 @@ class Compare:
         load_cvdump(self.cvdump_analysis, self._db, self.recomp_bin)
         load_cvdump_lines(self.cvdump_analysis, self._lines_db, self.recomp_bin)
 
+        # Function nodes (with their PDB type keys and decorated names) by
+        # recomp address: lets the function comparator derive return kinds
+        # and callee calling conventions for the effective-match verifier.
+        self.function_comparator.func_nodes = {
+            node.addr: node
+            for node in self.cvdump_analysis.nodes
+            if node.addr is not None
+            and (node.symbol_entry is not None or node.decorated_name is not None)
+        }
+
         match_entry(self._db, self.orig_bin, self.recomp_bin)
 
         load_markers(
