@@ -193,6 +193,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Exclude LIBRARY annotations from the analysis",
     )
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Do not read or write the local parsed-analysis cache.",
+    )
     argparse_add_logging_args(parser)
 
     args = parser.parse_args()
@@ -251,7 +256,16 @@ def main() -> int:
 
     logging.basicConfig(level=args.loglevel, format="[%(levelname)s] %(message)s")
 
-    compare = Compare.from_target(target)
+    selected = bool(args.orig_address or args.recomp_address)
+    setup_orig_addresses = list(args.orig_address)
+    if args.verbose is not None:
+        setup_orig_addresses.append(args.verbose)
+    compare = Compare.from_target(
+        target,
+        orig_addrs=setup_orig_addresses,
+        recomp_addrs=args.recomp_address,
+        use_cache=not args.no_cache,
+    )
 
     print()
 
@@ -280,7 +294,6 @@ def main() -> int:
 
         return True
 
-    selected = bool(args.orig_address or args.recomp_address)
     include_diff = bool(
         args.dump
         or args.html is not None

@@ -16,6 +16,7 @@ def test_parse_repeated_report_address_filters():
         "0x402000",
         "--recomp-address",
         "0x501000",
+        "--no-cache",
     ]
 
     with patch("sys.argv", argv):
@@ -23,3 +24,4 @@ def test_parse_repeated_report_address_filters():
 
     assert args.orig_address == [0x401000, 0x402000]
     assert args.recomp_address == [0x501000]
+    assert args.no_cache

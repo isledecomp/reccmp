@@ -44,11 +44,15 @@ def test_nested_paths(source_dir: Path):
     # Patch Cvdump.run: don't subprocess.run, just return an empty Cvdump result
     with (
         patch(
-            "reccmp.compare.core.detect_image", new=lambda **_: RawImage.from_memory()
+            "reccmp.compare.target_analysis.detect_image",
+            new=lambda **_: RawImage.from_memory(),
         ),
-        patch("reccmp.compare.core.Cvdump.run", new=lambda _: CvdumpParser()),
+        patch(
+            "reccmp.compare.target_analysis.Cvdump.run",
+            new=lambda _: CvdumpParser(),
+        ),
     ):
-        c = Compare.from_target(target)
+        c = Compare.from_target(target, use_cache=False)
 
         # If path walks were just combined, we would have 6 files.
         assert len(c.code_files) == 4

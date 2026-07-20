@@ -1,5 +1,6 @@
 """For aggregating decomp markers read from an entire directory and for a single module."""
 
+from pathlib import PurePath
 from typing import Callable, Iterable, Iterator
 from reccmp.formats import TextFile
 from .marker import ProjectAliases
@@ -62,6 +63,24 @@ class DecompCodebase:
 
         self._symbols = unique
         return duplicates
+
+    def files_for_offsets(self, offsets: Iterable[int]) -> dict[int, set[PurePath]]:
+        """Return source files containing annotations at selected addresses."""
+        return {
+            offset: {symbol.filename for symbol in symbols}
+            for offset, symbols in self.symbols_for_offsets(offsets).items()
+        }
+
+    def symbols_for_offsets(
+        self, offsets: Iterable[int]
+    ) -> dict[int, list[ParserSymbol]]:
+        """Return annotations at selected addresses without mutating the codebase."""
+        wanted = set(offsets)
+        result: dict[int, list[ParserSymbol]] = {}
+        for symbol in self._symbols:
+            if symbol.offset in wanted:
+                result.setdefault(symbol.offset, []).append(symbol)
+        return result
 
     def iter_line_functions(self) -> Iterator[ParserFunction]:
         """Return lineref functions separately from nameref. Assuming the PDB matches

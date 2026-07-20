@@ -67,9 +67,11 @@ All scripts will become available to use in your terminal with the `reccmp-` pre
   * e.g. `reccmp-decomplint --target LEGO1`
 * [`reccmp`](/reccmp/tools/asmcmp.py): Compares an original binary with a recompiled binary, provided a PDB file. For example:
   * Display the diff for a single function: `reccmp-reccmp --target LEGO1 --verbose 0x100ae1a0`
+  * Generate a filtered JSON report: `reccmp-reccmp --target LEGO1 --orig-address 0x100ae1a0 --json one.json --json-diet --silent`
   * Generate an HTML report: `reccmp-reccmp --target LEGO1 --html output.html`
   * Create a base file for diffs: `reccmp-reccmp --target LEGO1 --json base.json --silent`
   * Diff against a base file: `reccmp-reccmp --target LEGO1 --diff base.json`
+  * Filtered reports load only the required PDB object modules when they can be resolved conservatively. Parsed PDB, source-marker, and prepared entity analysis is cached in `.reccmp-cache` beside the PDB; binaries and source fingerprints invalidate it automatically. Pass `--no-cache` to diagnose a cache-independent run. Comparison and proof results are never cached.
 * [`stackcmp`](/reccmp/tools/stackcmp.py): Compares the stack layout for a given function that almost matches.
   * e.g. `reccmp-stackcmp --target BETA10 0x1007165d`
 * [`roadmap`](/reccmp/tools/roadmap.py): Compares symbol locations in an original binary with the same symbol locations of a recompiled binary

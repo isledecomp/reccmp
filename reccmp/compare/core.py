@@ -7,16 +7,15 @@ from typing_extensions import Self
 from reccmp.project.detect import RecCmpTarget
 from reccmp.compare.diff import EntityCompareResult, RawDiffOutput
 from reccmp.compare.diagnosis import ComparisonAnalysis
+from reccmp.parser import DecompCodebase
 from reccmp.parser.marker import ProjectAliases, normalize_project_aliases
-from reccmp.dir import source_code_search
 from reccmp.compare.functions import FunctionComparator
 from reccmp.formats import (
     Image,
     PEImage,
     TextFile,
-    detect_image,
 )
-from reccmp.cvdump import Cvdump, CvdumpTypesParser, CvdumpAnalysis
+from reccmp.cvdump import CvdumpTypesParser, CvdumpAnalysis
 from reccmp.types import EntityType, ImageId
 from reccmp.compare.event import (
     ReccmpReportProtocol,
@@ -36,6 +35,7 @@ from .match_msvc import (
 from .db import EntityDb, ReccmpEntity, ReccmpMatch
 from .lines import LinesDb
 from .report import ReccmpComparedEntity, ReccmpStatusReport
+from .target_analysis import PreparedAnalysis, load_target_analysis
 from .thunk_resolve import effective_orig_vtable_size, resolve_vtable_slot
 from .analyze import (
     create_imports,
@@ -88,6 +88,7 @@ class Compare:
     function_comparator: FunctionComparator
     data_sources: list[TextFile]
     project_aliases: ProjectAliases
+    codebase: DecompCodebase | None
 
     # pylint: disable=too-many-arguments
     # pylint: disable=too-many-positional-arguments
@@ -101,6 +102,7 @@ class Compare:
         code_files: list[TextFile] | None = None,
         data_sources: list[TextFile] | None = None,
         project_aliases: ProjectAliases | None = None,
+        codebase: DecompCodebase | None = None,
     ):
         self.orig_bin = orig_bin
         self.recomp_bin = recomp_bin
@@ -109,6 +111,7 @@ class Compare:
         self.src_encoding = encoding or "utf-8"
         self.bin_encoding = encoding or "latin1"
         self.project_aliases = normalize_project_aliases(project_aliases or {})
+        self.codebase = codebase
 
         if isinstance(code_files, list):
             self.code_files = code_files
@@ -137,6 +140,35 @@ class Compare:
             self.types,
         )
 
+    def _configure_function_nodes(self) -> None:
+        if isinstance(self.recomp_bin, PEImage):
+            for node in self.cvdump_analysis.nodes:
+                if self.recomp_bin.is_valid_section(node.section):
+                    node.addr = self.recomp_bin.get_abs_addr(node.section, node.offset)
+        self.function_comparator.func_nodes = {
+            node.addr: node
+            for node in self.cvdump_analysis.nodes
+            if node.addr is not None
+            and (node.symbol_entry is not None or node.decorated_name is not None)
+        }
+
+    def _prepared_analysis(self) -> PreparedAnalysis:
+        return PreparedAnalysis(self._db, self._lines_db, self.types)
+
+    def _restore_prepared_analysis(self, analysis: PreparedAnalysis) -> None:
+        self._db = analysis.db
+        self._lines_db = analysis.lines_db
+        self.types = analysis.types
+        self.function_comparator = FunctionComparator(
+            self._db,
+            self._lines_db,
+            self.orig_bin,
+            self.recomp_bin,
+            self.report,
+            self.types,
+        )
+        self._configure_function_nodes()
+
     def run(self):
         if not isinstance(self.orig_bin, PEImage) or not isinstance(
             self.recomp_bin, PEImage
@@ -153,12 +185,7 @@ class Compare:
         # Function nodes (with their PDB type keys and decorated names) by
         # recomp address: lets the function comparator derive return kinds
         # and callee calling conventions for the effective-match verifier.
-        self.function_comparator.func_nodes = {
-            node.addr: node
-            for node in self.cvdump_analysis.nodes
-            if node.addr is not None
-            and (node.symbol_entry is not None or node.decorated_name is not None)
-        }
+        self._configure_function_nodes()
 
         match_entry(self._db, self.orig_bin, self.recomp_bin)
 
@@ -171,6 +198,7 @@ class Compare:
             self.bin_encoding,
             self.project_aliases,
             self.report,
+            self.codebase,
         )
 
         load_data_sources(self._db, self.data_sources)
@@ -228,51 +256,37 @@ class Compare:
         match_strings(self._db, self.report)
 
     @classmethod
-    def from_target(cls, target: RecCmpTarget) -> Self:
-        origfile = detect_image(filepath=target.original_path)
-        recompfile = detect_image(filepath=target.recompiled_path)
-
-        logger.info("Parsing %s ...", target.recompiled_pdb)
-        cvdump = (
-            Cvdump(str(target.recompiled_pdb))
-            .lines()
-            .globals()
-            .publics()
-            .symbols()
-            .section_contributions()
-            .types()
-            .run()
+    def from_target(
+        cls,
+        target: RecCmpTarget,
+        *,
+        orig_addrs: Iterable[int] = (),
+        recomp_addrs: Iterable[int] = (),
+        use_cache: bool = True,
+    ) -> Self:
+        loaded = load_target_analysis(
+            target,
+            orig_addrs=orig_addrs,
+            recomp_addrs=recomp_addrs,
+            use_cache=use_cache,
         )
-        pdb_file = CvdumpAnalysis(cvdump)
-
-        code_paths = source_code_search(target.source_paths)
-        code_files = list(
-            TextFile.from_files(
-                code_paths, allow_error=True, encoding=target.encoding or "utf-8"
-            )
-        )
-
-        data_sources = list(
-            TextFile.from_files(
-                target.data_sources,
-                allow_error=True,
-                encoding=target.encoding or "utf-8",
-            )
-        )
-
-        project_aliases = {target.target_id: target.marker_aliases}
-
         compare = cls(
-            origfile,
-            recompfile,
-            pdb_file,
+            loaded.orig_bin,
+            loaded.recomp_bin,
+            loaded.pdb_file,
             target_id=target.target_id,
             encoding=target.encoding,
-            data_sources=data_sources,
-            code_files=code_files,
-            project_aliases=project_aliases,
+            data_sources=loaded.data_sources,
+            code_files=loaded.code_files,
+            project_aliases=loaded.project_aliases,
+            codebase=loaded.codebase,
         )
-        compare.run()
+        prepared = loaded.load_prepared()
+        if prepared is not None:
+            compare._restore_prepared_analysis(prepared)
+        else:
+            compare.run()
+            loaded.store_prepared(compare._prepared_analysis())
         return compare
 
     def _compare_vtable(

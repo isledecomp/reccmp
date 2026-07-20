@@ -3,6 +3,7 @@
 from reccmp.cvdump.parser import (
     CvdumpParser,
     GdataEntry,
+    ProcRefEntry,
 )
 from reccmp.cvdump.cvinfo import CVInfoTypeEnum
 
@@ -21,6 +22,7 @@ def test_globals():
     parser = CvdumpParser()
     parser.read_section("GLOBALS", GLOBALS_SAMPLE)
     assert len(parser.globals) == 2
+    assert parser.proc_refs == [ProcRefEntry(module=5, name="WinMain")]
 
     assert parser.globals[0] == GdataEntry(
         section=0x0003,

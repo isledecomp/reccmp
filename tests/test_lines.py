@@ -1,6 +1,7 @@
 """Testing lines database: mapping between (filename, line_number) to virtual address."""
 
 from pathlib import PurePosixPath, PureWindowsPath
+import pickle
 import pytest
 from reccmp.compare.lines import LinesDb
 
@@ -195,3 +196,14 @@ def test_db_search_line(local_path: PureWindowsPath | PurePosixPath):
 
     lines.mark_function_starts((0x1234,))
     assert [*lines.search_line(local_path, 2, 5, start_only=True)] == [0x1234]
+
+
+def test_pickle_round_trip_rebuilds_path_resolver():
+    lines = LinesDb()
+    lines.add_local_paths([LOCAL_PATHS[1]])
+    lines.add_line(PDB_PATH, 2, 0x1234)
+    lines.mark_function_starts((0x1234,))
+
+    restored = pickle.loads(pickle.dumps(lines))
+
+    assert restored.find_function(LOCAL_PATHS[1], 2) == 0x1234

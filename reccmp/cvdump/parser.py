@@ -34,6 +34,11 @@ _data_regex = re.compile(
     r"S_(?P<global>[GL])DATA32: \[(?P<section>\w{4}):(?P<offset>\w{8})\], Type:\s*(?P<type>\S+), (?P<name>.+)"
 )
 
+# e.g. `S_PROCREF: 0x00000000: ( 501, 00000840) CObject::Serialize`
+_proc_ref_regex = re.compile(
+    r"S_PROCREF: \w+: \(\s*(?P<module>\d+), \w+\) (?P<name>.+)"
+)
+
 # e.g. 0003 "CMakeFiles/isle.dir/ISLE/res/isle.rc.res"
 # e.g. 0004 "C:\work\lego-island\isle\3rdparty\smartheap\SHLW32MT.LIB" "check.obj"
 _module_regex = re.compile(r"(?P<id>\w{4})(?: \"(?P<lib>.+?)\")?(?: \"(?P<obj>.+?)\")")
@@ -87,6 +92,11 @@ class GdataEntry(NamedTuple):
     is_global: bool
 
 
+class ProcRefEntry(NamedTuple):
+    module: int
+    name: str
+
+
 class ModuleEntry(NamedTuple):
     id: int
     lib: str
@@ -118,6 +128,7 @@ class CvdumpParser:
         self.publics: list[PublicsEntry] = []
         self.sizerefs: list[SizeRefEntry] = []
         self.globals: list[GdataEntry] = []
+        self.proc_refs: list[ProcRefEntry] = []
         self.modules: list[ModuleEntry] = []
 
         self.types = CvdumpTypesParser()
@@ -178,6 +189,12 @@ class CvdumpParser:
                     type=CvdumpTypeKey.from_str(match.group("type")),
                     name=match.group("name"),
                     is_global=match.group("global") == "G",
+                )
+            )
+        elif (match := _proc_ref_regex.match(line)) is not None:
+            self.proc_refs.append(
+                ProcRefEntry(
+                    module=int(match.group("module")), name=match.group("name")
                 )
             )
 

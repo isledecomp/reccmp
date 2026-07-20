@@ -31,6 +31,15 @@ class LinesDb:
         # Addresses for the first line for a function
         self._function_starts: set[int] = set()
 
+    def __getstate__(self) -> dict[str, object]:
+        state = self.__dict__.copy()
+        state.pop("_path_resolver", None)
+        return state
+
+    def __setstate__(self, state: dict[str, object]) -> None:
+        self.__dict__.update(state)
+        self._path_resolver = cache(convert_foreign_path)
+
     def add_local_paths(self, paths: Iterable[Path] | Iterable[PurePath]):
         for path in paths:
             self._filenames.setdefault(path.name.lower(), []).append(path)
