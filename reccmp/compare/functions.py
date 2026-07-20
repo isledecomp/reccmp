@@ -194,7 +194,10 @@ class FunctionComparator:
             # Check whether we can resolve register swaps which are actually
             # perfect matches modulo compiler entropy.
             is_effective = find_effective_match(
-                diff.get_opcodes(), orig_asm, recomp_asm
+                diff.get_opcodes(),
+                orig_asm,
+                recomp_asm,
+                orig_addrs=[x[0] for x in orig],
             )
         else:
             is_effective = False

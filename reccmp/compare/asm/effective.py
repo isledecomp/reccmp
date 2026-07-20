@@ -166,6 +166,9 @@ class SideState:
         self.regs[family] = ("ins_" + part, old, value)
 
 
+_WIDTHS = {"byte": 1, "word": 2, "dword": 4, "qword": 8, "tbyte": 10}
+
+
 @dataclass
 class Context:
     gen: int = 0  # memory generation, shared by both sides
@@ -175,6 +178,9 @@ class Context:
     # list pins the measured tuples so their ids cannot be recycled.
     size_cache: dict[int, int] = field(default_factory=dict)
     keepalive: list = field(default_factory=list)
+    # When not None, every memory access performed by execute() is recorded
+    # here as ("r"|"w", address value, width, is_stack_slot).
+    trace: list | None = None
 
 
 # Symbolic values are DAGs (a register value can feed several later values),
@@ -318,7 +324,10 @@ def read_operand(state: SideState, ctx: Context, op) -> Value:
     if kind == "st":
         return state.x87.read(op[1])
     if kind == "mem":
-        return ("load", mem_address(state, op), op[1], ctx.gen)
+        address = mem_address(state, op)
+        if ctx.trace is not None:
+            ctx.trace.append(("r", address, _WIDTHS.get(op[1]), False))
+        return ("load", address, op[1], ctx.gen)
     raise Reject
 
 
@@ -327,7 +336,10 @@ def write_operand(state: SideState, ctx: Context, op, value: Value, obs: list) -
     if kind == "reg":
         state.write_reg(op[1], value)
     elif kind == "mem":
-        obs.append(("store", mem_address(state, op), op[1], value))
+        address = mem_address(state, op)
+        if ctx.trace is not None:
+            ctx.trace.append(("w", address, _WIDTHS.get(op[1]), False))
+        obs.append(("store", address, op[1], value))
         ctx.bump_requested = True
     elif kind == "st":
         state.x87.write(op[1], value)
@@ -486,14 +498,20 @@ def execute(
         value = read_operand(state, ctx, ops[0])
         new_esp = esp_add(state.read_reg("esp"), -4)
         state.write_reg("esp", new_esp)
+        if ctx.trace is not None:
+            ctx.trace.append(("w", new_esp, 4, "push"))
         obs.append(("store", new_esp, "stack", value))
         ctx.bump_requested = True
     elif mnemonic == "pop" and len(ops) == 1:
         esp = state.read_reg("esp")
+        if ctx.trace is not None:
+            ctx.trace.append(("r", esp, 4, "pop"))
         write_operand(state, ctx, ops[0], ("load", esp, "stack", ctx.gen), obs)
         state.write_reg("esp", esp_add(esp, 4))
     elif mnemonic == "leave":
         ebp = state.read_reg("ebp")
+        if ctx.trace is not None:
+            ctx.trace.append(("r", ebp, 4, "pop"))
         state.write_reg("ebp", ("load", ebp, "stack", ctx.gen))
         state.write_reg("esp", esp_add(ebp, 4))
     elif mnemonic == "call" and len(ops) == 1:
@@ -867,7 +885,10 @@ def verify_effective_match(orig_asm: list[str], recomp_asm: list[str]) -> bool:
 @dataclass(frozen=True)
 class LineEffects:
     """Conservative summary of one instruction's reads and writes, used to
-    decide whether two instructions may be reordered."""
+    decide whether two instructions may be reordered. Memory accesses are
+    (address value, width, is_stack_slot) with addresses resolved by
+    symbolic execution (see sequence_effects), so e.g. `[esi]` after
+    `lea esi, [ebx + 0x1c6]` is comparable with `[ebx + 0xb0]`."""
 
     # pylint: disable=too-many-instance-attributes
 
@@ -883,29 +904,18 @@ class LineEffects:
 
 BARRIER = LineEffects(barrier=True)
 
-# Memory access descriptor: (reg families with scale, displacement, symbols,
-# width in bytes or None). STACK_ACCESS marks a push/pop slot: somewhere on
-# the stack, so it aliases everything except named globals.
-STACK_ACCESS = ("stack",)
-
-_WIDTHS = {"byte": 1, "word": 2, "dword": 4, "qword": 8, "tbyte": 10}
-
 _RMW_BINOPS = frozenset(
     {"add", "sub", "and", "or", "xor", "shl", "shr", "sar", "rol", "ror", "adc", "sbb"}
 )
 _X87_MEM_WRITERS = frozenset({"fst", "fstp", "fist", "fistp", "fnstcw", "fbstp"})
 
 
-def _mem_descriptor(op) -> tuple:
-    _, size, _, reg_terms, disp, syms = op
-    families = tuple(sorted((REGISTERS[reg][0], scale) for reg, scale in reg_terms))
-    return (families, disp, syms, _WIDTHS.get(size))
-
-
 @cache
-def line_effects(line: str) -> LineEffects:
-    """Effect summary for one sanitized instruction. Anything not modeled
-    (calls, jumps, string ops, unparseable text) is a scheduling barrier."""
+def _line_base_effects(line: str) -> LineEffects:
+    """Textual effect summary for one sanitized instruction: register
+    families, flags, x87 use and barriers. Memory accesses are filled in
+    by sequence_effects. Anything not modeled (calls, jumps, string ops,
+    unparseable text) is a scheduling barrier."""
     # pylint: disable=too-many-branches,too-many-statements,too-many-return-statements
     if DATA_LINE_RE.match(line):
         return BARRIER
@@ -921,8 +931,6 @@ def line_effects(line: str) -> LineEffects:
 
     regs_read: set = set()
     regs_written: set = set()
-    mem_reads: list = []
-    mem_writes: list = []
     x87 = mnemonic.startswith("f")
     reads_flags = False
     writes_flags = False
@@ -934,7 +942,6 @@ def line_effects(line: str) -> LineEffects:
         elif kind == "mem":
             for reg, _ in op[3]:
                 regs_read.add(REGISTERS[reg][0])
-            (mem_writes if write else mem_reads).append(_mem_descriptor(op))
         elif kind not in ("imm", "sym", "st"):
             raise Reject
 
@@ -991,12 +998,10 @@ def line_effects(line: str) -> LineEffects:
             use(ops[0])
             regs_read.add("sp")
             regs_written.add("sp")
-            mem_writes.append(STACK_ACCESS)
         elif mnemonic == "pop" and len(ops) == 1:
             use(ops[0], write=True)
             regs_read.add("sp")
             regs_written.add("sp")
-            mem_reads.append(STACK_ACCESS)
         elif mnemonic.startswith("set") and mnemonic[3:] in CC_CANON and len(ops) == 1:
             use(ops[0], write=True)
             reads_flags = True
@@ -1023,47 +1028,202 @@ def line_effects(line: str) -> LineEffects:
         regs_written=frozenset(regs_written),
         reads_flags=reads_flags,
         writes_flags=writes_flags,
-        mem_reads=tuple(mem_reads),
-        mem_writes=tuple(mem_writes),
         x87=x87,
         barrier=False,
     )
 
 
-def _is_pure_global(desc: tuple) -> bool:
-    return desc is not STACK_ACCESS and not desc[0] and bool(desc[2])
+def _havoc(state: SideState, idx: int) -> None:
+    """Discard everything we know about the state after an instruction
+    outside the model."""
+    for family in FAMILIES:
+        state.regs[family] = ("havoc", idx, family)
+    state.flags = ("havoc_flags", idx)
+    state.fpu_flags = ("havoc_fpuflags", idx)
+    state.x87 = X87Stack(epoch=-idx - 1)
+
+
+def sequence_effects(asm: list[str]) -> list[LineEffects] | None:
+    """Symbolically execute one instruction sequence and return a per-line
+    effect summary with memory addresses resolved to symbolic values.
+    Returns None if the sequence cannot be analyzed at all."""
+    state = SideState()
+    ctx = Context()
+    result = []
+    try:
+        for idx, line in enumerate(asm):
+            base = _line_base_effects(line)
+            ctx.trace = []
+            failed = False
+            try:
+                ins = parse_instruction(line)
+                execute(state, ctx, idx, ins, [])
+                guard_state_size(state, ctx)
+            except (Reject, IndexError, KeyError, ValueError, TypeError):
+                _havoc(state, idx)
+                failed = True
+            if base.barrier or failed:
+                # Keep the flag information of modeled barriers (a jcc reads
+                # the flags, a call clobbers them).
+                result.append(BARRIER if failed and not base.barrier else base)
+                continue
+            trace = ctx.trace
+            result.append(
+                LineEffects(
+                    regs_read=base.regs_read,
+                    regs_written=base.regs_written,
+                    reads_flags=base.reads_flags,
+                    writes_flags=base.writes_flags,
+                    mem_reads=tuple(
+                        (addr, width, stack)
+                        for op, addr, width, stack in trace
+                        if op == "r"
+                    ),
+                    mem_writes=tuple(
+                        (addr, width, stack)
+                        for op, addr, width, stack in trace
+                        if op == "w"
+                    ),
+                    x87=base.x87,
+                    barrier=False,
+                )
+            )
+    except (Reject, RecursionError):
+        return None
+    return result
+
+
+def _flatten_mem(addr: Value) -> Value:
+    """Fold scale-1 base registers that hold a computed address (from lea)
+    into the memory expression itself, so `[esi]` with esi = &[ebx + 0x1c6]
+    compares as `[ebx + 0x1c6]`."""
+    _, seg, terms, disp, syms = addr
+    for _ in range(8):
+        folded = None
+        for term in terms:
+            value, scale = term
+            if (
+                scale == 1
+                and isinstance(value, tuple)
+                and len(value) == 2
+                and value[0] == "addr"
+                and value[1][1] in ("", seg)
+            ):
+                folded = term
+                break
+        if folded is None:
+            break
+        inner = folded[0][1]
+        terms = tuple(t for t in terms if t is not folded) + inner[2]
+        disp += inner[3]
+        syms = tuple(sorted(set(syms) | set(inner[4])))
+        seg = seg or inner[1]
+    return ("mem", seg, tuple(sorted(terms, key=repr)), disp, syms)
+
+
+def _stack_rooted(value: Value) -> bool:
+    """Is the value derived from the stack pointer or frame pointer?"""
+    if not isinstance(value, tuple) or not value:
+        return False
+    if value in (("init", "sp"), ("init", "bp")):
+        return True
+    if value[0] == "spadd":
+        return _stack_rooted(value[1])
+    if value[0] == "addr":
+        return any(_stack_rooted(v) for v, _ in value[1][2])
+    if value[0] == "ins_r16":
+        return _stack_rooted(value[1]) or _stack_rooted(value[2])
+    return False
+
+
+def _is_pure_global(mem: Value) -> bool:
+    return not mem[2] and bool(mem[4])
+
+
+def _unwind_spadd(value: Value, offset: int = 0) -> tuple[Value, int]:
+    while isinstance(value, tuple) and value and value[0] == "spadd":
+        offset += value[2]
+        value = value[1]
+    return (value, offset)
+
+
+def _abs_stack_offset(addr: Value, is_slot) -> tuple[Value, int] | None:
+    """Resolve an access to (root value, byte offset) when its address is a
+    plain chain of constant adjustments over one root — a push/pop slot, or
+    a single-register memory operand like [ebp - 8] or [esp + 4]."""
+    if is_slot:
+        return _unwind_spadd(addr)
+    mem = _flatten_mem(addr)
+    if len(mem[2]) == 1 and not mem[4]:
+        value, scale = mem[2][0]
+        if scale == 1:
+            root, offset = _unwind_spadd(value)
+            return (root, offset + mem[3])
+    return None
+
+
+def _ranges_disjoint(a_disp: int, a_width, b_disp: int, b_width) -> bool:
+    if a_width is None or b_width is None:
+        return False
+    return a_disp + a_width <= b_disp or b_disp + b_width <= a_disp
 
 
 def _mem_disjoint(a: tuple, b: tuple) -> bool:
-    """Can the two memory accesses be proven non-overlapping?"""
+    """Can the two memory accesses be proven non-overlapping?
+    Accesses are (address value, width, stack_kind) where stack_kind is
+    False for ordinary operands, "push" for a fresh slot below the stack
+    pointer, "pop" for a read of the top of the stack."""
     # pylint: disable=too-many-return-statements
-    if STACK_ACCESS in (a, b):
-        other = b if a == STACK_ACCESS else a
-        # The stack never overlaps a named global.
-        return other != STACK_ACCESS and _is_pure_global(other)
+    a_addr, a_width, a_stack = a
+    b_addr, b_width, b_stack = b
 
-    a_regs, a_disp, a_syms, a_width = a
-    b_regs, b_disp, b_syms, b_width = b
-
-    # Identical register terms and symbols: the register-conflict check in
-    # effects_conflict guarantees that no crossed instruction writes a
-    # register the moved access reads, so both accesses compute their base
-    # from the same register values and differ only by displacement.
-    # (This covers ebp frame slots and e.g. member stores through esi.)
-    if a_regs == b_regs and a_syms == b_syms:
-        if a_width is None or b_width is None:
+    if a_stack or b_stack:
+        a_res = _abs_stack_offset(a_addr, a_stack)
+        b_res = _abs_stack_offset(b_addr, b_stack)
+        if (
+            a_res is not None
+            and b_res is not None
+            and a_res[0] == b_res[0]
+            and _ranges_disjoint(a_res[1], a_width, b_res[1], b_width)
+        ):
+            return True
+        if a_stack and b_stack:
             return False
-        return a_disp + a_width <= b_disp or b_disp + b_width <= a_disp
+        stack_kind = a_stack or b_stack
+        other = _flatten_mem(b_addr if a_stack else a_addr)
+        if _is_pure_global(other):
+            # A stack slot never overlaps a named global.
+            return True
+        if stack_kind == "push":
+            # A push writes to fresh space below the stack pointer, where no
+            # other live memory (heap, globals, caller stack, locals) can
+            # be. Only another stack-pointer-derived access could reach it.
+            return not any(_stack_rooted(v) for v, _ in other[2])
+        return False
 
-    frame_a = a_regs == (("bp", 1),) and not a_syms
-    frame_b = b_regs == (("bp", 1),) and not b_syms
+    a_mem = _flatten_mem(a_addr)
+    b_mem = _flatten_mem(b_addr)
 
-    # An ebp frame slot cannot overlap a named global.
-    if (frame_a and _is_pure_global(b)) or (frame_b and _is_pure_global(a)):
+    if a_mem[1] != b_mem[1]:
+        # Different segment prefixes: assume they can alias.
+        return False
+
+    # Same base values (symbolically identical registers/symbols): the two
+    # accesses differ only by constant displacement.
+    if a_mem[2] == b_mem[2] and a_mem[4] == b_mem[4]:
+        return _ranges_disjoint(a_mem[3], a_width, b_mem[3], b_width)
+
+    global_a = _is_pure_global(a_mem)
+    global_b = _is_pure_global(b_mem)
+
+    if global_a and global_b and a_mem[4] != b_mem[4]:
+        # Two different named globals do not overlap.
         return True
 
-    if _is_pure_global(a) and _is_pure_global(b) and a_syms != b_syms:
-        # Two different named globals do not overlap.
+    # Stack/frame memory never overlaps a named global.
+    stack_a = any(_stack_rooted(v) for v, _ in a_mem[2])
+    stack_b = any(_stack_rooted(v) for v, _ in b_mem[2])
+    if (global_a and stack_b) or (global_b and stack_a):
         return True
 
     return False
@@ -1096,11 +1256,10 @@ def effects_conflict(moved: LineEffects, other: LineEffects) -> bool:
     return False
 
 
-def flags_dead_at(asm: list[str], start: int) -> bool:
+def flags_dead_at(effects_list: list[LineEffects], start: int) -> bool:
     """Are the CPU flags provably dead (rewritten before being read) from
     line `start` onward?"""
-    for line in asm[start:]:
-        effects = line_effects(line)
+    for effects in effects_list[start:]:
         if effects.reads_flags:
             return False
         if effects.writes_flags:

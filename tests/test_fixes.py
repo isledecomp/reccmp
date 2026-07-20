@@ -1,10 +1,5 @@
 import difflib
-from reccmp.compare.asm.fixes import (
-    find_effective_match,
-    patch_compare_jmp,
-    patch_fld_fmul,
-    patch_mov_compare_jmp,
-)
+from reccmp.compare.asm.fixes import find_effective_match
 
 
 def test_fix_cmp_jmp():
@@ -465,37 +460,15 @@ def test_and_swap_not_allowed():
     assert is_effective is False
 
 
-def test_patch_compare_jmp_cmp_recomp_shorter_than_orig():
-    """Regression: cmp_index found in orig must be bounds-checked against recomp
-    before indexing recomp[cmp_index]. Previously raised IndexError."""
+def test_recomp_shorter_than_orig():
+    """Sequences of different length never crash and are not effective."""
     orig = ["mov eax, 1", "mov ebx, 2", "cmp eax, ebx", "jg 0x1"]
     recomp = ["mov eax, 1", "mov ebx, 2"]
-    assert patch_compare_jmp(orig, recomp, "cmp") == set()
+    diff = difflib.SequenceMatcher(None, orig, recomp)
+    assert find_effective_match(diff.get_opcodes(), orig, recomp) is False
 
 
-def test_patch_compare_jmp_test_recomp_shorter_than_orig():
-    orig = ["mov eax, 1", "mov ebx, 2", "test eax, ebx", "jg 0x1"]
-    recomp = ["mov eax, 1", "mov ebx, 2"]
-    assert patch_compare_jmp(orig, recomp, "test") == set()
-
-
-def test_patch_mov_compare_jmp_recomp_shorter_than_orig():
-    orig = [
-        "mov eax, dword ptr [ebp - 4]",
-        "cmp dword ptr [ebp - 8], eax",
-        "jl 0x1",
-    ]
-    recomp = ["mov eax, dword ptr [ebp - 4]"]
-    assert patch_mov_compare_jmp(orig, recomp, "cmp") == set()
-
-
-def test_patch_fld_fmul_recomp_shorter_than_orig():
-    orig = ["fld dword ptr [ebp - 4]", "fmul dword ptr [ebp - 8]"]
-    recomp = ["fld dword ptr [ebp - 4]"]
-    assert patch_fld_fmul(orig, recomp) == set()
-
-
-# The following tests cover is_commutative_x87_chain_swap: MSVC
+# The following tests cover the commutative x87 operand-chain swap: MSVC
 # nondeterministically swaps the operand chains of commutative x87
 # computations (e.g. tableA[i] + tableB[j]) between recompiles.
 # The asm below is the real shape of Imperialism 0x4e0590 after sanitization.
@@ -713,3 +686,129 @@ def test_relocate_rejects_x87_reorder():
         "pop edi",
     ]
     assert _diff_and_match(orig_asm, recomp_asm) is False
+
+
+def test_relocate_across_forward_jcc_with_addresses():
+    """A store may cross a forward conditional jump whose target lies
+    within the crossed region (both placements execute it on both paths),
+    plus a push (which writes below the stack pointer) and an aliasing-free
+    inc. Requires instruction addresses. (Imperialism 0x4dd1b0)"""
+    orig_asm = [
+        "lea esi, [ebx + 0x1c6]",
+        "mov ax, word ptr [esi + 0x8a]",
+        "cmp ax, 0xffff",
+        "mov word ptr [esi], ax",
+        "jne 0x7",
+        "inc word ptr [ebx + 0xb0]",
+        "push edi",
+        "mov ecx, ebx",
+        "call dword ptr [esp + 0x14]",
+    ]
+    recomp_asm = [
+        "lea esi, [ebx + 0x1c6]",
+        "mov ax, word ptr [esi + 0x8a]",
+        "cmp ax, 0xffff",
+        "jne 0x7",
+        "inc word ptr [ebx + 0xb0]",
+        "push edi",
+        "mov ecx, ebx",
+        "mov word ptr [esi], ax",
+        "call dword ptr [esp + 0x14]",
+    ]
+    orig_addrs = [0, 6, 13, 17, 20, 22, 29, 30, 32]
+
+    diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
+    codes = diff.get_opcodes()
+
+    # Without addresses the jump displacement cannot be resolved: the jcc
+    # stays a barrier and the match is conservatively rejected.
+    assert find_effective_match(codes, orig_asm, recomp_asm) is False
+    assert (
+        find_effective_match(codes, orig_asm, recomp_asm, orig_addrs=orig_addrs) is True
+    )
+
+
+def test_relocate_rejects_backward_jcc():
+    """A backward jump is a loop edge: never cross it."""
+    orig_asm = [
+        "mov dword ptr [esi], 1",
+        "jne -0x10",
+        "mov dword ptr [edi], 2",
+        "push eax",
+    ]
+    recomp_asm = [
+        "jne -0x10",
+        "mov dword ptr [edi], 2",
+        "mov dword ptr [esi], 1",
+        "push eax",
+    ]
+    orig_addrs = [0, 6, 8, 14]
+    diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
+    assert (
+        find_effective_match(
+            diff.get_opcodes(), orig_asm, recomp_asm, orig_addrs=orig_addrs
+        )
+        is False
+    )
+
+
+def test_relocate_rejects_jcc_target_beyond_move():
+    """A forward jump whose target lies beyond the moved instruction's new
+    position would skip the instruction on the taken path."""
+    orig_asm = [
+        "mov dword ptr [esi], 1",
+        "jne 0x14",
+        "mov dword ptr [edi], 2",
+        "push eax",
+    ]
+    recomp_asm = [
+        "jne 0x14",
+        "mov dword ptr [edi], 2",
+        "mov dword ptr [esi], 1",
+        "push eax",
+    ]
+    orig_addrs = [0, 6, 8, 14]
+    diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
+    assert (
+        find_effective_match(
+            diff.get_opcodes(), orig_asm, recomp_asm, orig_addrs=orig_addrs
+        )
+        is False
+    )
+
+
+def test_relocate_store_across_push():
+    """A push writes below the stack pointer: an object-member store can
+    cross it."""
+    orig_asm = [
+        "mov dword ptr [esi + 8], eax",
+        "push ecx",
+        "push edx",
+        "call <OFFSET1>",
+    ]
+    recomp_asm = [
+        "push ecx",
+        "push edx",
+        "mov dword ptr [esi + 8], eax",
+        "call <OFFSET1>",
+    ]
+    diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
+    assert find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm) is True
+
+
+def test_relocate_rejects_esp_read_across_push():
+    """An esp-relative read may not cross a push that writes the same slot."""
+    orig_asm = [
+        "mov eax, dword ptr [esp - 4]",
+        "push ecx",
+        "push eax",
+        "call <OFFSET1>",
+    ]
+    recomp_asm = [
+        "push ecx",
+        "mov eax, dword ptr [esp - 4]",
+        "push eax",
+        "call <OFFSET1>",
+    ]
+    diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
+    assert find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm) is False
