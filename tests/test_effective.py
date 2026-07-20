@@ -1,7 +1,12 @@
 """Tests for the relational effective-match verifier
 (reccmp.compare.asm.effective.verify_effective_match)."""
 
-from reccmp.compare.asm.effective import verify_effective_match
+from reccmp.compare.asm.effective import (
+    CallAbi,
+    FunctionMetadata,
+    verify_effective_match,
+)
+from reccmp.compare.asm.instgen import InstructionMeta
 
 # --- Register renaming (positive) ------------------------------------------
 
@@ -638,9 +643,27 @@ def test_reject_carry_flag_survives_inc():
     assert verify_effective_match(orig, recomp) is False
 
 
-# --- PDB metadata: return kinds and callee conventions ---------------------
+def test_unsupported_instruction_does_not_erase_divergent_carry():
+    """The conservative resync fallback must include CF in its precondition.
+    inc makes the other flags equal but preserves the differing compare carry."""
+    orig = [
+        "cmp eax, ebx",
+        "inc ecx",
+        "bswap esi",
+        "adc edx, 0",
+        "mov dword ptr [edi], edx",
+    ]
+    recomp = [
+        "cmp ebx, eax",
+        "inc ecx",
+        "bswap esi",
+        "adc edx, 0",
+        "mov dword ptr [edi], edx",
+    ]
+    assert verify_effective_match(orig, recomp) is False
 
-from reccmp.compare.asm.effective import CallAbi, FunctionMetadata
+
+# --- PDB metadata: return kinds and callee conventions ---------------------
 
 
 def test_void_return_accepted_with_metadata():
@@ -743,7 +766,6 @@ def test_meta_step_over_unmodeled_instruction():
     """With capstone metadata, an unmodeled register-only instruction
     (bswap) can be stepped over even while a rename is in flight — its
     reads must agree, its writes become fresh paired values."""
-    from reccmp.compare.asm.instgen import InstructionMeta
 
     def meta(mnemonic, reads, writes, address):
         return InstructionMeta(

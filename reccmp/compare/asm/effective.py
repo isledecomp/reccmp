@@ -227,7 +227,7 @@ class FunctionMetadata:
 @dataclass
 class Context:
     # pylint: disable=too-many-instance-attributes
-    gen: int = 0  # memory generation, shared by both sides
+    gen: int | Value = 0  # memory generation, shared by both sides
     bump_requested: bool = False
     # Every symbolic node (including subexpressions) of every expression
     # that was proven equal across the two sides. Divergent register values
@@ -264,6 +264,13 @@ class Context:
             self.keepalive.append(node)
             self.matched_nodes.add(node)
             stack.extend(node)
+
+
+def _bump_linear_memory(ctx: Context) -> None:
+    """Advance the integer generation used by the lockstep verifier."""
+    if not isinstance(ctx.gen, int):
+        raise Reject
+    ctx.gen += 1
 
 
 # Symbolic values are DAGs (a register value can feed several later values),
@@ -846,6 +853,7 @@ def fully_synced(orig: SideState, recomp: SideState) -> bool:
     return (
         orig.regs == recomp.regs
         and orig.flags == recomp.flags
+        and orig.carry == recomp.carry
         and orig.fpu_flags == recomp.fpu_flags
         and orig.x87.state_key() == recomp.x87.state_key()
         # An unsupported-but-identical instruction accesses the same textual
@@ -1297,12 +1305,12 @@ def verify_effective_match(
                     else None
                 )
                 if meta is not None and _meta_step(orig, recomp, meta, ctx, idx):
-                    ctx.gen += 1
+                    _bump_linear_memory(ctx)
                     continue
                 if not fully_synced(orig, recomp):
                     return False
                 resync((orig, recomp), idx, ctx)
-                ctx.gen += 1
+                _bump_linear_memory(ctx)
                 continue
 
             guard_state_size(orig, ctx)
@@ -1310,7 +1318,7 @@ def verify_effective_match(
 
             if _callee_save_swap(ctx, ins_o, ins_r, obs_o, obs_r, orig, recomp):
                 if ctx.bump_requested:
-                    ctx.gen += 1
+                    _bump_linear_memory(ctx)
                 continue
 
             if obs_o != obs_r:
@@ -1347,7 +1355,7 @@ def verify_effective_match(
                     return False
 
             if ctx.bump_requested:
-                ctx.gen += 1
+                _bump_linear_memory(ctx)
 
         # Values still diverged at the end must be dead. Callee-saved
         # registers and the stack pointer are externally observable machine
@@ -1433,7 +1441,7 @@ def _line_base_effects(line: str) -> LineEffects:
     """Textual effect summary for one sanitized instruction: register
     families, flags, x87 use and barriers. Memory accesses are filled in
     by sequence_effects. Anything not modeled (calls, jumps, string ops,
-    unparseable text) is a scheduling barrier."""
+    unparsable text) is a scheduling barrier."""
     # pylint: disable=too-many-branches,too-many-statements,too-many-return-statements
     if DATA_LINE_RE.match(line):
         return BARRIER
@@ -1780,4 +1788,378 @@ def flags_dead_at(effects_list: list[LineEffects], start: int) -> bool:
         if effects.barrier:
             # Unknown control flow: assume the flags could be read.
             return False
+    return True
+
+
+# ---------------------------------------------------------------------------
+# CFG-aware verification
+
+
+def _clone_state(state: SideState) -> SideState:
+    clone = SideState(rename_slots=state.rename_slots)
+    clone.regs = dict(state.regs)
+    clone.flags = state.flags
+    clone.carry = state.carry
+    clone.fpu_flags = state.fpu_flags
+    clone.x87 = X87Stack(
+        known=list(state.x87.known),
+        deep_pops=state.x87.deep_pops,
+        epoch=state.x87.epoch,
+    )
+    clone.slot_map = dict(state.slot_map)
+    clone.slot_accesses = list(state.slot_accesses)
+    clone.slots_escaped = state.slots_escaped
+    return clone
+
+
+@dataclass
+class _CfgState:
+    """Paired machine state at a basic-block boundary.
+
+    Memory is one relational value rather than one value per side: every
+    store and call is already an observable that must match, so equal input
+    memories remain equal.  Carrying the value through the CFG is important;
+    a process-global generation would let visiting one path change loads on
+    another path and is neither a concrete execution nor a sound join.
+    """
+
+    orig: SideState
+    recomp: SideState
+    memory: int | Value
+
+
+def _clone_cfg_state(state: _CfgState) -> _CfgState:
+    return _CfgState(_clone_state(state.orig), _clone_state(state.recomp), state.memory)
+
+
+def _join_pairwise(
+    existing: tuple[Value, Value], incoming: tuple[Value, Value], key: tuple
+) -> tuple[Value, Value]:
+    """Three-level lattice: exact pair -> paired phi (cross-equal,
+    unknown value) -> per-side poison (nothing provable; any observable
+    use will mismatch). Monotone, so the fixpoint terminates."""
+    if existing == incoming:
+        return existing
+    phi = (("phi", *key), ("phi", *key))
+    if existing == phi and incoming[0] == incoming[1]:
+        return phi
+    if (
+        existing[0] == existing[1]
+        and incoming[0] == incoming[1]
+        and existing != (("poison", *key, "o"), ("poison", *key, "r"))
+    ):
+        return phi
+    return (("poison", *key, "o"), ("poison", *key, "r"))
+
+
+def _join_states(
+    entry: _CfgState,
+    incoming: _CfgState,
+    block: int,
+) -> _CfgState | None:
+    # pylint: disable=too-many-return-statements
+    """Merge an incoming state pair into a block's entry pair. Returns the
+    (possibly new) entry pair, or None if the states cannot be merged
+    (differing x87 shapes)."""
+    entry_o, entry_r = entry.orig, entry.recomp
+    in_o, in_r = incoming.orig, incoming.recomp
+    if len(entry_o.x87.known) != len(entry_r.x87.known):
+        return None
+    if len(in_o.x87.known) != len(in_r.x87.known):
+        return None
+    if len(entry_o.x87.known) != len(in_o.x87.known):
+        return None
+    if entry_o.x87.deep_pops != entry_r.x87.deep_pops:
+        return None
+    if in_o.x87.deep_pops != in_r.x87.deep_pops:
+        return None
+    if entry_o.x87.deep_pops != in_o.x87.deep_pops:
+        return None
+    out_o = _clone_state(entry_o)
+    out_r = _clone_state(entry_r)
+    for family in FAMILIES:
+        joined = _join_pairwise(
+            (entry_o.regs[family], entry_r.regs[family]),
+            (in_o.regs[family], in_r.regs[family]),
+            (block, family),
+        )
+        out_o.regs[family], out_r.regs[family] = joined
+    for attr in ("flags", "carry", "fpu_flags"):
+        joined = _join_pairwise(
+            (getattr(entry_o, attr), getattr(entry_r, attr)),
+            (getattr(in_o, attr), getattr(in_r, attr)),
+            (block, attr),
+        )
+        setattr(out_o, attr, joined[0])
+        setattr(out_r, attr, joined[1])
+    slots = zip(
+        entry_o.x87.known,
+        entry_r.x87.known,
+        in_o.x87.known,
+        in_r.x87.known,
+    )
+    for index, (entry_slot_o, entry_slot_r, in_slot_o, in_slot_r) in enumerate(slots):
+        joined = _join_pairwise(
+            (entry_slot_o, entry_slot_r),
+            (in_slot_o, in_slot_r),
+            (block, "st", index),
+        )
+        out_o.x87.known[index], out_r.x87.known[index] = joined
+    if entry_o.x87.epoch != entry_r.x87.epoch:
+        return None
+    if in_o.x87.epoch != in_r.x87.epoch:
+        return None
+    if entry_o.x87.epoch != in_o.x87.epoch:
+        return None
+
+    if entry.memory == incoming.memory:
+        memory = entry.memory
+    else:
+        memory = ("cfg_mem_phi", block)
+    return _CfgState(out_o, out_r, memory)
+
+
+def _states_equal(a: _CfgState, b: _CfgState) -> bool:
+    return a.memory == b.memory and all(
+        x.regs == y.regs
+        and x.flags == y.flags
+        and x.carry == y.carry
+        and x.fpu_flags == y.fpu_flags
+        and x.x87.state_key() == y.x87.state_key()
+        for x, y in ((a.orig, b.orig), (a.recomp, b.recomp))
+    )
+
+
+def _converged(orig: SideState, recomp: SideState) -> bool:
+    return (
+        orig.regs == recomp.regs
+        and orig.flags == recomp.flags
+        and orig.carry == recomp.carry
+        and orig.fpu_flags == recomp.fpu_flags
+        and orig.x87.state_key() == recomp.x87.state_key()
+    )
+
+
+def _same_meta_effects(
+    orig: InstructionMeta | None, recomp: InstructionMeta | None
+) -> bool:
+    """Whether two metadata records describe the same non-address effects.
+
+    The textual instruction is already identical when this is used.  Still,
+    consume metadata only as a pair: trusting facts collected from one binary
+    to model the other would defeat the purpose of structured input.
+    """
+    if orig is None or recomp is None:
+        return False
+    fields = (
+        "mnemonic",
+        "regs_read",
+        "regs_written",
+        "reads_flags",
+        "writes_flags",
+        "accesses_memory",
+        "is_jump",
+        "is_call",
+        "is_ret",
+    )
+    return all(getattr(orig, field) == getattr(recomp, field) for field in fields)
+
+
+def verify_cfg_effective_match(
+    orig_asm: list[str],
+    recomp_asm: list[str],
+    orig_targets: list[int | None],
+    recomp_targets: list[int | None],
+    metadata: FunctionMetadata | None = None,
+    orig_meta: list[InstructionMeta | None] | None = None,
+    recomp_meta: list[InstructionMeta | None] | None = None,
+) -> bool:
+    """CFG-aware verification: split both sequences into basic blocks
+    (which must be structurally identical under the line pairing), then
+    verify every block with state pairs flowing along the edges — forked
+    at conditional branches and joined at merge points. This proves pairs
+    that linear verification cannot (a divergence that is live across a
+    branch and consumed after the join) and rejects pairs it must
+    (a divergence created in one arm and overwritten after the join)."""
+    # pylint: disable=too-many-branches,too-many-statements,too-many-return-statements
+    # pylint: disable=too-many-locals
+    # pylint: disable=too-many-arguments,too-many-positional-arguments
+    total = len(orig_asm)
+    if (
+        len(recomp_asm) != total
+        or len(orig_targets) != total
+        or len(recomp_targets) != total
+        or total == 0
+    ):
+        return False
+    if orig_targets != recomp_targets:
+        return False
+
+    def classify(asm: list[str]) -> list[str]:
+        kinds = []
+        for line in asm:
+            mnemonic = line.partition(" ")[0]
+            if mnemonic in JCC_MNEMONICS:
+                kinds.append("jcc")
+            elif mnemonic in ("jmp", "ret"):
+                kinds.append(mnemonic)
+            elif mnemonic in ("loop", "loope", "loopne", "jcxz", "jecxz"):
+                kinds.append("jcc")
+            elif DATA_LINE_RE.match(line):
+                kinds.append("data")
+            else:
+                kinds.append("code")
+        return kinds
+
+    kinds = classify(orig_asm)
+    if kinds != classify(recomp_asm):
+        return False
+    leaders = {0}
+    for i in range(total):
+        target = orig_targets[i]
+        if target is not None:
+            if not 0 <= target < total:
+                return False
+            if kinds[target] == "data":
+                # A control-flow edge into bytes classified as a table is an
+                # inconsistent disassembly, not a block this verifier can run.
+                return False
+            leaders.add(target)
+        if kinds[i] in ("jcc", "jmp", "ret", "data") and i + 1 < total:
+            leaders.add(i + 1)
+    order = sorted(leaders)
+    starts = {start: n for n, start in enumerate(order)}
+    ends = [order[n + 1] if n + 1 < len(order) else total for n in range(len(order))]
+
+    def successors(block: int) -> list[int]:
+        last = ends[block] - 1
+        kind = kinds[last]
+        if kind in ("ret", "data"):
+            return []
+        if kind == "jmp":
+            target = orig_targets[last]
+            return [starts[target]] if target is not None else []
+        if kind == "jcc":
+            result = []
+            target = orig_targets[last]
+            if target is not None:
+                result.append(starts[target])
+            if ends[block] < total:
+                result.append(starts[ends[block]])
+            return result
+        return [starts[ends[block]]] if ends[block] < total else []
+
+    entry: dict[int, _CfgState] = {
+        0: _CfgState(
+            SideState(rename_slots=False),
+            SideState(rename_slots=False),
+            ("cfg_mem_init",),
+        )
+    }
+    pending = [0]
+    visits = 0
+
+    def run_block(block: int) -> bool:
+        flow = _clone_cfg_state(entry[block])
+        orig_state, recomp_state = flow.orig, flow.recomp
+        ctx = Context(gen=flow.memory, metadata=metadata)
+        for i in range(order[block], ends[block]):
+            line_o, line_r = orig_asm[i], recomp_asm[i]
+            if kinds[i] == "data":
+                if line_o != line_r:
+                    return False
+                continue
+            try:
+                ins_o = parse_instruction(line_o)
+                ins_r = parse_instruction(line_r)
+                obs_o: list = []
+                obs_r: list = []
+                ctx.bump_requested = False
+                execute(orig_state, ctx, i, ins_o, obs_o)
+                execute(recomp_state, ctx, i, ins_r, obs_r)
+            except (Reject, IndexError, KeyError, ValueError, TypeError):
+                if line_o != line_r:
+                    return False
+                meta_o = orig_meta[i] if orig_meta is not None else None
+                meta_r = recomp_meta[i] if recomp_meta is not None else None
+                if _same_meta_effects(meta_o, meta_r) and _meta_step(
+                    orig_state, recomp_state, meta_o, ctx, i
+                ):
+                    ctx.gen = ("cfg_mem_meta", i)
+                    continue
+                if not fully_synced(orig_state, recomp_state):
+                    return False
+                resync((orig_state, recomp_state), i, ctx)
+                ctx.gen = ("cfg_mem_resync", i)
+                continue
+
+            guard_state_size(orig_state, ctx)
+            guard_state_size(recomp_state, ctx)
+
+            # Canonicalize internal branch targets to block ids: with the
+            # structural check done, differing displacement text (from
+            # different instruction encodings) is irrelevant.
+            target = orig_targets[i]
+            if target is not None:
+                for entries in (obs_o, obs_r):
+                    for k, obs_entry in enumerate(entries):
+                        if obs_entry[0] in CONTROL_TAGS - {"jmpind"}:
+                            entries[k] = (*obs_entry[:-1], ("L", starts[target]))
+
+            if obs_o != obs_r:
+                return False
+            _invalidate_save_slots(ctx, obs_o)
+            for obs_entry in obs_o:
+                ctx.add_matched(obs_entry)
+            # We do not yet pair jump-table destinations. A computed jump
+            # therefore cannot be justified by this CFG proof. The lockstep
+            # verifier still handles identical/converged cases before this
+            # path is attempted.
+            if any(obs_entry[0] == "jmpind" for obs_entry in obs_o):
+                return False
+
+            # A direct edge outside the excerpt exposes the complete machine
+            # state to code this proof does not inspect. Be conservative for
+            # both unconditional exits and the taken edge of a conditional.
+            if kinds[i] in ("jmp", "jcc") and target is None:
+                if not _converged(orig_state, recomp_state):
+                    return False
+            if ctx.bump_requested:
+                ctx.gen = ("cfg_mem_write", i)
+
+        last_kind = kinds[ends[block] - 1]
+        if (
+            last_kind == "ret"
+            and orig_state.x87.state_key() != recomp_state.x87.state_key()
+        ):
+            return False
+        if last_kind == "code" and ends[block] == total:
+            # Falling out of the disassembled function is not a modeled exit.
+            return False
+
+        outgoing = _CfgState(orig_state, recomp_state, ctx.gen)
+        # Propagate to successors.
+        for successor in successors(block):
+            if successor not in entry:
+                entry[successor] = _clone_cfg_state(outgoing)
+                pending.append(successor)
+            else:
+                joined = _join_states(entry[successor], outgoing, successor)
+                if joined is None:
+                    return False
+                if not _states_equal(joined, entry[successor]):
+                    entry[successor] = joined
+                    pending.append(successor)
+        return True
+
+    try:
+        while pending:
+            block = pending.pop()
+            visits += 1
+            if visits > 8 * len(order) + 64:
+                return False
+            if not run_block(block):
+                return False
+    except (Reject, RecursionError):
+        return False
     return True

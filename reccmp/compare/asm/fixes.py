@@ -8,6 +8,7 @@ from reccmp.compare.asm.effective import (
     effects_conflict,
     flags_dead_at,
     sequence_effects,
+    verify_cfg_effective_match,
     verify_effective_match,
 )
 from reccmp.compare.asm.instgen import InstructionMeta
@@ -33,13 +34,16 @@ def _trim_padding(asm: list[str]) -> list[str]:
     return asm
 
 
-def find_effective_match(  # pylint: disable=too-many-positional-arguments
+def find_effective_match(  # pylint: disable=too-many-arguments
+    # pylint: disable=too-many-positional-arguments
     codes: Sequence[DiffOpcode],
     orig_asm: list[str],
     recomp_asm: list[str],
     orig_addrs: Sequence[int | None] | None = None,
     metadata: FunctionMetadata | None = None,
     orig_meta: list[InstructionMeta | None] | None = None,
+    recomp_addrs: Sequence[int | None] | None = None,
+    recomp_meta: list[InstructionMeta | None] | None = None,
 ) -> bool:
     """Check whether the two sequences of instructions are an effective match.
     Meaning: do they differ only by instruction order or register selection?
@@ -87,7 +91,49 @@ def find_effective_match(  # pylint: disable=too-many-positional-arguments
         logger.debug("effective match: instruction relocation")
         return True
 
+    # CFG-aware verification: needs branch targets for both sides.
+    orig_targets = _branch_targets(trimmed_orig, orig_addrs, orig_meta)
+    recomp_targets = _branch_targets(trimmed_recomp, recomp_addrs, recomp_meta)
+    if (
+        orig_targets is not None
+        and recomp_targets is not None
+        and verify_cfg_effective_match(
+            trimmed_orig,
+            trimmed_recomp,
+            orig_targets,
+            recomp_targets,
+            metadata=metadata,
+            orig_meta=trimmed_meta,
+            recomp_meta=(
+                recomp_meta[: len(trimmed_recomp)] if recomp_meta is not None else None
+            ),
+        )
+    ):
+        logger.debug("effective match: cfg")
+        return True
+
     return False
+
+
+def _branch_targets(
+    asm: list[str],
+    addrs: Sequence[int | None] | None,
+    metas: Sequence[InstructionMeta | None] | None,
+) -> list[int | None] | None:
+    """Line-index branch targets, resolved through the capstone metadata.
+    Targets outside the excerpt resolve to None (external)."""
+    if addrs is None or metas is None:
+        return None
+    index_of = {addr: i for i, addr in enumerate(addrs) if addr is not None}
+    result: list[int | None] = []
+    for i in range(len(asm)):
+        meta = metas[i] if i < len(metas) else None
+        target = meta.branch_target if meta is not None else None
+        # Calls are not local control flow.
+        if meta is not None and meta.is_call:
+            target = None
+        result.append(index_of.get(target) if target is not None else None)
+    return result
 
 
 def undo_relocations(

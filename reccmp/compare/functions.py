@@ -126,6 +126,7 @@ class FunctionComparator:
                 self.types.get_name_for_offset,
             ),
             is_32bit=self.is_32bit,
+            collect_meta=True,
         )
 
     def _source_ref_of_recomp_addr(self, recomp_addr: int | None) -> str | None:
@@ -191,6 +192,10 @@ class FunctionComparator:
             self.orig_sanitize.meta.get(addr) if addr is not None else None
             for addr, _ in orig_combined
         ]
+        recomp_meta = [
+            self.recomp_sanitize.meta.get(addr) if addr is not None else None
+            for addr, _ in recomp_combined
+        ]
 
         return self._compare_function_assembly(
             orig_combined,
@@ -198,6 +203,7 @@ class FunctionComparator:
             split_points,
             self._function_metadata(match),
             orig_meta,
+            recomp_meta,
         )
 
     # ------------------------------------------------------------------
@@ -321,8 +327,10 @@ class FunctionComparator:
         recomp: AsmExcerpt,
         split_points: list[tuple[int, int]],
         metadata: FunctionMetadata | None = None,
-        orig_meta: "list[InstructionMeta | None] | None" = None,
+        orig_meta: list[InstructionMeta | None] | None = None,
+        recomp_meta: list[InstructionMeta | None] | None = None,
     ) -> EntityCompareResult:
+        # pylint: disable=too-many-positional-arguments
         # Detach addresses from asm lines for the text diff.
         orig_asm = [x[1] for x in orig]
         recomp_asm = [x[1] for x in recomp]
@@ -339,6 +347,8 @@ class FunctionComparator:
                 orig_addrs=[x[0] for x in orig],
                 metadata=metadata,
                 orig_meta=orig_meta,
+                recomp_addrs=[x[0] for x in recomp],
+                recomp_meta=recomp_meta,
             )
         else:
             is_effective = False
