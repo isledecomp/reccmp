@@ -16,6 +16,7 @@ from reccmp.project.detect import (
     RecCmpProjectException,
 )
 from reccmp.compare.diff import CombinedDiffOutput, raw_diff_to_udiff
+from reccmp.compare.report import format_address
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +81,7 @@ def main():
 
             print(
                 tbl_match.name,
-                f": orig 0x{tbl_match.orig_addr:x}, recomp 0x{tbl_match.recomp_addr:x}",
+                f": orig {format_address(tbl_match.orig_addr)}, recomp {format_address(tbl_match.recomp_addr)}",
             )
             show_vtable_diff(udiff, args.verbose)
             print()
@@ -101,7 +102,7 @@ def main():
         if diff.ratio < 1.0:
             problem_count += 1
             print(
-                f"Problem with adjuster thunk {fun_match.name} (0x{fun_match.orig_addr:x} / 0x{fun_match.recomp_addr:x})"
+                f"Problem with adjuster thunk {fun_match.name} ({format_address(fun_match.orig_addr)} / {format_address(fun_match.recomp_addr)})"
             )
 
     return 1 if problem_count > 0 else 0

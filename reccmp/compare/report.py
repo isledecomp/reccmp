@@ -7,6 +7,13 @@ from reccmp.types import EntityType
 from .diff import CombinedDiffOutput, DiffReport, RawDiffOutput, raw_diff_to_udiff
 
 
+def format_address(addr: int) -> str:
+    """This is here just to document each spot where we
+    convert an int address into a string.
+    In the future, the format may be customizable. (GH #370)"""
+    return f"{addr:#x}"
+
+
 class ReccmpReportDeserializeError(Exception):
     """The given file is not a serialized reccmp report file"""
 
@@ -18,18 +25,22 @@ class ReccmpReportSameSourceError(Exception):
 @dataclass
 class ReccmpComparedEntity:
     # pylint:disable=too-many-instance-attributes
-    orig_addr: str
+    orig_addr: int
     name: str
     accuracy: float
     # Version 1 files have no type, so it is optional.
     type: EntityType | None = None
-    recomp_addr: str | None = None
+    recomp_addr: int | None = None
     is_effective_match: bool = False
     is_stub: bool = False
     rdiff: RawDiffOutput | None = None
 
     # Legacy field for importing version 1 files (aggregate).
     udiff: CombinedDiffOutput | None = None
+
+    recomp_addr_various: bool = False
+    """True if this entity had no fixed recomp address across the
+    samples combined by reccmp-aggregate."""
 
     @property
     def effective_accuracy(self) -> float:
@@ -46,7 +57,7 @@ class ReccmpStatusReport:
     timestamp: datetime
 
     # Using orig addr as the key.
-    entities: dict[str, ReccmpComparedEntity]
+    entities: dict[int, ReccmpComparedEntity]
 
     # Only set during deserialize.
     from_version: int | None
@@ -67,15 +78,12 @@ class ReccmpStatusReport:
         self.entities = {}
 
     def add_match(self, match: DiffReport):
-        orig_addr = f"0x{match.orig_addr:x}"
-        recomp_addr = f"0x{match.recomp_addr:x}"
-
-        self.entities[orig_addr] = ReccmpComparedEntity(
-            orig_addr=orig_addr,
+        self.entities[match.orig_addr] = ReccmpComparedEntity(
+            orig_addr=match.orig_addr,
             name=match.name,
             type=match.match_type,
             accuracy=match.ratio,
-            recomp_addr=recomp_addr,
+            recomp_addr=match.recomp_addr,
             is_effective_match=match.is_effective_match,
             is_stub=match.is_stub,
             rdiff=match.result.diff,
@@ -135,7 +143,7 @@ def report_progress_stats(report: ReccmpStatusReport) -> tuple[int, float]:
 
 
 def _get_entity_for_addr(
-    samples: Iterable[ReccmpStatusReport], addr: str
+    samples: Iterable[ReccmpStatusReport], addr: int
 ) -> Iterator[ReccmpComparedEntity]:
     """Helper to return entities from xreports that have the given address."""
     for sample in samples:
@@ -189,7 +197,8 @@ def combine_reports(samples: list[ReccmpStatusReport]) -> ReccmpStatusReport:
         # Keep the recomp_addr if it is the same across all samples.
         # i.e. to detect where function alignment ends
         if not all(e_list[0].recomp_addr == e.recomp_addr for e in e_list):
-            output.entities[addr].recomp_addr = "various"
+            output.entities[addr].recomp_addr = None
+            output.entities[addr].recomp_addr_various = True
 
     return output
 
@@ -249,16 +258,26 @@ class JSONReportVersion1(BaseModel):
     data: list[JSONEntityVersion1]
 
 
+MAGIC_STRING_VARIOUS = "various"
+"""reccmp-aggregate uses this to indicate an entity whose recomp addr varied between the sample reports."""
+
+
 def _serialize_version_1(
     report: ReccmpStatusReport, diff_included: bool = False
 ) -> JSONReportVersion1:
     """The JSON report can exclude the diff to make deserialization faster."""
     entities = [
         JSONEntityVersion1(
-            address=addr,  # prefer dict key over redundant value in entity
+            address=format_address(
+                addr
+            ),  # prefer dict key over redundant value in entity
             name=e.name,
             matching=e.accuracy,
-            recomp=e.recomp_addr,
+            recomp=(
+                format_address(e.recomp_addr)
+                if e.recomp_addr is not None
+                else (MAGIC_STRING_VARIOUS if e.recomp_addr_various else "")
+            ),
             stub=e.is_stub,
             effective=e.is_effective_match,
             diff=get_udiff_for_entity(e) if diff_included else None,
@@ -288,15 +307,25 @@ def _deserialize_version_1(obj: JSONReportVersion1) -> ReccmpStatusReport:
         except ValueError:
             entity_type = None
 
-        report.entities[e.address] = ReccmpComparedEntity(
-            orig_addr=e.address,
+        orig_addr = int(e.address, 16)
+
+        if e.recomp == MAGIC_STRING_VARIOUS:
+            recomp_addr = None
+            various = True
+        else:
+            recomp_addr = int(e.recomp, 16) if e.recomp is not None else None
+            various = False
+
+        report.entities[orig_addr] = ReccmpComparedEntity(
+            orig_addr=orig_addr,
             name=e.name,
             accuracy=e.matching,
             type=entity_type,
-            recomp_addr=e.recomp,
+            recomp_addr=recomp_addr,
             is_stub=e.stub,
             is_effective_match=e.effective,
             udiff=e.diff,
+            recomp_addr_various=various,
         )
 
     return report
@@ -306,7 +335,7 @@ def deserialize_reccmp_report(json_str: str) -> ReccmpStatusReport:
     try:
         obj = JSONReportVersion1.model_validate(from_json(json_str))
         return _deserialize_version_1(obj)
-    except ValidationError as ex:
+    except (ValidationError, ValueError) as ex:
         raise ReccmpReportDeserializeError from ex
 
 
