@@ -27,6 +27,7 @@ from reccmp.compare.report import (
     serialize_reccmp_report,
     report_function_alignment,
     report_function_accuracy,
+    format_address,
 )
 from reccmp.types import EntityType
 from reccmp.project.logging import (
@@ -54,9 +55,11 @@ def print_match_verbose(match: DiffReport, show_both_addrs: bool = False):
     percenttext = percent_string(match.effective_ratio, match.is_effective_match)
 
     if show_both_addrs:
-        addrs = f"0x{match.orig_addr:x} / 0x{match.recomp_addr:x}"
+        addrs = (
+            f"{format_address(match.orig_addr)} / {format_address(match.recomp_addr)}"
+        )
     else:
-        addrs = hex(match.orig_addr)
+        addrs = format_address(match.orig_addr)
 
     grouped_diff = match.match_type != EntityType.VTABLE
     udiff = raw_diff_to_udiff(match.result.diff, grouped=grouped_diff)
@@ -83,10 +86,12 @@ def print_match_verbose(match: DiffReport, show_both_addrs: bool = False):
 def print_match_oneline(match: ReccmpComparedEntity, show_both_addrs: bool = False):
     percenttext = percent_string(match.effective_accuracy, match.is_effective_match)
 
-    if show_both_addrs:
-        addrs = f"{match.orig_addr} / {match.recomp_addr}"
+    if show_both_addrs and match.recomp_addr is not None:
+        addrs = (
+            f"{format_address(match.orig_addr)} / {format_address(match.recomp_addr)}"
+        )
     else:
-        addrs = match.orig_addr
+        addrs = format_address(match.orig_addr)
 
     if match.is_stub:
         print(f"  {match.name} ({addrs}) is a stub.")

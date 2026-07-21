@@ -2,7 +2,7 @@ import base64
 import enum
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable, Iterator
+from typing import Callable, Iterable, Iterator
 import logging
 from pystache import Renderer  # type: ignore[import-untyped]
 from reccmp.assets import get_asset_file
@@ -11,6 +11,7 @@ from reccmp.compare.report import (
     ReccmpStatusReport,
     ReccmpComparedEntity,
     serialize_reccmp_report,
+    format_address,
 )
 
 
@@ -259,17 +260,21 @@ def percent_string(
     )
 
 
-def diff_json_display(show_both_addrs: bool = False, is_plain: bool = False):
+def diff_json_display(
+    show_both_addrs: bool = False, is_plain: bool = False
+) -> Callable[[int, ReccmpComparedEntity | None, ReccmpComparedEntity | None], str]:
     """Generate a function that will display the diff according to
     the reccmp display preferences."""
 
     def formatter(
-        orig_addr, saved: ReccmpComparedEntity, new: ReccmpComparedEntity
+        orig_addr: int,
+        saved: ReccmpComparedEntity | None,
+        new: ReccmpComparedEntity | None,
     ) -> str:
         old_pct = "new"
         new_pct = "gone"
         name = ""
-        recomp_addr = "n/a"
+        recomp_addr_str = "n/a"
 
         if new is not None:
             new_pct = (
@@ -284,7 +289,10 @@ def diff_json_display(show_both_addrs: bool = False, is_plain: bool = False):
             # We are using the original address as the key.
             # A function being renamed is not of interest here.
             name = new.name
-            recomp_addr = new.recomp_addr or "n/a"
+            if new.recomp_addr is None:
+                recomp_addr_str = "various" if new.recomp_addr_various else "n/a"
+            else:
+                recomp_addr_str = format_address(new.recomp_addr)
 
         if saved is not None:
             old_pct = (
@@ -298,10 +306,12 @@ def diff_json_display(show_both_addrs: bool = False, is_plain: bool = False):
             if name == "":
                 name = saved.name
 
+        orig_addr_str = format_address(orig_addr)
+
         if show_both_addrs:
-            addr_string = f"{orig_addr} / {recomp_addr:10}"
+            addr_string = f"{orig_addr_str} / {recomp_addr_str:10}"
         else:
-            addr_string = orig_addr
+            addr_string = orig_addr_str
 
         # The ANSI codes from colorama counted towards string length,
         # so displaying this as an ascii-like spreadsheet
