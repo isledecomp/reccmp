@@ -28,6 +28,7 @@ EFFECTIVE_REASON_ORDER = (
     "instruction_reorder",
     "commutative_order",
     "condition_inversion",
+    "load_folding",
     "dead_operation",
     "padding",
 )

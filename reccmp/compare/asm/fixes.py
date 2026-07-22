@@ -10,6 +10,7 @@ from reccmp.compare.asm.effective import (
     sequence_effects,
     verify_cfg_effective_match,
     verify_effective_match,
+    verify_isomorphic_cfg_effective_match,
 )
 from reccmp.compare.asm.instgen import InstructionMeta
 from reccmp.compare.asm.parse import AsmExcerpt
@@ -42,6 +43,7 @@ def _trim_padding(asm: list[str]) -> list[str]:
 def analyze_effective_match(  # pylint: disable=too-many-arguments
     # pylint: disable=too-many-positional-arguments
     # pylint: disable=too-many-return-statements
+    # pylint: disable=too-many-locals
     codes: Sequence[DiffOpcode],
     orig_asm: list[str],
     recomp_asm: list[str],
@@ -150,16 +152,46 @@ def analyze_effective_match(  # pylint: disable=too-many-arguments
         logger.debug("effective match: cfg")
         return cfg.effective_analysis({"padding"} if padding else ())
 
-    # Only positional lockstep and the paired CFG establish trusted program
-    # points. Diff alignment and relocation are proof-only strategies.
+    # Isomorphic-CFG verification: per-side block graphs matched by
+    # structure. Tolerates different instruction counts (folded loads,
+    # elided copies) and the shifted branch displacements they cause.
+    full_orig_targets = _branch_targets(orig_asm, orig_addr_list, orig_meta)
+    full_recomp_targets = _branch_targets(recomp_asm, recomp_addr_list, recomp_meta)
+    iso = new_recorder()
+    iso_attempted = full_orig_targets is not None and full_recomp_targets is not None
+    if full_orig_targets is not None and full_recomp_targets is not None:
+        iso_effective = verify_isomorphic_cfg_effective_match(
+            orig_asm,
+            recomp_asm,
+            full_orig_targets,
+            full_recomp_targets,
+            metadata=metadata,
+            orig_meta=orig_meta,
+            recomp_meta=recomp_meta,
+            recorder=iso,
+        )
+    else:
+        iso_effective = False
+    if iso_effective:
+        logger.debug("effective match: isomorphic cfg")
+        return iso.effective_analysis()
+
+    # Only positional lockstep and the two CFG strategies establish trusted
+    # program points. Diff alignment and relocation are proof-only.
     if cfg_attempted and cfg.best_difference is not None:
         return cfg.failure_analysis()
     if lockstep.best_difference is not None:
         return lockstep.failure_analysis()
+    if iso_attempted and iso.best_difference is not None:
+        return iso.failure_analysis()
     if not cfg_attempted:
         cfg.mark_inconclusive("missing_metadata")
-    inconclusive = cfg if cfg.inconclusive_reason is not None else lockstep
-    if inconclusive.inconclusive_reason is None:
+    for candidate in (iso, cfg, lockstep):
+        if candidate.inconclusive_reason is not None:
+            inconclusive = candidate
+            break
+    else:
+        inconclusive = cfg
         inconclusive.mark_inconclusive("analysis_limit")
     analysis = inconclusive.failure_analysis()
     assert analysis.status == ComparisonStatus.INCONCLUSIVE

@@ -94,6 +94,10 @@ CC_CANON = {
     "ae": ("le_u", True),
 }
 
+# Canonical flag state of every zero idiom (`xor r, r`, `sub r, r`,
+# `cmp r, r`): the result is zero, CF and OF are cleared.
+ZERO_FLAGS = ("cmp", ("imm", 0), ("imm", 0))
+
 X87_CONSTANTS = {"fld1", "fldz", "fldpi", "fldl2e", "fldl2t", "fldlg2", "fldln2"}
 X87_UNARY = {"fchs", "fabs", "fsqrt", "frndint", "fcos", "fsin", "ftan", "f2xm1"}
 
@@ -167,6 +171,12 @@ class SideState:
     regs: dict[str, Value] = field(
         default_factory=lambda: {f: ("init", f) for f in FAMILIES}
     )
+    # Every ordinary memory read performed by this side, as (address value,
+    # memory generation). Used to discharge the trap-parity obligation of a
+    # one-sided load on the other side: an extra explicit load is only
+    # harmless when the other side provably reads the same address at the
+    # same memory generation (e.g. folded into another instruction).
+    load_log: set = field(default_factory=set)
     flags: Value = ("init", "flags")
     fpu_flags: Value = ("init", "fpuflags")
     # The carry flag is tracked separately from the other integer flags:
@@ -271,6 +281,10 @@ class Context:
     # [orig family, recomp family, stack slot address, still_valid].
     # A potentially aliasing write to the slot clears still_valid.
     save_stack: list[list] = field(default_factory=list)
+    # Trap-parity obligations from one-sided memory reads: (other side's
+    # state, address value, memory generation). Discharged at the end of
+    # the verification scope against the other side's load_log.
+    load_obligations: list[tuple] = field(default_factory=list)
     # Which acceptance features fired, for debug/audit logging.
     categories: set[str] = field(default_factory=set)
     # PDB-derived return-type and callee-convention facts, if available.
@@ -778,6 +792,7 @@ def read_operand(state: SideState, ctx: Context, op) -> Value:
         address = mem_address(state, op)
         if ctx.trace is not None:
             ctx.trace.append(("r", address, _WIDTHS.get(op[1]), False))
+        state.load_log.add((address, ctx.gen))
         return ("load", address, op[1], ctx.gen)
     raise Reject
 
@@ -898,10 +913,21 @@ def execute(
         pair = _vsort(a, b)
         if mnemonic == "xor" and a == b:
             value = ("imm", 0)
+        elif mnemonic in ("and", "or") and a == b:
+            # and/or of a value with itself leaves it unchanged.
+            value = a
         else:
             value = _commutative_result(mnemonic, a, b)
         write_operand(state, ctx, ops[0], value, obs)
-        state.flags = ("flags", mnemonic, *pair)
+        if mnemonic == "xor" and a == b:
+            # Zero idiom: the flags are those of comparing zero with zero.
+            state.flags = ZERO_FLAGS
+        elif mnemonic in ("and", "or") and a == b:
+            # SF/ZF/PF reflect the value; CF and OF are cleared: exactly
+            # the flag state of `cmp value, 0`.
+            state.flags = ("cmp", a, ("imm", 0))
+        else:
+            state.flags = ("flags", mnemonic, *pair)
         # and/or/xor clear CF; add/imul produce a carry-out.
         if mnemonic in ("and", "or", "xor"):
             state.carry = ("cf0",)
@@ -921,9 +947,16 @@ def execute(
         b = read_operand(state, ctx, ops[1])
         value = ("imm", 0) if (mnemonic == "sub" and a == b) else (mnemonic, a, b)
         write_operand(state, ctx, ops[0], value, obs)
-        state.flags = ("flags", mnemonic, a, b)
-        # The borrow out of sub is the unsigned comparison of its operands.
-        state.carry = ("lt_u", a, b) if mnemonic == "sub" else ("carry", mnemonic, a, b)
+        if mnemonic == "sub" and a == b:
+            # Zero idiom: same flag state as xor r, r.
+            state.flags = ZERO_FLAGS
+            state.carry = ("cf0",)
+        else:
+            state.flags = ("flags", mnemonic, a, b)
+            # The borrow out of sub is the unsigned comparison of its operands.
+            state.carry = (
+                ("lt_u", a, b) if mnemonic == "sub" else ("carry", mnemonic, a, b)
+            )
     elif mnemonic in CARRY_BINOPS and len(ops) == 2:
         a = read_operand(state, ctx, ops[0])
         b = read_operand(state, ctx, ops[1])
@@ -942,13 +975,24 @@ def execute(
     elif mnemonic == "cmp" and len(ops) == 2:
         a = read_operand(state, ctx, ops[0])
         b = read_operand(state, ctx, ops[1])
-        state.flags = ("cmp", a, b)
-        state.carry = ("lt_u", a, b)
+        if a == b:
+            state.flags = ZERO_FLAGS
+        else:
+            state.flags = ("cmp", a, b)
+        # `x < x` and `x < 0` (unsigned) are always false.
+        if b in (a, ("imm", 0)):
+            state.carry = ("cf0",)
+        else:
+            state.carry = ("lt_u", a, b)
     elif mnemonic == "test" and len(ops) == 2:
-        state.flags = (
-            "test",
-            *_vsort(read_operand(state, ctx, ops[0]), read_operand(state, ctx, ops[1])),
-        )
+        a = read_operand(state, ctx, ops[0])
+        b = read_operand(state, ctx, ops[1])
+        if a == b:
+            # `test r, r` sets SF/ZF/PF from the value and clears CF/OF:
+            # exactly the flag state of `cmp r, 0`.
+            state.flags = ("cmp", a, ("imm", 0))
+        else:
+            state.flags = ("test", *_vsort(a, b))
         state.carry = ("cf0",)
     elif mnemonic in ("mul", "imul") and len(ops) == 1:
         acc, hi = _mul_registers(ops[0])
@@ -1412,44 +1456,68 @@ def _meta_step(orig: SideState, recomp: SideState, meta, idx: int) -> bool:
     return True
 
 
-def _one_sided_ok(state: SideState, ctx: Context, idx: int, line: str) -> bool:
-    """Execute an instruction that exists on only one side. Only a strict
-    whitelist of provably unobservable, non-faulting instructions is
-    allowed: nop, register-to-register mov, and lea (which computes an
-    address without accessing memory). Anything that touches memory, the
-    stack, x87, or that may trap is a real difference."""
+# One-sided instructions that are never unobservable: control flow, the
+# stack discipline (push/pop/leave/enter), x87 (stack-shape effects), and
+# instructions that can fault on operand values (division).
+_ONE_SIDED_BLACKLIST = frozenset(
+    {"push", "pop", "leave", "enter", "call", "ret", "jmp", "int3", "div", "idiv"}
+    | set(JCC_MNEMONICS)
+    | {"loop", "loope", "loopne", "jcxz", "jecxz"}
+    | set(STRING_OPS)
+)
+
+
+def _one_sided_ok(
+    state: SideState, other: SideState, ctx: Context, idx: int, line: str
+) -> bool:
+    # pylint: disable=too-many-return-statements
+    """Execute an instruction that exists on only one side. Any instruction
+    with no observable effect (no store, call, branch or return) is allowed:
+    its register and flag writes are validated downstream by the observables
+    that consume them, or by the end-of-run divergence rules. A memory read
+    may fault, so it incurs a trap-parity obligation: the other side must
+    read the same address at the same memory generation somewhere in the
+    same verification scope (the folded-load case). Control flow, stack
+    adjustments, x87 and potentially-faulting arithmetic stay excluded."""
     if DATA_LINE_RE.match(line):
         return False
     try:
         ins = parse_instruction(line)
     except (Reject, IndexError, KeyError, ValueError, TypeError):
         return False
-    ops = ins.operands
-    allowed = (
-        ins.mnemonic == "nop"
-        or (
-            ins.mnemonic == "mov"
-            and len(ops) == 2
-            and ops[0][0] == "reg"
-            and ops[1][0] == "reg"
-        )
-        or (
-            ins.mnemonic == "lea"
-            and len(ops) == 2
-            and ops[0][0] == "reg"
-            and ops[1][0] == "mem"
-        )
-    )
-    if not allowed:
+    if ins.prefix or ins.mnemonic in _ONE_SIDED_BLACKLIST:
         return False
+    if ins.mnemonic == "nop":
+        ctx.categories.add("dead_operation")
+        return True
+    if ins.mnemonic.startswith("f"):
+        return False
+    reads_before = len(state.load_log)
+    log_snapshot = set(state.load_log) if state.load_log else set()
     obs: list = []
     try:
         execute(state, ctx, idx, ins, obs)
         guard_state_size(state, ctx)
     except (Reject, IndexError, KeyError, ValueError, TypeError):
         return False
-    ctx.categories.add("dead_operation")
-    return not obs
+    if obs:
+        return False
+    if len(state.load_log) > reads_before:
+        for entry in state.load_log - log_snapshot:
+            ctx.load_obligations.append((other, *entry))
+        ctx.categories.add("load_folding")
+    else:
+        ctx.categories.add("dead_operation")
+    return True
+
+
+def _load_obligations_met(ctx: Context) -> bool:
+    """Discharge the trap-parity obligations of one-sided memory reads:
+    the other side must have read the same address at the same memory
+    generation somewhere in the current verification scope."""
+    return all(
+        (address, gen) in other.load_log for other, address, gen in ctx.load_obligations
+    )
 
 
 def _callee_save_swap(ctx: Context, ins_o, ins_r, obs_o, obs_r, orig, recomp) -> bool:
@@ -1670,9 +1738,10 @@ def verify_effective_match(
             line_r = recomp_asm[index_r] if index_r is not None else None
             if line_o is None or line_r is None:
                 side = recomp if line_o is None else orig
+                other_side = orig if line_o is None else recomp
                 line = line_r if line_o is None else line_o
                 assert line is not None
-                if not _one_sided_ok(side, ctx, idx, line):
+                if not _one_sided_ok(side, other_side, ctx, idx, line):
                     if recorder is not None:
                         recorder.mark_inconclusive(
                             "alignment_failure", index_o, index_r
@@ -1866,6 +1935,10 @@ def verify_effective_match(
         # Every callee-save substitution must have been balanced by its pop,
         # and any frame-slot renaming must describe a consistent layout.
         if ctx.save_stack:
+            if recorder is not None:
+                recorder.mark_inconclusive("analysis_limit")
+            return False
+        if not _load_obligations_met(ctx):
             if recorder is not None:
                 recorder.mark_inconclusive("analysis_limit")
             return False
@@ -2299,6 +2372,7 @@ def _clone_state(state: SideState) -> SideState:
     clone.slot_map = dict(state.slot_map)
     clone.slot_accesses = list(state.slot_accesses)
     clone.slots_escaped = state.slots_escaped
+    clone.load_log = set(state.load_log)
     return clone
 
 
@@ -2322,24 +2396,7 @@ def _clone_cfg_state(state: _CfgState) -> _CfgState:
     return _CfgState(_clone_state(state.orig), _clone_state(state.recomp), state.memory)
 
 
-def _join_pairwise(
-    existing: tuple[Value, Value], incoming: tuple[Value, Value], key: tuple
-) -> tuple[Value, Value]:
-    """Three-level lattice: exact pair -> paired phi (cross-equal,
-    unknown value) -> per-side poison (nothing provable; any observable
-    use will mismatch). Monotone, so the fixpoint terminates."""
-    if existing == incoming:
-        return existing
-    phi = (("phi", *key), ("phi", *key))
-    if existing == phi and incoming[0] == incoming[1]:
-        return phi
-    if (
-        existing[0] == existing[1]
-        and incoming[0] == incoming[1]
-        and existing != (("poison", *key, "o"), ("poison", *key, "r"))
-    ):
-        return phi
-    return (("poison", *key, "o"), ("poison", *key, "r"))
+_JOIN_ATTRS = ("flags", "carry", "fpu_flags")
 
 
 def _join_states(
@@ -2347,10 +2404,22 @@ def _join_states(
     incoming: _CfgState,
     block: int,
 ) -> _CfgState | None:
-    # pylint: disable=too-many-return-statements
+    # pylint: disable=too-many-return-statements,too-many-locals
+    # pylint: disable=too-many-branches
     """Merge an incoming state pair into a block's entry pair. Returns the
     (possibly new) entry pair, or None if the states cannot be merged
-    (differing x87 shapes)."""
+    (differing x87 shapes).
+
+    Every storage node (each side's register families, flag values and x87
+    slots) is keyed by its vector of values across the merge: nodes whose
+    vectors are identical held provably equal values on every incoming
+    edge, so they share one phi symbol — including nodes on *different*
+    sides and in *different* registers. This keeps relational knowledge
+    alive across joins when a live range is allocated to different
+    registers on the two sides. A node whose value agrees on all edges
+    keeps that value. Phi symbols are keyed by the class's canonical node
+    index; classes can only refine as more edges arrive, so the fixpoint
+    terminates."""
     entry_o, entry_r = entry.orig, entry.recomp
     in_o, in_r = incoming.orig, incoming.recomp
     if len(entry_o.x87.known) != len(entry_r.x87.known):
@@ -2365,42 +2434,69 @@ def _join_states(
         return None
     if entry_o.x87.deep_pops != in_o.x87.deep_pops:
         return None
-    out_o = _clone_state(entry_o)
-    out_r = _clone_state(entry_r)
-    for family in FAMILIES:
-        joined = _join_pairwise(
-            (entry_o.regs[family], entry_r.regs[family]),
-            (in_o.regs[family], in_r.regs[family]),
-            (block, family),
-        )
-        out_o.regs[family], out_r.regs[family] = joined
-    for attr in ("flags", "carry", "fpu_flags"):
-        joined = _join_pairwise(
-            (getattr(entry_o, attr), getattr(entry_r, attr)),
-            (getattr(in_o, attr), getattr(in_r, attr)),
-            (block, attr),
-        )
-        setattr(out_o, attr, joined[0])
-        setattr(out_r, attr, joined[1])
-    slots = zip(
-        entry_o.x87.known,
-        entry_r.x87.known,
-        in_o.x87.known,
-        in_r.x87.known,
-    )
-    for index, (entry_slot_o, entry_slot_r, in_slot_o, in_slot_r) in enumerate(slots):
-        joined = _join_pairwise(
-            (entry_slot_o, entry_slot_r),
-            (in_slot_o, in_slot_r),
-            (block, "st", index),
-        )
-        out_o.x87.known[index], out_r.x87.known[index] = joined
     if entry_o.x87.epoch != entry_r.x87.epoch:
         return None
     if in_o.x87.epoch != in_r.x87.epoch:
         return None
+    out_o = _clone_state(entry_o)
+    out_r = _clone_state(entry_r)
     if entry_o.x87.epoch != in_o.x87.epoch:
-        return None
+        # Paths through different call sites reach this block with different
+        # x87 epochs. Control flow is paired, so both sides always arrive
+        # via corresponding paths: a joined epoch keyed by the block keeps
+        # deep-stack reads cross-equal (same reasoning as the memory phi).
+        joined_epoch = ("x87_epoch_phi", block)
+        out_o.x87.epoch = joined_epoch  # type: ignore[assignment]
+        out_r.x87.epoch = joined_epoch  # type: ignore[assignment]
+
+    # (entry value, incoming value, setter on the joined state)
+    nodes: list[tuple[Value, Value, Callable[[Value], None]]] = []
+
+    def reg_setter(state: SideState, family: str) -> Callable[[Value], None]:
+        return lambda value: state.regs.__setitem__(family, value)
+
+    def attr_setter(state: SideState, attr: str) -> Callable[[Value], None]:
+        return lambda value: setattr(state, attr, value)
+
+    def slot_setter(state: SideState, index: int) -> Callable[[Value], None]:
+        return lambda value: state.x87.known.__setitem__(index, value)
+
+    for entry_state, in_state, out_state in (
+        (entry_o, in_o, out_o),
+        (entry_r, in_r, out_r),
+    ):
+        for family in FAMILIES:
+            nodes.append(
+                (
+                    entry_state.regs[family],
+                    in_state.regs[family],
+                    reg_setter(out_state, family),
+                )
+            )
+        for attr in _JOIN_ATTRS:
+            nodes.append(
+                (
+                    getattr(entry_state, attr),
+                    getattr(in_state, attr),
+                    attr_setter(out_state, attr),
+                )
+            )
+        for index, entry_slot in enumerate(entry_state.x87.known):
+            nodes.append(
+                (
+                    entry_slot,
+                    in_state.x87.known[index],
+                    slot_setter(out_state, index),
+                )
+            )
+
+    classes: dict[tuple[Value, Value], int] = {}
+    for n, (entry_value, in_value, setter) in enumerate(nodes):
+        if entry_value == in_value:
+            setter(entry_value)
+            continue
+        class_id = classes.setdefault((entry_value, in_value), n)
+        setter(("phi", block, class_id))
 
     if entry.memory == incoming.memory:
         memory = entry.memory
@@ -2743,4 +2839,538 @@ def verify_cfg_effective_match(
         if recorder is not None:
             recorder.mark_inconclusive("analysis_limit")
         return False
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Isomorphic-CFG verification (structure-matched, alignment-free)
+#
+# The positional CFG verifier above requires the two sequences to have equal
+# length and identical line-index branch structure. Register-allocation
+# entropy breaks both: a folded load or an elided register copy shifts every
+# following line and every crossing branch displacement. This verifier
+# instead builds each side's basic-block graph independently, pairs blocks
+# by control-flow structure (so branch targets compare as matched blocks,
+# not displacement text), aligns each block pair's instructions locally,
+# and runs the same paired symbolic execution with dataflow joins.
+
+
+def _control_kind(line: str) -> str:
+    if DATA_LINE_RE.match(line):
+        return "data"
+    mnemonic = line.partition(" ")[0]
+    if mnemonic in JCC_MNEMONICS or mnemonic in (
+        "loop",
+        "loope",
+        "loopne",
+        "jcxz",
+        "jecxz",
+    ):
+        return "jcc"
+    if mnemonic in ("jmp", "ret"):
+        return mnemonic
+    return "code"
+
+
+@dataclass
+class _SideCfg:
+    starts: list[int]
+    ends: list[int]
+    # Per block: role ("taken"/"fall"/"jmp"/"fallout") -> successor block
+    # index, or "external" for a target outside the excerpt.
+    succ: list[dict[str, int | str]]
+    kinds: list[str]
+
+
+def _build_side_cfg(asm: list[str], targets: list[int | None]) -> _SideCfg | None:
+    """One side's basic-block structure, or None when the shape is outside
+    this verifier's model (jump/data tables, invalid targets)."""
+    total = len(asm)
+    if total == 0 or len(targets) != total:
+        return None
+    kinds = [_control_kind(line) for line in asm]
+    if "data" in kinds:
+        return None
+    leaders = {0}
+    for i in range(total):
+        target = targets[i]
+        if target is not None:
+            if not 0 <= target < total:
+                return None
+            leaders.add(target)
+        if kinds[i] in ("jcc", "jmp", "ret") and i + 1 < total:
+            leaders.add(i + 1)
+    order = sorted(leaders)
+    index = {start: n for n, start in enumerate(order)}
+    ends = [order[n + 1] if n + 1 < len(order) else total for n in range(len(order))]
+    succ: list[dict[str, int | str]] = []
+    for n in range(len(order)):
+        last = ends[n] - 1
+        kind = kinds[last]
+        edges: dict[str, int | str] = {}
+        if kind == "jcc":
+            target = targets[last]
+            edges["taken"] = index[target] if target is not None else "external"
+            if ends[n] < total:
+                edges["fall"] = index[ends[n]]
+            else:
+                edges["fallout"] = "external"
+        elif kind == "jmp":
+            target = targets[last]
+            edges["jmp"] = index[target] if target is not None else "external"
+        elif kind == "ret":
+            pass
+        else:
+            if ends[n] < total:
+                edges["fall"] = index[ends[n]]
+            else:
+                edges["fallout"] = "external"
+        succ.append(edges)
+    return _SideCfg(starts=list(order), ends=ends, succ=succ, kinds=kinds)
+
+
+def _pair_cfg_blocks(cfg_o: _SideCfg, cfg_r: _SideCfg) -> list[tuple[int, int]] | None:
+    """Match the two sides' reachable blocks into a structural bijection,
+    starting from the entry blocks and following same-role edges. Returns
+    the matched pairs in discovery order, or None if the reachable graphs
+    are not isomorphic."""
+    map_o: dict[int, int] = {}
+    map_r: dict[int, int] = {}
+    order: list[tuple[int, int]] = []
+    queue: list[tuple[int, int]] = [(0, 0)]
+    while queue:
+        block_o, block_r = queue.pop()
+        seen_o = block_o in map_o
+        seen_r = block_r in map_r
+        if seen_o or seen_r:
+            if map_o.get(block_o) != block_r or map_r.get(block_r) != block_o:
+                return None
+            continue
+        map_o[block_o] = block_r
+        map_r[block_r] = block_o
+        order.append((block_o, block_r))
+        edges_o = cfg_o.succ[block_o]
+        edges_r = cfg_r.succ[block_r]
+        if set(edges_o) != set(edges_r):
+            return None
+        for role, to_o in edges_o.items():
+            to_r = edges_r[role]
+            if (to_o == "external") != (to_r == "external"):
+                return None
+            if to_o != "external":
+                assert isinstance(to_o, int) and isinstance(to_r, int)
+                queue.append((to_o, to_r))
+    return order
+
+
+# Line-alignment costs (integers to keep DP ties exact): prefer exact text,
+# then identical instruction shape (registers anonymized), then a shared
+# mnemonic, then anything in the same observable class. A gap (one-sided
+# line) costs more than a good pairing but less than two forced bad ones.
+_SUB_EXACT = 0
+_SUB_SKELETON = 1
+_SUB_MNEMONIC = 4
+_SUB_CLASS = 7
+_GAP = 5
+
+_X87_MEM_WRITERS_DP = frozenset({"fst", "fstp", "fist", "fistp", "fnstcw", "fbstp"})
+
+
+@cache
+def _dp_line_class(line: str) -> str:
+    # pylint: disable=too-many-return-statements
+    """Coarse observable class used to constrain the block-local alignment:
+    lines with an observable effect only pair within their class and never
+    go one-sided (the verifier would reject that anyway)."""
+    mnemonic, _, _ = line.partition(" ")
+    if mnemonic == "call":
+        return "call"
+    if mnemonic == "push" or mnemonic in STRING_OPS or mnemonic.startswith("rep"):
+        return "store"
+    try:
+        ins = parse_instruction(line)
+    except (Reject, IndexError, KeyError, ValueError, TypeError):
+        return "opaque"
+    if ins.prefix:
+        return "store"
+    if mnemonic in _X87_MEM_WRITERS_DP:
+        return "store" if any(op[0] == "mem" for op in ins.operands) else "none"
+    if mnemonic in ("cmp", "test"):
+        return "none"
+    if ins.operands and ins.operands[0][0] == "mem" and not mnemonic.startswith("j"):
+        return "store"
+    return "none"
+
+
+@cache
+def _dp_skeleton(line: str):
+    """Instruction shape with register identities erased: mnemonic plus
+    operand kinds, keeping immediates, symbols, widths, displacements and
+    scale multisets."""
+    try:
+        ins = parse_instruction(line)
+    except (Reject, IndexError, KeyError, ValueError, TypeError):
+        return None
+    shape: list[tuple] = []
+    for op in ins.operands:
+        kind = op[0]
+        if kind == "reg":
+            shape.append(("reg", REGISTERS[op[1]][1]))
+        elif kind == "mem":
+            _, size, seg, reg_terms, disp, syms = op
+            shape.append(
+                (
+                    "mem",
+                    size,
+                    seg,
+                    tuple(sorted(scale for _, scale in reg_terms)),
+                    disp,
+                    syms,
+                )
+            )
+        else:
+            shape.append(op)
+    return (ins.prefix, ins.mnemonic, tuple(shape))
+
+
+def _dp_sub_cost(line_o: str, line_r: str) -> float | None:
+    if line_o == line_r:
+        return _SUB_EXACT
+    class_o = _dp_line_class(line_o)
+    class_r = _dp_line_class(line_r)
+    if class_o != class_r or class_o == "opaque":
+        return None
+    skeleton_o = _dp_skeleton(line_o)
+    skeleton_r = _dp_skeleton(line_r)
+    if skeleton_o is not None and skeleton_o == skeleton_r:
+        return _SUB_SKELETON
+    mnemonic_o = line_o.partition(" ")[0]
+    mnemonic_r = line_r.partition(" ")[0]
+    if mnemonic_o == mnemonic_r or (
+        mnemonic_o in JCC_MNEMONICS and mnemonic_r in JCC_MNEMONICS
+    ):
+        return _SUB_MNEMONIC
+    return _SUB_CLASS
+
+
+def _align_block_lines(
+    lines_o: list[str], lines_r: list[str]
+) -> list[tuple[int | None, int | None]] | None:
+    """Pair up two blocks' instructions with a cost-minimizing alignment.
+    Returns block-local index pairs; None when the blocks cannot be aligned
+    (observable-class counts differ, or the blocks are absurdly large)."""
+    n, m = len(lines_o), len(lines_r)
+    if n * m > 1_000_000:
+        return None
+    inf = float("inf")
+    # cost[i][j]: best cost aligning lines_o[:i] with lines_r[:j].
+    cost = [[inf] * (m + 1) for _ in range(n + 1)]
+    cost[0][0] = 0.0
+    gap_o = [_GAP if _dp_line_class(line) == "none" else inf for line in lines_o]
+    gap_r = [_GAP if _dp_line_class(line) == "none" else inf for line in lines_r]
+    for i in range(1, n + 1):
+        cost[i][0] = cost[i - 1][0] + gap_o[i - 1]
+    for j in range(1, m + 1):
+        cost[0][j] = cost[0][j - 1] + gap_r[j - 1]
+    for i in range(1, n + 1):
+        row = cost[i]
+        prev = cost[i - 1]
+        line_o = lines_o[i - 1]
+        for j in range(1, m + 1):
+            best = min(prev[j] + gap_o[i - 1], row[j - 1] + gap_r[j - 1])
+            sub = _dp_sub_cost(line_o, lines_r[j - 1])
+            if sub is not None:
+                best = min(best, prev[j - 1] + sub)
+            row[j] = best
+    if cost[n][m] == inf:
+        return None
+    # Reconstruct.
+    result: list[tuple[int | None, int | None]] = []
+    i, j = n, m
+    while i > 0 or j > 0:
+        if i > 0 and j > 0:
+            sub = _dp_sub_cost(lines_o[i - 1], lines_r[j - 1])
+            if sub is not None and cost[i][j] == cost[i - 1][j - 1] + sub:
+                result.append((i - 1, j - 1))
+                i -= 1
+                j -= 1
+                continue
+        if i > 0 and cost[i][j] == cost[i - 1][j] + gap_o[i - 1]:
+            result.append((i - 1, None))
+            i -= 1
+            continue
+        result.append((None, j - 1))
+        j -= 1
+    result.reverse()
+    return result
+
+
+def verify_isomorphic_cfg_effective_match(
+    orig_asm: list[str],
+    recomp_asm: list[str],
+    orig_targets: list[int | None],
+    recomp_targets: list[int | None],
+    metadata: FunctionMetadata | None = None,
+    orig_meta: list[InstructionMeta | None] | None = None,
+    recomp_meta: list[InstructionMeta | None] | None = None,
+    recorder: AnalysisRecorder | None = None,
+) -> bool:
+    """CFG verification that tolerates different instruction counts:
+    per-side block graphs matched structurally, block contents aligned
+    locally, one-sided unobservable instructions allowed. This proves
+    register-allocation wobble in its full generality — renames composed
+    with folded loads, elided copies and shifted branch displacements."""
+    # pylint: disable=too-many-branches,too-many-statements,too-many-return-statements
+    # pylint: disable=too-many-locals
+    # pylint: disable=too-many-arguments,too-many-positional-arguments
+    cfg_o = _build_side_cfg(orig_asm, orig_targets)
+    cfg_r = _build_side_cfg(recomp_asm, recomp_targets)
+    if cfg_o is None or cfg_r is None:
+        if recorder is not None:
+            recorder.mark_inconclusive("unsupported_control_flow")
+        return False
+    pairs = _pair_cfg_blocks(cfg_o, cfg_r)
+    if pairs is None:
+        if recorder is not None:
+            recorder.mark_inconclusive("unsupported_control_flow")
+        return False
+    pair_ids = {pair: n for n, pair in enumerate(pairs)}
+
+    # Align every paired block's lines once, up front.
+    alignments: dict[tuple[int, int], list[tuple[int | None, int | None]]] = {}
+    any_shifted = False
+    for block_o, block_r in pairs:
+        start_o, end_o = cfg_o.starts[block_o], cfg_o.ends[block_o]
+        start_r, end_r = cfg_r.starts[block_r], cfg_r.ends[block_r]
+        aligned = _align_block_lines(orig_asm[start_o:end_o], recomp_asm[start_r:end_r])
+        if aligned is None:
+            if recorder is not None:
+                recorder.mark_inconclusive("alignment_failure")
+            return False
+        # The block terminators (control lines) must pair with each other:
+        # a one-sided branch or return breaks the matched structure.
+        for local_o, local_r in aligned:
+            kind_o = cfg_o.kinds[start_o + local_o] if local_o is not None else "code"
+            kind_r = cfg_r.kinds[start_r + local_r] if local_r is not None else "code"
+            if kind_o != kind_r or (local_o is None and kind_r != "code"):
+                if recorder is not None:
+                    recorder.mark_inconclusive("alignment_failure")
+                return False
+        if any(local_o is None or local_r is None for local_o, local_r in aligned):
+            any_shifted = True
+        alignments[(block_o, block_r)] = [
+            (
+                start_o + local_o if local_o is not None else None,
+                start_r + local_r if local_r is not None else None,
+            )
+            for local_o, local_r in aligned
+        ]
+
+    entry: dict[tuple[int, int], _CfgState] = {
+        (0, 0): _CfgState(
+            SideState(rename_slots=False),
+            SideState(rename_slots=False),
+            ("cfg_mem_init",),
+        )
+    }
+    pending: list[tuple[int, int]] = [(0, 0)]
+    visits = 0
+
+    def run_pair(pair: tuple[int, int]) -> bool:
+        # pylint: disable=too-many-branches,too-many-statements
+        # pylint: disable=too-many-return-statements,too-many-locals
+        block_o, block_r = pair
+        flow = _clone_cfg_state(entry[pair])
+        orig_state, recomp_state = flow.orig, flow.recomp
+        # Trap-parity scope for one-sided loads is the block run.
+        orig_state.load_log = set()
+        recomp_state.load_log = set()
+        ctx = Context(gen=flow.memory, metadata=metadata, recorder=recorder)
+        edges_o = cfg_o.succ[block_o]
+        edges_r = cfg_r.succ[block_r]
+        for index_o, index_r in alignments[pair]:
+            if index_o is None or index_r is None:
+                if index_o is None:
+                    assert index_r is not None
+                    side, other_side = recomp_state, orig_state
+                    line, position = recomp_asm[index_r], index_r
+                else:
+                    side, other_side = orig_state, recomp_state
+                    line, position = orig_asm[index_o], index_o
+                # A one-sided instruction can never store (any observable
+                # rejects it), so the memory generation is unaffected.
+                if not _one_sided_ok(side, other_side, ctx, position, line):
+                    if recorder is not None:
+                        recorder.mark_inconclusive(
+                            "alignment_failure", index_o, index_r
+                        )
+                    return False
+                continue
+            line_o, line_r = orig_asm[index_o], recomp_asm[index_r]
+            try:
+                ins_o = parse_instruction(line_o)
+                ins_r = parse_instruction(line_r)
+                _record_operand_candidate(ctx, index_o, index_r, ins_o, ins_r)
+                obs_o: list = []
+                obs_r: list = []
+                ctx.bump_requested = False
+                before_o = dict(orig_state.regs)
+                before_r = dict(recomp_state.regs)
+                state_before_o = _clone_state(orig_state)
+                state_before_r = _clone_state(recomp_state)
+                execute(orig_state, ctx, index_o, ins_o, obs_o)
+                execute(recomp_state, ctx, index_o, ins_r, obs_r)
+            except (Reject, IndexError, KeyError, ValueError, TypeError):
+                if line_o != line_r:
+                    if recorder is not None:
+                        recorder.mark_inconclusive(
+                            "unsupported_instruction", index_o, index_r
+                        )
+                    return False
+                meta_o = orig_meta[index_o] if orig_meta is not None else None
+                meta_r = recomp_meta[index_r] if recomp_meta is not None else None
+                if _same_meta_effects(meta_o, meta_r) and _meta_step(
+                    orig_state, recomp_state, meta_o, index_o
+                ):
+                    ctx.gen = ("cfg_mem_meta", index_o)
+                    continue
+                if not fully_synced(orig_state, recomp_state):
+                    if recorder is not None:
+                        recorder.mark_inconclusive(
+                            "unsupported_instruction", index_o, index_r
+                        )
+                    return False
+                resync((orig_state, recomp_state), index_o, ctx)
+                ctx.gen = ("cfg_mem_resync", index_o)
+                continue
+
+            guard_state_size(orig_state, ctx)
+            guard_state_size(recomp_state, ctx)
+
+            # Canonicalize local control-flow targets: the block pairing
+            # already proved that both sides' edges lead to the same matched
+            # blocks, so the displacement text is irrelevant. External
+            # targets keep their raw text — those must match exactly.
+            kind = cfg_o.kinds[index_o]
+            if (
+                kind in ("jcc", "jmp")
+                and edges_o.get("taken" if kind == "jcc" else "jmp") != "external"
+            ):
+                for entries in (obs_o, obs_r):
+                    for k, obs_entry in enumerate(entries):
+                        if obs_entry[0] in CONTROL_TAGS - {"jmpind"}:
+                            entries[k] = (*obs_entry[:-1], ("L", kind))
+
+            if obs_o != obs_r:
+                meta_o = orig_meta[index_o] if orig_meta is not None else None
+                meta_r = recomp_meta[index_r] if recomp_meta is not None else None
+                _record_observable_difference(
+                    ctx,
+                    index_o,
+                    index_r,
+                    ins_o,
+                    ins_r,
+                    obs_o,
+                    obs_r,
+                    meta_o,
+                    meta_r,
+                )
+                return False
+            _invalidate_save_slots(ctx, obs_o)
+            for obs_entry in obs_o:
+                ctx.add_matched(obs_entry)
+            if any(
+                family_o != family_r and value_o == value_r
+                for family_o, value_o in orig_state.regs.items()
+                if value_o is not before_o[family_o]
+                for family_r, value_r in recomp_state.regs.items()
+                if value_r is not before_r[family_r]
+            ):
+                ctx.categories.add("register_allocation")
+            if _commutative_order_used(
+                state_before_o, state_before_r, ctx, ins_o, ins_r
+            ):
+                ctx.categories.add("commutative_order")
+            if (
+                any(entry_obs[0] == "branch" for entry_obs in obs_o)
+                and obs_o == obs_r
+                and (
+                    ins_o.mnemonic != ins_r.mnemonic
+                    or state_before_o.flags != state_before_r.flags
+                )
+            ):
+                ctx.categories.add("condition_inversion")
+            if any(obs_entry[0] == "jmpind" for obs_entry in obs_o):
+                if recorder is not None:
+                    recorder.mark_inconclusive("unsupported_control_flow")
+                return False
+
+            # A direct edge outside the excerpt exposes the complete machine
+            # state to code this proof does not inspect.
+            if kind in ("jmp", "jcc") and (
+                edges_o.get("taken" if kind == "jcc" else "jmp") == "external"
+            ):
+                if not _converged(orig_state, recomp_state):
+                    if recorder is not None:
+                        recorder.mark_inconclusive("unsupported_control_flow")
+                    return False
+            if ctx.bump_requested:
+                ctx.gen = ("cfg_mem_write", index_o)
+
+        if not _load_obligations_met(ctx):
+            if recorder is not None:
+                recorder.mark_inconclusive("analysis_limit")
+            return False
+
+        last_kind = cfg_o.kinds[cfg_o.ends[block_o] - 1]
+        if (
+            last_kind == "ret"
+            and orig_state.x87.state_key() != recomp_state.x87.state_key()
+        ):
+            return False
+        if "fallout" in edges_o:
+            # Falling out of the disassembled function is not a modeled exit.
+            if recorder is not None:
+                recorder.mark_inconclusive("unsupported_control_flow")
+            return False
+
+        outgoing = _CfgState(orig_state, recomp_state, ctx.gen)
+        if recorder is not None:
+            recorder.reasons.update(ctx.categories)
+        for role, to_o in edges_o.items():
+            if to_o == "external":
+                continue
+            to_r = edges_r[role]
+            assert isinstance(to_o, int) and isinstance(to_r, int)
+            successor = (to_o, to_r)
+            if successor not in entry:
+                entry[successor] = _clone_cfg_state(outgoing)
+                pending.append(successor)
+            else:
+                joined = _join_states(entry[successor], outgoing, pair_ids[successor])
+                if joined is None:
+                    if recorder is not None:
+                        recorder.mark_inconclusive("unsupported_control_flow")
+                    return False
+                if not _states_equal(joined, entry[successor]):
+                    entry[successor] = joined
+                    pending.append(successor)
+        return True
+
+    try:
+        while pending:
+            pair = pending.pop()
+            visits += 1
+            if visits > 8 * len(pairs) + 64:
+                if recorder is not None:
+                    recorder.mark_inconclusive("analysis_limit")
+                return False
+            if not run_pair(pair):
+                return False
+    except (Reject, RecursionError):
+        if recorder is not None:
+            recorder.mark_inconclusive("analysis_limit")
+        return False
+    if any_shifted and recorder is not None:
+        recorder.reasons.add("instruction_reorder")
     return True

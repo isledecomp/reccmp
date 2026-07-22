@@ -345,9 +345,7 @@ def _analysis_json(analysis: ComparisonAnalysis) -> dict[str, object]:
     if analysis.inconclusive_reason is not None:
         value["inconclusive_reason"] = analysis.inconclusive_reason
     if analysis.inconclusive_location is not None:
-        value["inconclusive_location"] = _side_json(
-            analysis.inconclusive_location
-        )
+        value["inconclusive_location"] = _side_json(analysis.inconclusive_location)
     return value
 
 
