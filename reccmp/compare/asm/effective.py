@@ -262,8 +262,22 @@ class FunctionMetadata:
 @dataclass
 class Context:
     # pylint: disable=too-many-instance-attributes
-    gen: int | Value = 0  # memory generation, shared by both sides
-    bump_requested: bool = False
+    # Memory summary tag, shared by both sides: the tag of the most recent
+    # store/clobber event, or the scope's initial value. Used as a block's
+    # outgoing memory state and as the base tag for loads that no recorded
+    # store can alias.
+    gen: int | Value = 0
+    # Committed memory events, newest last: (tag, access) for a store with
+    # a known (address value, width, stack kind), or (tag, None) for a
+    # clobber-all (call, string write, resync). A load is tagged by the
+    # newest event that may alias it, so independent loads keep their tag
+    # across unrelated stores.
+    mem_events: list[tuple] = field(default_factory=list)
+    # Whether a pointer into this function's own frame may have escaped
+    # (stored to memory or passed to a callee). Until then, memory below
+    # the entry stack pointer is private scratch that no incoming pointer
+    # can alias.
+    stack_escaped: bool = False
     # Every symbolic node (including subexpressions) of every expression
     # that was proven equal across the two sides. Divergent register values
     # are only excused when they appear in this set (they were consumed by
@@ -285,12 +299,21 @@ class Context:
     # state, address value, memory generation). Discharged at the end of
     # the verification scope against the other side's load_log.
     load_obligations: list[tuple] = field(default_factory=list)
+    # Live one-sided spills: [side state, entry-sp offset, value, event
+    # tag]. Must be empty at every call: a pushed value still live at a
+    # call would be an argument the other side never passed.
+    scratch_pushes: list[list] = field(default_factory=list)
     # Which acceptance features fired, for debug/audit logging.
     categories: set[str] = field(default_factory=set)
     # PDB-derived return-type and callee-convention facts, if available.
     metadata: FunctionMetadata | None = None
     # Structured evidence sink for the current verifier strategy.
     recorder: AnalysisRecorder | None = None
+
+    def __post_init__(self) -> None:
+        # The memory tag of the scope's entry state: loads that precede
+        # every recorded store (or that no recorded store aliases) carry it.
+        self.initial_gen = self.gen
 
     def add_matched(self, value) -> None:
         stack = [value]
@@ -307,11 +330,108 @@ class Context:
             stack.extend(node)
 
 
-def _bump_linear_memory(ctx: Context) -> None:
-    """Advance the integer generation used by the lockstep verifier."""
-    if not isinstance(ctx.gen, int):
-        raise Reject
-    ctx.gen += 1
+# A load only needs the newest may-aliasing store. Scanning the whole event
+# log per load would be quadratic on huge straight-line functions; past the
+# cap, the newest unresolved tag is a sound (merely coarser) answer.
+_ALIAS_SCAN_LIMIT = 128
+
+
+def _load_tag(ctx: Context, address: Value, width, stack) -> int | Value:
+    """Tag identifying which memory state a load reads: the tag of the
+    newest committed store that may alias it (or of any clobber), else the
+    scope's initial memory tag. Two loads of the same address with the same
+    tag are the same read."""
+    access = (address, width, stack)
+    events = ctx.mem_events
+    scanned = 0
+    for index in range(len(events) - 1, -1, -1):
+        tag, store = events[index]
+        scanned += 1
+        if scanned > _ALIAS_SCAN_LIMIT:
+            return tag
+        if store is None or _store_may_alias_load(store, access, ctx.stack_escaped):
+            return tag
+    return ctx.initial_gen
+
+
+def _frame_pointer_value(value: Value) -> bool:
+    """Does this value hold a pointer into the current function's own
+    frame (strictly below the entry stack pointer)? Such a value reaching
+    memory or a callee makes the frame externally reachable."""
+    if not isinstance(value, tuple) or not value:
+        return False
+    if value[0] == "addr":
+        resolved = _abs_stack_offset(value[1], False)
+        if resolved is None:
+            # An escaping address we cannot resolve: assume the worst
+            # when it is stack-rooted at all.
+            return any(_stack_rooted(term) for term, _ in value[1][2])
+        root, offset = resolved
+        return root == ("init", "sp") and offset < 0
+    if value[0] == "spadd":
+        root, offset = _unwind_spadd(value)
+        return root == ("init", "sp") and offset < 0
+    return False
+
+
+def _store_may_alias_load(store: tuple, load: tuple, stack_escaped: bool) -> bool:
+    """May this committed store affect this load? Refines _mem_disjoint
+    with an ABI fact: while no frame pointer has escaped, memory strictly
+    below the entry stack pointer is the function's private scratch, which
+    no incoming (unknown) pointer can alias."""
+    if _mem_disjoint(store, load):
+        return False
+    if not stack_escaped:
+        for scratch, other in ((store, load), (load, store)):
+            resolved = _abs_stack_offset(scratch[0], scratch[2])
+            if (
+                resolved is not None
+                and resolved[0] == ("init", "sp")
+                and resolved[1] < 0
+                and not other[2]
+            ):
+                other_mem = _flatten_mem(other[0])
+                if not any(_stack_rooted(term) for term, _ in other_mem[2]):
+                    return False
+    return True
+
+
+def _commit_clobber(ctx: Context, marker) -> None:
+    """Record a write to unknown locations: every later load re-reads."""
+    tag = ("mem", marker, "clobber")
+    ctx.mem_events.append((tag, None))
+    ctx.gen = tag
+
+
+def _commit_memory(ctx: Context, obs: list, marker) -> None:
+    """Commit the memory effects of one verified instruction pair. Deferred
+    until after both sides executed so that loads within the pair observe
+    the same pre-instruction memory."""
+    for k, entry in enumerate(obs):
+        kind = entry[0]
+        if kind == "store":
+            _, address, size, value = entry
+            width = 4 if size == "stack" else _WIDTHS.get(size)
+            stack = "push" if size == "stack" else False
+            tag = ("mem", marker, k)
+            ctx.mem_events.append((tag, (address, width, stack)))
+            ctx.gen = tag
+            if _frame_pointer_value(value):
+                ctx.stack_escaped = True
+        elif kind == "call":
+            if ctx.scratch_pushes:
+                # A one-sided spill still on the stack at a call would be
+                # an extra argument: not provably equivalent.
+                raise Reject
+            for argument in entry[2:]:
+                if _frame_pointer_value(argument):
+                    ctx.stack_escaped = True
+            _commit_clobber(ctx, (marker, k))
+        elif isinstance(kind, tuple):
+            # String instruction: (mnemonic, prefix). Writers clobber; the
+            # data they copy was already committed by its original store.
+            if STRING_OPS.get(kind[0], ("", "", False))[2]:
+                _commit_clobber(ctx, (marker, k))
 
 
 # Symbolic values are DAGs (a register value can feed several later values),
@@ -765,12 +885,21 @@ def mem_address(
             # The slot's address escapes (lea) or the access is indexed
             # (a local array): renaming frame slots is no longer safe.
             state.slots_escaped = True
-    terms = tuple(
-        sorted(
-            ((state.read_reg(reg), scale) for reg, scale in reg_terms),
-            key=repr,
-        )
-    )
+    pairs = [(state.read_reg(reg), scale) for reg, scale in reg_terms]
+    if isinstance(disp_key, int):
+        # Fold constant stack-pointer adjustments into the displacement so
+        # that e.g. [esp + 8] before a push and [esp + 0xc] after it denote
+        # the same address. Skipped for alpha-renamed frame slots, whose
+        # key is the slot id rather than an offset.
+        folded = []
+        for value, scale in pairs:
+            base, offset = _unwind_spadd(value)
+            if offset:
+                disp_key += scale * offset
+                value = base
+            folded.append((value, scale))
+        pairs = folded
+    terms = tuple(sorted(pairs, key=repr))
     if escape and any(_stack_rooted(value) for value, _ in terms):
         # A stack address escapes into a register: pointers derived from it
         # could reach frame slots or saved registers on the stack.
@@ -790,10 +919,12 @@ def read_operand(state: SideState, ctx: Context, op) -> Value:
         return state.x87.read(op[1])
     if kind == "mem":
         address = mem_address(state, op)
+        width = _WIDTHS.get(op[1])
         if ctx.trace is not None:
-            ctx.trace.append(("r", address, _WIDTHS.get(op[1]), False))
-        state.load_log.add((address, ctx.gen))
-        return ("load", address, op[1], ctx.gen)
+            ctx.trace.append(("r", address, width, False))
+        tag = _load_tag(ctx, address, width, False)
+        state.load_log.add((address, tag))
+        return ("load", address, op[1], tag)
     raise Reject
 
 
@@ -806,7 +937,6 @@ def write_operand(state: SideState, ctx: Context, op, value: Value, obs: list) -
         if ctx.trace is not None:
             ctx.trace.append(("w", address, _WIDTHS.get(op[1]), False))
         obs.append(("store", address, op[1], value))
-        ctx.bump_requested = True
     elif kind == "st":
         state.x87.write(op[1], value)
     else:
@@ -1023,18 +1153,23 @@ def execute(
         if ctx.trace is not None:
             ctx.trace.append(("w", new_esp, 4, "push"))
         obs.append(("store", new_esp, "stack", value))
-        ctx.bump_requested = True
     elif mnemonic == "pop" and len(ops) == 1:
         esp = state.read_reg("esp")
         if ctx.trace is not None:
             ctx.trace.append(("r", esp, 4, "pop"))
-        write_operand(state, ctx, ops[0], ("load", esp, "stack", ctx.gen), obs)
+        write_operand(
+            state,
+            ctx,
+            ops[0],
+            ("load", esp, "stack", _load_tag(ctx, esp, 4, "pop")),
+            obs,
+        )
         state.write_reg("esp", esp_add(esp, 4))
     elif mnemonic == "leave":
         ebp = state.read_reg("ebp")
         if ctx.trace is not None:
             ctx.trace.append(("r", ebp, 4, "pop"))
-        state.write_reg("ebp", ("load", ebp, "stack", ctx.gen))
+        state.write_reg("ebp", ("load", ebp, "stack", _load_tag(ctx, ebp, 4, "pop")))
         state.write_reg("esp", esp_add(ebp, 4))
     elif mnemonic == "call" and len(ops) == 1:
         # The callee may take arguments in ecx (thiscall) or ecx+edx
@@ -1057,7 +1192,6 @@ def execute(
         state.flags = ("callflags", idx)
         state.carry = ("callcf", idx)
         state.x87 = X87Stack(epoch=idx + 1)
-        ctx.bump_requested = True
     elif mnemonic == "ret":
         obs.append(("retstack", ins.raw_operands, state.x87.state_key()[1:]))
         # Externally observable machine state at return must match exactly:
@@ -1111,7 +1245,7 @@ def execute(
         )
         write_operand(state, ctx, ops[0], value, obs)
     elif mnemonic in STRING_OPS:
-        reads, writes, writes_memory = STRING_OPS[mnemonic]
+        reads, writes, _writes_memory = STRING_OPS[mnemonic]
         key = (mnemonic, ins.prefix)
         observed = [key]
         for family in reads.split():
@@ -1126,8 +1260,7 @@ def execute(
         if mnemonic.startswith(("scas", "cmps")):
             state.flags = ("strflags", idx)
             state.carry = ("strcf", idx)
-        if writes_memory:
-            ctx.bump_requested = True
+
     elif mnemonic in ("nop", "int3"):
         pass
     elif mnemonic.startswith("f"):
@@ -1257,7 +1390,7 @@ def resync(states: tuple[SideState, SideState], idx: int, ctx: Context) -> None:
         state.carry = ("resync_cf", idx)
         state.fpu_flags = ("resync_fpuflags", idx)
         state.x87.known = [("resync_st", idx, i) for i in range(len(state.x87.known))]
-    ctx.bump_requested = True
+    _commit_clobber(ctx, ("resync", idx))
 
 
 def _contained(value: Value, ctx: Context) -> bool:
@@ -1460,11 +1593,61 @@ def _meta_step(orig: SideState, recomp: SideState, meta, idx: int) -> bool:
 # stack discipline (push/pop/leave/enter), x87 (stack-shape effects), and
 # instructions that can fault on operand values (division).
 _ONE_SIDED_BLACKLIST = frozenset(
-    {"push", "pop", "leave", "enter", "call", "ret", "jmp", "int3", "div", "idiv"}
+    {"leave", "enter", "call", "ret", "jmp", "int3", "div", "idiv"}
     | set(JCC_MNEMONICS)
     | {"loop", "loope", "loopne", "jcxz", "jecxz"}
     | set(STRING_OPS)
 )
+
+
+def _one_sided_push_ok(state: SideState, ctx: Context, ins, idx: int) -> bool:
+    """One side spills a register the other side never needed (a save
+    around a region, or a scratch spill). The slot is private: it lies
+    strictly below the entry stack pointer, no frame pointer has escaped,
+    and the spill must be reclaimed before any call (a pushed value still
+    live at a call would be an argument). The store is committed so later
+    reads of the slot alias correctly."""
+    value = read_operand(state, ctx, ins.operands[0])
+    new_esp = esp_add(state.read_reg("esp"), -4)
+    root, offset = _unwind_spadd(new_esp)
+    if root != ("init", "sp") or offset >= 0 or ctx.stack_escaped:
+        return False
+    if _frame_pointer_value(value):
+        return False
+    obs = [("store", new_esp, "stack", value)]
+    state.write_reg("esp", new_esp)
+    tag = ("mem", ("scratch", idx), 0)
+    ctx.mem_events.append((tag, (new_esp, 4, "push")))
+    ctx.gen = tag
+    ctx.scratch_pushes.append([state, offset, value, tag])
+    _invalidate_save_slots(ctx, obs)
+    ctx.categories.add("callee_save_substitution")
+    return True
+
+
+def _one_sided_pop_ok(state: SideState, ctx: Context, ins) -> bool:
+    """Reclaim of a one-sided spill (or a plain scratch read): only from
+    the function's own private scratch. When it provably reads back an
+    intact one-sided push, the popped register regains the exact pushed
+    value, so callee-save round-trips stay externally clean."""
+    if ins.operands[0][0] != "reg":
+        return False
+    esp = state.read_reg("esp")
+    root, offset = _unwind_spadd(esp)
+    if root != ("init", "sp") or offset >= 0 or ctx.stack_escaped:
+        return False
+    tag = _load_tag(ctx, esp, 4, "pop")
+    value: Value = ("load", esp, "stack", tag)
+    for k, record in enumerate(ctx.scratch_pushes):
+        if record[0] is state and record[1] == offset:
+            if record[3] == tag:
+                value = record[2]
+            del ctx.scratch_pushes[k]
+            break
+    state.write_reg(ins.operands[0][1], value)
+    state.write_reg("esp", esp_add(esp, 4))
+    ctx.categories.add("callee_save_substitution")
+    return True
 
 
 def _one_sided_ok(
@@ -1491,6 +1674,13 @@ def _one_sided_ok(
         ctx.categories.add("dead_operation")
         return True
     if ins.mnemonic.startswith("f"):
+        return False
+    try:
+        if ins.mnemonic == "push" and len(ins.operands) == 1:
+            return _one_sided_push_ok(state, ctx, ins, idx)
+        if ins.mnemonic == "pop" and len(ins.operands) == 1:
+            return _one_sided_pop_ok(state, ctx, ins)
+    except (Reject, IndexError, KeyError, ValueError, TypeError):
         return False
     reads_before = len(state.load_log)
     log_snapshot = set(state.load_log) if state.load_log else set()
@@ -1761,7 +1951,6 @@ def verify_effective_match(
                 _record_operand_candidate(ctx, index_o, index_r, ins_o, ins_r)
                 obs_o: list = []
                 obs_r: list = []
-                ctx.bump_requested = False
                 before_o = dict(orig.regs)
                 before_r = dict(recomp.regs)
                 state_before_o = _clone_state(orig)
@@ -1791,7 +1980,6 @@ def verify_effective_match(
                 )
                 meta = meta_o or meta_r
                 if meta is not None and _meta_step(orig, recomp, meta, idx):
-                    _bump_linear_memory(ctx)
                     continue
                 if not fully_synced(orig, recomp):
                     if recorder is not None:
@@ -1800,15 +1988,15 @@ def verify_effective_match(
                         )
                     return False
                 resync((orig, recomp), idx, ctx)
-                _bump_linear_memory(ctx)
                 continue
 
             guard_state_size(orig, ctx)
             guard_state_size(recomp, ctx)
 
             if _callee_save_swap(ctx, ins_o, ins_r, obs_o, obs_r, orig, recomp):
-                if ctx.bump_requested:
-                    _bump_linear_memory(ctx)
+                # The pushed values differ (that is the point of the swap),
+                # but the slot and width agree: commit from the orig side.
+                _commit_memory(ctx, obs_o, idx)
                 continue
 
             if obs_o != obs_r:
@@ -1886,8 +2074,7 @@ def verify_effective_match(
                 if not _divergences_justified(ctx, orig, recomp):
                     return False
 
-            if ctx.bump_requested:
-                _bump_linear_memory(ctx)
+            _commit_memory(ctx, obs_o, idx)
 
         # Values still diverged at the end must be dead. Callee-saved
         # registers and the stack pointer are externally observable machine
@@ -2244,7 +2431,7 @@ def _abs_stack_offset(addr: Value, is_slot) -> tuple[Value, int] | None:
     if is_slot:
         return _unwind_spadd(addr)
     mem = _flatten_mem(addr)
-    if len(mem[2]) == 1 and not mem[4]:
+    if len(mem[2]) == 1 and not mem[4] and isinstance(mem[3], int):
         value, scale = mem[2][0]
         if scale == 1:
             root, offset = _unwind_spadd(value)
@@ -2252,10 +2439,20 @@ def _abs_stack_offset(addr: Value, is_slot) -> tuple[Value, int] | None:
     return None
 
 
-def _ranges_disjoint(a_disp: int, a_width, b_disp: int, b_width) -> bool:
-    if a_width is None or b_width is None:
+def _ranges_disjoint(a_disp, a_width, b_disp, b_width) -> bool:
+    if isinstance(a_disp, int) and isinstance(b_disp, int):
+        if a_width is None or b_width is None:
+            return False
+        return a_disp + a_width <= b_disp or b_disp + b_width <= a_disp
+    if a_disp == b_disp:
         return False
-    return a_disp + a_width <= b_disp or b_disp + b_width <= a_disp
+    # Alpha-renamed frame slots: distinct slot ids are distinct locals
+    # (their non-overlap is validated by _slots_consistent).
+    return (
+        isinstance(a_disp, tuple)
+        and isinstance(b_disp, tuple)
+        and a_disp[0] == b_disp[0] == "slot"
+    )
 
 
 def _mem_disjoint(a: tuple, b: tuple) -> bool:
@@ -2390,10 +2587,18 @@ class _CfgState:
     orig: SideState
     recomp: SideState
     memory: int | Value
+    # Whether a pointer into the function's own frame may have escaped on
+    # some path reaching this point (see Context.stack_escaped).
+    escaped: bool = False
 
 
 def _clone_cfg_state(state: _CfgState) -> _CfgState:
-    return _CfgState(_clone_state(state.orig), _clone_state(state.recomp), state.memory)
+    return _CfgState(
+        _clone_state(state.orig),
+        _clone_state(state.recomp),
+        state.memory,
+        state.escaped,
+    )
 
 
 _JOIN_ATTRS = ("flags", "carry", "fpu_flags")
@@ -2502,17 +2707,21 @@ def _join_states(
         memory = entry.memory
     else:
         memory = ("cfg_mem_phi", block)
-    return _CfgState(out_o, out_r, memory)
+    return _CfgState(out_o, out_r, memory, entry.escaped or incoming.escaped)
 
 
 def _states_equal(a: _CfgState, b: _CfgState) -> bool:
-    return a.memory == b.memory and all(
-        x.regs == y.regs
-        and x.flags == y.flags
-        and x.carry == y.carry
-        and x.fpu_flags == y.fpu_flags
-        and x.x87.state_key() == y.x87.state_key()
-        for x, y in ((a.orig, b.orig), (a.recomp, b.recomp))
+    return (
+        a.memory == b.memory
+        and a.escaped == b.escaped
+        and all(
+            x.regs == y.regs
+            and x.flags == y.flags
+            and x.carry == y.carry
+            and x.fpu_flags == y.fpu_flags
+            and x.x87.state_key() == y.x87.state_key()
+            for x, y in ((a.orig, b.orig), (a.recomp, b.recomp))
+        )
     )
 
 
@@ -2685,6 +2894,7 @@ def verify_cfg_effective_match(
         flow = _clone_cfg_state(entry[block])
         orig_state, recomp_state = flow.orig, flow.recomp
         ctx = Context(gen=flow.memory, metadata=metadata, recorder=recorder)
+        ctx.stack_escaped = flow.escaped
         for i in range(order[block], ends[block]):
             line_o, line_r = orig_asm[i], recomp_asm[i]
             if kinds[i] == "data":
@@ -2697,7 +2907,6 @@ def verify_cfg_effective_match(
                 _record_operand_candidate(ctx, i, i, ins_o, ins_r)
                 obs_o: list = []
                 obs_r: list = []
-                ctx.bump_requested = False
                 before_o = dict(orig_state.regs)
                 before_r = dict(recomp_state.regs)
                 state_before_o = _clone_state(orig_state)
@@ -2714,14 +2923,12 @@ def verify_cfg_effective_match(
                 if _same_meta_effects(meta_o, meta_r) and _meta_step(
                     orig_state, recomp_state, meta_o, i
                 ):
-                    ctx.gen = ("cfg_mem_meta", i)
                     continue
                 if not fully_synced(orig_state, recomp_state):
                     if recorder is not None:
                         recorder.mark_inconclusive("unsupported_instruction", i, i)
                     return False
                 resync((orig_state, recomp_state), i, ctx)
-                ctx.gen = ("cfg_mem_resync", i)
                 continue
 
             guard_state_size(orig_state, ctx)
@@ -2793,8 +3000,7 @@ def verify_cfg_effective_match(
                     if recorder is not None:
                         recorder.mark_inconclusive("unsupported_control_flow")
                     return False
-            if ctx.bump_requested:
-                ctx.gen = ("cfg_mem_write", i)
+            _commit_memory(ctx, obs_o, i)
 
         last_kind = kinds[ends[block] - 1]
         if (
@@ -2806,7 +3012,7 @@ def verify_cfg_effective_match(
             # Falling out of the disassembled function is not a modeled exit.
             return False
 
-        outgoing = _CfgState(orig_state, recomp_state, ctx.gen)
+        outgoing = _CfgState(orig_state, recomp_state, ctx.gen, ctx.stack_escaped)
         if recorder is not None:
             recorder.reasons.update(ctx.categories)
         # Propagate to successors.
@@ -2985,7 +3191,11 @@ def _dp_line_class(line: str) -> str:
     mnemonic, _, _ = line.partition(" ")
     if mnemonic == "call":
         return "call"
-    if mnemonic == "push" or mnemonic in STRING_OPS or mnemonic.startswith("rep"):
+    if mnemonic == "push":
+        # Pushes pair with pushes, but may also go one-sided (a scratch
+        # spill on one side only); the verifier gates the soundness.
+        return "push"
+    if mnemonic in STRING_OPS or mnemonic.startswith("rep"):
         return "store"
     try:
         ins = parse_instruction(line)
@@ -3066,8 +3276,9 @@ def _align_block_lines(
     # cost[i][j]: best cost aligning lines_o[:i] with lines_r[:j].
     cost = [[inf] * (m + 1) for _ in range(n + 1)]
     cost[0][0] = 0.0
-    gap_o = [_GAP if _dp_line_class(line) == "none" else inf for line in lines_o]
-    gap_r = [_GAP if _dp_line_class(line) == "none" else inf for line in lines_r]
+    gap_classes = ("none", "push")
+    gap_o = [_GAP if _dp_line_class(line) in gap_classes else inf for line in lines_o]
+    gap_r = [_GAP if _dp_line_class(line) in gap_classes else inf for line in lines_r]
     for i in range(1, n + 1):
         cost[i][0] = cost[i - 1][0] + gap_o[i - 1]
     for j in range(1, m + 1):
@@ -3186,6 +3397,7 @@ def verify_isomorphic_cfg_effective_match(
         orig_state.load_log = set()
         recomp_state.load_log = set()
         ctx = Context(gen=flow.memory, metadata=metadata, recorder=recorder)
+        ctx.stack_escaped = flow.escaped
         edges_o = cfg_o.succ[block_o]
         edges_r = cfg_r.succ[block_r]
         for index_o, index_r in alignments[pair]:
@@ -3213,7 +3425,6 @@ def verify_isomorphic_cfg_effective_match(
                 _record_operand_candidate(ctx, index_o, index_r, ins_o, ins_r)
                 obs_o: list = []
                 obs_r: list = []
-                ctx.bump_requested = False
                 before_o = dict(orig_state.regs)
                 before_r = dict(recomp_state.regs)
                 state_before_o = _clone_state(orig_state)
@@ -3232,7 +3443,6 @@ def verify_isomorphic_cfg_effective_match(
                 if _same_meta_effects(meta_o, meta_r) and _meta_step(
                     orig_state, recomp_state, meta_o, index_o
                 ):
-                    ctx.gen = ("cfg_mem_meta", index_o)
                     continue
                 if not fully_synced(orig_state, recomp_state):
                     if recorder is not None:
@@ -3241,7 +3451,6 @@ def verify_isomorphic_cfg_effective_match(
                         )
                     return False
                 resync((orig_state, recomp_state), index_o, ctx)
-                ctx.gen = ("cfg_mem_resync", index_o)
                 continue
 
             guard_state_size(orig_state, ctx)
@@ -3314,8 +3523,7 @@ def verify_isomorphic_cfg_effective_match(
                     if recorder is not None:
                         recorder.mark_inconclusive("unsupported_control_flow")
                     return False
-            if ctx.bump_requested:
-                ctx.gen = ("cfg_mem_write", index_o)
+            _commit_memory(ctx, obs_o, index_o)
 
         if not _load_obligations_met(ctx):
             if recorder is not None:
@@ -3334,7 +3542,7 @@ def verify_isomorphic_cfg_effective_match(
                 recorder.mark_inconclusive("unsupported_control_flow")
             return False
 
-        outgoing = _CfgState(orig_state, recomp_state, ctx.gen)
+        outgoing = _CfgState(orig_state, recomp_state, ctx.gen, ctx.stack_escaped)
         if recorder is not None:
             recorder.reasons.update(ctx.categories)
         for role, to_o in edges_o.items():

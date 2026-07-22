@@ -10,6 +10,7 @@ copy and mirrored one compare region — shifting the length of the function
 and every crossing branch displacement.
 """
 
+import difflib
 from pathlib import Path
 
 import pytest
@@ -493,3 +494,139 @@ def test_test_different_operands_not_conflated_with_cmp():
         "ret",
     ]
     assert verify_effective_match(orig, recomp) is False
+
+
+# --- Scheduling across the stack (per-load alias tags) -----------------------
+
+
+def test_load_scheduled_across_push():
+    """The same argument load before vs after a push: [esp + 8] and
+    [esp + 0xc] denote the same slot once the stack adjustment is folded,
+    and the push's write to private scratch does not invalidate the load."""
+    orig = [
+        "mov eax, dword ptr [esp + 8]",
+        "push esi",
+        "cdq ",
+        "mov esi, 0x1d",
+        "idiv esi",
+        "mov eax, edx",
+        "pop esi",
+        "ret 8",
+    ]
+    recomp = [
+        "push esi",
+        "mov esi, 0x1d",
+        "mov eax, dword ptr [esp + 0xc]",
+        "cdq ",
+        "idiv esi",
+        "mov eax, edx",
+        "pop esi",
+        "ret 8",
+    ]
+    assert verify_effective_match(orig, recomp) is False  # lengths equal, but
+    # positional pairing misaligns; the CFG pairing proves it:
+    t_o: list[int | None] = [None] * 8
+    t_r: list[int | None] = [None] * 8
+    assert verify_isomorphic_cfg_effective_match(orig, recomp, t_o, t_r) is True
+
+
+def test_unknown_pointer_load_across_push():
+    """A load through an incoming pointer is not aliased by a push: while
+    no frame pointer has escaped, callee scratch is private."""
+    orig = [
+        "mov eax, dword ptr [ecx + 0x14]",
+        "push esi",
+        "mov esi, eax",
+        "mov eax, esi",
+        "pop esi",
+        "ret",
+    ]
+    recomp = [
+        "push esi",
+        "mov eax, dword ptr [ecx + 0x14]",
+        "mov esi, eax",
+        "mov eax, esi",
+        "pop esi",
+        "ret",
+    ]
+    t: list[int | None] = [None] * 6
+    assert verify_isomorphic_cfg_effective_match(orig, recomp, t, list(t)) is True
+
+
+def test_pushed_then_popped_values_stay_distinct():
+    """Two successive push/pop round-trips at the same slot must not be
+    conflated: the second pop reads the second pushed value."""
+    orig = [
+        "push ecx",
+        "pop eax",
+        "push edx",
+        "pop eax",
+        "mov dword ptr [esi], eax",
+        "ret",
+    ]
+    recomp = [
+        "push ecx",
+        "pop eax",
+        "push edx",
+        "pop ecx",
+        "mov dword ptr [esi], ecx",
+        "mov eax, ecx",
+        "ret",
+    ]
+    codes = difflib.SequenceMatcher(None, orig, recomp).get_opcodes()
+    assert verify_effective_match(orig, recomp, codes) is True
+    bad = [
+        "push ecx",
+        "pop eax",
+        "push edx",
+        "pop ecx",
+        "mov dword ptr [esi], eax",  # stores the FIRST pushed value
+        "ret",
+    ]
+    t: list[int | None] = [None] * 6
+    assert verify_isomorphic_cfg_effective_match(orig, bad, t, list(t)) is False
+
+
+# --- One-sided scratch spills -------------------------------------------------
+
+
+def test_one_sided_register_spill():
+    """One side needs an extra temp register and wraps the region in a
+    push/pop the other side never emits; the callee-saved register is
+    restored, so the round-trip is externally invisible."""
+    orig = [
+        "mov ax, word ptr [ecx + 8]",
+        "shl ax, 1",
+        "add ax, word ptr [ecx + 6]",
+        "ret",
+    ]
+    recomp = [
+        "push esi",
+        "mov si, word ptr [ecx + 8]",
+        "mov ax, word ptr [ecx + 6]",
+        "shl si, 1",
+        "add ax, si",
+        "pop esi",
+        "ret",
+    ]
+    t_o: list[int | None] = [None] * 4
+    t_r: list[int | None] = [None] * 7
+    assert verify_isomorphic_cfg_effective_match(orig, recomp, t_o, t_r) is True
+
+
+def test_one_sided_push_live_at_call_rejected():
+    """A one-sided push still on the stack at a call site is an extra
+    argument, not a spill."""
+    orig = [
+        "call <OFFSET1>",
+        "ret",
+    ]
+    recomp = [
+        "push eax",
+        "call <OFFSET1>",
+        "add esp, 4",
+        "ret",
+    ]
+    t_o: list[int | None] = [None] * 2
+    t_r: list[int | None] = [None] * 4
+    assert verify_isomorphic_cfg_effective_match(orig, recomp, t_o, t_r) is False

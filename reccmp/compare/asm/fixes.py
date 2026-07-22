@@ -70,6 +70,17 @@ def analyze_effective_match(  # pylint: disable=too-many-arguments
     if orig_asm == recomp_asm:
         return ComparisonAnalysis.exact()
 
+    def finish(analysis: ComparisonAnalysis) -> ComparisonAnalysis:
+        # A proof over textually-different streams with no specific reason
+        # means the differences were pure scheduling absorbed by the value
+        # flow (renames, swaps and inversions all carry their own label).
+        if (
+            analysis.status == ComparisonStatus.EFFECTIVE
+            and not analysis.effective_reasons
+        ):
+            return ComparisonAnalysis.effective(("instruction_reorder",))
+        return analysis
+
     orig_addr_list = list(orig_addrs) if orig_addrs is not None else None
     recomp_addr_list = list(recomp_addrs) if recomp_addrs is not None else None
 
@@ -105,7 +116,7 @@ def analyze_effective_match(  # pylint: disable=too-many-arguments
         extra_reasons = {"padding"} if padding else set()
         if relocation_normalized is not None:
             extra_reasons.add("instruction_reorder")
-        return lockstep.effective_analysis(extra_reasons)
+        return finish(lockstep.effective_analysis(extra_reasons))
 
     # Diff-aligned pairing: handles length differences (one-sided entries
     # for whitelisted unobservable instructions, e.g. a redundant
@@ -121,14 +132,14 @@ def analyze_effective_match(  # pylint: disable=too-many-arguments
         recorder=diff_aligned,
     ):
         logger.debug("effective match: diff-aligned")
-        return diff_aligned.effective_analysis()
+        return finish(diff_aligned.effective_analysis())
 
     relocation = new_recorder()
     if relocation_normalized is not None and verify_effective_match(
         orig_asm, relocation_normalized, metadata=metadata, recorder=relocation
     ):
         logger.debug("effective match: instruction relocation")
-        return relocation.effective_analysis({"instruction_reorder"})
+        return finish(relocation.effective_analysis({"instruction_reorder"}))
 
     # CFG-aware verification: needs branch targets for both sides.
     orig_targets = _branch_targets(trimmed_orig, orig_addrs, orig_meta)
@@ -150,7 +161,7 @@ def analyze_effective_match(  # pylint: disable=too-many-arguments
         cfg_effective = False
     if cfg_effective:
         logger.debug("effective match: cfg")
-        return cfg.effective_analysis({"padding"} if padding else ())
+        return finish(cfg.effective_analysis({"padding"} if padding else ()))
 
     # Isomorphic-CFG verification: per-side block graphs matched by
     # structure. Tolerates different instruction counts (folded loads,
@@ -174,7 +185,7 @@ def analyze_effective_match(  # pylint: disable=too-many-arguments
         iso_effective = False
     if iso_effective:
         logger.debug("effective match: isomorphic cfg")
-        return iso.effective_analysis()
+        return finish(iso.effective_analysis())
 
     # Only positional lockstep and the two CFG strategies establish trusted
     # program points. Diff alignment and relocation are proof-only.
