@@ -20,6 +20,7 @@ def create_name_lookup(
     image_id: ImageId,
     bin_read: Callable[[int], int | None],
     offset_name: Callable[[CvdumpTypeKey, int], str],
+    equivalence_groups: dict[int, int] | None = None,
 ) -> NameReplacementProtocol:
     """Function generator for name replacement"""
     assert image_id in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
@@ -34,6 +35,25 @@ def create_name_lookup(
 
     ref_key = "ref_orig" if image_id == ImageId.ORIG else "ref_recomp"
 
+    def equivalence_canonical_name(entity: ReccmpEntity) -> str | None:
+        """The canonical group member's name, when the entity's original
+        address belongs to a configured equivalence group (fold islands,
+        per-TU duplicate COMDATs). Both images canonicalize through the same
+        orig-address groups, so a reference to any group member on either
+        side emits the identical name and compares equal."""
+        if not equivalence_groups:
+            return None
+        orig_addr = entity.orig_addr
+        if orig_addr is None:
+            return None
+        canonical = equivalence_groups.get(orig_addr)
+        if canonical is None:
+            return None
+        canonical_entity = db.get(ImageId.ORIG, canonical, exact=True)
+        if canonical_entity is None:
+            return None
+        return canonical_entity.match_name()
+
     def get_name(entity: ReccmpEntity, offset: int = 0) -> str | None:
         """The offset is the difference between the input search address and the entity's
         starting address. Decide whether to return the base name (match_name) or
@@ -47,8 +67,8 @@ def create_name_lookup(
                 if isinstance(ref_addr, int):
                     target = db.get(image_id, ref_addr, exact=True)
                     if target is not None and target.entity_type == EntityType.FUNCTION:
-                        return target.match_name()
-            return entity.match_name()
+                        return equivalence_canonical_name(target) or target.match_name()
+            return equivalence_canonical_name(entity) or entity.match_name()
 
         # We will not return an offset name if this is not a variable
         # or if the offset is outside the range of the entity.

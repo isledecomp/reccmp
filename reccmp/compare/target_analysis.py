@@ -70,6 +70,7 @@ class LoadedTargetAnalysis:
     pdb_file: CvdumpAnalysis
     code_files: list[TextFile]
     data_sources: list[TextFile]
+    equivalence_sources: list[TextFile]
     project_aliases: ProjectAliases
     codebase: DecompCodebase
     cache: AnalysisCache
@@ -286,10 +287,20 @@ def load_target_analysis(
             encoding=target.encoding or "utf-8",
         )
     )
+    equivalence_sources = list(
+        TextFile.from_files(
+            target.equivalence_groups,
+            allow_error=True,
+            encoding=target.encoding or "utf-8",
+        )
+    )
     prepared_fingerprint = ""
     if use_cache:
         data_fingerprint = fingerprint_text_files(
             data_sources, context="data-sources-v1"
+        )
+        equivalence_fingerprint = fingerprint_text_files(
+            equivalence_sources, context="equivalence-groups-v1"
         )
         prepared_context = json.dumps(
             {
@@ -300,6 +311,10 @@ def load_target_analysis(
                 "pdb": pdb_fingerprint,
                 "data": data_fingerprint,
                 "data_order": [str(source.path) for source in data_sources],
+                "equivalence": equivalence_fingerprint,
+                "equivalence_order": [
+                    str(source.path) for source in equivalence_sources
+                ],
                 "symbols": symbol_scope,
             },
             sort_keys=True,
@@ -315,6 +330,7 @@ def load_target_analysis(
         pdb_file=pdb_file,
         code_files=code_files,
         data_sources=data_sources,
+        equivalence_sources=equivalence_sources,
         project_aliases={target.target_id: target.marker_aliases},
         codebase=codebase,
         cache=cache,

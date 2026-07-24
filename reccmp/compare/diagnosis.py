@@ -31,6 +31,10 @@ EFFECTIVE_REASON_ORDER = (
     "load_folding",
     "dead_operation",
     "padding",
+    # The original function is a stale incremental-link jmp island whose fold
+    # chain lands on a proven-equivalent shared body (configured via the
+    # project's equivalence-groups metadata); the recomp emits the real body.
+    "folded_symbol_alias",
 )
 
 EFFECTIVE_REASONS = frozenset(EFFECTIVE_REASON_ORDER)

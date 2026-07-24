@@ -1,3 +1,4 @@
+import dataclasses
 from dataclasses import dataclass, field
 from functools import cache
 import struct
@@ -27,6 +28,18 @@ from reccmp.formats.exceptions import (
 )
 from reccmp.formats import Image, PEImage
 from reccmp.types import ImageId
+
+_ISLAND_PADDING = (0x90, 0xCC)  # nop / int3
+
+
+def _is_bare_jmp_island(raw: bytes) -> bool:
+    """True when the function body is a lone `jmp rel32` followed only by
+    padding: the shape an incremental link leaves at a moved/folded symbol's
+    old address."""
+    if len(raw) < 5 or raw[0] != 0xE9:
+        return False
+    return all(b in _ISLAND_PADDING for b in raw[5:])
+
 
 # Register-argument usage by PDB calling convention. cdecl and stdcall
 # take all arguments on the stack; thiscall reads the receiver from ecx;
@@ -102,6 +115,9 @@ class FunctionComparator:
     # kinds and callee register-argument conventions for the effective-match
     # verifier. Optional: without it the verifier stays fully conservative.
     func_nodes: dict[int, CvdumpNode] = field(default_factory=dict)
+    # Proven-equivalent original addresses (member -> canonical): references to
+    # any group member sanitize to the canonical name on both sides.
+    equivalence_groups: dict[int, int] = field(default_factory=dict)
 
     def __post_init__(self):
         self._call_abi_cache: dict[str, CallAbi | None] | None = None
@@ -112,6 +128,7 @@ class FunctionComparator:
                 ImageId.ORIG,
                 create_bin_lookup(self.orig_bin),
                 self.types.get_name_for_offset,
+                self.equivalence_groups,
             ),
             is_32bit=self.is_32bit,
             collect_meta=False,
@@ -125,6 +142,7 @@ class FunctionComparator:
                 ImageId.RECOMP,
                 create_bin_lookup(self.recomp_bin),
                 self.types.get_name_for_offset,
+                self.equivalence_groups,
             ),
             is_32bit=self.is_32bit,
             collect_meta=False,
@@ -195,7 +213,7 @@ class FunctionComparator:
             orig_combined, recomp_combined, line_annotations
         )
 
-        return self._compare_function_assembly(
+        result = self._compare_function_assembly(
             orig_combined,
             recomp_combined,
             split_points,
@@ -205,6 +223,24 @@ class FunctionComparator:
             include_diff=include_diff,
             include_exact_diff=include_exact_diff,
         )
+
+        # Folded-symbol island: the original address is a group member whose
+        # entire original body is a stale `jmp rel32` island (plus padding)
+        # left by an incremental link, while the recomp emits the real body.
+        # The equivalence-groups metadata (validated project-side) proves the
+        # fold chain lands on an equivalent shared body, so the pair is an
+        # effective match, not a source defect.
+        if (
+            not result.analysis.is_effective
+            and match.orig_addr in self.equivalence_groups
+            and _is_bare_jmp_island(orig_raw)
+        ):
+            result = dataclasses.replace(
+                result,
+                analysis=ComparisonAnalysis.effective(("folded_symbol_alias",)),
+            )
+
+        return result
 
     # ------------------------------------------------------------------
     # PDB-derived metadata for the effective-match verifier

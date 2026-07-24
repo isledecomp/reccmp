@@ -88,6 +88,10 @@ class ProjectFileTarget(BaseModel):
         validation_alias=AliasChoices("data-sources", "data_sources"),
         default_factory=list,
     )
+    equivalence_groups: list[Path] = Field(
+        validation_alias=AliasChoices("equivalence-groups", "equivalence_groups"),
+        default_factory=list,
+    )
     encoding: str | None = Field(default=None)
     ghidra: YmlGhidraConfig = Field(default_factory=YmlGhidraConfig.default)
     report: YmlReportConfig = Field(default_factory=YmlReportConfig.default)
