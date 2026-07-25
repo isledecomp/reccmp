@@ -289,7 +289,6 @@ def diff_json_display(
             # We are using the original address as the key.
             # A function being renamed is not of interest here.
             name = new.name
-
             if new.recomp_addr is None:
                 recomp_addr_str = "various" if new.recomp_addr_varies else "n/a"
             else:
