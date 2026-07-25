@@ -196,17 +196,17 @@ def test_serialize_address():
     assert entity["recomp"] == "0x40a000"
 
 
-def test_serialize_address_uses_dict_key():
-    """The dict key is the source of truth for the orig addr.
-    The value on the entity is redundant and is not serialized."""
+def test_serialize_address_and_dict_key_out_of_sync():
+    """Fail to serialize if the report's internal structures are out of sync.
+    By nature of using a `dict` for report.entities, the key and the entity's `orig_addr`
+    could disagree, but it should never happen in normal operation."""
     report = ReccmpStatusReport(filename="test.exe")
     report.entities[0x100] = ReccmpComparedEntity(
         orig_addr=0x200, name="test", accuracy=1.0, recomp_addr=0x100
     )
 
-    obj = json.loads(serialize_reccmp_report(report))
-    [entity] = obj["data"]
-    assert entity["address"] == "0x100"
+    with pytest.raises(AssertionError):
+        json.loads(serialize_reccmp_report(report))
 
 
 def test_serialize_prefer_existing_udiff():

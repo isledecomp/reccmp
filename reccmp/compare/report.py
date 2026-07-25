@@ -266,11 +266,14 @@ def _serialize_version_1(
     report: ReccmpStatusReport, diff_included: bool = False
 ) -> JSONReportVersion1:
     """The JSON report can exclude the diff to make deserialization faster."""
-    entities = [
-        JSONEntityVersion1(
-            address=format_address(
-                addr
-            ),  # prefer dict key over redundant value in entity
+    entities = []
+
+    for addr, e in report.entities.items():
+        # The dict key and the entity's `orig_addr` property should never differ.
+        assert addr == e.orig_addr
+
+        report_ent = JSONEntityVersion1(
+            address=format_address(addr),
             name=e.name,
             matching=e.accuracy,
             recomp=(
@@ -283,8 +286,8 @@ def _serialize_version_1(
             diff=get_udiff_for_entity(e) if diff_included else None,
             type=int(e.type) if e.type is not None else None,
         )
-        for addr, e in report.entities.items()
-    ]
+
+        entities.append(report_ent)
 
     return JSONReportVersion1(
         file=report.filename,
