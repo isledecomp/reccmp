@@ -86,8 +86,77 @@ def test_offset_name(db: EntityDb, entity_type: EntityType):
     assert lookup(100) is not None
     assert lookup(101) is not None
 
+    # One-past-the-end of an array-sized entity resolves to 'name+size'.
+    # (A common compiler idiom for the end bound of an array.)
+    assert lookup(110) == "Hello+10 (OFFSET)"
+
     # Outside the range = no name
-    assert lookup(110) is None
+    assert lookup(111) is None
+
+
+def test_one_past_end_prefers_existing_entity(db: EntityDb):
+    """A one-past-the-end name is a fallback: when an entity starts exactly at
+    the end-bound address, its own name wins."""
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, name="Hello", type=EntityType.DATA, size=10)
+        batch.set(ImageId.ORIG, 110, name="Neighbor", type=EntityType.DATA, size=4)
+
+    lookup = create_lookup(db)
+
+    name = lookup(110)
+    assert name is not None
+    assert "Neighbor" in name
+    assert "Hello" not in name
+
+
+def test_one_past_end_small_entity(db: EntityDb):
+    """Without type information, do not use the one-past-the-end name for a
+    small (scalar sized) entity. An address just past a small entity is more
+    likely to be an unrelated (unannotated) neighbor variable."""
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, name="Hello", type=EntityType.DATA, size=4)
+
+    lookup = create_lookup(db)
+
+    assert lookup(103) is not None
+    assert lookup(104) is None
+
+
+def test_one_past_end_scalar_type(db: EntityDb):
+    """A known scalar never gets a one-past-the-end name, regardless of size.
+    (T_REAL64 is 8 bytes and would pass a pure size heuristic.)"""
+    with db.batch() as batch:
+        batch.set(
+            ImageId.ORIG,
+            100,
+            name="Hello",
+            type=EntityType.DATA,
+            size=8,
+            data_type=0x0041,
+        )
+
+    lookup = create_lookup(db)
+
+    assert lookup(107) is not None
+    assert lookup(108) is None
+
+
+def test_one_past_end_aggregate_type(db: EntityDb):
+    """A known array or struct admits the one-past-the-end name even when it
+    is smaller than the fallback size heuristic."""
+    with db.batch() as batch:
+        batch.set(
+            ImageId.ORIG,
+            100,
+            name="Hello",
+            type=EntityType.DATA,
+            size=4,
+            data_type=0x1004,
+        )
+
+    lookup = create_lookup(db)
+
+    assert lookup(104) == "Hello+4 (OFFSET)"
 
 
 def test_offset_name_non_variables(db):

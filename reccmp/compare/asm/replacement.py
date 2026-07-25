@@ -42,11 +42,37 @@ def create_name_lookup(
 
         # We will not return an offset name if this is not a variable
         # or if the offset is outside the range of the entity.
-        if entity.entity_type not in (
-            EntityType.DATA,
-            EntityType.OFFSET,
-        ) or offset >= entity.any_size(image_id):
+        # Exception: an offset exactly one past the end of the entity is
+        # allowed, so we can identify one-past-the-end pointers (a common
+        # compiler idiom for array end bounds). This case can only be reached
+        # when no other entity starts at the given address.
+        size = entity.any_size(image_id)
+        if (
+            entity.entity_type
+            not in (
+                EntityType.DATA,
+                EntityType.OFFSET,
+            )
+            or offset > size
+        ):
             return None
+
+        if offset == size:
+            # One-past-the-end reference: a common compiler idiom for the end
+            # bound of an array. Only allow this for arrays and structs; for
+            # a scalar an address just past the entity is much more likely to
+            # be an unrelated (unannotated) neighbor variable.
+            # Without type information, fall back to a size heuristic.
+            type_key = entity.get("data_type")
+            if (
+                CvdumpTypeKey(type_key).is_scalar()
+                if type_key is not None
+                else size < 8
+            ):
+                return None
+            # Skip the data_type offset lookup (the offset is outside the
+            # type) and use the raw offset suffix.
+            return entity.match_name(f"+{offset}")
 
         type_key = entity.get("data_type")
         if type_key:
