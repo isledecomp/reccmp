@@ -4,7 +4,7 @@ from typing import Literal, Iterable, Iterator
 from pydantic import BaseModel, ValidationError
 from pydantic_core import from_json
 from reccmp.types import EntityType
-from .diff import CombinedDiffOutput, DiffReport, RawDiffOutput, raw_diff_to_udiff
+from .diff import CombinedDiffOutput, RawDiffOutput, raw_diff_to_udiff
 
 
 def format_address(addr: int) -> str:
@@ -81,17 +81,8 @@ class ReccmpStatusReport:
 
         self.entities = {}
 
-    def add_match(self, match: DiffReport):
-        self.entities[match.orig_addr] = ReccmpComparedEntity(
-            orig_addr=match.orig_addr,
-            name=match.name,
-            type=match.match_type,
-            accuracy=match.ratio,
-            recomp_addr=match.recomp_addr,
-            is_effective_match=match.is_effective_match,
-            is_stub=match.is_stub,
-            rdiff=match.result.diff,
-        )
+    def add_match(self, match: ReccmpComparedEntity):
+        self.entities[match.orig_addr] = match
 
     def has_same_source(self, other: "ReccmpStatusReport") -> bool:
         """Were both reports derived from the same reccmp target?"""

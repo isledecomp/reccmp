@@ -345,11 +345,11 @@ def main() -> int:
         print(f"Failed to find a match at address 0x{args.address:x}")
         return 1
 
-    assert match.result is not None
+    assert match.rdiff is not None
     # Analyze the entire function, including long sections that already match.
     # This comment explains why this is necessary:
     # https://github.com/isledecomp/reccmp/pull/307#issuecomment-3796146436
-    udiff = raw_diff_to_udiff(match.result.diff, grouped=False)
+    udiff = raw_diff_to_udiff(match.rdiff, grouped=False)
 
     function_data = next(
         (y for y in compare.cvdump_analysis.nodes if y.addr == match.recomp_addr),

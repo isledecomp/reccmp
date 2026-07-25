@@ -33,10 +33,7 @@ def to_report(compare: Compare) -> ReccmpStatusReport:
     """Creates a ReccmpStatusReport using the current reccmp state,
     serializes to JSON text, then deserializes back to a new report object.
     The goal is to see the state of the data after serialization."""
-    report = ReccmpStatusReport(filename=compare.target_id)
-    for match in compare.compare_all():
-        report.add_match(match)
-
+    report = compare.to_report(filename=compare.target_id)
     json_text = serialize_reccmp_report(report, diff_included=True)
     return deserialize_reccmp_report(json_text)
 
@@ -101,9 +98,9 @@ def test_matched_entity_no_type():
         batch.set(ImageId.RECOMP, 0, name="test", size=1)
         batch.match(0, 0)
 
-    with pytest.raises(AssertionError):
-        # TODO: We could skip the entity instead of blowing up. GH #252
-        to_report(compare)
+    # Skip the entity instead of blowing up. (GH #252)
+    report = to_report(compare)
+    assert not report.entities
 
 
 def test_matched_function_missing_name():
