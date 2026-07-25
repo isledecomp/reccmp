@@ -31,6 +31,10 @@ class ReccmpComparedEntity:
     # Version 1 files have no type, so it is optional.
     type: EntityType | None = None
     recomp_addr: int | None = None
+    """The meaning of `None` depends on `recomp_addr_varies`:
+    recomp_addr_varies is False: This entity is unmatched.
+    recomp_addr_varies is True:  This entity has no fixed recomp addr."""
+
     is_effective_match: bool = False
     is_stub: bool = False
     rdiff: RawDiffOutput | None = None
@@ -38,7 +42,7 @@ class ReccmpComparedEntity:
     # Legacy field for importing version 1 files (aggregate).
     udiff: CombinedDiffOutput | None = None
 
-    recomp_addr_various: bool = False
+    recomp_addr_varies: bool = False
     """True if this entity had no fixed recomp address across the
     samples combined by reccmp-aggregate."""
 
@@ -198,7 +202,7 @@ def combine_reports(samples: list[ReccmpStatusReport]) -> ReccmpStatusReport:
         # i.e. to detect where function alignment ends
         if not all(e_list[0].recomp_addr == e.recomp_addr for e in e_list):
             output.entities[addr].recomp_addr = None
-            output.entities[addr].recomp_addr_various = True
+            output.entities[addr].recomp_addr_varies = True
 
     return output
 
@@ -279,7 +283,7 @@ def _serialize_version_1(
             recomp=(
                 format_address(e.recomp_addr)
                 if e.recomp_addr is not None
-                else (MAGIC_STRING_VARIOUS if e.recomp_addr_various else "")
+                else (MAGIC_STRING_VARIOUS if e.recomp_addr_varies else "")
             ),
             stub=e.is_stub,
             effective=e.is_effective_match,
@@ -328,7 +332,7 @@ def _deserialize_version_1(obj: JSONReportVersion1) -> ReccmpStatusReport:
             is_stub=e.stub,
             is_effective_match=e.effective,
             udiff=e.diff,
-            recomp_addr_various=various,
+            recomp_addr_varies=various,
         )
 
     return report

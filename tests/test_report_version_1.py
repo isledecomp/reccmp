@@ -92,7 +92,7 @@ def test_deserialize_defaults_for_optional_fields():
     assert e.is_stub is False
     assert e.is_effective_match is False
     assert e.udiff is None
-    assert e.recomp_addr_various is False
+    assert e.recomp_addr_varies is False
 
     # Cannot be set from a version 1 report.
     assert e.rdiff is None
@@ -147,7 +147,7 @@ def test_deserialize_address_must_be_a_string():
         deserialize_reccmp_report(create_json([create_entity(recomp=0x100)]))
 
 
-def test_deserialize_recomp_addr_various():
+def test_deserialize_recomp_addr_varies():
     """For an entity with varying recomp addresses created by `reccmp-aggregate`
     handle the magic string "various" and set the correct properties."""
     entity = create_entity(recomp="various")
@@ -155,7 +155,7 @@ def test_deserialize_recomp_addr_various():
     e = report.entities[0x100]
 
     assert e.recomp_addr is None
-    assert e.recomp_addr_various is True
+    assert e.recomp_addr_varies is True
 
 
 def test_deserialize_recomp_addr_various_exact():
@@ -265,12 +265,12 @@ def test_serialize_existing_timestamp():
     assert report.timestamp == then
 
 
-def test_serialize_recomp_addr_various():
+def test_serialize_recomp_addr_varies():
     """An entity created with `reccmp-aggregate` that does not have
     a fixed recomp addr should use the magic string `various`."""
     report = ReccmpStatusReport(filename="test.exe")
     report.entities[0x100] = ReccmpComparedEntity(
-        orig_addr=0x100, name="test", accuracy=1.0, recomp_addr_various=True
+        orig_addr=0x100, name="test", accuracy=1.0, recomp_addr_varies=True
     )
 
     obj = json.loads(serialize_reccmp_report(report))

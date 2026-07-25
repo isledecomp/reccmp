@@ -156,4 +156,4 @@ def test_aggregate_recomp_addr():
     assert combined.entities[100].recomp_addr == 500
     assert combined.entities[200].recomp_addr != 600
     assert combined.entities[200].recomp_addr is None
-    assert combined.entities[200].recomp_addr_various
+    assert combined.entities[200].recomp_addr_varies

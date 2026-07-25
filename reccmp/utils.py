@@ -290,7 +290,7 @@ def diff_json_display(
             # A function being renamed is not of interest here.
             name = new.name
             if new.recomp_addr is None:
-                recomp_addr_str = "various" if new.recomp_addr_various else "n/a"
+                recomp_addr_str = "various" if new.recomp_addr_varies else "n/a"
             else:
                 recomp_addr_str = format_address(new.recomp_addr)
 
