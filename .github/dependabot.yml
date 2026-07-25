@@ -12,7 +12,7 @@ updates:
     cooldown:
       default-days: 5 # some protection against supply chain attacks
     groups:
-      tests:
+      non-major:
         patterns: ["*"]
         update-types: ["minor", "patch"]
 
@@ -24,6 +24,6 @@ updates:
     cooldown:
       default-days: 5 # some protection against supply chain attacks
     groups:
-      tests:
+      non-major:
         patterns: ["*"]
         update-types: ["minor", "patch"]
