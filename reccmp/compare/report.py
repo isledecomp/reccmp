@@ -109,17 +109,41 @@ class ReccmpStatusReport:
     def filter_entities(
         self, filter_fn: Callable[[ReccmpComparedEntity], bool]
     ) -> None:
+        """Delete entities that return False from the provided filter function."""
         # Set the count in case it has never been set.
         self.update_function_count()
 
-        filtered = [key for key, value in self.entities.items() if filter_fn(value)]
+        discarded = [
+            key for key, value in self.entities.items() if not filter_fn(value)
+        ]
 
-        for key in filtered:
+        # Only functions contribute to function_total.
+        functions_removed = sum(
+            1 for key in discarded if self.entities[key].is_function()
+        )
+
+        for key in discarded:
             del self.entities[key]
 
         # Manually decrease it because recalculating will use
         # the higher of either the previous or current count.
-        self.function_total -= len(filtered)
+        self.function_total -= functions_removed
+
+    def asmcmp_filtering(self, nolib: bool, ignore_functions: list[str]) -> None:
+        """Helper to filter the report using the current filter options from `reccmp-reccmp`.
+        Compare with `entity_filter` in asmcmp.py that acts on the `ReccmpEntity` object.
+        """
+
+        def entity_filter(entity: ReccmpComparedEntity) -> bool:
+            if entity.is_function() and entity.name in ignore_functions:
+                return False
+
+            if nolib and entity.is_library:
+                return False
+
+            return True
+
+        self.filter_entities(entity_filter)
 
 
 def report_function_alignment(report: ReccmpStatusReport) -> int:

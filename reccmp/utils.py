@@ -422,17 +422,22 @@ def diff_json(
 
         print()
 
-    # Convert to dict, using orig_addr as key
-    saved_invert = saved_data.entities
-    new_invert = new_data.entities
-
-    all_addrs = set(saved_invert.keys()).union(new_invert.keys())
+    # The report can now hold unmatched entities.
+    # Keep the old behavior for now: only matched entities are displayed in the diff.
+    # In the future, we could addd a "discovered" bucket for newly identified entities.
+    all_addrs: set[int] = set()
+    all_addrs.update(
+        addr for addr, ent in saved_data.entities.items() if ent.is_matched()
+    )
+    all_addrs.update(
+        addr for addr, ent in new_data.entities.items() if ent.is_matched()
+    )
 
     # Put all the information in one place so we can decide how each item changed.
     combined = {
         addr: (
-            saved_invert.get(addr),
-            new_invert.get(addr),
+            saved_data.entities.get(addr),
+            new_data.entities.get(addr),
         )
         for addr in sorted(all_addrs)
     }

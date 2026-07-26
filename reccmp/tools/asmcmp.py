@@ -294,6 +294,10 @@ def main() -> int:
             with open(args.diff, "r", encoding="utf-8") as f:
                 saved_data = deserialize_reccmp_report(f.read())
 
+            saved_data.asmcmp_filtering(
+                args.nolib, target.report_config.ignore_functions
+            )
+
             diff_json(
                 saved_data,
                 report,
@@ -318,6 +322,7 @@ def main() -> int:
     if args.html is not None:
         write_html_report(args.html, report, target_icon)
 
+    report.update_function_count()
     function_count = report.function_total
 
     implemented = implemented_funcs / safe_denominator(function_count) * 100

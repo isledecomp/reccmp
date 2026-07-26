@@ -7,6 +7,7 @@ from reccmp.compare.report import (
     combine_reports,
     ReccmpReportSameSourceError,
 )
+from reccmp.types import EntityType
 
 
 def create_report(
@@ -157,3 +158,203 @@ def test_aggregate_recomp_addr():
     assert combined.entities[200].recomp_addr != 600
     assert combined.entities[200].recomp_addr is None
     assert combined.entities[200].recomp_addr_varies
+
+
+####  Entity filtering  ####
+
+
+def add_entity(
+    report: ReccmpStatusReport,
+    addr: int,
+    *,
+    name: str = "test",
+    accuracy: float = 1.0,
+    entity_type: EntityType | None = EntityType.FUNCTION,
+    library: bool = False,
+) -> ReccmpComparedEntity:
+    """Helper to add an entity with the attributes used by the filter tests."""
+    entity = ReccmpComparedEntity(
+        orig_addr=addr,
+        name=name,
+        accuracy=accuracy,
+        type=entity_type,
+        recomp_addr=addr,
+        is_library=library,
+    )
+    report.entities[addr] = entity
+    return entity
+
+
+def test_filter_entity_behavior():
+    """filter_entities() behaves the same as the main filter() function."""
+    report = create_report([(100, 1.0), (200, 0.5)])
+
+    report.filter_entities(lambda _: True)
+    assert set(report.entities) == {100, 200}
+
+    report.filter_entities(lambda _: False)
+    assert not report.entities
+
+
+def test_filter_entities_empty_report():
+    """Filtering a report with no entities has no effect."""
+    report = create_report()
+
+    report.filter_entities(lambda _: False)
+    assert not report.entities
+    assert report.function_total == 0
+
+
+def test_filter_entities_library():
+    """Exclude library functions."""
+    report = ReccmpStatusReport(filename="test.exe")
+    add_entity(report, 100)
+    add_entity(report, 200, library=True)
+    add_entity(report, 300)
+
+    report.filter_entities(lambda e: not e.is_library)
+    assert set(report.entities) == {100, 300}
+
+
+def test_filter_entities_function_name_exclude_list():
+    """Exclude functions by name. Entities of any other type are unaffected,
+    even if their name is in the exclusion list."""
+    report = ReccmpStatusReport(filename="test.exe")
+    add_entity(report, 100, name="Hello")
+    add_entity(report, 200, name="Pizza")
+    add_entity(report, 300, name="Pizza", entity_type=EntityType.VTABLE)
+
+    exclude = {"Pizza"}
+    report.filter_entities(
+        lambda e: not (e.type == EntityType.FUNCTION and e.name in exclude)
+    )
+    assert set(report.entities) == {100, 300}
+
+
+def test_filter_entities_untyped_is_not_function_type():
+    """Potential gap: filtering on entity type instead of calling `entity.is_function()`
+    will miss functions that have type=None (version 1 compatibility)."""
+    report = ReccmpStatusReport(filename="test.exe")
+    add_entity(report, 100, name="hello", entity_type=None)
+
+    report.filter_entities(lambda e: e.type != EntityType.FUNCTION)
+    assert set(report.entities) == {100}
+
+    report.filter_entities(lambda e: not e.is_function())
+    assert not report.entities
+
+
+def test_filter_entities_sets_function_total():
+    """Filtering resets the function count if it was never set."""
+    report = ReccmpStatusReport(filename="test.exe")
+    add_entity(report, 100)
+    add_entity(report, 200)
+    assert report.function_total == 0
+
+    report.filter_entities(lambda _: True)
+    assert report.function_total == 2
+
+
+def test_filter_entities_reduces_function_total():
+    """Discarded functions decrease the function count."""
+    report = ReccmpStatusReport(filename="test.exe")
+    add_entity(report, 100)
+    add_entity(report, 200)
+    add_entity(report, 300)
+
+    report.filter_entities(lambda e: e.orig_addr != 200)
+    assert report.function_total == 2
+
+
+def test_filter_entities_function_total_ignores_other_types():
+    """Only functions contribute to the function count,
+    so discarding a vtable does not change it."""
+    report = ReccmpStatusReport(filename="test.exe")
+    add_entity(report, 100)
+    add_entity(report, 200, entity_type=EntityType.VTABLE)
+
+    report.filter_entities(lambda e: e.type != EntityType.VTABLE)
+    assert set(report.entities) == {100}
+    assert report.function_total == 1
+
+
+def test_filter_entities_function_total_user_provided():
+    """A user-provided function count is higher than the number of functions
+    in the report. Discarding functions still reduces it by the amount removed."""
+    report = ReccmpStatusReport(filename="test.exe")
+    report.function_total = 100
+    add_entity(report, 100)
+    add_entity(report, 200)
+
+    report.filter_entities(lambda e: e.orig_addr != 200)
+    assert report.function_total == 99
+
+
+def test_filter_entities_repeated():
+    """Each call reduces the count against the entities that remain."""
+    report = ReccmpStatusReport(filename="test.exe")
+    add_entity(report, 100)
+    add_entity(report, 200)
+    add_entity(report, 300)
+
+    report.filter_entities(lambda e: e.orig_addr != 100)
+    assert report.function_total == 2
+
+    report.filter_entities(lambda e: e.orig_addr != 200)
+    assert set(report.entities) == {300}
+    assert report.function_total == 1
+
+
+def test_asmcmp_filtering_no_options():
+    """Default options: retain everything."""
+    report = ReccmpStatusReport(filename="test.exe")
+    add_entity(report, 100, name="Hello")
+    add_entity(report, 200, name="strcat", library=True)
+    add_entity(report, 300, name="Hello::`vftable'", entity_type=EntityType.VTABLE)
+
+    report.asmcmp_filtering(nolib=False, ignore_functions=[])
+    assert set(report.entities) == {100, 200, 300}
+    assert report.function_total == 2
+
+
+def test_asmcmp_filtering_nolib():
+    """--no-lib discards library entities of any type."""
+    report = ReccmpStatusReport(filename="test.exe")
+    add_entity(report, 100, name="Hello")
+    add_entity(report, 200, name="strcat", library=True)
+    add_entity(
+        report,
+        300,
+        name="Hello::`vftable'",
+        entity_type=EntityType.VTABLE,
+        library=True,
+    )
+
+    report.asmcmp_filtering(nolib=True, ignore_functions=[])
+    assert set(report.entities) == {100}
+
+    # Only the discarded function reduces the count.
+    assert report.function_total == 1
+
+
+def test_asmcmp_filtering_ignore_functions():
+    """Functions named in the ignore list are discarded.
+    An entity of another type is retained even if its name is in the list."""
+    report = ReccmpStatusReport(filename="test.exe")
+    add_entity(report, 100, name="Hello")
+    add_entity(report, 200, name="Pizza")
+    add_entity(report, 300, name="Pizza::`vftable'", entity_type=EntityType.VTABLE)
+
+    report.asmcmp_filtering(nolib=False, ignore_functions=["Pizza"])
+    assert set(report.entities) == {100, 300}
+    assert report.function_total == 1
+
+
+def test_asmcmp_filtering_untyped_entity():
+    """An entity with no type is treated as a function,
+    so the ignore list applies to it. (Version 1 report compatibility.)"""
+    report = ReccmpStatusReport(filename="test.exe")
+    add_entity(report, 100, name="Pizza", entity_type=None)
+
+    report.asmcmp_filtering(nolib=False, ignore_functions=["Pizza"])
+    assert not report.entities
