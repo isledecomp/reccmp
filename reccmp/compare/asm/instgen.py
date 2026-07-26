@@ -6,7 +6,7 @@ import bisect
 import struct
 from functools import cache
 from enum import Enum, auto
-from typing import Iterable, Literal, NamedTuple
+from typing import Iterable, Literal, Mapping, NamedTuple
 from capstone import Cs, CS_ARCH_X86, CS_MODE_16, CS_MODE_32  # type: ignore
 from .const import JUMP_MNEMONICS
 
@@ -65,7 +65,20 @@ def stop_at_int3(
 
 class InstructGen:
     # pylint: disable=too-many-instance-attributes
-    def __init__(self, blob: bytes, start: int, is_32bit: bool = True) -> None:
+    def __init__(
+        self,
+        blob: bytes,
+        start: int,
+        is_32bit: bool = True,
+        seeds: Mapping[int, SectionType] | None = None,
+    ) -> None:
+        """seeds provides table locations that are known before we start
+        the analysis. A jump or data table is normally detected from the
+        instruction that reads it, but that instruction may come *after*
+        the table, in which case we have already disassembled the table
+        bytes as (junk) code. The caller can break this chicken-and-egg
+        problem by seeding the tables detected on a previous run or by the
+        disassembly of the same function in another image."""
         self.is_32bit = is_32bit
         self.blob = blob
         self.start = start
@@ -81,6 +94,11 @@ class InstructGen:
         self.sections: list[FuncSection] = []
 
         self.confirmed_addrs: dict[int, SectionType] = {}
+        if seeds:
+            for addr, type_ in seeds.items():
+                if type_ != SectionType.CODE and self.start < addr < self.end:
+                    self.confirmed_addrs[addr] = type_
+
         self.analysis()
 
     def _finish_code_section(self, contents: list[DisasmLiteTuple]):
@@ -112,13 +130,14 @@ class InstructGen:
 
         # Assume the start of every function is code.
         if addr == self.start:
-            self.section_end = self.end
-            return SectionType.CODE
+            new_type = SectionType.CODE
+        else:
+            # The start of a new section must be an address that we've seen.
+            maybe_type = self.confirmed_addrs.get(addr)
+            if maybe_type is None:
+                return None
 
-        # The start of a new section must be an address that we've seen.
-        new_type = self.confirmed_addrs.get(addr)
-        if new_type is None:
-            return None
+            new_type = maybe_type
 
         self.cur_section_type = new_type
 

@@ -86,8 +86,26 @@ def test_offset_name(db: EntityDb, entity_type: EntityType):
     assert lookup(100) is not None
     assert lookup(101) is not None
 
+    # One-past-the-end of an array-sized entity resolves to 'name+size'.
+    # (A common compiler idiom for the end bound of an array.)
+    assert lookup(110) == "Hello+10 (OFFSET)"
+
     # Outside the range = no name
-    assert lookup(110) is None
+    assert lookup(111) is None
+
+
+@pytest.mark.parametrize("entity_type", (EntityType.DATA, EntityType.OFFSET))
+def test_one_past_end_small_entity(db: EntityDb, entity_type: EntityType):
+    """Do not use the one-past-the-end name for a small (scalar sized) entity.
+    An address just past a small entity is more likely to be an unrelated
+    (unannotated) neighbor variable."""
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, name="Hello", type=entity_type, size=4)
+
+    lookup = create_lookup(db)
+
+    assert lookup(103) is not None
+    assert lookup(104) is None
 
 
 def test_offset_name_non_variables(db):
