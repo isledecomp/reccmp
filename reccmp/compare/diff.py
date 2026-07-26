@@ -2,7 +2,6 @@ import dataclasses
 from typing import Iterable, Sequence
 from typing_extensions import NotRequired, TypedDict
 from reccmp.difflib import DiffOpcode, get_grouped_opcodes
-from reccmp.types import EntityType
 
 CombinedDiffInput = list[tuple[str, str]]
 
@@ -136,30 +135,3 @@ def raw_diff_to_udiff(
         opcode_groups = [diff.codes]
 
     return combined_diff(opcode_groups, diff.orig_inst, diff.recomp_inst)
-
-
-@dataclasses.dataclass
-class DiffReport:
-    match_type: EntityType
-    orig_addr: int
-    recomp_addr: int
-    name: str
-    result: EntityCompareResult = dataclasses.field(default_factory=EntityCompareResult)
-    is_stub: bool = False
-    is_library: bool = False
-
-    @property
-    def ratio(self) -> float:
-        return self.result.match_ratio
-
-    @property
-    def is_effective_match(self) -> bool:
-        return self.result.is_effective_match
-
-    @property
-    def effective_ratio(self) -> float:
-        return 1.0 if self.is_effective_match else self.ratio
-
-    def __str__(self) -> str:
-        """For debug purposes. Proper diff printing (with coloring) is in another module."""
-        return f"{self.name} (0x{self.orig_addr:x}) {self.ratio*100:.02f}%{'*' if self.is_effective_match else ''}"
