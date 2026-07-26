@@ -424,7 +424,7 @@ def diff_json(
 
     # The report can now hold unmatched entities.
     # Keep the old behavior for now: only matched entities are displayed in the diff.
-    # In the future, we could addd a "discovered" bucket for newly identified entities.
+    # In the future, we could add a "discovered" bucket for newly identified entities.
     all_addrs: set[int] = set()
     all_addrs.update(
         addr for addr, ent in saved_data.entities.items() if ent.is_matched()
