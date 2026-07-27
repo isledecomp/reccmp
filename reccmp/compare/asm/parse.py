@@ -193,7 +193,20 @@ class ParseAsm:
 
         return (inst_mnemonic, op_str)
 
-    def parse_asm(self, data: Buffer, start_addr: int) -> AsmExcerpt:
+    def fix_jump(self, inst: DisasmLiteTuple) -> tuple[str, str]:
+        """Subset of sanitize: fix jump offsets, replace nothing."""
+        inst_address, inst_size, inst_mnemonic, inst_op_str = inst
+
+        if (op_str_address := from_hex(inst_op_str)) is not None:
+            # Show the jump offset rather than the absolute address
+            jump_displacement = op_str_address - (inst_address + inst_size)
+            return (inst_mnemonic, hex(jump_displacement))
+
+        return (inst_mnemonic, inst_op_str)
+
+    def parse_asm(
+        self, data: Buffer, start_addr: int, *, sanitize: bool = True
+    ) -> AsmExcerpt:
         self.reset()
         asm: AsmExcerpt = []
 
@@ -212,12 +225,18 @@ class ParseAsm:
                     # where the hex value could not be an address.
                     # The exception is jumps which are as small as 2 bytes
                     # but are still useful to sanitize.
-                    if "0x" in inst_op_str and (
-                        inst_mnemonic in JUMP_MNEMONICS
-                        or inst_size > 4
-                        or not self.is_32bit
+                    if (
+                        sanitize
+                        and "0x" in inst_op_str
+                        and (
+                            inst_mnemonic in JUMP_MNEMONICS
+                            or inst_size > 4
+                            or not self.is_32bit
+                        )
                     ):
                         result = self.sanitize(inst)
+                    elif not sanitize and (inst_mnemonic in JUMP_MNEMONICS):
+                        result = self.fix_jump(inst)
                     else:
                         result = (inst_mnemonic, inst_op_str)
 

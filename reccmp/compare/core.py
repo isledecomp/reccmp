@@ -383,6 +383,9 @@ class Compare:
 
     ## Public API
 
+    def set_sanitize(self, value: bool) -> None:
+        self.function_comparator.sanitize = value
+
     def count_unmatched_functions(self) -> int:
         """Count known but unmatched functions in orig."""
         return sum(

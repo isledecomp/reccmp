@@ -51,7 +51,11 @@ def gen_json(json_file: str, json_str: str):
         f.write(json_str)
 
 
-def print_match_verbose(match: ReccmpComparedEntity, show_both_addrs: bool = False):
+def print_match_verbose(
+    match: ReccmpComparedEntity,
+    show_both_addrs: bool = False,
+    opt_udiff: bool = True,
+):
     percenttext = percent_string(match.effective_accuracy, match.is_effective_match)
 
     if show_both_addrs and match.recomp_addr is not None:
@@ -61,7 +65,7 @@ def print_match_verbose(match: ReccmpComparedEntity, show_both_addrs: bool = Fal
     else:
         addrs = format_address(match.orig_addr)
 
-    grouped_diff = match.type != EntityType.VTABLE
+    grouped_diff = opt_udiff and (match.type != EntityType.VTABLE)
     assert match.rdiff is not None
     udiff = raw_diff_to_udiff(match.rdiff, grouped=grouped_diff)
 
@@ -176,6 +180,18 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Exclude LIBRARY annotations from the analysis",
     )
+    parser.add_argument(
+        "--sanitize",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Asm replacement",
+    )
+    parser.add_argument(
+        "--udiff",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Display unified diff",
+    )
     argparse_add_logging_args(parser)
 
     args = parser.parse_args()
@@ -235,6 +251,7 @@ def main() -> int:
     logging.basicConfig(level=args.loglevel, format="[%(levelname)s] %(message)s")
 
     compare = Compare.from_target(target)
+    compare.set_sanitize(args.sanitize)
 
     print()
 
@@ -246,7 +263,9 @@ def main() -> int:
             logger.error("Failed to find a match at address 0x%x", args.verbose)
             return 1
 
-        print_match_verbose(match, show_both_addrs=args.print_rec_addr)
+        print_match_verbose(
+            match, show_both_addrs=args.print_rec_addr, opt_udiff=args.udiff
+        )
         return 0
 
     ### Compare everything.

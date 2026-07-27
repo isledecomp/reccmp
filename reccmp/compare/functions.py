@@ -74,6 +74,7 @@ class FunctionComparator:
     report: ReccmpReportProtocol
     types: CvdumpTypesParser
     is_32bit: bool = True
+    sanitize: bool = True
 
     def __post_init__(self):
         self.orig_sanitize = ParseAsm(
@@ -142,8 +143,12 @@ class FunctionComparator:
         except IndexError:
             pass
 
-        orig_combined = self.orig_sanitize.parse_asm(orig_raw, match.orig_addr)
-        recomp_combined = self.recomp_sanitize.parse_asm(recomp_raw, match.recomp_addr)
+        orig_combined = self.orig_sanitize.parse_asm(
+            orig_raw, match.orig_addr, sanitize=self.sanitize
+        )
+        recomp_combined = self.recomp_sanitize.parse_asm(
+            recomp_raw, match.recomp_addr, sanitize=self.sanitize
+        )
 
         # Check for assert calls only if we expect to find them
         if has_asserts(self.orig_bin):
