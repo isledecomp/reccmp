@@ -181,6 +181,12 @@ def parse_args() -> argparse.Namespace:
         help="Exclude LIBRARY annotations from the analysis",
     )
     parser.add_argument(
+        "--placeholder",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Asm replacement",
+    )
+    parser.add_argument(
         "--sanitize",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -252,6 +258,7 @@ def main() -> int:
 
     compare = Compare.from_target(target)
     compare.set_sanitize(args.sanitize)
+    compare.set_placeholder(args.placeholder)
 
     print()
 

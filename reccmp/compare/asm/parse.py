@@ -7,6 +7,7 @@ so that virtual addresses are replaced by symbol name or a generic
 placeholder string."""
 
 import re
+from dataclasses import dataclass
 from functools import cache
 from typing_extensions import Buffer
 from .const import JUMP_MNEMONICS, SINGLE_OPERAND_INSTS
@@ -33,7 +34,21 @@ def from_hex(string: str) -> int | None:
     return None
 
 
+@dataclass
+class AsmRenderOptions:
+    do_sanitize: bool = True
+    number_placeholders: bool = True
+    use_placeholders: bool = True
+
+
 class ParseAsm:
+    addr_test: AddrTestProtocol | None
+    name_lookup: NameReplacementProtocol | None
+    is_32bit: bool
+    replacements: dict[int, str]
+    indirect_replacements: dict[int, str]
+    options: AsmRenderOptions
+
     def __init__(
         self,
         addr_test: AddrTestProtocol | None = None,
@@ -46,7 +61,7 @@ class ParseAsm:
 
         self.replacements: dict[int, str] = {}
         self.indirect_replacements: dict[int, str] = {}
-        self.number_placeholders = True
+        self.options = AsmRenderOptions()
 
     def reset(self):
         self.replacements = {}
@@ -73,7 +88,7 @@ class ParseAsm:
         already replaced. This is so the number will be consistent across the diff
         if we can replace some symbols with actual names in recomp but not orig."""
         number = len(self.replacements) + len(self.indirect_replacements) + 1
-        return f"<OFFSET{number}>" if self.number_placeholders else "<OFFSET>"
+        return f"<OFFSET{number}>" if self.options.number_placeholders else "<OFFSET>"
 
     def replace(self, addr: int, exact: bool = False) -> str:
         """Provide a replacement name for the given address."""
@@ -83,6 +98,11 @@ class ParseAsm:
         if (name := self.lookup(addr, exact=exact)) is not None:
             self.replacements[addr] = name
             return name
+
+        if not self.options.use_placeholders:
+            # Ideally, you would get back the original string
+            # but we have already converted it to an int.
+            return hex(addr)
 
         placeholder = self._next_placeholder()
         self.replacements[addr] = placeholder
@@ -204,9 +224,7 @@ class ParseAsm:
 
         return (inst_mnemonic, inst_op_str)
 
-    def parse_asm(
-        self, data: Buffer, start_addr: int, *, sanitize: bool = True
-    ) -> AsmExcerpt:
+    def parse_asm(self, data: Buffer, start_addr: int) -> AsmExcerpt:
         self.reset()
         asm: AsmExcerpt = []
 
@@ -226,7 +244,7 @@ class ParseAsm:
                     # The exception is jumps which are as small as 2 bytes
                     # but are still useful to sanitize.
                     if (
-                        sanitize
+                        self.options.do_sanitize
                         and "0x" in inst_op_str
                         and (
                             inst_mnemonic in JUMP_MNEMONICS
@@ -235,7 +253,9 @@ class ParseAsm:
                         )
                     ):
                         result = self.sanitize(inst)
-                    elif not sanitize and (inst_mnemonic in JUMP_MNEMONICS):
+                    elif not self.options.do_sanitize and (
+                        inst_mnemonic in JUMP_MNEMONICS
+                    ):
                         result = self.fix_jump(inst)
                     else:
                         result = (inst_mnemonic, inst_op_str)

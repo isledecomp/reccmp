@@ -74,7 +74,6 @@ class FunctionComparator:
     report: ReccmpReportProtocol
     types: CvdumpTypesParser
     is_32bit: bool = True
-    sanitize: bool = True
 
     def __post_init__(self):
         self.orig_sanitize = ParseAsm(
@@ -107,6 +106,14 @@ class FunctionComparator:
         if path_line_pair is None:
             return None
         return f"{path_line_pair[0].name}:{path_line_pair[1]}"
+
+    def set_sanitize(self, value: bool) -> None:
+        self.orig_sanitize.options.do_sanitize = value
+        self.recomp_sanitize.options.do_sanitize = value
+
+    def set_placeholder(self, value: bool) -> None:
+        self.orig_sanitize.options.use_placeholders = value
+        self.recomp_sanitize.options.use_placeholders = value
 
     def compare_function(self, match: ReccmpMatch) -> EntityCompareResult:
         # Detect when the recomp function size would cause us to read
@@ -143,12 +150,8 @@ class FunctionComparator:
         except IndexError:
             pass
 
-        orig_combined = self.orig_sanitize.parse_asm(
-            orig_raw, match.orig_addr, sanitize=self.sanitize
-        )
-        recomp_combined = self.recomp_sanitize.parse_asm(
-            recomp_raw, match.recomp_addr, sanitize=self.sanitize
-        )
+        orig_combined = self.orig_sanitize.parse_asm(orig_raw, match.orig_addr)
+        recomp_combined = self.recomp_sanitize.parse_asm(recomp_raw, match.recomp_addr)
 
         # Check for assert calls only if we expect to find them
         if has_asserts(self.orig_bin):
