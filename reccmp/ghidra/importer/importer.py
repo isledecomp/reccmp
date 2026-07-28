@@ -8,9 +8,11 @@ from typing import Callable
 from functools import partial
 
 from ghidra.program.flatapi import FlatProgramAPI
+from ghidra.program.model.address import AddressSet
 
 from reccmp.compare.core import Compare
 from reccmp.project.detect import RecCmpTarget
+from reccmp.types import ImageId
 
 from .exceptions import ReccmpGhidraException
 from .function_importer import PdbFunctionImporter
@@ -29,13 +31,17 @@ def _import_function_into_ghidra(
     pdb_function: PdbFunction,
     type_importer: PdbTypeImporter,
     name_substitutions: CompiledRegexReplacements,
+    *,
+    image_id: ImageId = ImageId.ORIG,
 ):
     logger.debug("Start handling function '%s'", pdb_function.match_info.best_name())
 
-    hex_original_address = f"{pdb_function.match_info.orig_addr:x}"
+    image_address = pdb_function.match_info.addr(image_id)
+    assert image_address is not None
+    hex_image_address = f"{image_address:x}"
 
     # Find the Ghidra function at that address
-    ghidra_address = api.getAddressFactory().getAddress(hex_original_address)
+    ghidra_address = api.getAddressFactory().getAddress(hex_image_address)
     # pylint: disable=possibly-used-before-assignment
     function_importer = PdbFunctionImporter.build(
         api, pdb_function, type_importer, name_substitutions
@@ -49,6 +55,13 @@ def _import_function_into_ghidra(
         ), f"Failed to create function at {ghidra_address}"
         logger.info("Created new function at %s", ghidra_address)
 
+    if image_id == ImageId.RECOMP:
+        function_size = pdb_function.match_info.size(image_id)
+        if function_size is not None and function_size > 0:
+            body = AddressSet(ghidra_address, ghidra_address.add(function_size - 1))
+            if ghidra_function.getBody() != body:
+                ghidra_function.setBody(body)
+
     if function_importer.matches_ghidra_function(ghidra_function):
         logger.info(
             "Skipping function '%s', matches already",
@@ -59,7 +72,7 @@ def _import_function_into_ghidra(
     logger.debug(
         "Modifying function %s at 0x%s",
         function_importer.get_full_name(),
-        hex_original_address,
+        hex_image_address,
     )
 
     function_importer.overwrite_ghidra_function(ghidra_function)
@@ -88,6 +101,8 @@ def _do_execute_import(
     ignore_types: set[str],
     ignore_functions: set[int],
     name_substitutions: list[tuple[str, str]],
+    *,
+    image_id: ImageId = ImageId.ORIG,
 ):
     pdb_functions = extraction.get_function_list()
 
@@ -101,7 +116,12 @@ def _do_execute_import(
         _do_with_error_handling(
             glob.name or hex(glob.orig_addr),
             partial(
-                import_global_into_ghidra, api, extraction.compare, type_importer, glob
+                import_global_into_ghidra,
+                api,
+                extraction.compare,
+                type_importer,
+                glob,
+                image_id=image_id,
             ),
         )
 
@@ -131,13 +151,16 @@ def _do_execute_import(
                 pdb_func,
                 type_importer,
                 name_substitutions_compiled,
+                image_id=image_id,
             ),
         )
 
     logger.info("Finished importing functions.")
 
     logger.info("Importing vftables...")
-    import_vftables_into_ghidra(api, extraction.compare.get_vtables())
+    import_vftables_into_ghidra(
+        api, extraction.compare.get_vtables(), image_id=image_id
+    )
     logger.info("Finished importing vftables.")
 
 
@@ -154,7 +177,11 @@ def _log_and_track_failure(
         )
 
 
-def import_target_into_ghidra(target: RecCmpTarget, api: FlatProgramAPI):
+def import_target_into_ghidra(
+    target: RecCmpTarget,
+    api: FlatProgramAPI,
+    image_id: ImageId = ImageId.ORIG,
+):
     compare = Compare.from_target(target)
 
     # try to acquire matched functions
@@ -166,6 +193,7 @@ def import_target_into_ghidra(target: RecCmpTarget, api: FlatProgramAPI):
             set(target.ghidra_config.ignore_types),
             set(target.ghidra_config.ignore_functions),
             target.ghidra_config.name_substitutions,
+            image_id=image_id,
         )
     finally:
         GLOBALS.statistics.log()

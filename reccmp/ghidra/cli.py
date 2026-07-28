@@ -7,6 +7,7 @@ import logging
 
 from reccmp.project.detect import argparse_add_project_target_args
 from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
+from reccmp.types import ImageId
 
 logger = logging.getLogger(__file__)
 
@@ -91,6 +92,16 @@ def parse_reccmp_import_args():
 
     argparse_add_project_target_args(parser)
 
+    parser.add_argument(
+        "--image",
+        choices=("original", "recompiled"),
+        default="original",
+        help=(
+            "Select which matched image is open in Ghidra. The default preserves "
+            "the historical behavior and imports metadata at original addresses."
+        ),
+    )
+
     # These arguments decide if this is a local or remote project
     local_or_remote = parser.add_mutually_exclusive_group(required=True)
     local_or_remote.add_argument("--local-project-name", metavar="<name>")
@@ -130,4 +141,5 @@ def parse_reccmp_import_args():
     args = parser.parse_args()
 
     argparse_parse_logging(args)
+    args.image_id = ImageId.ORIG if args.image == "original" else ImageId.RECOMP
     return args

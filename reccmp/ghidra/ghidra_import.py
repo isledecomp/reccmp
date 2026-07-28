@@ -10,6 +10,8 @@ from pyghidra import HeadlessPyGhidraLauncher  # type: ignore[import-untyped]
 from reccmp.ghidra.cli import RemoteProjectConfig, parse_reccmp_import_args
 from reccmp.project.detect import argparse_parse_project_target
 from reccmp.project.error import RecCmpProjectException
+from reccmp.project.util import get_path_sha256
+from reccmp.types import ImageId
 
 # Suppress linter warnings related to the fact that the header support for Ghidra is limited
 # and that we cannot import Ghidra classes before Ghidra has been loaded
@@ -53,7 +55,12 @@ def main():
         program_hash = program.getExecutableSHA256()
         # If Ghidra's hash does not match the reccmp target hash, abort
         # the import unless the user has enabled `allow-hash-mismatch`.
-        if target.sha256 != program_hash:
+        expected_hash = (
+            target.sha256
+            if args.image_id == ImageId.ORIG
+            else get_path_sha256(target.recompiled_path)
+        )
+        if expected_hash != program_hash:
             hash_mismatch_log_level = (
                 logging.WARNING
                 if target.ghidra_config.allow_hash_mismatch
@@ -63,7 +70,7 @@ def main():
                 hash_mismatch_log_level,
                 "The program hashes mismatch (Ghidra: '%s', reccmp project: '%s')",
                 program_hash,
-                target.sha256,
+                expected_hash,
             )
 
             if not target.ghidra_config.allow_hash_mismatch:
@@ -71,7 +78,7 @@ def main():
 
         transaction = program.startTransaction(TRANSACTION_NAME)
         api = FlatProgramAPI(program)
-        import_target_into_ghidra(target, api)
+        import_target_into_ghidra(target, api, image_id=args.image_id)
 
         commit = True
         program.endTransaction(transaction, commit)

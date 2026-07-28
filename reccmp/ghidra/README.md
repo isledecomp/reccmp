@@ -25,6 +25,9 @@ This assumes that you have already installed `reccmp`, e.g. in a virtual environ
     `reccmp-ghidra-import --target <reccmp-target> --local-project-name <ghidra-project-name> --file <file-inside-ghidra-project>`
     - If necessary, also provide `--local-project-dir`, especially if your Ghidra project is not
       located in the default directory.
+    - Add `--image recompiled` when the Ghidra Program contains the rebuilt
+      executable. This validates that executable and imports matched metadata at
+      recompiled addresses. Omitting `--image` retains the original-image behavior.
   - Shared project:
     `RECCMP_GHIDRA_USER=user RECCMP_GHIDRA_PASSWORD=password reccmp-ghidra-import --target <reccmp-target> --remote-url ghidra://<host>[:<port>]/<project-name> --file <file-inside-ghidra-project>`
     - You can optionally provide `--remote-checkin-comment` if you want to customize the check-in

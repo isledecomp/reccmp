@@ -11,6 +11,7 @@ import pytest
 from reccmp.cvdump.analysis import CvdumpNode
 from reccmp.cvdump.cvinfo import CVInfoTypeEnum, CvdumpTypeKey
 from reccmp.compare.db import ReccmpMatch
+from reccmp.types import ImageId
 from reccmp.ghidra.importer.pdb_extraction import (
     CppRegisterSymbol,
     CppStackSymbol,
@@ -23,6 +24,52 @@ from .ghidra_integration_test_setup import (
 
 if TYPE_CHECKING:
     from ghidra.program.flatapi import FlatProgramAPI
+
+
+def test_import_function_into_recompiled_image(
+    ghidra: "FlatProgramAPI",
+    function_helper: GhidraFunctionTestHelper,
+    type_helper: GhidraTypeTestHelper,
+):
+    from reccmp.ghidra.importer.importer import _import_function_into_ghidra
+    from reccmp.ghidra.importer.pdb_extraction import PdbFunction
+
+    recomp_address = function_helper.ORIG_FN_TO_OVERWRITE_SECONDARY
+    original_function = ghidra.getFunctionAt(
+        ghidra.getAddressFactory().getAddress(hex(function_helper.orig_address))
+    )
+    assert original_function is not None
+    original_name = original_function.getName()
+
+    pdb_function = PdbFunction(
+        ReccmpMatch(
+            function_helper.orig_address,
+            recomp_address,
+            {
+                "name": "RecompiledImageFunction",
+                "orig_size": 20,
+                "recomp_size": 1,
+            },
+        ),
+        signature=None,
+        is_stub=False,
+    )
+
+    _import_function_into_ghidra(
+        ghidra,
+        pdb_function,
+        type_helper.type_importer,
+        [],
+        image_id=ImageId.RECOMP,
+    )
+
+    imported = ghidra.getFunctionAt(
+        ghidra.getAddressFactory().getAddress(hex(recomp_address))
+    )
+    assert imported is not None
+    assert imported.getName() == "RecompiledImageFunction"
+    assert imported.getBody().getNumAddresses() == 1
+    assert original_function.getName() == original_name
 
 
 def test_import_trivial_function(
