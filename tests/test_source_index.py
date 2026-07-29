@@ -41,13 +41,13 @@ def test_source_index_joins_markers_to_clang_semantics(tmp_path: Path) -> None:
                                 "name": "Run",
                                 "mangledName": "?Run@Widget@N@@UAEHF@Z",
                                 "parentDeclContextId": "widget",
-                                "virtual": True,
                                 "type": {
                                     "qualType": "int (short) __attribute__((thiscall))"
                                 },
                                 "loc": {"file": str(source), "line": 7},
                                 "range": {"end": {"file": str(source), "line": 7}},
                                 "inner": [
+                                    {"kind": "OverrideAttr"},
                                     {
                                         "kind": "ParmVarDecl",
                                         "type": {"qualType": "short"},

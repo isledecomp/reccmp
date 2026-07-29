@@ -247,6 +247,15 @@ def _semantic_id(node: dict[str, Any], qualified_name: str) -> str:
     return f"{node.get('kind')}:{qualified_name}({signature})"
 
 
+def _is_virtual(node: dict[str, Any]) -> bool:
+    """Clang marks introducing virtuals directly and overrides with an attribute."""
+
+    return bool(node.get("virtual")) or any(
+        child.get("kind") in {"OverrideAttr", "FinalAttr"}
+        for child in node.get("inner", ())
+    )
+
+
 class _AstCollector:
     def __init__(self, repository: Path, compilation_root: Path | None = None) -> None:
         self.repository = repository.resolve()
@@ -315,7 +324,7 @@ class _AstCollector:
                     child, _qualified(qualified_name, str(child.get("name") or ""))
                 )
                 for child in node.get("inner", ())
-                if child.get("kind") in _FUNCTION_KINDS and child.get("virtual")
+                if child.get("kind") in _FUNCTION_KINDS and _is_virtual(child)
             )
             source_class = SourceClass(
                 semantic_id=f"record:{qualified_name}",
@@ -352,7 +361,7 @@ class _AstCollector:
                 owning_class=owning_class,
                 has_this=semantic_kind
                 in {"constructor", "destructor", "instance_method"},
-                is_virtual=bool(node.get("virtual")),
+                is_virtual=_is_virtual(node),
                 source_file=self._relative(location.file),
                 line=location.line,
                 end_line=location.end_line,
