@@ -119,6 +119,21 @@ def _qualified(scope: str, name: str) -> str:
     return f"{scope}::{name}" if scope else name
 
 
+def _scope_component(node: dict[str, Any]) -> str:
+    name = str(node.get("name") or "")
+    if node.get("kind") != "ClassTemplateSpecializationDecl":
+        return name
+    arguments = []
+    for child in node.get("inner", ()):
+        if child.get("kind") != "TemplateArgument":
+            continue
+        argument_type = _canonical_type(child)
+        value = child.get("value")
+        arguments.append(argument_type or str(value or ""))
+    rendered = ", ".join(argument for argument in arguments if argument)
+    return f"{name}<{rendered}>" if rendered else name
+
+
 def _canonical_type(node: dict[str, Any]) -> str:
     type_info = node.get("type") or {}
     return str(type_info.get("desugaredQualType") or type_info.get("qualType") or "")
@@ -203,7 +218,7 @@ class _AstCollector:
 
     def _collect_contexts(self, node: dict[str, Any], scope: str) -> None:
         kind = node.get("kind")
-        name = str(node.get("name") or "")
+        name = _scope_component(node)
         child_scope = scope
         if kind in _SCOPE_KINDS and name:
             child_scope = _qualified(scope, name)
@@ -230,13 +245,14 @@ class _AstCollector:
     def _walk(self, node: dict[str, Any], scope: str, fallback_file: str) -> None:
         kind = node.get("kind")
         name = str(node.get("name") or "")
+        scope_name = _scope_component(node)
         explicit_file = _explicit_file(node)
         if explicit_file:
             self.current_file = explicit_file
         location = _location(node, self.current_file or fallback_file)
         child_scope = scope
-        if kind in _SCOPE_KINDS and name:
-            child_scope = _qualified(scope, name)
+        if kind in _SCOPE_KINDS and scope_name:
+            child_scope = _qualified(scope, scope_name)
 
         if kind in _RECORD_KINDS and name and node.get("completeDefinition"):
             qualified_name = child_scope
