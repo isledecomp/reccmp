@@ -708,11 +708,25 @@ class SourceIndex:
                 # attaching it positionally to the next class definition.
                 index = class_by_name.get(vtable_symbol.name)
             if index is None:
-                raise SourceIndexError(
-                    f"{relative}:{vtable_symbol.line_number}: VTABLE "
-                    f"0x{vtable_symbol.offset:08x} names {vtable_symbol.name}, "
-                    "which is not a compiled class definition"
+                # A standalone specialization annotation need not be named by
+                # any explicit source declaration. Preserve that reviewed
+                # identity as an annotation-owned record; if Clang did emit the
+                # specialization, the name lookup above retains its bases,
+                # fields, virtual declarations, and source extent instead.
+                source_class = SourceClass(
+                    semantic_id=f"record:{vtable_symbol.name}",
+                    qualified_name=vtable_symbol.name,
+                    bases=(),
+                    fields=(),
+                    virtual_declarations=(),
+                    source_file=relative,
+                    line=vtable_symbol.line_number,
+                    end_line=vtable_symbol.line_number,
+                    vtable_address=vtable_symbol.offset,
                 )
+                classes.append(source_class)
+                class_by_name[source_class.qualified_name] = len(classes) - 1
+                continue
             source_class = classes[index]
             if source_class.vtable_address is not None:
                 raise SourceIndexError(
