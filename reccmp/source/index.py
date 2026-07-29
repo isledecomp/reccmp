@@ -683,6 +683,9 @@ class SourceIndex:
         class_by_location = {
             (item.source_file, item.line): index for index, item in enumerate(classes)
         }
+        class_by_name = {
+            item.qualified_name: index for index, item in enumerate(classes)
+        }
         for vtable_symbol in codebase.iter_vtables():
             relative = (
                 Path(vtable_symbol.filename)
@@ -693,9 +696,22 @@ class SourceIndex:
             key = (relative, vtable_symbol.line_number)
             index = class_by_location.get(key)
             if index is None:
+                # Template-specialization vtables are commonly accounted for by
+                # a standalone class comment instead of a repeated source
+                # declaration:
+                #
+                #   // VTABLE: TARGET 0x1234
+                #   // class Vector<Element *>
+                #
+                # The marker parser already recovers that qualified class name.
+                # Bind it to Clang's canonical specialization rather than
+                # attaching it positionally to the next class definition.
+                index = class_by_name.get(vtable_symbol.name)
+            if index is None:
                 raise SourceIndexError(
                     f"{relative}:{vtable_symbol.line_number}: VTABLE "
-                    f"0x{vtable_symbol.offset:08x} is not attached to a class definition"
+                    f"0x{vtable_symbol.offset:08x} names {vtable_symbol.name}, "
+                    "which is not a compiled class definition"
                 )
             source_class = classes[index]
             if source_class.vtable_address is not None:

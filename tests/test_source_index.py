@@ -126,6 +126,38 @@ def test_source_index_preserves_template_specialization_owner(tmp_path: Path) ->
     assert declaration.owning_class == "Vec<float>"
 
 
+def test_source_index_joins_standalone_template_vtable_by_name(tmp_path: Path) -> None:
+    source = tmp_path / "vector.cpp"
+    source.write_text(
+        "template<class T> class Vec {};\n"
+        "// VTABLE: TEST 0x2000\n"
+        "// class Vec<float>\n",
+        encoding="utf-8",
+    )
+    ast = {
+        "kind": "TranslationUnitDecl",
+        "inner": [
+            {
+                "id": "vec-float",
+                "kind": "ClassTemplateSpecializationDecl",
+                "name": "Vec",
+                "completeDefinition": True,
+                "loc": {"file": str(source), "line": 1},
+                "range": {"end": {"file": str(source), "line": 1}},
+                "inner": [
+                    {"kind": "TemplateArgument", "type": {"qualType": "float"}}
+                ],
+            }
+        ],
+    }
+
+    index = SourceIndex.from_ast_documents(tmp_path, "TEST", [source], [(ast, source)])
+
+    assert len(index.classes) == 1
+    assert index.classes[0].qualified_name == "Vec<float>"
+    assert index.classes[0].vtable_address == 0x2000
+
+
 def test_source_index_combines_distinct_marker_targets(tmp_path: Path) -> None:
     first = tmp_path / "first.cpp"
     second = tmp_path / "second.cpp"
