@@ -124,3 +124,42 @@ def test_source_index_preserves_template_specialization_owner(tmp_path: Path) ->
     assert declaration is not None
     assert declaration.qualified_name == "Vec<float>::Convert"
     assert declaration.owning_class == "Vec<float>"
+
+
+def test_source_index_combines_distinct_marker_targets(tmp_path: Path) -> None:
+    first = tmp_path / "first.cpp"
+    second = tmp_path / "second.cpp"
+    first.write_text("// FUNCTION: FIRST 0x1000\nvoid One() {}\n", encoding="utf-8")
+    second.write_text("// FUNCTION: SECOND 0x2000\nvoid Two() {}\n", encoding="utf-8")
+    ast = {
+        "kind": "TranslationUnitDecl",
+        "inner": [
+            {
+                "kind": "FunctionDecl",
+                "name": "One",
+                "mangledName": "?One@@YAXXZ",
+                "type": {"qualType": "void ()"},
+                "loc": {"file": str(first), "line": 2},
+                "inner": [{"kind": "CompoundStmt"}],
+            },
+            {
+                "kind": "FunctionDecl",
+                "name": "Two",
+                "mangledName": "?Two@@YAXXZ",
+                "type": {"qualType": "void ()"},
+                "loc": {"file": str(second), "line": 2},
+                "inner": [{"kind": "CompoundStmt"}],
+            },
+        ],
+    }
+
+    index = SourceIndex.from_ast_documents_targets(
+        tmp_path,
+        {"FIRST": [first], "SECOND": [second]},
+        [(ast, first)],
+    )
+
+    assert [(marker.address, marker.declaration.qualified_name) for marker in index.markers] == [
+        (0x1000, "One"),
+        (0x2000, "Two"),
+    ]

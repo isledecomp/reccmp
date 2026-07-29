@@ -13,7 +13,7 @@ import shlex
 import subprocess
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Sequence
+from typing import Any, Iterable, Iterator, Mapping, Sequence
 
 from reccmp.formats import TextFile
 from reccmp.parser.codebase import DecompCodebase
@@ -531,6 +531,40 @@ class SourceIndex:
         )
 
     @classmethod
+    # This is the multi-image form of from_compilation_database. The compiler
+    # AST is expensive, so collect it once and bind each marker target against
+    # its own physical source roots before combining the disposable index.
+    # pylint: disable=too-many-arguments
+    def from_compilation_database_targets(
+        cls,
+        repository: Path,
+        compilation_database: Path,
+        targets: Mapping[str, Sequence[Path]],
+        *,
+        aliases: ProjectAliases | None = None,
+        clang: str | None = None,
+        command_prefix: Sequence[str] = (),
+        compilation_root: Path | None = None,
+        execution_cwd: Path | None = None,
+    ) -> "SourceIndex":
+        database = json.loads(compilation_database.read_text(encoding="utf-8"))
+        collector = _AstCollector(repository, compilation_root)
+        for entry in database:
+            collector.collect(
+                _emit_ast(entry, clang, command_prefix, execution_cwd),
+                Path(entry.get("directory") or ".") / entry["file"],
+            )
+        indexes = [
+            cls._from_collector(repository, target, paths, collector, aliases=aliases)
+            for target, paths in targets.items()
+        ]
+        return cls(
+            declarations=(item for index in indexes for item in index.declarations),
+            classes=(item for index in indexes for item in index.classes),
+            markers=(item for index in indexes for item in index.markers),
+        )
+
+    @classmethod
     def from_ast_documents(
         cls,
         repository: Path,
@@ -546,6 +580,30 @@ class SourceIndex:
 
         return cls._from_collector(
             repository, target, source_paths, collector, aliases=aliases
+        )
+
+    @classmethod
+    def from_ast_documents_targets(
+        cls,
+        repository: Path,
+        targets: Mapping[str, Sequence[Path]],
+        documents: Sequence[tuple[dict[str, Any], Path]],
+        *,
+        aliases: ProjectAliases | None = None,
+    ) -> "SourceIndex":
+        """Bind several marker targets against one already-emitted Clang AST."""
+
+        collector = _AstCollector(repository)
+        for document, main_file in documents:
+            collector.collect(document, main_file)
+        indexes = [
+            cls._from_collector(repository, target, paths, collector, aliases=aliases)
+            for target, paths in targets.items()
+        ]
+        return cls(
+            declarations=(item for index in indexes for item in index.declarations),
+            classes=(item for index in indexes for item in index.classes),
+            markers=(item for index in indexes for item in index.markers),
         )
 
     @classmethod
