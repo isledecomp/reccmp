@@ -117,86 +117,92 @@ def parse_args() -> argparse.Namespace:
         "--version", action="version", version=f"%(prog)s {reccmp.VERSION}"
     )
     argparse_add_project_target_args(parser)
-    parser.add_argument(
+
+    input_group = parser.add_argument_group("Inputs")
+    output_group = parser.add_argument_group("Output options")
+    term_group = parser.add_argument_group(title="Terminal display options")
+    asm_group = parser.add_argument_group(title="Asm rendering options")
+
+    input_group.add_argument(
         "--total",
         "-T",
         metavar="<count>",
         help="Total number of expected functions (improves total accuracy statistic)",
     )
-    parser.add_argument(
+    input_group.add_argument(
         "--verbose",
         "-v",
         metavar="<offset>",
         type=virtual_address,
         help="Print assembly diff for specific function (original file's offset)",
     )
-    parser.add_argument(
+    output_group.add_argument(
         "--json",
         metavar="<file>",
         help="Generate JSON file with match summary",
     )
-    parser.add_argument(
+    output_group.add_argument(
         "--json-diet",
         action="store_true",
         help="Exclude diff from JSON report.",
     )
-    parser.add_argument(
+    input_group.add_argument(
         "--diff",
         metavar="<file>",
         help="Diff against summary in JSON file",
     )
-    parser.add_argument(
+    output_group.add_argument(
         "--dump",
         action="store_true",
         help="Write decompiled assembly to debug files.",
     )
-    parser.add_argument(
+    output_group.add_argument(
         "--html",
         "-H",
         metavar="<file>",
         help="Generate searchable HTML summary of status and diffs",
     )
-    parser.add_argument(
+    term_group.add_argument(
         "--no-color", "-n", action="store_true", help="Do not color the output"
     )
-    parser.add_argument(
+    output_group.add_argument(
         "--svg", "-S", metavar="<file>", help="Generate SVG graphic of progress"
     )
-    parser.add_argument(
+    output_group.add_argument(
         "--svg-icon", metavar="icon", type=Path, help="Icon to use in SVG (PNG)"
     )
-    parser.add_argument(
+    term_group.add_argument(
         "--print-rec-addr",
         action="store_true",
         help="Print addresses of recompiled functions too",
     )
-    parser.add_argument(
+    term_group.add_argument(
         "--silent",
         action="store_true",
         help="Don't display text summary of matches",
     )
-    parser.add_argument(
+    output_group.add_argument(
         "--nolib",
         action="store_true",
         help="Exclude LIBRARY annotations from the analysis",
     )
-    parser.add_argument(
+    asm_group.add_argument(
         "--placeholder",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Asm replacement",
+        help="Replace undiscovered addresses with `<OFFSET>` (default: True)",
     )
-    parser.add_argument(
+    asm_group.add_argument(
         "--sanitize",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Asm replacement",
+        help="Replace addresses with name or placeholder (default: True)",
     )
-    parser.add_argument(
+    term_group.add_argument(
         "--udiff",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Display unified diff",
+        help="In `--verbose` mode, display unified diff (default: True)",
     )
     argparse_add_logging_args(parser)
 

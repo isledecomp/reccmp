@@ -384,9 +384,11 @@ class Compare:
     ## Public API
 
     def set_sanitize(self, value: bool) -> None:
+        """Enable or disable replacing addresses with names or placeholders."""
         self.function_comparator.set_sanitize(value)
 
     def set_placeholder(self, value: bool) -> None:
+        """Enable or disable using placeholders (`<OFFSET>`) in asm rendering."""
         self.function_comparator.set_placeholder(value)
 
     def count_unmatched_functions(self) -> int:
