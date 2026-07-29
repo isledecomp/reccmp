@@ -13,7 +13,7 @@ import shlex
 import subprocess
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Iterator, Sequence
 
 from reccmp.formats import TextFile
 from reccmp.parser.codebase import DecompCodebase
@@ -69,6 +69,7 @@ class SourceClass:
     source_file: str
     line: int
     end_line: int
+    asserted_size: int | None = None
     vtable_address: int | None = None
 
 
@@ -162,6 +163,51 @@ def _is_definition(node: dict[str, Any]) -> bool:
     )
 
 
+def _descendants(node: dict[str, Any]) -> Iterator[dict[str, Any]]:
+    yield node
+    for child in node.get("inner", ()):
+        yield from _descendants(child)
+
+
+def _size_assertion(node: dict[str, Any], scope: str) -> tuple[str, int] | None:
+    if node.get("kind") != "StaticAssertDecl":
+        return None
+    expression = next(
+        (
+            child
+            for child in node.get("inner", ())
+            if child.get("kind") == "BinaryOperator"
+        ),
+        None,
+    )
+    if expression is None or expression.get("opcode") != "==":
+        return None
+    size_of = next(
+        (
+            child
+            for child in _descendants(expression)
+            if child.get("kind") == "UnaryExprOrTypeTraitExpr"
+            and child.get("name") == "sizeof"
+            and (child.get("argType") or {}).get("qualType")
+        ),
+        None,
+    )
+    literal = next(
+        (
+            child
+            for child in _descendants(expression)
+            if child.get("kind") == "IntegerLiteral" and child.get("value") is not None
+        ),
+        None,
+    )
+    if size_of is None or literal is None:
+        return None
+    class_name = str(size_of["argType"]["qualType"])
+    if "::" not in class_name and scope:
+        class_name = _qualified(scope, class_name)
+    return class_name, int(str(literal["value"]), 0)
+
+
 def _semantic_kind(node: dict[str, Any], owning_class: str | None, scope: str) -> str:
     kind = node.get("kind")
     if kind == "CXXConstructorDecl":
@@ -208,6 +254,7 @@ class _AstCollector:
         self.contexts: dict[str, tuple[str, bool]] = {}
         self.declarations: dict[str, SourceDeclaration] = {}
         self.classes: dict[str, SourceClass] = {}
+        self.size_assertions: dict[str, int] = {}
         self.current_file = ""
 
     def collect(self, document: dict[str, Any], main_file: Path) -> None:
@@ -316,6 +363,17 @@ class _AstCollector:
                 declaration.is_definition and not declaration_previous.is_definition
             ):
                 self.declarations[declaration.semantic_id] = declaration
+
+        assertion = _size_assertion(node, scope)
+        if assertion is not None:
+            class_name, asserted_size = assertion
+            previous_size = self.size_assertions.get(class_name)
+            if previous_size is not None and previous_size != asserted_size:
+                raise SourceIndexError(
+                    f"{class_name} has conflicting size assertions: "
+                    f"{previous_size:#x} and {asserted_size:#x}"
+                )
+            self.size_assertions[class_name] = asserted_size
 
         for child in node.get("inner", ()):
             self._walk(child, child_scope, fallback_file)
@@ -521,6 +579,15 @@ class SourceIndex:
             item
             for item in collector.classes.values()
             if item.source_file in source_files
+        ]
+        classes = [
+            SourceClass(
+                **{
+                    **asdict(item),
+                    "asserted_size": collector.size_assertions.get(item.qualified_name),
+                }
+            )
+            for item in classes
         ]
         class_by_location = {
             (item.source_file, item.line): index for index, item in enumerate(classes)
