@@ -95,8 +95,8 @@ def test_order_reports_all_modules():
     assert {alert.target for alert in alerts} == {"ALPHA"}
 
 
-def test_byname_headers_only():
-    """Markers referenced by name belong in header files only."""
+def test_implicit_byname_headers_only():
+    """Implementation markers that fall back to name lookup belong in headers."""
     code = """\
         // FUNCTION: TEST 0x1000
         // MyClass::~MyClass
@@ -109,6 +109,22 @@ def test_byname_headers_only():
 
     alerts = check_byname_allowed(result_cpp)
     assert alerts[0].code == AlertCode.BYNAME_FUNCTION_IN_CPP
+
+
+def test_explicit_byname_markers_allowed_in_cpp():
+    """Explicit name-reference marker kinds are valid without an adjacent body."""
+    code = """\
+        // TEMPLATE: TEST 0x1000
+        // Template<int>::Method
+        // SYNTHETIC: TEST 0x2000
+        // MyClass::`scalar deleting destructor'
+        // LIBRARY: TEST 0x3000
+        // ThirdPartyFunction
+        """
+
+    result = create_parser_result(code, PurePath("test.cpp"))
+
+    assert not check_byname_allowed(result)
 
 
 def test_duplicate_offsets_module_scope():

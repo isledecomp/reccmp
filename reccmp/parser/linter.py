@@ -1,5 +1,6 @@
 from pathlib import PurePath
 from typing import Iterator, Sequence
+from .marker import MarkerType
 from .parser import ReccmpParserResult
 from .error import AlertCode, ParserAlert
 from .node import ParserFunction, ParserString, ParserVtable
@@ -16,7 +17,11 @@ def check_byname_allowed(result: ReccmpParserResult) -> list[ParserAlert]:
     alerts = []
 
     for fun in result.tokens:
-        if isinstance(fun, ParserFunction) and fun.lookup_by_name:
+        if (
+            isinstance(fun, ParserFunction)
+            and fun.lookup_by_name
+            and fun.type in (MarkerType.FUNCTION, MarkerType.STUB)
+        ):
             alerts.append(
                 ParserAlert(
                     code=AlertCode.BYNAME_FUNCTION_IN_CPP,

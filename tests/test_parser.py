@@ -295,6 +295,20 @@ def test_multiline_function_signature(parser):
     assert "void* self" in parser.functions[0].name
 
 
+def test_wrapped_signature_with_one_line_body(parser):
+    parser.read("""\
+        // FUNCTION: TEST 0x1234
+        TestClass::TestClass()
+            : value(0) {}
+        // FUNCTION: TEST 0x5678
+        void next_function() {}
+        """)
+
+    assert parser.state == ReaderState.SEARCH
+    assert len(parser.functions) == 2
+    assert not parser.alerts
+
+
 def test_function_with_spaces_implicit(parser):
     """Same as above, but for implicit lookup-by-name"""
     parser.read("""\

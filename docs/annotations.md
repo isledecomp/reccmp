@@ -54,6 +54,11 @@ In those cases, one can spell out the function's name in a comment:
 // MxCollection<MxRegionLeftRight *>::`scalar deleting destructor'
 ```
 
+The explicit name-reference markers `TEMPLATE`, `SYNTHETIC`, and `LIBRARY` may
+appear in either headers or source files. `reccmp-decomplint` warns when an
+implementation marker such as `FUNCTION` has no adjacent declaration in a source
+file and therefore falls back to name lookup.
+
 ### Annotating a comment of the function's symbol
 
 There are a few cases where two functions of the same name need to be annotated by comment (e.g. in function overloads). In such cases, you can annotate a comment of the function's debug symbol:

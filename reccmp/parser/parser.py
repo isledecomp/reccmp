@@ -580,8 +580,15 @@ class DecompParser:
             self.function_sig = f"{self.function_sig} {sig_line}".strip()
 
             if "{" in sig_line:
-                self.curly_indent_stops = line.index("{")
-                self.state = ReaderState.IN_FUNC
+                # A wrapped signature may end with an entire one-line body, most
+                # commonly an inline constructor initializer followed by `{}`.
+                # Do not leave the parser inside a function after both braces have
+                # already been consumed on this line.
+                if sig_line.count("{") == sig_line.count("}"):
+                    self._function_done()
+                else:
+                    self.curly_indent_stops = line.index("{")
+                    self.state = ReaderState.IN_FUNC
             elif self.function_sig.endswith("}") or self.function_sig.endswith("};"):
                 self._function_done()
             elif self.function_sig.endswith(");"):
