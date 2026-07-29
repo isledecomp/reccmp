@@ -467,7 +467,15 @@ class SourceIndex:
     ) -> "SourceIndex":
         files = tuple(TextFile.from_files(source_paths))
         codebase = DecompCodebase(files, target, aliases=aliases)
-        declarations = tuple(collector.declarations.values())
+        source_files = {
+            path.resolve().relative_to(repository.resolve()).as_posix()
+            for path in source_paths
+        }
+        declarations = tuple(
+            item
+            for item in collector.declarations.values()
+            if item.source_file in source_files
+        )
         by_location: dict[tuple[str, int], list[SourceDeclaration]] = {}
         for declaration in declarations:
             if declaration.is_definition:
@@ -509,7 +517,11 @@ class SourceIndex:
                 )
             )
 
-        classes = list(collector.classes.values())
+        classes = [
+            item
+            for item in collector.classes.values()
+            if item.source_file in source_files
+        ]
         class_by_location = {
             (item.source_file, item.line): index for index, item in enumerate(classes)
         }
