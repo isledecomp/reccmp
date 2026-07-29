@@ -39,7 +39,8 @@ class ExactComparison:
         return self.status == "exact"
 
 
-def _coff_name(data: bytes, raw: bytes, string_table: int) -> str:
+def coff_name(data: bytes, raw: bytes, string_table: int) -> str:
+    """Decode an inline or string-table COFF name."""
     if raw[:4] == b"\0\0\0\0":
         offset = struct.unpack_from("<I", raw, 4)[0]
         return data[string_table + offset :].split(b"\0", 1)[0].decode(
@@ -76,7 +77,7 @@ def parse_coff_functions(path: Path) -> list[CoffFunction]:  # pylint: disable=t
     section_offset = 20
     for index in range(1, section_count + 1):
         header = data[section_offset : section_offset + 40]
-        name = _coff_name(data, header[:8], string_table)
+        name = coff_name(data, header[:8], string_table)
         size, raw_offset, relocation_offset, _lines, relocation_count, _line_count, _attrs = (
             struct.unpack_from("<IIIIHHI", header, 16)
         )
@@ -94,7 +95,7 @@ def parse_coff_functions(path: Path) -> list[CoffFunction]:  # pylint: disable=t
     symbol_index = 0
     while symbol_index < symbol_count:
         raw = data[symbol_table + symbol_index * 18 : symbol_table + symbol_index * 18 + 18]
-        name = _coff_name(data, raw, string_table)
+        name = coff_name(data, raw, string_table)
         value, section, symbol_type, storage, auxiliary_count = struct.unpack_from(
             "<IhHBB", raw, 8
         )
