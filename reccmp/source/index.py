@@ -28,7 +28,6 @@ _FUNCTION_KINDS = {
 }
 _RECORD_KINDS = {
     "CXXRecordDecl",
-    "ClassTemplateDecl",
     "ClassTemplateSpecializationDecl",
 }
 _SCOPE_KINDS = _RECORD_KINDS | {"NamespaceDecl"}
