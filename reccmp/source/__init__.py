@@ -3,6 +3,7 @@
 from .index import (
     SourceClass,
     SourceDeclaration,
+    SourceField,
     SourceIndex,
     SourceIndexError,
     SourceMarker,
@@ -11,6 +12,7 @@ from .index import (
 __all__ = [
     "SourceClass",
     "SourceDeclaration",
+    "SourceField",
     "SourceIndex",
     "SourceIndexError",
     "SourceMarker",

@@ -36,6 +36,12 @@ def test_source_index_joins_markers_to_clang_semantics(tmp_path: Path) -> None:
                         "bases": [{"type": {"qualType": "N::Base"}}],
                         "inner": [
                             {
+                                "kind": "FieldDecl",
+                                "name": "value",
+                                "type": {"qualType": "int"},
+                                "loc": {"file": str(source), "line": 6},
+                            },
+                            {
                                 "id": "run",
                                 "kind": "CXXMethodDecl",
                                 "name": "Run",
@@ -74,6 +80,7 @@ def test_source_index_joins_markers_to_clang_semantics(tmp_path: Path) -> None:
     assert declaration.owning_class == "N::Widget"
     assert declaration.is_virtual
     assert index.classes[0].bases == ("N::Base",)
+    assert [(field.name, field.type) for field in index.classes[0].fields] == [("value", "int")]
     assert index.classes[0].vtable_address == 0x2000
 
 

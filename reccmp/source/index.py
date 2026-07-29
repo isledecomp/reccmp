@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import shlex
 import subprocess
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Sequence
 
@@ -58,6 +58,16 @@ class SourceDeclaration:
 
 
 @dataclass(frozen=True)
+class SourceField:
+    """One direct non-static source field emitted by Clang."""
+
+    name: str
+    type: str
+    source_file: str
+    line: int
+
+
+@dataclass(frozen=True)
 # pylint: disable=too-many-instance-attributes
 class SourceClass:
     """One complete C++ record definition emitted by Clang."""
@@ -65,6 +75,7 @@ class SourceClass:
     semantic_id: str
     qualified_name: str
     bases: tuple[str, ...]
+    fields: tuple[SourceField, ...]
     virtual_declarations: tuple[str, ...]
     source_file: str
     line: int
@@ -326,10 +337,25 @@ class _AstCollector:
                 for child in node.get("inner", ())
                 if child.get("kind") in _FUNCTION_KINDS and _is_virtual(child)
             )
+            fields = tuple(
+                SourceField(
+                    name=str(child.get("name")),
+                    type=str(
+                        (child.get("type") or {}).get("desugaredQualType")
+                        or (child.get("type") or {}).get("qualType")
+                        or ""
+                    ),
+                    source_file=self._relative(_location(child, location.file).file),
+                    line=_location(child, location.file).line,
+                )
+                for child in node.get("inner", ())
+                if child.get("kind") == "FieldDecl" and child.get("name")
+            )
             source_class = SourceClass(
                 semantic_id=f"record:{qualified_name}",
                 qualified_name=qualified_name,
                 bases=bases,
+                fields=fields,
                 virtual_declarations=virtuals,
                 source_file=self._relative(location.file),
                 line=location.line,
@@ -590,11 +616,9 @@ class SourceIndex:
             if item.source_file in source_files
         ]
         classes = [
-            SourceClass(
-                **{
-                    **asdict(item),
-                    "asserted_size": collector.size_assertions.get(item.qualified_name),
-                }
+            replace(
+                item,
+                asserted_size=collector.size_assertions.get(item.qualified_name),
             )
             for item in classes
         ]
@@ -621,9 +645,7 @@ class SourceIndex:
                     f"{relative}:{vtable_symbol.line_number}: class has more than one "
                     "primary VTABLE marker"
                 )
-            classes[index] = SourceClass(
-                **{**asdict(source_class), "vtable_address": vtable_symbol.offset}
-            )
+            classes[index] = replace(source_class, vtable_address=vtable_symbol.offset)
 
         return cls(declarations=declarations, classes=classes, markers=markers)
 
