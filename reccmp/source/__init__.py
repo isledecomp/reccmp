@@ -1,6 +1,7 @@
 """Compiler-backed source ownership model."""
 
 from .index import (
+    SourceBaseVtable,
     SourceClass,
     SourceDeclaration,
     SourceField,
@@ -10,6 +11,7 @@ from .index import (
 )
 
 __all__ = [
+    "SourceBaseVtable",
     "SourceClass",
     "SourceDeclaration",
     "SourceField",

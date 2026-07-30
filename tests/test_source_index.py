@@ -84,6 +84,43 @@ def test_source_index_joins_markers_to_clang_semantics(tmp_path: Path) -> None:
     assert index.classes[0].vtable_address == 0x2000
 
 
+def test_source_index_records_isle_style_base_vtables(tmp_path: Path) -> None:
+    source = tmp_path / "sample.cpp"
+    source.write_text(
+        "class Primary {};\n"
+        "class Secondary {};\n"
+        "// VTABLE: TEST 0x2000 Widget\n"
+        "// VTABLE: TEST 0x2100 Secondary\n"
+        "class Widget : public Primary, public Secondary {};\n",
+        encoding="utf-8",
+    )
+    ast = {
+        "kind": "TranslationUnitDecl",
+        "inner": [
+            {
+                "id": "widget",
+                "kind": "CXXRecordDecl",
+                "name": "Widget",
+                "completeDefinition": True,
+                "loc": {"file": str(source), "line": 5},
+                "range": {"end": {"file": str(source), "line": 5}},
+                "bases": [
+                    {"type": {"qualType": "Primary"}},
+                    {"type": {"qualType": "Secondary"}},
+                ],
+            }
+        ],
+    }
+
+    index = SourceIndex.from_ast_documents(tmp_path, "TEST", [source], [(ast, source)])
+
+    assert len(index.classes) == 1
+    assert index.classes[0].vtable_address == 0x2000
+    assert [(item.address, item.base_class) for item in index.classes[0].base_vtables] == [
+        (0x2100, "Secondary")
+    ]
+
+
 def test_source_index_preserves_template_specialization_owner(tmp_path: Path) -> None:
     source = tmp_path / "vector.cpp"
     source.write_text(

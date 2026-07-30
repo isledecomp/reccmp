@@ -68,6 +68,14 @@ class SourceField:
 
 
 @dataclass(frozen=True)
+class SourceBaseVtable:
+    """One vtable installed for a polymorphic base subobject."""
+
+    address: int
+    base_class: str
+
+
+@dataclass(frozen=True)
 # pylint: disable=too-many-instance-attributes
 class SourceClass:
     """One complete C++ record definition emitted by Clang."""
@@ -82,6 +90,7 @@ class SourceClass:
     end_line: int
     asserted_size: int | None = None
     vtable_address: int | None = None
+    base_vtables: tuple[SourceBaseVtable, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -728,6 +737,23 @@ class SourceIndex:
                 class_by_name[source_class.qualified_name] = len(classes) - 1
                 continue
             source_class = classes[index]
+            base_class = vtable_symbol.base_class
+            class_names = {
+                source_class.qualified_name,
+                source_class.qualified_name.rsplit("::", 1)[-1],
+            }
+            if base_class is not None and base_class not in class_names:
+                base_vtable = SourceBaseVtable(vtable_symbol.offset, base_class)
+                if base_vtable in source_class.base_vtables:
+                    raise SourceIndexError(
+                        f"{relative}:{vtable_symbol.line_number}: duplicate VTABLE marker "
+                        f"for base {base_class}"
+                    )
+                classes[index] = replace(
+                    source_class,
+                    base_vtables=(*source_class.base_vtables, base_vtable),
+                )
+                continue
             if source_class.vtable_address is not None:
                 raise SourceIndexError(
                     f"{relative}:{vtable_symbol.line_number}: class has more than one "
