@@ -481,3 +481,85 @@ def test_16bit_mode():
         (0x1000, "call <OFFSET1>"),
         (0x1003, "shl bx, 1"),
     ]
+
+
+def test_16bit_calls():
+    """Should sanitize near and far calls."""
+    code = (
+        # call 0x20
+        b"\xe8\x1d\x00"
+        # lcall 0x1000, 0x10
+        b"\x9a\x10\x00\x00\x10"
+    )
+
+    start = 0x10000000
+    p = ParseAsm(is_32bit=False)
+    # Placeholders used for both.
+    assert p.parse_asm(code, start) == [
+        (start, "call <OFFSET1>"),
+        (start + 3, "lcall <OFFSET2>"),
+    ]
+
+    # Demonstrate address replacement.
+    def name_lookup(addr: int, *_, **__) -> str | None:
+        return {0x10000010: "Test", 0x10000020: "Hello"}.get(addr)
+
+    p = ParseAsm(name_lookup=name_lookup, is_32bit=False)
+    # Near call uses code seg to get full address.
+    # It also adds the instruction size to the raw value, similar to jumps.
+    # Capstone makes these adjustments automatically.
+    assert p.parse_asm(code, start) == [
+        (start, "call Hello"),
+        (start + 3, "lcall Test"),
+    ]
+
+
+def test_16bit_jump_table():
+    """Build the address of the jump table displacement by masking out
+    the current code seg and combining it with the offset."""
+    code = (
+        # jmp word ptr cs:[bx + 0x1010]
+        b"\x2e\xff\xa7\x10\x10" +
+        # nop padding to 16 bytes
+        (b"\x90" * 11) +
+        # jump table
+        b"\x20\x10"
+        b"\x30\x10"
+    )
+
+    start = 0x10001000
+    p = ParseAsm(is_32bit=False)
+    asm = p.parse_asm(code, start)
+
+    assert asm[0] == (start, "jmp word ptr cs:[bx + 0x1010]")
+    # Sanitized offsets are relative to the function start.
+    assert asm[-3:] == [
+        (None, "Jump table:"),
+        (start + 0x10, "start + 0x20"),
+        (start + 0x12, "start + 0x30"),
+    ]
+
+
+def test_32bit_jump_table():
+    """32-bit jump tables use absolute 32-bit addresses."""
+    code = (
+        # jmp dword ptr [eax*4 + 0x10000010]
+        b"\xff\x24\x85\x10\x00\x00\x10" +
+        # nop padding to 16 bytes
+        (b"\x90" * 9) +
+        # jump table
+        b"\x20\x00\x00\x10"
+        b"\x30\x00\x00\x10"
+    )
+
+    start = 0x10000000
+    p = ParseAsm(is_32bit=True)
+    asm = p.parse_asm(code, start)
+
+    assert asm[0] == (start, "jmp dword ptr [eax*4 + 0x10000010]")
+    # Sanitized offsets are relative to the function start.
+    assert asm[-3:] == [
+        (None, "Jump table:"),
+        (start + 0x10, "start + 0x20"),
+        (start + 0x14, "start + 0x30"),
+    ]

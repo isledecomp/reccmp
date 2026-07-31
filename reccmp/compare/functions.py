@@ -122,6 +122,14 @@ class FunctionComparator:
             else:
                 orig_size = recomp_size
 
+        if recomp_size is None:
+            assert orig_size is not None
+            recomp_max = match.max_size(ImageId.RECOMP)
+            if recomp_max is not None:
+                recomp_size = min(recomp_max, orig_size)
+            else:
+                recomp_size = orig_size
+
         assert orig_size is not None and recomp_size is not None
 
         orig_raw = self.orig_bin.read(match.orig_addr, orig_size)
