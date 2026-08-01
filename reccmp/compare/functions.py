@@ -8,7 +8,8 @@ from reccmp.compare.lines import LinesDb
 from reccmp.compare.pinned_sequences import SequenceMatcherWithPins
 from reccmp.compare.asm.effective import CallAbi, FunctionMetadata
 from reccmp.compare.asm.fixes import analyze_effective_match, assert_fixup
-from reccmp.compare.asm.instgen import InstructionMeta
+from reccmp.compare.asm.const import JUMP_MNEMONICS
+from reccmp.compare.asm.instgen import InstructGen, InstructionMeta, SectionType
 from reccmp.compare.asm.parse import AsmExcerpt, ParseAsm
 from reccmp.compare.asm.replacement import (
     create_name_lookup,
@@ -30,6 +31,20 @@ from reccmp.formats import Image, PEImage
 from reccmp.types import ImageId
 
 _ISLAND_PADDING = (0x90, 0xCC)  # nop / int3
+
+
+def _code_instructions(
+    raw: bytes, addr: int, is_32bit: bool
+) -> list[tuple[int, int, str, str]] | None:
+    """The body's raw instruction tuples, or None when the body carries
+    non-code sections (jump-table data) that would break the positional
+    pairing with the sanitized excerpt."""
+    instructions: list[tuple[int, int, str, str]] = []
+    for section in InstructGen(bytes(raw), addr, is_32bit).sections:
+        if section.type != SectionType.CODE:
+            return None
+        instructions.extend(section.contents)
+    return instructions
 
 
 def _is_bare_jmp_island(raw: bytes) -> bool:
@@ -241,6 +256,109 @@ class FunctionComparator:
             )
 
         return result
+
+    def raw_pair_alias_equivalent(
+        self,
+        orig_addr: int,
+        recomp_addr: int,
+        size: int,
+        *,
+        _depth: int = 0,
+        _seen: set[tuple[int, int]] | None = None,
+    ) -> bool:
+        """Recomputed, conservative compiler-alias equivalence for one
+        (orig, recomp) body pair that is not an annotated match.
+
+        MSVC folds identical COMDAT bodies (template deleting destructors
+        above all), so one original address may serve slots that the rebuild
+        gives distinct functions. This proves the equivalence from the bodies
+        themselves instead of a declared alias ledger: both sides must
+        disassemble to the same sanitized instruction sequence. Where one
+        instruction pair diverges (or resolves only to a positional
+        placeholder), it may still be accepted when it is a direct call or
+        jump whose two targets are themselves alias-equivalent — folding is
+        transitive: the linker folded a derived deleting destructor onto its
+        base's only because their destructor chains folded too. The
+        recursion is depth-bounded and cycle-guarded, and any operand that
+        cannot be proven fails the check rather than matching positionally.
+        A bare original ``jmp rel32`` island (a stale incremental-link
+        forwarder) is followed to the shared body it lands on.
+        """
+
+        if size <= 0 or _depth > 3:
+            return False
+        seen = _seen if _seen is not None else set()
+        if (orig_addr, recomp_addr) in seen:
+            return True
+        seen.add((orig_addr, recomp_addr))
+        try:
+            orig_raw = self.orig_bin.read(orig_addr, size)
+            recomp_raw = self.recomp_bin.read(recomp_addr, size)
+        except (InvalidVirtualAddressError, InvalidVirtualReadError):
+            return False
+        if len(orig_raw) != size or len(recomp_raw) != size:
+            return False
+        if _is_bare_jmp_island(orig_raw):
+            island_target = orig_addr + 5 + int.from_bytes(
+                orig_raw[1:5], "little", signed=True
+            )
+            return self.raw_pair_alias_equivalent(
+                island_target, recomp_addr, size, _depth=_depth + 1, _seen=seen
+            )
+        orig_asm = self.orig_sanitize.parse_asm(orig_raw, orig_addr)
+        recomp_asm = self.recomp_sanitize.parse_asm(recomp_raw, recomp_addr)
+        if not orig_asm or len(orig_asm) != len(recomp_asm):
+            return False
+        orig_insts = _code_instructions(orig_raw, orig_addr, self.is_32bit)
+        recomp_insts = _code_instructions(recomp_raw, recomp_addr, self.is_32bit)
+        if (
+            orig_insts is None
+            or recomp_insts is None
+            or len(orig_insts) != len(orig_asm)
+            or len(recomp_insts) != len(orig_asm)
+        ):
+            return False
+        for index, ((_, orig_line), (_, recomp_line)) in enumerate(
+            zip(orig_asm, recomp_asm)
+        ):
+            if orig_line == recomp_line and "<OFFSET" not in orig_line:
+                continue
+            if not self._transfer_targets_alias_equivalent(
+                orig_insts[index], recomp_insts[index], _depth, seen
+            ):
+                return False
+        return True
+
+    def _transfer_targets_alias_equivalent(
+        self,
+        orig_inst: tuple[int, int, str, str],
+        recomp_inst: tuple[int, int, str, str],
+        depth: int,
+        seen: set[tuple[int, int]],
+    ) -> bool:
+        """Whether a diverging instruction pair is a direct transfer whose
+        two targets are themselves alias-equivalent bodies. The target size
+        comes from the annotated recomp entity; an unknown target is not
+        evidence."""
+
+        (_, _, orig_mnemonic, orig_op) = orig_inst
+        (_, _, recomp_mnemonic, recomp_op) = recomp_inst
+        if orig_mnemonic != recomp_mnemonic:
+            return False
+        if orig_mnemonic != "call" and orig_mnemonic not in JUMP_MNEMONICS:
+            return False
+        try:
+            orig_target = int(orig_op, 16)
+            recomp_target = int(recomp_op, 16)
+        except ValueError:
+            return False  # indirect or composite operand
+        entity = self.db.get(ImageId.RECOMP, recomp_target)
+        target_size = entity.size(ImageId.RECOMP) if entity is not None else None
+        if target_size is None or target_size <= 0:
+            return False
+        return self.raw_pair_alias_equivalent(
+            orig_target, recomp_target, target_size, _depth=depth + 1, _seen=seen
+        )
 
     # ------------------------------------------------------------------
     # PDB-derived metadata for the effective-match verifier

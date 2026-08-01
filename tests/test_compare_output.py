@@ -462,9 +462,15 @@ def test_compare_vtable_match():
 def test_compare_vtable_diff():
     """Vtable contents always appear in the diff report."""
 
-    # Create 3 functions.
-    function_bytes = b"\xc3\x00\x00\x00"  # `ret` padded to 4 bytes
-    functions = function_bytes + function_bytes + function_bytes
+    # Create 3 functions with distinct bodies. Identical bodies would be
+    # accepted by recomputed compiler-alias equivalence (MSVC folds
+    # identical COMDATs), so the retargeted slots must point at functions
+    # that provably differ.
+    functions = (
+        b"\xc3\x00\x00\x00"  # func0: `ret` padded to 4 bytes
+        + b"\xc3\x00\x00\x00"  # func1: `ret`
+        + b"\xcc\x00\x00\x00"  # func2: `int3` — not equivalent to func1
+    )
 
     # Create two vtables that differ in the first and last entry.
     vtable_addr1000 = b"\x00\x10\x00\x00"

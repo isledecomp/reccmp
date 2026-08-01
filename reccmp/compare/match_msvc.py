@@ -93,6 +93,16 @@ def match_symbols(
                 )
 
 
+def _match_name(name: str) -> str:
+    """One comparable spelling for demangled-name matching.
+
+    MSVC's demangler separates pointer and reference sigils from template
+    arguments with a space (``T *>``) while annotation-side names may spell
+    them tight (``T*>``). The spacing carries no identity, so names match
+    on the tight form."""
+    return name.replace(" *", "*").replace(" &", "&")
+
+
 def match_functions(
     db: EntityDb,
     report: ReccmpReportProtocol = reccmp_report_nop,
@@ -119,6 +129,7 @@ def match_functions(
         # Truncate function name to 255 chars for older MSVC. See also: Warning C4786.
         if truncate:
             name = name[:255]
+        name = _match_name(name)
 
         assert ent.recomp_addr is not None
         name_index.add(name, ent.recomp_addr)
@@ -143,9 +154,10 @@ def match_functions(
 
             assert ent.orig_addr is not None
 
-            # Repeat the truncate for our match search
+            # Repeat the truncate and normalization for our match search
             if truncate:
                 name = name[:255]
+            name = _match_name(name)
 
             if name in name_index:
                 recomp_addr = name_index.pop(name)
@@ -187,14 +199,14 @@ def _find_vtable_match(
     # Most classes will not use multiple inheritance, so try the regular vtable
     # first, unless a base class is provided.
     if base_class is None or base_class == class_name:
-        bare_vftable = f"{class_name}::`vftable'"
+        bare_vftable = _match_name(f"{class_name}::`vftable'")
 
         if bare_vftable in vtable_name_index:
             return vtable_name_index.pop(bare_vftable)
 
     # If we didn't find a match above, search for the multiple inheritance vtable.
     for_name = base_class if base_class is not None else class_name
-    for_vftable = f"{class_name}::`vftable'{{for `{for_name}'}}"
+    for_vftable = _match_name(f"{class_name}::`vftable'{{for `{for_name}'}}")
 
     if for_vftable in vtable_name_index:
         return vtable_name_index.pop(for_vftable)
@@ -228,7 +240,7 @@ def match_vtables(db: EntityDb, report: ReccmpReportProtocol = reccmp_report_nop
             continue
 
         assert ent.recomp_addr is not None
-        vtable_name_index.add(name, ent.recomp_addr)
+        vtable_name_index.add(_match_name(name), ent.recomp_addr)
 
     with db.batch() as batch:
         for ent in db.unmatched(ImageId.ORIG):

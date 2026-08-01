@@ -315,6 +315,30 @@ class Compare:
             self.equivalence_groups, orig_addr
         ) == canonical_orig_addr(self.equivalence_groups, recomp_orig_addr)
 
+    def _slot_alias_equivalent(self, raw_orig: int, recomp: "ReccmpEntity | None") -> bool:
+        """Recomputed compiler-alias acceptance for one vtable slot.
+
+        MSVC folds identical COMDAT bodies, so one original address may
+        serve slots whose rebuilt targets are distinct functions, and only
+        one of them (or none) can carry the annotation for the shared
+        original body. The slot is still correct when the original body at
+        the slot's target and the rebuilt body the recomp table installs
+        are provably the same compiled code; that equivalence is recomputed
+        from the bodies by {@link FunctionComparator.raw_pair_alias_equivalent}
+        and holds only when every relocated operand resolves to a named,
+        paired entity on both sides. Non-equivalent targets still fail.
+        """
+        if recomp is None or recomp.recomp_addr is None:
+            return False
+        if recomp.get("type") not in (EntityType.FUNCTION, None):
+            return False
+        size = recomp.size(ImageId.RECOMP)
+        if size is None or size <= 0:
+            return False
+        return self.function_comparator.raw_pair_alias_equivalent(
+            raw_orig, recomp.recomp_addr, size
+        )
+
     def _compare_vtable(
         self, match: ReccmpMatch, *, include_diff: bool = True
     ) -> EntityCompareResult:
@@ -421,14 +445,17 @@ class Compare:
                 self._db, ImageId.RECOMP, self.recomp_bin, raw_recomp
             )
 
-            if (
+            slot_matches = (
                 orig is not None
                 and recomp is not None
                 and (
                     orig.recomp_addr == recomp.recomp_addr
                     or self._orig_addrs_equivalent(orig.orig_addr, recomp.orig_addr)
                 )
-            ):
+            )
+            if not slot_matches:
+                slot_matches = self._slot_alias_equivalent(raw_orig, recomp)
+            if slot_matches:
                 ratio += 1
 
             orig_text.append((index, match_text(orig, raw_orig)))
