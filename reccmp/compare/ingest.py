@@ -12,6 +12,7 @@ from reccmp.formats import PEImage, TextFile
 from reccmp.cvdump import CvdumpTypesParser, CvdumpAnalysis
 from reccmp.parser import DecompCodebase
 from reccmp.parser.marker import ProjectAliases
+from reccmp.parser.node import ParserVtable
 from reccmp.types import EntityType, ImageId
 from reccmp.compare.event import (
     ReccmpEvent,
@@ -223,14 +224,26 @@ def load_markers(
                     parent_function=var.parent_function,
                 )
 
+        vtables_by_offset: dict[int, list[ParserVtable]] = {}
         for tbl in codebase.iter_vtables():
+            vtables_by_offset.setdefault(tbl.offset, []).append(tbl)
+
+        for offset, candidates in vtables_by_offset.items():
+            primary = candidates[0]
             batch.set(
                 ImageId.ORIG,
-                tbl.offset,
-                name=tbl.name,
-                base_class=tbl.base_class,
+                offset,
+                name=primary.name,
+                base_class=primary.base_class,
                 type=EntityType.VTABLE,
             )
+
+            if len(candidates) > 1:
+                batch.set(
+                    ImageId.ORIG,
+                    offset,
+                    folded_vtables=[(tbl.name, tbl.base_class) for tbl in candidates],
+                )
 
         for string in codebase.iter_strings():
             # Not that we don't trust you, but we're checking the string
