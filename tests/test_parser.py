@@ -782,6 +782,28 @@ def test_folded_mixed_by_module(parser):
     assert len(parser.alerts) == 0
 
 
+def test_folded_option_vtable(parser):
+    """Read FOLDED option from VTABLE annotations."""
+    parser.read("""\
+        // VTABLE: HELLO 0x1234 FOLDED
+        class Pizza {
+        };
+
+        // VTABLE: HELLO 0x5555
+        class Lunch {
+        };
+        """)
+
+    assert parser.vtables[0].offset == 0x1234
+    assert parser.vtables[0].is_folded is True
+    assert parser.vtables[0].base_class is None
+
+    assert parser.vtables[1].offset == 0x5555
+    assert parser.vtables[1].is_folded is False
+
+    assert len(parser.alerts) == 0
+
+
 def test_variables_calling_constructor(parser):
     """Can extract the variable name for variables initialized by a constructor."""
     parser.read("""\

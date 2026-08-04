@@ -447,6 +447,8 @@ def test_load_code_vtable(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     assert entity.get("name") == "Pizza"
     assert entity.get("base_class") is None
 
+    assert entity.get("folded_vtables") is None
+
 
 def test_load_code_vtable_vbase(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     """Should set base_class for VTABLE entities with virtual inheritance."""
@@ -475,6 +477,33 @@ def test_load_code_vtable_vbase(db: EntityDb, lines_db: LinesDb, binfile: PEImag
     assert entity.get("type") == EntityType.VTABLE
     assert entity.get("name") == "Pizza"
     assert entity.get("base_class") == "Pizza"
+
+
+def test_load_code_vtable_folded(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
+    files = (
+        TextFile(
+            PurePath("test.h"),
+            dedent("""\
+                // VTABLE: TEST 0x100d7380 FOLDED
+                class Pizza {
+                };
+
+                // VTABLE: TEST 0x100d7380 FOLDED
+                class Lunch {
+                };
+                """),
+        ),
+    )
+    load_markers(files, lines_db, binfile, "TEST", db)
+
+    entity = db.get(ImageId.ORIG, 0x100D7380)
+    assert entity is not None
+    assert entity.get("type") == EntityType.VTABLE
+
+    assert entity.get("name") == "Pizza"
+    assert entity.get("base_class") is None
+
+    assert entity.get("folded_vtables") == [("Pizza", None), ("Lunch", None)]
 
 
 def test_load_code_variable(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
