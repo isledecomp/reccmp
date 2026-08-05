@@ -274,7 +274,7 @@ def main() -> int:
     # we can substitute an alternate value to use when calculating the percentages below.
     if args.total:
         # Use the alternate value if it exceeds the number of known functions
-        report.function_total = max(report.function_total, int(args.total))
+        report.function_count = max(report.function_count, int(args.total))
 
     # Count how many functions have the same virtual address in orig and recomp.
     functions_aligned_count = report_function_alignment(report)
@@ -323,7 +323,7 @@ def main() -> int:
         write_html_report(args.html, report, target_icon)
 
     report.update_function_count()
-    function_count = report.function_total
+    function_count = report.function_count
 
     implemented = implemented_funcs / safe_denominator(function_count) * 100
 

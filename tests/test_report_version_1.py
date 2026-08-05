@@ -58,7 +58,7 @@ def test_deserialize_empty_report():
     report = deserialize_reccmp_report(create_json())
     assert report.filename == "test.exe"
     assert report.from_version == 1
-    assert report.function_total == 0
+    assert report.function_count == 0
     assert not report.entities
 
 
@@ -128,7 +128,7 @@ def test_deserialize_null_type_presumed_function():
 
     assert e.type is None
     assert e.is_function() is True
-    assert report.function_total == 1
+    assert report.function_count == 1
 
 
 @pytest.mark.xfail(reason="Potential improvement.")
@@ -140,7 +140,7 @@ def test_deserialize_guess_vtable_type():
 
     assert e.type is None
     assert e.is_function() is False
-    assert report.function_total == 0
+    assert report.function_count == 0
 
 
 def test_deserialize_valid_type():
@@ -196,33 +196,33 @@ def test_deserialize_recomp_addr_various_exact():
             deserialize_reccmp_report(create_json([entity]))
 
 
-def test_deserialize_null_function_total():
-    """If `function_total` is null or not set, recalculate by counting
+def test_deserialize_null_function_count():
+    """If `function_count` is null or not set, recalculate by counting
     the function entities in the report."""
     entities = [
         create_entity(address="0x100", recomp="0x100"),
         create_entity(address="0x200", recomp="0x200", type=int(EntityType.VTABLE)),
     ]
-    report = deserialize_reccmp_report(create_json(entities, function_total=None))
-    assert report.function_total == 1
+    report = deserialize_reccmp_report(create_json(entities, function_count=None))
+    assert report.function_count == 1
 
 
-def test_deserialize_function_total_lower_than_count():
+def test_deserialize_function_count_lower_than_count():
     """Count the number of function entities when deserializing.
     Use this value or the report's serialized count, whichever is higher."""
     entities = [
         create_entity(address="0x100", recomp="0x100"),
         create_entity(address="0x200", recomp="0x200"),
     ]
-    report = deserialize_reccmp_report(create_json(entities, function_total=1))
-    assert report.function_total == 2
+    report = deserialize_reccmp_report(create_json(entities, function_count=1))
+    assert report.function_count == 2
 
 
-def test_deserialize_function_total_higher_than_count():
+def test_deserialize_function_count_higher_than_count():
     """Do not overwrite the serialized function total if it is higher than the count."""
     entities = [create_entity(recomp="0x100")]
-    report = deserialize_reccmp_report(create_json(entities, function_total=100))
-    assert report.function_total == 100
+    report = deserialize_reccmp_report(create_json(entities, function_count=100))
+    assert report.function_count == 100
 
 
 def test_serialize_empty():
@@ -232,7 +232,7 @@ def test_serialize_empty():
 
     assert obj["file"] == filename
     assert obj["format"] == 1
-    assert obj["function_total"] == 0
+    assert obj["function_count"] == 0
 
     # No entities
     assert not obj["data"]
@@ -324,18 +324,18 @@ def test_serialize_existing_timestamp():
     assert report.timestamp == then
 
 
-def test_serialize_updates_function_total():
+def test_serialize_updates_function_count():
     """Recalculate the function count before serializing."""
     report = ReccmpStatusReport(filename="test.exe")
     report.entities[0x100] = ReccmpComparedEntity(
         orig_addr=0x100, name="test", accuracy=1.0, recomp_addr=0x100
     )
-    assert report.function_total == 0
+    assert report.function_count == 0
 
     obj = json.loads(serialize_reccmp_report(report))
 
-    assert report.function_total == 1
-    assert obj["function_total"] == 1
+    assert report.function_count == 1
+    assert obj["function_count"] == 1
 
 
 def test_serialize_recomp_addr_varies():
@@ -362,4 +362,4 @@ def test_serialize_omits_unmatched_entities():
     assert not obj["data"]
 
     # The unmatched entity is still counted for the function total.
-    assert obj["function_total"] == 1
+    assert obj["function_count"] == 1

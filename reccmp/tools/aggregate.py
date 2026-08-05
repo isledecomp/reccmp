@@ -201,7 +201,7 @@ def main():
                     "No comparable functions in aggregate report; skipping SVG."
                 )
             else:
-                total_funcs = max(agg_report.function_total, args.total or 0)
+                total_funcs = max(agg_report.function_count, args.total or 0)
                 gen_svg(
                     args.svg,
                     agg_report.filename,

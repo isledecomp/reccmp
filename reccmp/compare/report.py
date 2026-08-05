@@ -75,7 +75,7 @@ class ReccmpStatusReport:
     from_version: int | None
     """Only set during deserialize. (Not used yet)"""
 
-    function_total: int = 0
+    function_count: int = 0
     """Function count used to determine progress percentage and other statistics.
     We can compute this value from the report's entities or use a user-provided value.
     We will use whichever is higher so progress cannot exceed 100%."""
@@ -104,7 +104,7 @@ class ReccmpStatusReport:
 
     def update_function_count(self) -> None:
         counted_type = sum(1 for ent in self.entities.values() if ent.is_function())
-        self.function_total = max(self.function_total, counted_type)
+        self.function_count = max(self.function_count, counted_type)
 
     def filter_entities(
         self, filter_fn: Callable[[ReccmpComparedEntity], bool]
@@ -117,7 +117,7 @@ class ReccmpStatusReport:
             key for key, value in self.entities.items() if not filter_fn(value)
         ]
 
-        # Only functions contribute to function_total.
+        # Only functions contribute to function_count.
         functions_removed = sum(
             1 for key in discarded if self.entities[key].is_function()
         )
@@ -127,7 +127,7 @@ class ReccmpStatusReport:
 
         # Manually decrease it because recalculating will use
         # the higher of either the previous or current count.
-        self.function_total -= functions_removed
+        self.function_count -= functions_removed
 
     def asmcmp_filtering(self, nolib: bool, ignore_functions: list[str]) -> None:
         """Helper to filter the report using the current filter options from `reccmp-reccmp`.
@@ -216,7 +216,7 @@ def combine_reports(samples: list[ReccmpStatusReport]) -> ReccmpStatusReport:
 
     # Use the highest function total across all samples.
     # Some functions may have been inlined in some reports.
-    output.function_total = max(sample.function_total for sample in samples)
+    output.function_count = max(sample.function_count for sample in samples)
 
     # Combine every orig addr used in any of the reports.
     orig_addr_set = {key for sample in samples for key in sample.entities.keys()}
@@ -301,7 +301,7 @@ class JSONReportVersion1(BaseModel):
     data: list[JSONEntityVersion1]
 
     # Did not exist before July 2026.
-    function_total: int | None = None
+    function_count: int | None = None
 
 
 MAGIC_STRING_VARIOUS = "various"
@@ -348,7 +348,7 @@ def _serialize_version_1(
         format=1,
         timestamp=report.timestamp.timestamp(),
         data=entities,
-        function_total=report.function_total,
+        function_count=report.function_count,
     )
 
 
@@ -358,7 +358,7 @@ def _deserialize_version_1(obj: JSONReportVersion1) -> ReccmpStatusReport:
         timestamp=datetime.fromtimestamp(obj.timestamp),
         from_version=1,
     )
-    report.function_total = obj.function_total or 0
+    report.function_count = obj.function_count or 0
 
     for e in obj.data:
         try:

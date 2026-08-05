@@ -202,7 +202,7 @@ def test_filter_entities_empty_report():
 
     report.filter_entities(lambda _: False)
     assert not report.entities
-    assert report.function_total == 0
+    assert report.function_count == 0
 
 
 def test_filter_entities_library():
@@ -244,18 +244,18 @@ def test_filter_entities_untyped_is_not_function_type():
     assert not report.entities
 
 
-def test_filter_entities_sets_function_total():
+def test_filter_entities_sets_function_count():
     """Filtering resets the function count if it was never set."""
     report = ReccmpStatusReport(filename="test.exe")
     add_entity(report, 100)
     add_entity(report, 200)
-    assert report.function_total == 0
+    assert report.function_count == 0
 
     report.filter_entities(lambda _: True)
-    assert report.function_total == 2
+    assert report.function_count == 2
 
 
-def test_filter_entities_reduces_function_total():
+def test_filter_entities_reduces_function_count():
     """Discarded functions decrease the function count."""
     report = ReccmpStatusReport(filename="test.exe")
     add_entity(report, 100)
@@ -263,10 +263,10 @@ def test_filter_entities_reduces_function_total():
     add_entity(report, 300)
 
     report.filter_entities(lambda e: e.orig_addr != 200)
-    assert report.function_total == 2
+    assert report.function_count == 2
 
 
-def test_filter_entities_function_total_ignores_other_types():
+def test_filter_entities_function_count_ignores_other_types():
     """Only functions contribute to the function count,
     so discarding a vtable does not change it."""
     report = ReccmpStatusReport(filename="test.exe")
@@ -275,19 +275,19 @@ def test_filter_entities_function_total_ignores_other_types():
 
     report.filter_entities(lambda e: e.type != EntityType.VTABLE)
     assert set(report.entities) == {100}
-    assert report.function_total == 1
+    assert report.function_count == 1
 
 
-def test_filter_entities_function_total_user_provided():
+def test_filter_entities_function_count_user_provided():
     """A user-provided function count is higher than the number of functions
     in the report. Discarding functions still reduces it by the amount removed."""
     report = ReccmpStatusReport(filename="test.exe")
-    report.function_total = 100
+    report.function_count = 100
     add_entity(report, 100)
     add_entity(report, 200)
 
     report.filter_entities(lambda e: e.orig_addr != 200)
-    assert report.function_total == 99
+    assert report.function_count == 99
 
 
 def test_filter_entities_repeated():
@@ -298,11 +298,11 @@ def test_filter_entities_repeated():
     add_entity(report, 300)
 
     report.filter_entities(lambda e: e.orig_addr != 100)
-    assert report.function_total == 2
+    assert report.function_count == 2
 
     report.filter_entities(lambda e: e.orig_addr != 200)
     assert set(report.entities) == {300}
-    assert report.function_total == 1
+    assert report.function_count == 1
 
 
 def test_asmcmp_filtering_no_options():
@@ -314,7 +314,7 @@ def test_asmcmp_filtering_no_options():
 
     report.asmcmp_filtering(nolib=False, ignore_functions=[])
     assert set(report.entities) == {100, 200, 300}
-    assert report.function_total == 2
+    assert report.function_count == 2
 
 
 def test_asmcmp_filtering_nolib():
@@ -334,7 +334,7 @@ def test_asmcmp_filtering_nolib():
     assert set(report.entities) == {100}
 
     # Only the discarded function reduces the count.
-    assert report.function_total == 1
+    assert report.function_count == 1
 
 
 def test_asmcmp_filtering_ignore_functions():
@@ -347,7 +347,7 @@ def test_asmcmp_filtering_ignore_functions():
 
     report.asmcmp_filtering(nolib=False, ignore_functions=["Pizza"])
     assert set(report.entities) == {100, 300}
-    assert report.function_total == 1
+    assert report.function_count == 1
 
 
 def test_asmcmp_filtering_untyped_entity():
