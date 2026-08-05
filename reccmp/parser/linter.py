@@ -2,7 +2,7 @@ from pathlib import PurePath
 from typing import Iterator, Sequence
 from .parser import ReccmpParserResult
 from .error import AlertCode, ParserAlert
-from .node import ParserFunction, ParserString
+from .node import ParserFunction, ParserString, ParserVtable
 
 
 def file_is_header(path: PurePath) -> bool:
@@ -84,7 +84,9 @@ def check_offset_uniqueness(results: Sequence[ReccmpParserResult]) -> list[Parse
 
     for result in results:
         for marker in result.tokens:
-            is_folded = isinstance(marker, ParserFunction) and marker.is_folded
+            is_folded = (
+                isinstance(marker, (ParserFunction, ParserVtable)) and marker.is_folded
+            )
             is_string = isinstance(marker, ParserString)
 
             module_addresses = seen_addresses.setdefault(marker.module, set())

@@ -190,6 +190,39 @@ def test_ignore_folded_and_regular_duplicate():
     assert alerts[0].code == AlertCode.DUPLICATE_OFFSET
 
 
+def test_ignore_folded_duplicate_vtable():
+    """Do not alert to folded vtables that reuse an address."""
+    folded_lines = """\
+    // VTABLE: TEST 0x1000 FOLDED
+    class Folded {
+    };
+
+    // VTABLE: TEST 0x1000 FOLDED
+    class First {
+    };
+    """
+
+    result = create_parser_result(folded_lines, PurePath("test.cpp"))
+    assert not check_offset_uniqueness([result, result])
+
+
+def test_ignore_folded_and_regular_duplicate_vtable():
+    """Should alert when folded and non-folded vtables reuse an address."""
+    folded_lines = """\
+    // VTABLE: TEST 0x1000 FOLDED
+    class Folded {
+    };
+
+    // VTABLE: TEST 0x1000
+    class First {
+    };
+    """
+
+    result = create_parser_result(folded_lines, PurePath("test.cpp"))
+    alerts = check_offset_uniqueness([result, result])
+    assert alerts[0].code == AlertCode.DUPLICATE_OFFSET
+
+
 def test_ignore_folded_order():
     """Skip folded functions and do not check their order."""
     folded_lines = """\

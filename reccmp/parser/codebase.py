@@ -50,10 +50,10 @@ class DecompCodebase:
         unique = []
 
         for s in self._symbols:
-            # Must retain FOLDED functions because they will reuse the address.
+            # Must retain FOLDED functions/vtables because they will reuse the address.
             # Question: should we keep *all* annotations for this address if *any* are folded?
             if s.offset in used_addr and not (
-                isinstance(s, ParserFunction) and s.is_folded
+                isinstance(s, (ParserFunction, ParserVtable)) and s.is_folded
             ):
                 duplicates.append(s)
             else:
