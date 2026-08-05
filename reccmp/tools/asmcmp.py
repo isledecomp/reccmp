@@ -270,22 +270,33 @@ def main() -> int:
     if args.dump:
         dump_all_matched_functions(report)
 
+    # If we know how many functions are in the file (via analysis with Ghidra or other tools)
+    # we can substitute an alternate value to use when calculating the percentages below.
+    if args.total:
+        # Use the alternate value if it exceeds the number of known functions
+        report.function_count = max(report.function_count, int(args.total))
+
     # Count how many functions have the same virtual address in orig and recomp.
     functions_aligned_count = report_function_alignment(report)
 
     # Number of functions compared (i.e. excluding stubs)
-    function_count, _, total_effective_accuracy = report_function_accuracy(report)
+    implemented_funcs, _, total_effective_accuracy = report_function_accuracy(report)
 
     # Print diff summary to terminal
     if not args.silent and args.diff is None:
         for entity in report.entities.values():
-            print_match_oneline(entity, show_both_addrs=args.print_rec_addr)
+            if entity.is_matched():
+                print_match_oneline(entity, show_both_addrs=args.print_rec_addr)
 
     # Compare with saved diff report.
     if args.diff is not None:
         try:
             with open(args.diff, "r", encoding="utf-8") as f:
                 saved_data = deserialize_reccmp_report(f.read())
+
+            saved_data.asmcmp_filtering(
+                args.nolib, target.report_config.ignore_functions
+            )
 
             diff_json(
                 saved_data,
@@ -311,16 +322,8 @@ def main() -> int:
     if args.html is not None:
         write_html_report(args.html, report, target_icon)
 
-    implemented_funcs = function_count
-
-    # Add known but unmatched functions to our count
-    function_count += compare.count_unmatched_functions()
-
-    # If we know how many functions are in the file (via analysis with Ghidra or other tools)
-    # we can substitute an alternate value to use when calculating the percentages below.
-    if args.total:
-        # Use the alternate value if it exceeds the number of annotated functions
-        function_count = max(function_count, int(args.total))
+    report.update_function_count()
+    function_count = report.function_count
 
     implemented = implemented_funcs / safe_denominator(function_count) * 100
 
