@@ -70,6 +70,9 @@ class ParserVariable(ParserSymbol):
 class ParserVtable(ParserSymbol):
     base_class: str | None = None
 
+    # True if this address is shared by many identical VMTs.
+    is_folded: bool = False
+
 
 @dataclass
 class ParserString(ParserSymbol):
