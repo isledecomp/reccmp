@@ -5,7 +5,7 @@ from reccmp.formats.exceptions import InvalidVirtualAddressError
 from reccmp.cvdump.symbols import SymbolsEntry
 from reccmp.compare import Compare
 from reccmp.compare.db import ReccmpMatch
-from reccmp.cvdump.types import CvdumpParsedType
+from reccmp.cvdump.types import CvdumpKeyError
 from reccmp.cvdump.cvinfo import CvdumpTypeKey, CVInfoTypeEnum
 
 logger = logging.getLogger(__file__)
@@ -63,11 +63,6 @@ class PdbFunctionExtractor:
         "Fast Near": "__fastcall",
     }
 
-    def _get_cvdump_type(
-        self, type_key: CvdumpTypeKey | None
-    ) -> CvdumpParsedType | None:
-        return None if type_key is None else self.compare.types.keys.get(type_key)
-
     def _get_func_signature(self, fn: SymbolsEntry) -> FunctionSignature | None:
         function_type_key = fn.func_type
         if function_type_key == CVInfoTypeEnum.T_NOTYPE:
@@ -76,8 +71,9 @@ class PdbFunctionExtractor:
 
         # get corresponding function type
 
-        function_type = self.compare.types.keys.get(function_type_key)
-        if function_type is None:
+        try:
+            function_type = self.compare.types.from_key(function_type_key)
+        except CvdumpKeyError:
             logger.error(
                 "Could not find function type %s for function %s", fn.func_type, fn.name
             )
@@ -85,8 +81,8 @@ class PdbFunctionExtractor:
 
         class_type = function_type.get("class_type")
 
-        arg_list_type = self._get_cvdump_type(function_type.get("arg_list_type"))
-        assert arg_list_type is not None
+        assert "arg_list_type" in function_type
+        arg_list_type = self.compare.types.from_key(function_type["arg_list_type"])
         arg_list_pdb_types = arg_list_type.get("args", [])
         assert arg_list_type["argcount"] == len(arg_list_pdb_types)
 

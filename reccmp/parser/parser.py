@@ -297,6 +297,8 @@ class DecompParser:
 
     def _vtable_done(self, class_name: str):
         for marker in self.tbl_markers.iter():
+            is_folded = marker.extra is not None and marker.extra.lower() == "folded"
+
             self._symbols.append(
                 ParserVtable(
                     type=marker.type,
@@ -305,7 +307,8 @@ class DecompParser:
                     offset=marker.offset,
                     name=self.curly.get_prefix(class_name),
                     filename=self.filename,
-                    base_class=marker.extra,
+                    base_class=None if is_folded else marker.extra,
+                    is_folded=is_folded,
                 )
             )
 

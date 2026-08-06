@@ -2,48 +2,49 @@
 
 from unittest.mock import Mock, patch
 import pytest
-from reccmp.compare.asm.parse import DisasmLiteInst, ParseAsm
+from reccmp.compare.asm.parse import ParseAsm
 from reccmp.compare.asm.replacement import (
     AddrTestProtocol,
     NameReplacementProtocol,
 )
+from reccmp.compare.asm.instgen import DisasmLiteTuple
 
 REGISTER_ONLY_INSTRUCTIONS = (
     # No operands
-    DisasmLiteInst(0x1000, 1, "sti", ""),
-    DisasmLiteInst(0x1000, 1, "ret", ""),
+    (0x1000, 1, "sti", ""),
+    (0x1000, 1, "ret", ""),
     # One operand
-    DisasmLiteInst(0x1000, 1, "push", "eax"),
-    DisasmLiteInst(0x1000, 2, "call", "eax"),
+    (0x1000, 1, "push", "eax"),
+    (0x1000, 2, "call", "eax"),
     # Two operands
-    DisasmLiteInst(0x1000, 2, "cmp", "eax, edx"),
+    (0x1000, 2, "cmp", "eax, edx"),
 )
 
 
 @pytest.mark.parametrize("inst", REGISTER_ONLY_INSTRUCTIONS)
-def test_nothing_to_replace(inst: DisasmLiteInst):
+def test_nothing_to_replace(inst: DisasmLiteTuple):
     """There's no pointer or address value in these instructions,
     so your operand string should not be manipulated."""
     p = ParseAsm()
     _, op_str = p.sanitize(inst)
-    assert op_str == inst.op_str
+    assert op_str == inst[3]
 
 
 # There is one pointer in these instructions and we always replace it.
 POINTER_INSTRUCTIONS = (
     # One operand
-    DisasmLiteInst(0x1000, 6, "inc", "byte ptr [0x1234]"),
-    DisasmLiteInst(0x1000, 6, "inc", "word ptr [0x1234]"),
-    DisasmLiteInst(0x1000, 6, "inc", "dword ptr [0x1234]"),
-    DisasmLiteInst(0x1000, 6, "inc", "qword ptr [0x1234]"),
+    (0x1000, 6, "inc", "byte ptr [0x1234]"),
+    (0x1000, 6, "inc", "word ptr [0x1234]"),
+    (0x1000, 6, "inc", "dword ptr [0x1234]"),
+    (0x1000, 6, "inc", "qword ptr [0x1234]"),
     # Two operands
-    DisasmLiteInst(0x1000, 5, "mov", "eax, dword ptr [0x1234]"),
-    DisasmLiteInst(0x1000, 5, "mov", "dword ptr [0x1234], eax"),
+    (0x1000, 5, "mov", "eax, dword ptr [0x1234]"),
+    (0x1000, 5, "mov", "dword ptr [0x1234], eax"),
 )
 
 
 @pytest.mark.parametrize("inst", POINTER_INSTRUCTIONS)
-def test_pointer_instructions(inst: DisasmLiteInst):
+def test_pointer_instructions(inst: DisasmLiteTuple):
     """Can identify the pointer and insert a placeholder, regardless of the size
     of the pointed-at-item or the operand position."""
     addr_test = Mock(spec=AddrTestProtocol, return_value=False)
@@ -57,7 +58,7 @@ def test_pointer_instructions(inst: DisasmLiteInst):
 
 
 @pytest.mark.parametrize("inst", POINTER_INSTRUCTIONS)
-def test_pointer_instructions_deterministic(inst: DisasmLiteInst):
+def test_pointer_instructions_deterministic(inst: DisasmLiteTuple):
     """Calling sanitize() twice on the same instruction should give the same result.
     i.e. we use the same placeholder for the same address."""
     p = ParseAsm()
@@ -67,7 +68,7 @@ def test_pointer_instructions_deterministic(inst: DisasmLiteInst):
 
 
 @pytest.mark.parametrize("inst", POINTER_INSTRUCTIONS)
-def test_pointer_instructions_with_name(inst: DisasmLiteInst):
+def test_pointer_instructions_with_name(inst: DisasmLiteTuple):
     """Same as above, but using name lookup and substitution."""
     name_lookup = Mock(spec=NameReplacementProtocol, return_value="Hello")
     p = ParseAsm(name_lookup=name_lookup)
@@ -81,29 +82,29 @@ def test_pointer_instructions_with_name(inst: DisasmLiteInst):
 
 DISPLACE_INSTRUCTIONS = (
     # One operand
-    DisasmLiteInst(0x1000, 6, "inc", "byte ptr [eax + 0x1234]"),
+    (0x1000, 6, "inc", "byte ptr [eax + 0x1234]"),
     # Two operands
-    DisasmLiteInst(0x1000, 6, "mov", "eax, dword ptr [ecx + 0x1234]"),
-    DisasmLiteInst(0x1000, 6, "mov", "dword ptr [ecx + 0x1234], eax"),
-    DisasmLiteInst(0x1000, 7, "mov", "dword ptr [eax*4 + 0x1234], esi"),
-    DisasmLiteInst(0x1000, 7, "mov", "esi, dword ptr [eax*4 + 0x1234]"),
+    (0x1000, 6, "mov", "eax, dword ptr [ecx + 0x1234]"),
+    (0x1000, 6, "mov", "dword ptr [ecx + 0x1234], eax"),
+    (0x1000, 7, "mov", "dword ptr [eax*4 + 0x1234], esi"),
+    (0x1000, 7, "mov", "esi, dword ptr [eax*4 + 0x1234]"),
     # Jump table
-    DisasmLiteInst(0x1000, 7, "jmp", "dword ptr [eax*4 + 0x1234]"),
+    (0x1000, 7, "jmp", "dword ptr [eax*4 + 0x1234]"),
 )
 
 
 @pytest.mark.parametrize("inst", DISPLACE_INSTRUCTIONS)
-def test_displacement_without_addr_verify(inst: DisasmLiteInst):
+def test_displacement_without_addr_verify(inst: DisasmLiteTuple):
     """Can identify displacement operand (i.e. register plus address)
     but we only replace the value if it passes the address test."""
     p = ParseAsm()
     _, op_str = p.sanitize(inst)
     # No address test function provided, should not replace.
-    assert op_str == inst.op_str
+    assert op_str == inst[3]
 
 
 @pytest.mark.parametrize("inst", DISPLACE_INSTRUCTIONS)
-def test_displacement_with_addr_verify(inst: DisasmLiteInst):
+def test_displacement_with_addr_verify(inst: DisasmLiteTuple):
     """Same test as above, but with the address test function provided."""
     addr_test = Mock(spec=AddrTestProtocol, return_value=True)
     p = ParseAsm(addr_test=addr_test)
@@ -116,24 +117,24 @@ def test_displacement_with_addr_verify(inst: DisasmLiteInst):
 
 IMMEDIATE_VALUE_INSTRUCTIONS = (
     # One operand
-    DisasmLiteInst(0x1000, 5, "push", "0x1234"),
+    (0x1000, 5, "push", "0x1234"),
     # Two operands
-    DisasmLiteInst(0x1000, 5, "mov", "eax, 0x1234"),
+    (0x1000, 5, "mov", "eax, 0x1234"),
 )
 
 
 @pytest.mark.parametrize("inst", IMMEDIATE_VALUE_INSTRUCTIONS)
-def test_immediate_without_addr_verify(inst: DisasmLiteInst):
+def test_immediate_without_addr_verify(inst: DisasmLiteTuple):
     """If an operand is just a number, we will substitute the name
     or placeholder if it passes the address test."""
     p = ParseAsm()
     _, op_str = p.sanitize(inst)
     # No address test function provided, should not replace.
-    assert op_str == inst.op_str
+    assert op_str == inst[3]
 
 
 @pytest.mark.parametrize("inst", IMMEDIATE_VALUE_INSTRUCTIONS)
-def test_immediate_with_addr_verify(inst: DisasmLiteInst):
+def test_immediate_with_addr_verify(inst: DisasmLiteTuple):
     """Same test as above, but with the address test function provided."""
     addr_test = Mock(spec=AddrTestProtocol, return_value=True)
     p = ParseAsm(addr_test=addr_test)
@@ -149,7 +150,7 @@ def test_pointer_and_immediate_is_not_addr():
     In this case, we assume 0x5555 is not an address"""
     addr_test = Mock(spec=AddrTestProtocol, return_value=False)
     p = ParseAsm(addr_test=addr_test)
-    inst = DisasmLiteInst(0x1000, 10, "mov", "dword ptr [0x1234], 0x5555")
+    inst = (0x1000, 10, "mov", "dword ptr [0x1234], 0x5555")
 
     _, op_str = p.sanitize(inst)
 
@@ -165,25 +166,25 @@ def test_pointer_and_immediate_is_addr():
     """Same test as above, assumes 0x5555 is a valid address."""
     addr_test = Mock(spec=AddrTestProtocol, return_value=True)
     p = ParseAsm(addr_test=addr_test)
-    inst = DisasmLiteInst(0x1000, 10, "mov", "dword ptr [0x1234], 0x5555")
+    inst = (0x1000, 10, "mov", "dword ptr [0x1234], 0x5555")
 
     _, op_str = p.sanitize(inst)
     assert op_str == "dword ptr [<OFFSET1>], <OFFSET2>"
 
 
 JUMP_SAMPLES = (
-    (DisasmLiteInst(0x1000, 5, "jmp", "0x10ac"), "0xa7"),
-    (DisasmLiteInst(0x1000, 5, "jmp", "0x805"), "-0x800"),
-    (DisasmLiteInst(0x1000, 2, "je", "0x1006"), "0x4"),
-    (DisasmLiteInst(0x1000, 2, "je", "0x1000"), "-0x2"),
-    (DisasmLiteInst(0x1000, 5, "loop", "0x10ac"), "0xa7"),
-    (DisasmLiteInst(0x1000, 2, "loope", "0x1006"), "0x4"),
-    (DisasmLiteInst(0x1000, 2, "loopne", "0x1000"), "-0x2"),
+    ((0x1000, 5, "jmp", "0x10ac"), "0xa7"),
+    ((0x1000, 5, "jmp", "0x805"), "-0x800"),
+    ((0x1000, 2, "je", "0x1006"), "0x4"),
+    ((0x1000, 2, "je", "0x1000"), "-0x2"),
+    ((0x1000, 5, "loop", "0x10ac"), "0xa7"),
+    ((0x1000, 2, "loope", "0x1006"), "0x4"),
+    ((0x1000, 2, "loopne", "0x1000"), "-0x2"),
 )
 
 
 @pytest.mark.parametrize("inst, expected", JUMP_SAMPLES)
-def test_jump_displacement(inst: DisasmLiteInst, expected: str):
+def test_jump_displacement(inst: DisasmLiteTuple, expected: str):
     """Jump instructions use a displacement value as their operand.
     Meaning: the jump destination is the jump instruction's address
     plus the instruction size plus the operand value.
@@ -236,7 +237,7 @@ def test_no_placeholder_for_jumps():
     placeholder OR bump the placeholder number."""
     # codespell:ignore-end
     p = ParseAsm()
-    _, op_str = p.sanitize(DisasmLiteInst(0x1000, 5, "jmp", "0x2000"))
+    _, op_str = p.sanitize((0x1000, 5, "jmp", "0x2000"))
 
     # We don't have the name, so don't use a placeholder.
     assert op_str != "<OFFSET1>"
@@ -247,10 +248,10 @@ def test_jmp_ignore_placeholder():
     p = ParseAsm()
 
     # Establish placeholder for 0x2000
-    p.sanitize(DisasmLiteInst(0x1000, 5, "call", "0x2000"))
+    p.sanitize((0x1000, 5, "call", "0x2000"))
     assert 0x2000 in p.replacements
 
-    _, op_str = p.sanitize(DisasmLiteInst(0x1000, 5, "jmp", "0x2000"))
+    _, op_str = p.sanitize((0x1000, 5, "jmp", "0x2000"))
 
     # Do not use the existing placeholder
     assert op_str != "<OFFSET1>"
@@ -262,7 +263,7 @@ def test_jmp_with_name_lookup():
     name_lookup = Mock(spec=NameReplacementProtocol, return_value="Hello")
     p = ParseAsm(name_lookup=name_lookup)
 
-    _, op_str = p.sanitize(DisasmLiteInst(0x1000, 5, "jmp", "0x2000"))
+    _, op_str = p.sanitize((0x1000, 5, "jmp", "0x2000"))
 
     name_lookup.assert_called_with(0x2000, exact=True, indirect=False)
     assert op_str == "Hello"
@@ -275,12 +276,12 @@ def test_cmp_without_name_lookup():
     because it suggests that some variables are out of order."""
     addr_test = Mock(spec=AddrTestProtocol, return_value=False)
     p = ParseAsm(addr_test=addr_test)
-    inst = DisasmLiteInst(0x1000, 5, "cmp", "eax, 0x2000")
+    inst = (0x1000, 5, "cmp", "eax, 0x2000")
 
     _, op_str = p.sanitize(inst)
 
     addr_test.assert_not_called()
-    assert op_str == inst.op_str
+    assert op_str == inst[3]
 
 
 def test_cmp_ignore_placeholder():
@@ -289,22 +290,22 @@ def test_cmp_ignore_placeholder():
     p = ParseAsm()
 
     # Establish placeholder for 0x2000
-    p.sanitize(DisasmLiteInst(0x1000, 5, "call", "0x2000"))
+    p.sanitize((0x1000, 5, "call", "0x2000"))
     assert 0x2000 in p.replacements
 
-    inst = DisasmLiteInst(0x1000, 5, "cmp", "eax, 0x2000")
+    inst = (0x1000, 5, "cmp", "eax, 0x2000")
 
     _, op_str = p.sanitize(inst)
 
     # Do not use the existing placeholder
-    assert op_str == inst.op_str
+    assert op_str == inst[3]
 
 
 def test_cmp_with_name_lookup():
     """We will replace the value in a CMP instruction if we have a name for the address."""
     name_lookup = Mock(spec=NameReplacementProtocol, return_value="Hello")
     p = ParseAsm(name_lookup=name_lookup)
-    inst = DisasmLiteInst(0x1000, 5, "cmp", "eax, 0x2000")
+    inst = (0x1000, 5, "cmp", "eax, 0x2000")
 
     _, op_str = p.sanitize(inst)
 
@@ -316,7 +317,7 @@ def test_call_without_name_lookup():
     """CALL 0x____ instructions always use a placeholder."""
     addr_test = Mock(spec=AddrTestProtocol, return_value=False)
     p = ParseAsm(addr_test=addr_test)
-    inst = DisasmLiteInst(0x1000, 5, "call", "0x1234")
+    inst = (0x1000, 5, "call", "0x1234")
 
     _, op_str = p.sanitize(inst)
 
@@ -329,7 +330,7 @@ def test_call_with_name_lookup():
     """CALL instructions require exact addr match"""
     name_lookup = Mock(spec=NameReplacementProtocol, return_value="Hello")
     p = ParseAsm(name_lookup=name_lookup)
-    inst = DisasmLiteInst(0x1000, 5, "call", "0x1234")
+    inst = (0x1000, 5, "call", "0x1234")
 
     _, op_str = p.sanitize(inst)
 
@@ -348,10 +349,10 @@ def test_replacement_numbering():
 
     p = ParseAsm(name_lookup=substitute_1234_mock)
 
-    _, op_str = p.sanitize(DisasmLiteInst(0x1000, 6, "inc", "dword ptr [0x1234]"))
+    _, op_str = p.sanitize((0x1000, 6, "inc", "dword ptr [0x1234]"))
     assert op_str == "dword ptr [Hello]"
 
-    _, op_str = p.sanitize(DisasmLiteInst(0x1000, 6, "inc", "dword ptr [0x5555]"))
+    _, op_str = p.sanitize((0x1000, 6, "inc", "dword ptr [0x5555]"))
     assert op_str == "dword ptr [<OFFSET2>]"
 
 
@@ -362,7 +363,7 @@ def test_absolute_indirect():
     that it was called with the indirect parameter set."""
     name_lookup = Mock(spec=NameReplacementProtocol, return_value=None)
     p = ParseAsm(name_lookup=name_lookup)
-    inst = DisasmLiteInst(0x1000, 5, "call", "dword ptr [0x1234]")
+    inst = (0x1000, 5, "call", "dword ptr [0x1234]")
 
     _, op_str = p.sanitize(inst)
 
@@ -380,8 +381,8 @@ def test_direct_and_indirect_different_names():
 
     lookup_mock = Mock(side_effect=lookup)
 
-    indirect_inst = DisasmLiteInst(0x1000, 5, "call", "dword ptr [0x1234]")
-    direct_inst = DisasmLiteInst(0x1000, 5, "mov", "eax, dword ptr [0x1234]")
+    indirect_inst = (0x1000, 5, "call", "dword ptr [0x1234]")
+    direct_inst = (0x1000, 5, "mov", "eax, dword ptr [0x1234]")
 
     # Indirect first
     p = ParseAsm(name_lookup=lookup_mock)
@@ -413,8 +414,8 @@ def test_direct_and_indirect_different_names():
 
 def test_direct_and_indirect_placeholders():
     """If no addresses are known, placeholders for direct and indirect lookup must be distinct"""
-    indirect_inst = DisasmLiteInst(0x1000, 5, "call", "dword ptr [0x1234]")
-    direct_inst = DisasmLiteInst(0x1000, 5, "mov", "eax, dword ptr [0x1234]")
+    indirect_inst = (0x1000, 5, "call", "dword ptr [0x1234]")
+    direct_inst = (0x1000, 5, "mov", "eax, dword ptr [0x1234]")
 
     name_lookup = Mock(spec=NameReplacementProtocol, return_value=None)
     p = ParseAsm(name_lookup=name_lookup)

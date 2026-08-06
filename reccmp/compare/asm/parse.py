@@ -10,9 +10,8 @@ import re
 from functools import cache
 from typing_extensions import Buffer
 from .const import JUMP_MNEMONICS, SINGLE_OPERAND_INSTS
-from .instgen import InstructGen, SectionType
+from .instgen import DisasmLiteTuple, InstructGen, SectionType
 from .replacement import AddrTestProtocol, NameReplacementProtocol
-from .types import DisasmLiteInst
 
 AsmExcerpt = list[tuple[int | None, str]]
 
@@ -135,7 +134,7 @@ class ParseAsm:
         value = int(match.group(1), 16)
         return self.indirect_replace(value)
 
-    def sanitize(self, inst: DisasmLiteInst) -> tuple[str, str]:
+    def sanitize(self, inst: DisasmLiteTuple) -> tuple[str, str]:
         # For jumps or calls, if the entire op_str is a hex number, the value
         # is a relative offset.
         # Otherwise (i.e. it looks like `dword ptr [address]`) it is an
@@ -143,40 +142,41 @@ class ParseAsm:
         # Providing the starting address of the function to capstone.disasm has
         # automatically resolved relative offsets to an absolute address.
         # We will have to undo this for some of the jumps or they will not match.
+        inst_address, inst_size, inst_mnemonic, inst_op_str = inst
 
         if (
-            inst.mnemonic in SINGLE_OPERAND_INSTS
-            and (op_str_address := from_hex(inst.op_str)) is not None
+            inst_mnemonic in SINGLE_OPERAND_INSTS
+            and (op_str_address := from_hex(inst_op_str)) is not None
         ):
-            if inst.mnemonic == "call":
-                return (inst.mnemonic, self.replace(op_str_address, exact=True))
+            if inst_mnemonic == "call":
+                return (inst_mnemonic, self.replace(op_str_address, exact=True))
 
-            if inst.mnemonic == "push":
+            if inst_mnemonic == "push":
                 if self.is_addr(op_str_address):
-                    return (inst.mnemonic, self.replace(op_str_address))
+                    return (inst_mnemonic, self.replace(op_str_address))
 
                 # To avoid falling into jump handling
-                return (inst.mnemonic, inst.op_str)
+                return (inst_mnemonic, inst_op_str)
 
-            if inst.mnemonic == "jmp":
+            if inst_mnemonic == "jmp":
                 # The unwind section contains JMPs to other functions.
                 # If we have a name for this address, use it. If not,
                 # do not create a new placeholder. We will instead
                 # fall through to generic jump handling below.
                 potential_name = self.lookup(op_str_address, exact=True)
                 if potential_name is not None:
-                    return (inst.mnemonic, potential_name)
+                    return (inst_mnemonic, potential_name)
 
             # Else: this is any jump
             # Show the jump offset rather than the absolute address
-            jump_displacement = op_str_address - (inst.address + inst.size)
-            return (inst.mnemonic, hex(jump_displacement))
+            jump_displacement = op_str_address - (inst_address + inst_size)
+            return (inst_mnemonic, hex(jump_displacement))
 
-        if inst.mnemonic == "call":
+        if inst_mnemonic == "call":
             # Special handling for absolute indirect CALL.
-            op_str = ptr_replace_regex.sub(self.hex_replace_indirect, inst.op_str)
+            op_str = ptr_replace_regex.sub(self.hex_replace_indirect, inst_op_str)
         else:
-            op_str = ptr_replace_regex.sub(self.hex_replace_always, inst.op_str)
+            op_str = ptr_replace_regex.sub(self.hex_replace_always, inst_op_str)
 
             # We only want relocated addresses for pointer displacement.
             # i.e. ptr [register + something]
@@ -186,12 +186,12 @@ class ParseAsm:
 
         # In the event of pointer comparison, only replace the immediate value
         # if it is a known address.
-        if inst.mnemonic == "cmp":
+        if inst_mnemonic == "cmp":
             op_str = immediate_replace_regex.sub(self.hex_replace_annotated, op_str)
         else:
             op_str = immediate_replace_regex.sub(self.hex_replace_relocated, op_str)
 
-        return (inst.mnemonic, op_str)
+        return (inst_mnemonic, op_str)
 
     def parse_asm(self, data: Buffer, start_addr: int) -> AsmExcerpt:
         self.reset()
@@ -202,9 +202,7 @@ class ParseAsm:
         for section in ig.sections:
             if section.type == SectionType.CODE:
                 for inst in section.contents:
-                    # Use heuristics to disregard some differences that aren't representative
-                    # of the accuracy of a function (e.g. global offsets)
-
+                    inst_address, inst_size, inst_mnemonic, inst_op_str = inst
                     # If there is no pointer or immediate value in the op_str,
                     # there is nothing to sanitize.
                     # This leaves us with cases where a small immediate value or
@@ -214,17 +212,17 @@ class ParseAsm:
                     # where the hex value could not be an address.
                     # The exception is jumps which are as small as 2 bytes
                     # but are still useful to sanitize.
-                    if "0x" in inst.op_str and (
-                        inst.mnemonic in JUMP_MNEMONICS
-                        or inst.size > 4
+                    if "0x" in inst_op_str and (
+                        inst_mnemonic in JUMP_MNEMONICS
+                        or inst_size > 4
                         or not self.is_32bit
                     ):
                         result = self.sanitize(inst)
                     else:
-                        result = (inst.mnemonic, inst.op_str)
+                        result = (inst_mnemonic, inst_op_str)
 
                     # mnemonic + " " + op_str
-                    asm.append((inst.address, " ".join(result)))
+                    asm.append((inst_address, " ".join(result)))
             elif section.type == SectionType.ADDR_TAB:
                 asm.append((None, "Jump table:"))
                 for ofs, target in section.contents:

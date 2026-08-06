@@ -8,7 +8,7 @@ def entity(
     """Helper to create entities with dummy values for required fields: address, name.
     The only relevant fields are: accuracy, is_stub, is_effective_match"""
     return ReccmpComparedEntity(
-        orig_addr="0x400000",
+        orig_addr=0x400000,
         name="Test",
         accuracy=accuracy,
         is_stub=is_stub,

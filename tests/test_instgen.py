@@ -1,5 +1,4 @@
 from reccmp.compare.asm.instgen import InstructGen, SectionType
-from reccmp.compare.asm.types import DisasmLiteInst
 
 
 def test_ret():
@@ -40,9 +39,11 @@ def test_score_notify():
     assert types_only == (SectionType.CODE, SectionType.ADDR_TAB, SectionType.DATA_TAB)
 
     # CODE section stopped at correct place?
-    instructions = ig.sections[0].contents
-    assert isinstance(instructions[-1], DisasmLiteInst)
-    assert instructions[-1].address == 0x100014D2
+    section = ig.sections[0]
+    assert section.type == SectionType.CODE
+    last_inst_address = section.contents[-1][0]
+
+    assert last_inst_address == 0x100014D2
     # n.b. 0x100014d2 is the dummy instruction `mov edi, edi`
     # Ghidra does more thorough analysis and ignores this.
     # The last real instruction should be at 0x100014cf. Not a big deal
@@ -73,8 +74,10 @@ def test_smack_case():
     assert ig.sections[0].type == ig.sections[2].type == SectionType.CODE
 
     # Make sure we captured the instruction immediately after
-    assert isinstance(ig.sections[2].contents[0], DisasmLiteInst)
-    assert ig.sections[2].contents[0].mnemonic == "mov"
+    section = ig.sections[2]
+    assert section.type == SectionType.CODE
+    first_inst_mnemonic = section.contents[0][2]
+    assert first_inst_mnemonic == "mov"
 
 
 # BETA10 0x1004c9cc
@@ -100,8 +103,10 @@ def test_beta_case():
     assert ig.sections[0].type == ig.sections[2].type == SectionType.CODE
 
     # Make sure we captured the instruction immediately after
-    assert isinstance(ig.sections[2].contents[0], DisasmLiteInst)
-    assert ig.sections[2].contents[0].mnemonic == "mov"
+    section = ig.sections[2]
+    assert section.type == SectionType.CODE
+    first_inst_mnemonic = section.contents[0][2]
+    assert first_inst_mnemonic == "mov"
 
 
 # LEGO1 0x1000fb50

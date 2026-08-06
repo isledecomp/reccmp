@@ -323,8 +323,17 @@ class CvdumpTypesParser:
     }
 
     def __init__(self) -> None:
-        self.keys: dict[CvdumpTypeKey, CvdumpParsedType] = {}
+        self._keys: dict[CvdumpTypeKey, CvdumpParsedType] = {}
+        self._raw: dict[CvdumpTypeKey, tuple[str, str]] = {}
         self.alerted_types: set[int] = set()
+
+    def from_key(self, type_key: CvdumpTypeKey) -> CvdumpParsedType:
+        try:
+            return self._keys[type_key]
+        except KeyError:
+            pass
+
+        return self._parse_raw(type_key)
 
     def _get_field_list(self, type_obj: CvdumpParsedType) -> list[FieldListItem]:
         """Return the field list for the given LF_CLASS/LF_STRUCTURE reference"""
@@ -333,7 +342,7 @@ class CvdumpTypesParser:
             field_obj = type_obj
         else:
             field_list_type = type_obj["field_list_type"]
-            field_obj = self.keys[field_list_type]
+            field_obj = self.from_key(field_list_type)
 
         members: list[FieldListItem] = []
 
@@ -375,10 +384,7 @@ class CvdumpTypesParser:
             )
 
         # Go to our dictionary to find it.
-        obj = self.keys.get(type_key)
-        if obj is None:
-            raise CvdumpKeyError(type_key)
-
+        obj = self.from_key(type_key)
         obj_type = obj.get("type")
 
         if obj_type == "LF_POINTER":
@@ -548,8 +554,8 @@ class CvdumpTypesParser:
 
     def get_name_for_offset(self, type_key: CvdumpTypeKey, offset: int) -> str:
         """Limited to arrays for now. Enable to close GH #462."""
-        if type_key in self.keys:
-            type_dict = self.keys[type_key]
+        if type_key in self._raw:
+            type_dict = self.from_key(type_key)
             if type_dict.get("type") != "LF_ARRAY":
                 return f"+{offset}" if offset > 0 else ""
 
@@ -594,6 +600,56 @@ class CvdumpTypesParser:
         members = self.get_scalars_gapless(type_key)
         return member_list_to_struct_string(members)
 
+    def _parse_raw(self, leaf_id: CvdumpTypeKey) -> CvdumpParsedType:
+        try:
+            leaf, leaf_type = self._raw[leaf_id]
+        except KeyError as ex:
+            raise CvdumpKeyError from ex
+
+        try:
+            match leaf_type:
+                case "LF_MODIFIER":
+                    self._keys[leaf_id] = self.read_modifier(leaf, leaf_type)
+
+                case "LF_ARRAY":
+                    self._keys[leaf_id] = self.read_array(leaf, leaf_type)
+
+                case "LF_FIELDLIST":
+                    self._keys[leaf_id] = self.read_fieldlist(leaf, leaf_type)
+
+                case "LF_ARGLIST":
+                    self._keys[leaf_id] = self.read_arglist(leaf, leaf_type)
+
+                case "LF_MFUNCTION":
+                    self._keys[leaf_id] = self.read_mfunction(leaf, leaf_type)
+
+                case "LF_PROCEDURE":
+                    self._keys[leaf_id] = self.read_procedure(leaf, leaf_type)
+
+                case "LF_CLASS" | "LF_STRUCTURE":
+                    self._keys[leaf_id] = self.read_class_or_struct(leaf, leaf_type)
+
+                case "LF_POINTER":
+                    self._keys[leaf_id] = self.read_pointer(leaf, leaf_type)
+
+                case "LF_ENUM":
+                    self._keys[leaf_id] = self.read_enum(leaf, leaf_type)
+
+                case "LF_UNION":
+                    self._keys[leaf_id] = self.read_union(leaf, leaf_type)
+
+                case "LF_BITFIELD":
+                    self._keys[leaf_id] = self.read_bitfield(leaf, leaf_type)
+
+                case _:
+                    # Check for exhaustiveness
+                    logger.error("Unhandled leaf type: %s", leaf_type)
+
+        except AssertionError:
+            logger.error("Failed to parse PDB types leaf:\n%s", leaf)
+
+        return self._keys[leaf_id]
+
     def read_all(self, section: str):
         r_leafsplit = re.compile(r"\n(?=0x\w{4,8} : )")
         for leaf in r_leafsplit.split(section):
@@ -601,51 +657,9 @@ class CvdumpTypesParser:
                 continue
 
             leaf_id_str, leaf_type = match.groups()
-            leaf_id = CvdumpTypeKey.from_str(leaf_id_str)
-            if leaf_type not in self.MODES_OF_INTEREST:
-                continue
-
-            try:
-                match leaf_type:
-                    case "LF_MODIFIER":
-                        self.keys[leaf_id] = self.read_modifier(leaf, leaf_type)
-
-                    case "LF_ARRAY":
-                        self.keys[leaf_id] = self.read_array(leaf, leaf_type)
-
-                    case "LF_FIELDLIST":
-                        self.keys[leaf_id] = self.read_fieldlist(leaf, leaf_type)
-
-                    case "LF_ARGLIST":
-                        self.keys[leaf_id] = self.read_arglist(leaf, leaf_type)
-
-                    case "LF_MFUNCTION":
-                        self.keys[leaf_id] = self.read_mfunction(leaf, leaf_type)
-
-                    case "LF_PROCEDURE":
-                        self.keys[leaf_id] = self.read_procedure(leaf, leaf_type)
-
-                    case "LF_CLASS" | "LF_STRUCTURE":
-                        self.keys[leaf_id] = self.read_class_or_struct(leaf, leaf_type)
-
-                    case "LF_POINTER":
-                        self.keys[leaf_id] = self.read_pointer(leaf, leaf_type)
-
-                    case "LF_ENUM":
-                        self.keys[leaf_id] = self.read_enum(leaf, leaf_type)
-
-                    case "LF_UNION":
-                        self.keys[leaf_id] = self.read_union(leaf, leaf_type)
-
-                    case "LF_BITFIELD":
-                        self.keys[leaf_id] = self.read_bitfield(leaf, leaf_type)
-
-                    case _:
-                        # Check for exhaustiveness
-                        logger.error("Unhandled data in mode: %s", leaf_type)
-
-            except AssertionError:
-                logger.error("Failed to parse PDB types leaf:\n%s", leaf)
+            if leaf_type in self.MODES_OF_INTEREST:
+                leaf_id = CvdumpTypeKey.from_str(leaf_id_str)
+                self._raw[leaf_id] = (leaf, leaf_type)
 
     def read_modifier(self, leaf: str, leaf_type: str) -> CvdumpParsedType:
         match = self.MODIFIES_RE.search(leaf)

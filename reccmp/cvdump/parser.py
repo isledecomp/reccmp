@@ -2,7 +2,7 @@ import re
 from pathlib import PureWindowsPath
 from typing import NamedTuple
 from .types import CvdumpTypesParser
-from .symbols import CvdumpSymbolsParser
+from .symbols import CvdumpSymbolsParser, SymbolsEntry
 from .cvinfo import CvdumpTypeKey
 
 # e.g. `     27 00034EC0     28 00034EE2     29 00034EE7     30 00034EF4`
@@ -118,7 +118,7 @@ class CvdumpParser:
         self.symbols_parser = CvdumpSymbolsParser()
 
     @property
-    def symbols(self):
+    def symbols(self) -> list[SymbolsEntry]:
         return self.symbols_parser.symbols
 
     def _lines_section(self, line: str):
