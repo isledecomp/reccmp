@@ -7,6 +7,26 @@ def is_effective_match(*args, **kwargs) -> bool:
     return analyze_effective_match(*args, **kwargs).is_effective
 
 
+def test_semantic_similarity_can_be_lower_than_raw_similarity():
+    """Unreachable textual matches must not raise the reachable semantic score."""
+    orig_asm = ["mov eax, 1", "ret"] + ["mov ecx, ecx"] * 100
+    recomp_asm = ["mov eax, 2", "ret"] + ["mov ecx, ecx"] * 100
+    diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
+
+    analysis = analyze_effective_match(
+        diff.get_opcodes(),
+        orig_asm,
+        recomp_asm,
+        orig_addrs=list(range(0x1000, 0x1000 + len(orig_asm))),
+        orig_meta=[None] * len(orig_asm),
+        recomp_addrs=list(range(0x2000, 0x2000 + len(recomp_asm))),
+        recomp_meta=[None] * len(recomp_asm),
+    )
+
+    assert diff.ratio() > 0.99
+    assert analysis.semantic_similarity == 0.5
+
+
 def test_fix_cmp_jmp():
     orig_asm = ["mov eax, 1", "mov ebx, 2", "cmp eax, ebx", "jg 0x1"]
     recomp_asm = ["mov eax, 1", "mov ebx, 2", "cmp ebx, eax", "jl 0x1"]

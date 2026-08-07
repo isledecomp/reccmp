@@ -84,13 +84,6 @@ def analyze_effective_match(  # pylint: disable=too-many-arguments
 
     orig_addr_list = list(orig_addrs) if orig_addrs is not None else None
     recomp_addr_list = list(recomp_addrs) if recomp_addrs is not None else None
-    raw_matches = sum(i2 - i1 for tag, i1, i2, _, __ in codes if tag == "equal")
-    raw_similarity = (
-        2.0 * raw_matches / (len(orig_asm) + len(recomp_asm))
-        if orig_asm or recomp_asm
-        else 1.0
-    )
-
     def new_recorder() -> AnalysisRecorder:
         return AnalysisRecorder(orig_addr_list, recomp_addr_list)
 
@@ -214,7 +207,7 @@ def analyze_effective_match(  # pylint: disable=too-many-arguments
             if similarity is not None:
                 return ComparisonAnalysis.mismatch(
                     analysis.difference,
-                    semantic_similarity=max(raw_similarity, similarity),
+                    semantic_similarity=similarity,
                 )
         return analysis
 

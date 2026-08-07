@@ -3759,12 +3759,12 @@ def _recover_local_outputs(
         orig.x87.known = list(values)
         recomp.x87.known = list(values)
 
-    # A differing load is already charged to this edit.  Equalize the
-    # block-local fault-obligation log so that it does not cascade into a
-    # second diagnostic edit later in the block.
-    combined_loads = orig.load_log | recomp.load_log
-    orig.load_log = set(combined_loads)
-    recomp.load_log = set(combined_loads)
+    # A differing load is already charged to this edit, but it must not
+    # discharge an obligation created by an earlier one-sided load. Preserve
+    # each side's history from immediately before the edited pair and discard
+    # only the pair's own memory-read effects.
+    orig.load_log = set(before_o.load_log)
+    recomp.load_log = set(before_r.load_log)
     return True
 
 

@@ -360,6 +360,31 @@ def test_semantic_similarity_is_unavailable_for_different_cfgs():
     )
 
 
+def test_semantic_similarity_preserves_one_sided_load_obligations():
+    """Recovering an unrelated edit must not invent the load needed to prove
+    that an earlier one-sided potentially faulting read is harmless."""
+    orig = [
+        "mov eax, dword ptr [ebp - 4]",
+        "mov ecx, 1",
+        "mov edx, 10",
+        "ret",
+    ]
+    recomp = [
+        "mov ecx, 2",
+        "mov edx, 10",
+        "ret",
+    ]
+    assert (
+        estimate_isomorphic_cfg_semantic_similarity(
+            orig,
+            recomp,
+            [None] * len(orig),
+            [None] * len(recomp),
+        )
+        is None
+    )
+
+
 def test_reject_divergent_branch_structure():
     """Different reachable block graphs are not comparable."""
     orig = [
