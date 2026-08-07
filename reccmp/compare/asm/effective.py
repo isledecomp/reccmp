@@ -273,6 +273,14 @@ class Context:
     # newest event that may alias it, so independent loads keep their tag
     # across unrelated stores.
     mem_events: list[tuple] = field(default_factory=list)
+    # Values written to exact addresses by already matched stores. Virtual
+    # receiver canonicalization uses this narrow forwarding table so a
+    # receiver reloaded from its stable slot is equivalent to the saved value.
+    # Unknown calls do not erase the identity of that slot; an explicit later
+    # store to the same address replaces it.
+    receiver_values: dict[tuple[Value, int | None], tuple[Value, Value]] = field(
+        default_factory=dict
+    )
     # Whether a pointer into this function's own frame may have escaped
     # (stored to memory or passed to a callee). Until then, memory below
     # the entry stack pointer is private scratch that no incoming pointer
@@ -415,6 +423,7 @@ def _commit_memory(ctx: Context, obs: list, marker) -> None:
             stack = "push" if size == "stack" else False
             tag = ("mem", marker, k)
             ctx.mem_events.append((tag, (address, width, stack)))
+            ctx.receiver_values[(address, width)] = (tag, value)
             ctx.gen = tag
             if _frame_pointer_value(value):
                 ctx.stack_escaped = True
@@ -699,6 +708,12 @@ def _record_operand_candidate(
         return
     if ins_o.mnemonic in JCC_MNEMONICS or ins_o.mnemonic.startswith("loop"):
         return
+    if ins_o.mnemonic == "call":
+        # CALL observations diagnose canonical direct/indirect targets and
+        # register arguments after symbolic execution. A raw memory-operand
+        # candidate here would re-expose the physical vtable register after a
+        # virtual target had already been proved equivalent.
+        return
     for op_o, op_r in zip(ins_o.operands, ins_r.operands):
         if op_o == op_r:
             continue
@@ -956,7 +971,36 @@ def _canonical_address_value(address: Value) -> Value:
     return result
 
 
-def _canonical_virtual_target(target: Value) -> Value | None:
+def _receiver_equivalence_class(receiver: Value, ctx: Context) -> Value:
+    """Canonical receiver identity independent of reload generation tags."""
+    seen: set[int] = set()
+    while (
+        isinstance(receiver, tuple)
+        and len(receiver) == 4
+        and receiver[0] == "load"
+        and id(receiver) not in seen
+    ):
+        seen.add(id(receiver))
+        address, size = receiver[1], _WIDTHS.get(receiver[2])
+        forwarded = ctx.receiver_values.get((address, size))
+        if forwarded is None:
+            return ("receiver_load", address, receiver[2])
+        store_tag, stored_value = forwarded
+        load_tag = receiver[3]
+        event_tags = [tag for tag, _ in ctx.mem_events]
+        if store_tag == load_tag:
+            receiver = stored_value
+        elif store_tag in event_tags and load_tag in event_tags:
+            if event_tags.index(store_tag) < event_tags.index(load_tag):
+                receiver = stored_value
+            else:
+                return ("receiver_load", address, receiver[2])
+        else:
+            return ("receiver_load", address, receiver[2])
+    return receiver
+
+
+def _canonical_virtual_target(target: Value, ctx: Context) -> Value | None:
     """Recognize ``load(load(receiver) + slot)`` as a virtual call target.
 
     The physical register carrying the vtable is intentionally absent from
@@ -987,7 +1031,7 @@ def _canonical_virtual_target(target: Value) -> Value | None:
         or receiver_terms[0][1] != 1
     ):
         return None
-    receiver = receiver_terms[0][0]
+    receiver = _receiver_equivalence_class(receiver_terms[0][0], ctx)
     return ("vcall", receiver, slot)
 
 
@@ -1243,7 +1287,7 @@ def execute(
             if ops[0][0] == "sym":
                 abi = ctx.metadata.call_abi(ops[0][1])
         target = read_operand(state, ctx, ops[0])
-        virtual_target = _canonical_virtual_target(target)
+        virtual_target = _canonical_virtual_target(target, ctx)
         entry = ["call", virtual_target or target]
         if virtual_target is None:
             if abi is None or abi.uses_ecx:
@@ -2665,6 +2709,9 @@ class _CfgState:
     orig: SideState
     recomp: SideState
     memory: int | Value
+    receiver_values: dict[tuple[Value, int | None], tuple[Value, Value]] = field(
+        default_factory=dict
+    )
     # Whether a pointer into the function's own frame may have escaped on
     # some path reaching this point (see Context.stack_escaped).
     escaped: bool = False
@@ -2675,6 +2722,7 @@ def _clone_cfg_state(state: _CfgState) -> _CfgState:
         _clone_state(state.orig),
         _clone_state(state.recomp),
         state.memory,
+        dict(state.receiver_values),
         state.escaped,
     )
 
@@ -2785,12 +2833,24 @@ def _join_states(
         memory = entry.memory
     else:
         memory = ("cfg_mem_phi", block)
-    return _CfgState(out_o, out_r, memory, entry.escaped or incoming.escaped)
+    receiver_values = {
+        key: value
+        for key, value in entry.receiver_values.items()
+        if incoming.receiver_values.get(key) == value
+    }
+    return _CfgState(
+        out_o,
+        out_r,
+        memory,
+        receiver_values,
+        entry.escaped or incoming.escaped,
+    )
 
 
 def _states_equal(a: _CfgState, b: _CfgState) -> bool:
     return (
         a.memory == b.memory
+        and a.receiver_values == b.receiver_values
         and a.escaped == b.escaped
         and all(
             x.regs == y.regs
@@ -2972,6 +3032,7 @@ def verify_cfg_effective_match(
         flow = _clone_cfg_state(entry[block])
         orig_state, recomp_state = flow.orig, flow.recomp
         ctx = Context(gen=flow.memory, metadata=metadata, recorder=recorder)
+        ctx.receiver_values = dict(flow.receiver_values)
         ctx.stack_escaped = flow.escaped
         for i in range(order[block], ends[block]):
             line_o, line_r = orig_asm[i], recomp_asm[i]
@@ -3090,7 +3151,13 @@ def verify_cfg_effective_match(
             # Falling out of the disassembled function is not a modeled exit.
             return False
 
-        outgoing = _CfgState(orig_state, recomp_state, ctx.gen, ctx.stack_escaped)
+        outgoing = _CfgState(
+            orig_state,
+            recomp_state,
+            ctx.gen,
+            dict(ctx.receiver_values),
+            ctx.stack_escaped,
+        )
         if recorder is not None:
             recorder.reasons.update(ctx.categories)
         # Propagate to successors.
@@ -3475,6 +3542,7 @@ def verify_isomorphic_cfg_effective_match(
         orig_state.load_log = set()
         recomp_state.load_log = set()
         ctx = Context(gen=flow.memory, metadata=metadata, recorder=recorder)
+        ctx.receiver_values = dict(flow.receiver_values)
         ctx.stack_escaped = flow.escaped
         edges_o = cfg_o.succ[block_o]
         edges_r = cfg_r.succ[block_r]
@@ -3620,7 +3688,13 @@ def verify_isomorphic_cfg_effective_match(
                 recorder.mark_inconclusive("unsupported_control_flow")
             return False
 
-        outgoing = _CfgState(orig_state, recomp_state, ctx.gen, ctx.stack_escaped)
+        outgoing = _CfgState(
+            orig_state,
+            recomp_state,
+            ctx.gen,
+            dict(ctx.receiver_values),
+            ctx.stack_escaped,
+        )
         if recorder is not None:
             recorder.reasons.update(ctx.categories)
         for role, to_o in edges_o.items():

@@ -43,25 +43,31 @@ def canonical_callee_name(
 
     canonical_entity = entity
     canonical_orig = entity.orig_addr
+    configured_alias = False
     if canonical_orig is not None and equivalence_groups:
-        canonical_orig = equivalence_groups.get(canonical_orig, canonical_orig)
-        configured = db.get(ImageId.ORIG, canonical_orig, exact=True)
-        if configured is not None:
-            canonical_entity = configured
+        configured_orig = equivalence_groups.get(canonical_orig)
+        configured_alias = configured_orig is not None
+        canonical_orig = (
+            configured_orig if configured_orig is not None else canonical_orig
+        )
+        configured_entity = db.get(ImageId.ORIG, canonical_orig, exact=True)
+        if configured_entity is not None:
+            canonical_entity = configured_entity
 
-    if canonical_orig is not None and (
-        entity.matched
-        or canonical_orig != entity.orig_addr
-        or canonical_entity.matched
-        or entity.addr(image_id) is None
-    ):
+    symbol = canonical_entity.get("symbol") or entity.get("symbol")
+    if configured_alias and canonical_orig is not None:
         identity = f"orig:{canonical_orig:x}"
         display = canonical_entity.match_name() or entity.match_name()
-    elif symbol := canonical_entity.get("symbol") or entity.get("symbol"):
+    elif symbol:
         identity = f"symbol:{symbol}"
         display = f"{symbol} ({EntityTypeLookup.get(entity.entity_type or -1, 'UNK')})"
     elif entity.entity_type == EntityType.IMPORT:
         identity = f"import:{canonical_entity.best_name() or entity.best_name()}"
+        display = canonical_entity.match_name() or entity.match_name()
+    elif canonical_orig is not None and (
+        entity.matched or canonical_entity.matched or entity.addr(image_id) is None
+    ):
+        identity = f"orig:{canonical_orig:x}"
         display = canonical_entity.match_name() or entity.match_name()
     else:
         addr = entity.addr(image_id)
@@ -93,30 +99,37 @@ def create_name_lookup(
 
     ref_key = "ref_orig" if image_id == ImageId.ORIG else "ref_recomp"
 
-    # Build a small point-query index for paired data objects.  A paired
+    # Build the point-query index lazily: FunctionComparator is constructed
+    # before entity ingestion populates the shared database. A paired
     # containing object is stronger evidence than a nearer unpaired interior
-    # annotation.  Prefix maximum ends let each lookup stop as soon as no
+    # annotation. Prefix maximum ends let each lookup stop as soon as no
     # earlier interval can contain the requested address.
-    paired_ranges: list[tuple[int, int, ReccmpEntity]] = []
-    for candidate in db.all(image_id):
-        base = candidate.addr(image_id)
-        size = candidate.any_size(image_id)
-        if (
-            candidate.matched
-            and candidate.entity_type in (EntityType.DATA, EntityType.OFFSET)
-            and base is not None
-            and size > 0
-        ):
-            paired_ranges.append((base, base + size, candidate))
-    paired_ranges.sort(key=lambda item: item[0])
-    paired_starts = [item[0] for item in paired_ranges]
-    paired_max_ends: list[int] = []
-    maximum = 0
-    for _, end, _ in paired_ranges:
-        maximum = max(maximum, end)
-        paired_max_ends.append(maximum)
+    @cache
+    def paired_index() -> (
+        tuple[list[tuple[int, int, ReccmpEntity]], list[int], list[int]]
+    ):
+        paired_ranges: list[tuple[int, int, ReccmpEntity]] = []
+        for candidate in db.all(image_id):
+            base = candidate.addr(image_id)
+            size = candidate.any_size(image_id)
+            if (
+                candidate.matched
+                and candidate.entity_type in (EntityType.DATA, EntityType.OFFSET)
+                and base is not None
+                and size > 0
+            ):
+                paired_ranges.append((base, base + size, candidate))
+        paired_ranges.sort(key=lambda item: item[0])
+        paired_starts = [item[0] for item in paired_ranges]
+        paired_max_ends: list[int] = []
+        maximum = 0
+        for _, end, _ in paired_ranges:
+            maximum = max(maximum, end)
+            paired_max_ends.append(maximum)
+        return paired_ranges, paired_starts, paired_max_ends
 
     def paired_containing(addr: int) -> ReccmpEntity | None:
+        paired_ranges, paired_starts, paired_max_ends = paired_index()
         candidates: list[tuple[int, int, ReccmpEntity]] = []
         index = bisect.bisect_right(paired_starts, addr) - 1
         while index >= 0 and paired_max_ends[index] > addr:

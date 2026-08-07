@@ -1,11 +1,15 @@
 """Tests for the relational effective-match verifier
 (reccmp.compare.asm.effective.verify_effective_match)."""
 
+# pylint: disable=too-many-lines
+
 import difflib
 
 from reccmp.compare.asm.effective import (
     CallAbi,
+    Context,
     FunctionMetadata,
+    _receiver_equivalence_class,
     verify_effective_match,
 )
 from reccmp.compare.asm.instgen import InstructionMeta
@@ -183,6 +187,61 @@ def test_virtual_call_tolerates_equivalent_vtable_reload():
         "call dword ptr [edx + 0x80]",
     ]
     assert verify_effective_match(orig, recomp) is True
+
+
+def test_virtual_call_receiver_reload_ignores_unrelated_pointee_store():
+    address = ("mem", "", (("receiver_slot", 1),), 8, ())
+    before = ("load", address, "dword", 0)
+    after_unrelated_store = ("load", address, "dword", ("mem", 4, 0))
+    ctx = Context()
+    assert _receiver_equivalence_class(before, ctx) == _receiver_equivalence_class(
+        after_unrelated_store, ctx
+    )
+
+
+def test_virtual_call_receiver_reload_forwards_matched_exact_store():
+    orig = [
+        "push ebx",
+        "push ebp",
+        "mov eax, dword ptr [esi + 4]",
+        "mov dword ptr [g_receiver (DATA)], eax",
+        "mov edx, dword ptr [eax]",
+        "mov ecx, eax",
+        "call dword ptr [edx + 0xc]",
+        "mov ecx, dword ptr [g_receiver (DATA)]",
+        "mov eax, dword ptr [ecx]",
+        "call dword ptr [eax + 0x204]",
+        "pop ebp",
+        "pop ebx",
+    ]
+    recomp = [
+        "push ebx",
+        "push ebp",
+        "mov ebp, dword ptr [esi + 4]",
+        "mov dword ptr [g_receiver (DATA)], ebp",
+        "mov ebx, dword ptr [ebp]",
+        "mov ecx, ebp",
+        "call dword ptr [ebx + 0xc]",
+        "mov ecx, ebp",
+        "mov eax, dword ptr [ebp]",
+        "call dword ptr [eax + 0x204]",
+        "pop ebp",
+        "pop ebx",
+    ]
+    assert verify_effective_match(orig, recomp) is True
+
+
+def test_reject_virtual_receiver_reload_after_exact_pointer_store():
+    address = ("mem", "", (("receiver_slot", 1),), 8, ())
+    store_tag = ("mem", 1, 0)
+    ctx = Context()
+    ctx.mem_events.append((store_tag, (address, 4, False)))
+    ctx.receiver_values[(address, 4)] = (store_tag, ("init", "di"))
+    before_store = ("load", address, "dword", 0)
+    after_store = ("load", address, "dword", store_tag)
+    assert _receiver_equivalence_class(
+        before_store, ctx
+    ) != _receiver_equivalence_class(after_store, ctx)
 
 
 def test_reject_virtual_call_with_different_receiver():

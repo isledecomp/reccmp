@@ -118,6 +118,8 @@ def test_offset_name_no_size(db):
 
 
 def test_paired_containing_global_precedes_nearer_unpaired_interior(db: EntityDb):
+    # FunctionComparator creates lookups before entity ingestion.
+    lookup = create_lookup(db)
     with db.batch() as batch:
         batch.set(
             ImageId.ORIG,
@@ -136,7 +138,6 @@ def test_paired_containing_global_precedes_nearer_unpaired_interior(db: EntityDb
         batch.set(ImageId.ORIG, 104, name="MisleadingInterior", type=EntityType.OFFSET)
         batch.match(100, 500)
 
-    lookup = create_lookup(db)
     name = lookup(104)
     assert name is not None
     assert "PairedArray+4" in name
