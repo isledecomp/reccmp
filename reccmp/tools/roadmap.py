@@ -20,7 +20,7 @@ from reccmp.compare.db import ReccmpEntity
 from reccmp.cvdump import Cvdump
 from reccmp.compare import Compare
 from reccmp.formats.exceptions import InvalidVirtualAddressError
-from reccmp.types import EntityType
+from reccmp.types import EntityType, ImageId
 from reccmp.project.detect import (
     argparse_add_project_target_args,
     argparse_parse_project_target,
@@ -174,6 +174,7 @@ class RoadmapRow(NamedTuple):
     size: int
     name: str | None
     module: str | None
+    pairing_state: str
 
 
 class DeltaCollector:
@@ -416,6 +417,12 @@ def main() -> int:
         raise ValueError("`roadmap` currently only supports 32-bit PE images")
 
     module_map = ModuleMap(target.recompiled_pdb, recomp_bin)
+    original_aliases = {
+        entity.orig_addr for entity, _ in engine.get_aliases(ImageId.ORIG)
+    }
+    recomp_duplicates = {
+        entity.recomp_addr for entity, _ in engine.get_aliases(ImageId.RECOMP)
+    }
 
     def is_same_section(orig: int, recomp: int) -> bool:
         """
@@ -469,6 +476,17 @@ def main() -> int:
             assert orig_ofs is not None
             displacement = recomp_ofs - orig_ofs
 
+        if orig_addr is not None and recomp_addr is not None:
+            pairing = "paired"
+        elif orig_addr in original_aliases:
+            pairing = "original_alias"
+        elif recomp_addr in recomp_duplicates:
+            pairing = "recomp_duplicate"
+        elif orig_addr is not None:
+            pairing = "unexplained"
+        else:
+            pairing = "recomp_only"
+
         return RoadmapRow(
             orig_sect_ofs,
             recomp_sect_ofs,
@@ -479,6 +497,7 @@ def main() -> int:
             match.any_size(),
             match.name,
             module_name,
+            pairing,
         )
 
     def roadmap_row_generator(matches):
