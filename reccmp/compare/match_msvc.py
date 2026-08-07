@@ -109,85 +109,67 @@ def match_functions(
     *,
     truncate: bool = False,
 ):
-    # addr->symbol map. Used later in error message for non-unique match.
+    """Match functions by name only when the identity is unique on both sides."""
     recomp_symbols: dict[int, str] = {}
-
     name_index = EntityIndex()
 
-    # TODO: We allow a match if entity_type is null.
-    # This can be removed if we can more confidently declare a symbol is a function
-    # when adding from the PDB.
     for ent in db.unmatched(ImageId.RECOMP):
         symbol = ent.get("symbol")
         name = ent.get("name")
         if ent.get("type") and ent.get("type") != EntityType.FUNCTION:
             continue
-
         if not name:
             continue
-
-        # Truncate function name to 255 chars for older MSVC. See also: Warning C4786.
         if truncate:
             name = name[:255]
         name = _match_name(name)
-
         assert ent.recomp_addr is not None
         name_index.add(name, ent.recomp_addr)
-
-        # Get the symbol for the error message later.
         if symbol is not None:
             recomp_symbols[ent.recomp_addr] = symbol
 
-    # Report if the name used in the match is not unique.
-    # If the name list contained multiple addresses at the start,
-    # we should report even for the last address in the list.
-    non_unique_names = set()
+    orig_entities = [
+        ent
+        for ent in db.unmatched(ImageId.ORIG)
+        if ent.get("type") == EntityType.FUNCTION and ent.get("name")
+    ]
+    orig_name_counts: dict[str, int] = {}
+    normalized_names: dict[int, str] = {}
+    for ent in orig_entities:
+        assert ent.orig_addr is not None
+        name = ent.get("name")
+        assert isinstance(name, str)
+        if truncate:
+            name = name[:255]
+        name = _match_name(name)
+        normalized_names[ent.orig_addr] = name
+        orig_name_counts[name] = orig_name_counts.get(name, 0) + 1
 
     with db.batch() as batch:
-        for ent in db.unmatched(ImageId.ORIG):
-            name = ent.get("name")
-            if ent.get("type") != EntityType.FUNCTION:
-                continue
-
-            if not name:
-                continue
-
+        for ent in orig_entities:
             assert ent.orig_addr is not None
-
-            # Repeat the truncate and normalization for our match search
-            if truncate:
-                name = name[:255]
-            name = _match_name(name)
-
-            if name in name_index:
-                recomp_addr = name_index.pop(name)
-                # If match was not unique
-                if name in name_index:
-                    non_unique_names.add(name)
-
-                # If this name was ever matched non-uniquely
-                if name in non_unique_names:
-                    matched_symbol = recomp_symbols.get(recomp_addr, "None")
-                    other_symbols = [
-                        recomp_symbols.get(recomp_addr, "None")
-                        for recomp_addr in name_index.get(name)
-                    ]
-                    report(
-                        ReccmpEvent.AMBIGUOUS_MATCH,
-                        ent.orig_addr,
-                        msg=f"Ambiguous match 0x{ent.orig_addr:x} on name '{name}' to\n"
-                        + f"'{matched_symbol}'\n"
-                        + "Other candidates:\n"
-                        + ",\n".join(f"'{candidate}'" for candidate in other_symbols),
-                    )
-
-                batch.match(ent.orig_addr, recomp_addr)
-            else:
+            name = normalized_names[ent.orig_addr]
+            candidates = name_index.get(name)
+            if not candidates:
                 report(
                     ReccmpEvent.NO_MATCH,
                     ent.orig_addr,
                     msg=f"Failed to match function at 0x{ent.orig_addr:x} with name '{name}'",
                 )
+                continue
+
+            if orig_name_counts[name] != 1 or len(candidates) != 1:
+                symbols = [recomp_symbols.get(addr, "None") for addr in candidates]
+                report(
+                    ReccmpEvent.AMBIGUOUS_MATCH,
+                    ent.orig_addr,
+                    msg=f"Ambiguous function name '{name}' has "
+                    f"{orig_name_counts[name]} original and {len(candidates)} recomp candidates:\n"
+                    + ",\n".join(f"'{symbol}'" for symbol in symbols),
+                )
+                continue
+
+            batch.match(ent.orig_addr, name_index.pop(name))
 
 
 def _find_vtable_match(
