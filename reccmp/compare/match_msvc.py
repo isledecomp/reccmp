@@ -178,6 +178,30 @@ def match_functions(
                 )
 
 
+def _find_vtable_match(
+    class_name: str, base_class: str | None, vtable_name_index: EntityIndex
+) -> int | None:
+    """Try to resolve a single class_name/base_class candidate against the
+    recomp vtable name index."""
+
+    # Most classes will not use multiple inheritance, so try the regular vtable
+    # first, unless a base class is provided.
+    if base_class is None or base_class == class_name:
+        bare_vftable = f"{class_name}::`vftable'"
+
+        if bare_vftable in vtable_name_index:
+            return vtable_name_index.pop(bare_vftable)
+
+    # If we didn't find a match above, search for the multiple inheritance vtable.
+    for_name = base_class if base_class is not None else class_name
+    for_vftable = f"{class_name}::`vftable'{{for `{for_name}'}}"
+
+    if for_vftable in vtable_name_index:
+        return vtable_name_index.pop(for_vftable)
+
+    return None
+
+
 def match_vtables(db: EntityDb, report: ReccmpReportProtocol = reccmp_report_nop):
     """The requirements for matching are:
     1.  Recomp entity has name attribute in this format: "Pizza::`vftable'"
@@ -215,31 +239,21 @@ def match_vtables(db: EntityDb, report: ReccmpReportProtocol = reccmp_report_nop
             assert ent.orig_addr is not None
 
             base_class = ent.get("base_class")
+            candidates = ent.get("folded_vtables") or [(class_name, base_class)]
 
-            # Most classes will not use multiple inheritance, so try the regular vtable
-            # first, unless a base class is provided.
-            if base_class is None or base_class == class_name:
-                bare_vftable = f"{class_name}::`vftable'"
-
-                if bare_vftable in vtable_name_index:
-                    recomp_addr = vtable_name_index.pop(bare_vftable)
+            for candidate_name, candidate_base_class in candidates:
+                recomp_addr = _find_vtable_match(
+                    candidate_name, candidate_base_class, vtable_name_index
+                )
+                if recomp_addr is not None:
                     batch.match(ent.orig_addr, recomp_addr)
-                    continue
-
-            # If we didn't find a match above, search for the multiple inheritance vtable.
-            for_name = base_class if base_class is not None else class_name
-            for_vftable = f"{class_name}::`vftable'{{for `{for_name}'}}"
-
-            if for_vftable in vtable_name_index:
-                recomp_addr = vtable_name_index.pop(for_vftable)
-                batch.match(ent.orig_addr, recomp_addr)
-                continue
-
-            report(
-                ReccmpEvent.NO_MATCH,
-                ent.orig_addr,
-                msg=f"Failed to match vtable at 0x{ent.orig_addr:x} for class '{class_name}' (base={base_class or 'None'})",
-            )
+                    break
+            else:
+                report(
+                    ReccmpEvent.NO_MATCH,
+                    ent.orig_addr,
+                    msg=f"Failed to match vtable at 0x{ent.orig_addr:x} for class '{class_name}' (base={base_class or 'None'})",
+                )
 
 
 def match_static_variables(
