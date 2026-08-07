@@ -2,6 +2,7 @@ import dataclasses
 from dataclasses import dataclass, field
 from functools import cache
 import struct
+import re
 from itertools import pairwise
 from typing import Callable, Iterator
 from reccmp.compare.lines import LinesDb
@@ -260,6 +261,144 @@ class FunctionComparator:
             )
 
         return result
+
+    def _alias_fingerprint(
+        self, image_id: ImageId, addr: int, size: int
+    ) -> tuple[tuple[str, str], ...] | None:
+        """Cheap body shape used only to limit alias-equivalence proofs.
+
+        Address operands are erased only when the image identifies them as a
+        relocation or an existing entity.  Ordinary immediates remain in the
+        key, so equal-sized functions with different constants are rejected
+        before the more expensive proof.  Relocation position and instruction
+        shape remain part of the key.
+        """
+        image = self.orig_bin if image_id == ImageId.ORIG else self.recomp_bin
+        valid_addr = create_valid_addr_lookup(self.db, image_id, image)
+        try:
+            raw = image.read(addr, size)
+        except (InvalidVirtualAddressError, InvalidVirtualReadError):
+            return None
+        instructions = _code_instructions(raw, addr, self.is_32bit)
+        if instructions is None:
+            return None
+
+        def normalize_operand(operand: str) -> str:
+            def replace(match: re.Match[str]) -> str:
+                value = int(match.group(0), 16)
+                return "<ADDR>" if valid_addr(value) else match.group(0)
+
+            return re.sub(r"0x[0-9a-fA-F]+", replace, operand)
+
+        return tuple(
+            (mnemonic, normalize_operand(operand))
+            for _, _, mnemonic, operand in instructions
+        )
+
+    def _unpaired_function_candidates(
+        self, image_id: ImageId
+    ) -> dict[tuple[int, tuple[tuple[str, str], ...]], list[int]]:
+        groups: dict[tuple[int, tuple[tuple[str, str], ...]], list[int]] = {}
+        for entity in self.db.unexplained(image_id):
+            if entity.entity_type != EntityType.FUNCTION:
+                continue
+            addr = entity.addr(image_id)
+            size = entity.size(image_id)
+            if addr is None or size is None or size <= 0:
+                continue
+            fingerprint = self._alias_fingerprint(image_id, addr, size)
+            if fingerprint is not None:
+                groups.setdefault((size, fingerprint), []).append(addr)
+        return groups
+
+    def _classify_function_aliases(
+        self, image_id: ImageId, opposite_id: ImageId, matches: list[ReccmpMatch]
+    ) -> bool:
+        """Classify one image's remaining bodies against canonical pairs."""
+        added = False
+        canonical_groups: dict[
+            tuple[int, tuple[tuple[str, str], ...]], list[ReccmpMatch]
+        ] = {}
+        for canonical in matches:
+            opposite_addr = canonical.addr(opposite_id)
+            opposite_size = canonical.size(opposite_id)
+            if opposite_addr is None or opposite_size is None or opposite_size <= 0:
+                continue
+            fingerprint = self._alias_fingerprint(
+                opposite_id, opposite_addr, opposite_size
+            )
+            if fingerprint is not None:
+                canonical_groups.setdefault((opposite_size, fingerprint), []).append(
+                    canonical
+                )
+
+        groups = self._unpaired_function_candidates(image_id)
+        for (size, fingerprint), addrs in groups.items():
+            for addr in addrs:
+                identities: set[int] = set()
+                for canonical in canonical_groups.get((size, fingerprint), []):
+                    opposite_addr = canonical.addr(opposite_id)
+                    assert opposite_addr is not None
+                    orig_addr = addr if image_id == ImageId.ORIG else opposite_addr
+                    recomp_addr = opposite_addr if image_id == ImageId.ORIG else addr
+                    if self.raw_pair_alias_equivalent(orig_addr, recomp_addr, size):
+                        identities.add(canonical.orig_addr)
+                if len(identities) == 1:
+                    added |= self.db.set_alias(image_id, addr, identities.pop())
+        return added
+
+    def discover_unpaired_function_bodies(self) -> list[tuple[int, int]]:
+        """Discover differently named function pairs to a conservative fixed point.
+
+        Candidate edges require equal size, equal relocation-aware shape and a
+        full ``raw_pair_alias_equivalent`` proof.  A pair is committed only
+        when its edge has degree one at *both* endpoints.  All newly committed
+        pairs become operand identities for the next pass.  Ambiguous graphs
+        are left untouched instead of falling back to name/FIFO order.
+
+        Once real pairs stop growing, remaining bodies may be recorded as
+        side-local aliases of an existing canonical pair.  This is symmetric:
+        original folded addresses and recomp duplicate emissions use the same
+        canonical-original identity and never create fake one-to-one pairs.
+        """
+        discovered: list[tuple[int, int]] = []
+        while True:
+            orig_groups = self._unpaired_function_candidates(ImageId.ORIG)
+            recomp_groups = self._unpaired_function_candidates(ImageId.RECOMP)
+            edges: set[tuple[int, int]] = set()
+            for key in orig_groups.keys() & recomp_groups.keys():
+                size = key[0]
+                for orig_addr in orig_groups[key]:
+                    for recomp_addr in recomp_groups[key]:
+                        if self.raw_pair_alias_equivalent(orig_addr, recomp_addr, size):
+                            edges.add((orig_addr, recomp_addr))
+            orig_degree: dict[int, int] = {}
+            recomp_degree: dict[int, int] = {}
+            for orig_addr, recomp_addr in edges:
+                orig_degree[orig_addr] = orig_degree.get(orig_addr, 0) + 1
+                recomp_degree[recomp_addr] = recomp_degree.get(recomp_addr, 0) + 1
+            pairs = sorted(
+                (orig_addr, recomp_addr)
+                for orig_addr, recomp_addr in edges
+                if orig_degree[orig_addr] == 1 and recomp_degree[recomp_addr] == 1
+            )
+            if pairs:
+                self.db.bulk_match(pairs)
+                discovered.extend(pairs)
+                continue
+
+            # Alias identities can themselves unlock mutually unique callers,
+            # so interleave symmetric classification with pair discovery.
+            matches = list(self.db.get_functions())
+            orig_added = self._classify_function_aliases(
+                ImageId.ORIG, ImageId.RECOMP, matches
+            )
+            recomp_added = self._classify_function_aliases(
+                ImageId.RECOMP, ImageId.ORIG, matches
+            )
+            if not orig_added and not recomp_added:
+                break
+        return discovered
 
     def raw_pair_alias_equivalent(
         self,

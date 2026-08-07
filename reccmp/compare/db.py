@@ -274,6 +274,13 @@ class EntityDb:
     def __init__(self):
         self._entities = {ImageId.ORIG: {}, ImageId.RECOMP: {}}
         self._matches = {ImageId.ORIG: {}, ImageId.RECOMP: {}}
+        # Side-local duplicate bodies that have been proven equivalent to a
+        # real matched pair.  The value is always the canonical original
+        # address; aliases deliberately do not occupy the one-to-one match map.
+        self._aliases: dict[ImageId, dict[int, int]] = {
+            ImageId.ORIG: {},
+            ImageId.RECOMP: {},
+        }
 
         self._addr_set = {ImageId.ORIG: set(), ImageId.RECOMP: set()}
         self._addr_order = {ImageId.ORIG: [], ImageId.RECOMP: []}
@@ -332,6 +339,8 @@ class EntityDb:
 
             self._matches[ImageId.ORIG][x] = y
             self._matches[ImageId.RECOMP][y] = x
+            self._aliases[ImageId.ORIG].pop(x, None)
+            self._aliases[ImageId.RECOMP].pop(y, None)
 
             orig_data = {}
             if x in orig_entities:
@@ -407,6 +416,62 @@ class EntityDb:
         for recomp_addr in self._addr_order[ImageId.RECOMP]:
             if recomp_addr not in self._matches[ImageId.RECOMP]:
                 yield recomp_entities[recomp_addr]
+
+    def set_alias(self, image_id: ImageId, addr: int, canonical_orig: int) -> bool:
+        """Record a proven side-local duplicate of a real matched function.
+
+        Aliases are accounting/identity edges, not matches: several addresses
+        on either image may name the same canonical pair.  Return ``False``
+        when either endpoint is unsuitable rather than inventing an entity or
+        replacing a one-to-one pair.
+        """
+        assert image_id in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
+        if addr in self._matches[image_id]:
+            return False
+        canonical = self.get_one_match(canonical_orig)
+        if canonical is None or addr not in self._entities[image_id]:
+            return False
+        existing = self._aliases[image_id].get(addr)
+        if existing is not None:
+            return False
+        self._aliases[image_id][addr] = canonical_orig
+        return True
+
+    def alias_canonical_orig(self, image_id: ImageId, addr: int) -> int | None:
+        """Canonical original address for an alias, or for a real pair."""
+        assert image_id in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
+        if image_id == ImageId.ORIG and addr in self._matches[ImageId.ORIG]:
+            return addr
+        if image_id == ImageId.RECOMP:
+            paired_orig = self._matches[ImageId.RECOMP].get(addr)
+            if paired_orig is not None:
+                return paired_orig
+        return self._aliases[image_id].get(addr)
+
+    def get_aliases(
+        self, image_id: ImageId
+    ) -> Iterator[tuple[ReccmpEntity, ReccmpMatch]]:
+        """Yield side-local alias entities and their canonical real pairs."""
+        assert image_id in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
+        for addr in self._addr_order[image_id]:
+            canonical_orig = self._aliases[image_id].get(addr)
+            if canonical_orig is None:
+                continue
+            canonical = self.get_one_match(canonical_orig)
+            if canonical is not None:
+                yield self._entities[image_id][addr], canonical
+
+    def unexplained(self, image_id: ImageId) -> Iterator[ReccmpEntity]:
+        """Unmatched entities excluding proven aliases.
+
+        ``unmatched`` remains the raw inventory API and intentionally includes
+        aliases, so callers can report both headline and raw counts.
+        """
+        aliases = self._aliases[image_id]
+        for entity in self.unmatched(image_id):
+            addr = entity.addr(image_id)
+            if addr is not None and addr not in aliases:
+                yield entity
 
     def get_matches(self) -> Iterator[ReccmpMatch]:
         matches = self._matches[ImageId.ORIG]

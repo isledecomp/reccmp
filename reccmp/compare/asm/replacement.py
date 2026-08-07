@@ -42,7 +42,19 @@ def canonical_callee_name(
         return entity.match_name()
 
     canonical_entity = entity
-    canonical_orig = entity.orig_addr
+    entity_addr = entity.addr(image_id)
+    discovered_orig = (
+        db.alias_canonical_orig(image_id, entity_addr)
+        if entity_addr is not None
+        else None
+    )
+    canonical_orig = (
+        discovered_orig if discovered_orig is not None else entity.orig_addr
+    )
+    if discovered_orig is not None:
+        discovered_entity = db.get(ImageId.ORIG, discovered_orig, exact=True)
+        if discovered_entity is not None:
+            canonical_entity = discovered_entity
     configured_alias = False
     if canonical_orig is not None and equivalence_groups:
         configured_orig = equivalence_groups.get(canonical_orig)
