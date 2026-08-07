@@ -9,6 +9,7 @@ from reccmp.types import EntityType, ImageId
 def make_graph_comparator(db: EntityDb, fingerprints, edges):
     comparator = object.__new__(FunctionComparator)
     comparator.db = db
+    comparator.equivalence_groups = {}
     comparator._alias_fingerprint = Mock(  # type: ignore[method-assign]
         side_effect=lambda image, addr, size: fingerprints.get((image, addr))
     )
@@ -73,6 +74,28 @@ def test_discovery_preserves_ambiguous_many_to_one_graph():
     assert not comparator.discover_unpaired_function_bodies()
     assert not list(db.get_matches())
     assert len(list(db.unexplained(ImageId.ORIG))) == 2
+
+
+def test_discovery_uses_declared_canonical_for_folded_many_to_one_graph():
+    db = EntityDb()
+    add_functions(db, ImageId.ORIG, 0x100, 0x110)
+    add_functions(db, ImageId.RECOMP, 0x200)
+    shape = (("ret", ""),)
+    fingerprints = {
+        (ImageId.ORIG, 0x100): shape,
+        (ImageId.ORIG, 0x110): shape,
+        (ImageId.RECOMP, 0x200): shape,
+    }
+    comparator = make_graph_comparator(
+        db, fingerprints, {(0x100, 0x200), (0x110, 0x200)}
+    )
+    comparator.equivalence_groups = {0x110: 0x100}
+
+    assert comparator.discover_unpaired_function_bodies() == [(0x100, 0x200)]
+    aliases = list(db.get_aliases(ImageId.ORIG))
+    assert [(alias.orig_addr, canonical.orig_addr) for alias, canonical in aliases] == [
+        (0x110, 0x100)
+    ]
 
 
 def test_aliases_are_symmetric_and_do_not_create_fake_pairs():

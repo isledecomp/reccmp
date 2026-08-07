@@ -21,6 +21,7 @@ from reccmp.compare.db import EntityDb, ReccmpMatch
 from reccmp.compare.diff import EntityCompareResult, RawDiffOutput
 from reccmp.compare.diagnosis import ComparisonAnalysis
 from reccmp.compare.event import ReccmpEvent, ReccmpReportProtocol
+from reccmp.compare.equivalence import canonical_orig_addr
 from reccmp.cvdump.analysis import CvdumpNode
 from reccmp.cvdump.cvinfo import CvdumpTypeKey, CvdumpTypeMap
 from reccmp.cvdump.demangler import parse_function_signature
@@ -377,11 +378,36 @@ class FunctionComparator:
             for orig_addr, recomp_addr in edges:
                 orig_degree[orig_addr] = orig_degree.get(orig_addr, 0) + 1
                 recomp_degree[recomp_addr] = recomp_degree.get(recomp_addr, 0) + 1
-            pairs = sorted(
+            unique_pairs = {
                 (orig_addr, recomp_addr)
                 for orig_addr, recomp_addr in edges
                 if orig_degree[orig_addr] == 1 and recomp_degree[recomp_addr] == 1
-            )
+            }
+
+            # A curated equivalence group supplies the otherwise-missing identity
+            # for a many-originals-to-one-recomp folded body. Pair only its declared
+            # canonical member; the remaining members become side-local aliases on
+            # the next fixed-point iteration. Without that evidence, ambiguity stays.
+            origs_by_recomp: dict[int, set[int]] = {}
+            for orig_addr, recomp_addr in edges:
+                origs_by_recomp.setdefault(recomp_addr, set()).add(orig_addr)
+            canonical_pairs: set[tuple[int, int]] = set()
+            for recomp_addr, orig_addrs in origs_by_recomp.items():
+                if len(orig_addrs) < 2 or any(
+                    orig_degree[orig_addr] != 1 for orig_addr in orig_addrs
+                ):
+                    continue
+                canonical_addrs = {
+                    canonical_orig_addr(self.equivalence_groups, orig_addr)
+                    for orig_addr in orig_addrs
+                }
+                if len(canonical_addrs) != 1:
+                    continue
+                (canonical_addr,) = canonical_addrs
+                if canonical_addr in orig_addrs:
+                    canonical_pairs.add((canonical_addr, recomp_addr))
+
+            pairs = sorted(unique_pairs | canonical_pairs)
             if pairs:
                 self.db.bulk_match(pairs)
                 discovered.extend(pairs)
