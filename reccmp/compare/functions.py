@@ -348,6 +348,80 @@ class FunctionComparator:
                     added |= self.db.set_alias(image_id, addr, identities.pop())
         return added
 
+    def _paired_caller_identity_edges(self) -> set[tuple[int, int]]:
+        """Direct-call identities at corresponding instructions in paired owners."""
+        orig_candidates = {
+            entity.orig_addr
+            for entity in self.db.unexplained(ImageId.ORIG)
+            if entity.entity_type == EntityType.FUNCTION
+            and entity.orig_addr is not None
+        }
+        recomp_candidates = {
+            entity.recomp_addr
+            for entity in self.db.unexplained(ImageId.RECOMP)
+            if entity.entity_type == EntityType.FUNCTION
+            and entity.recomp_addr is not None
+        }
+        edges: set[tuple[int, int]] = set()
+        for caller in self.db.get_functions():
+            orig_size = caller.size(ImageId.ORIG)
+            recomp_size = caller.size(ImageId.RECOMP)
+            if orig_size is None or recomp_size is None:
+                continue
+            try:
+                orig_raw = self.orig_bin.read(caller.orig_addr, orig_size)
+                recomp_raw = self.recomp_bin.read(caller.recomp_addr, recomp_size)
+            except (InvalidVirtualAddressError, InvalidVirtualReadError):
+                continue
+            orig_ins = _code_instructions(orig_raw, caller.orig_addr, self.is_32bit)
+            recomp_ins = _code_instructions(
+                recomp_raw, caller.recomp_addr, self.is_32bit
+            )
+            if (
+                orig_ins is None
+                or recomp_ins is None
+                or len(orig_ins) != len(recomp_ins)
+                or any(a[2] != b[2] for a, b in zip(orig_ins, recomp_ins))
+            ):
+                continue
+            for orig_instruction, recomp_instruction in zip(orig_ins, recomp_ins):
+                if orig_instruction[2] != "call":
+                    continue
+                orig_operand = re.fullmatch(r"0x([0-9a-fA-F]+)", orig_instruction[3])
+                recomp_operand = re.fullmatch(
+                    r"0x([0-9a-fA-F]+)", recomp_instruction[3]
+                )
+                if orig_operand is None or recomp_operand is None:
+                    continue
+                orig_target = int(orig_operand.group(1), 16)
+                recomp_target = int(recomp_operand.group(1), 16)
+                if (
+                    orig_target in orig_candidates
+                    and recomp_target in recomp_candidates
+                ):
+                    edges.add((orig_target, recomp_target))
+        return edges
+
+    def discover_unique_called_functions(self) -> list[tuple[int, int]]:
+        """Pair callees only when paired-callsite evidence is mutually unique."""
+        discovered: list[tuple[int, int]] = []
+        while True:
+            edges = self._paired_caller_identity_edges()
+            orig_degree: dict[int, int] = {}
+            recomp_degree: dict[int, int] = {}
+            for orig_addr, recomp_addr in edges:
+                orig_degree[orig_addr] = orig_degree.get(orig_addr, 0) + 1
+                recomp_degree[recomp_addr] = recomp_degree.get(recomp_addr, 0) + 1
+            pairs = sorted(
+                (orig_addr, recomp_addr)
+                for orig_addr, recomp_addr in edges
+                if orig_degree[orig_addr] == 1 and recomp_degree[recomp_addr] == 1
+            )
+            if not pairs:
+                return discovered
+            self.db.bulk_match(pairs)
+            discovered.extend(pairs)
+
     def discover_unpaired_function_bodies(self) -> list[tuple[int, int]]:
         """Discover differently named function pairs to a conservative fixed point.
 

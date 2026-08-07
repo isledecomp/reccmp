@@ -250,6 +250,7 @@ class Compare:
         match_seh(self._db)
 
         match_ref(self._db, self.report)
+        self.function_comparator.discover_unique_called_functions()
         self.function_comparator.discover_unpaired_function_bodies()
         unique_names_for_overloaded_functions(self._db)
         name_thunks(self._db)

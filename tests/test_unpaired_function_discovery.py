@@ -201,3 +201,18 @@ def test_fingerprint_rejects_one_sided_relocation():
     assert comparator._alias_fingerprint(
         ImageId.ORIG, 0x100, len(code)
     ) != comparator._alias_fingerprint(ImageId.RECOMP, 0x200, len(code))
+
+
+def test_paired_callsite_discovery_selects_only_mutually_unique_edges():
+    db = EntityDb()
+    add_functions(db, ImageId.ORIG, 0x100, 0x110, 0x120)
+    add_functions(db, ImageId.RECOMP, 0x200, 0x210)
+    comparator = object.__new__(FunctionComparator)
+    comparator.db = db
+    comparator._paired_caller_identity_edges = Mock(  # type: ignore[method-assign]
+        side_effect=[{(0x100, 0x200), (0x110, 0x210), (0x120, 0x210)}, set()]
+    )
+
+    assert comparator.discover_unique_called_functions() == [(0x100, 0x200)]
+    assert db.is_match(0x100, 0x200)
+    assert not db.is_match(0x110, 0x210)
