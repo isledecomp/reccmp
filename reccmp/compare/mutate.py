@@ -5,6 +5,7 @@ These functions create or update entities using the current information in the d
 import logging
 from reccmp.analysis.crt_startup import (
     detect_crt_startup_arrays,
+    fingerprint_crt_functions,
     create_crt_matches,
 )
 from reccmp.cvdump.demangler import (
@@ -90,17 +91,19 @@ def unique_names_for_overloaded_functions(db: EntityDb):
 
 
 def match_crt_startup(db: EntityDb, orig_bin: PEImage, recomp_bin: PEImage):
-    crt_orig = tuple(detect_crt_startup_arrays(db, ImageId.ORIG, orig_bin))
-    crt_recomp = tuple(detect_crt_startup_arrays(db, ImageId.RECOMP, recomp_bin))
+    crt_orig = detect_crt_startup_arrays(db, ImageId.ORIG, orig_bin)
+    crt_recomp = detect_crt_startup_arrays(db, ImageId.RECOMP, recomp_bin)
 
     matches = []
 
-    for (orig_type, orig_array), (recomp_type, recomp_array) in zip(
-        crt_orig, crt_recomp
-    ):
-        # Safety
-        assert orig_type == recomp_type
-        if orig_array and recomp_array:
+    for array_type, orig_array in crt_orig.items():
+        recomp_array = crt_recomp.get(array_type)
+        if recomp_array is None:
+            continue
+
+        if orig_array.functions and recomp_array.functions:
+            fingerprint_crt_functions(db, ImageId.ORIG, orig_bin, orig_array)
+            fingerprint_crt_functions(db, ImageId.RECOMP, recomp_bin, recomp_array)
             matches.extend(create_crt_matches(orig_array, recomp_array))
 
     with db.batch() as batch:

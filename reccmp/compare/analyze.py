@@ -19,7 +19,8 @@ from reccmp.analysis import (
     is_likely_latin1,
 )
 from reccmp.analysis.crt_startup import (
-    read_crt_arrays,
+    detect_crt_startup_arrays,
+    get_crt_function_name,
 )
 from .db import EntityDb, entity_name_from_string
 from .queries import get_floats_without_data, get_strings_without_data
@@ -42,14 +43,17 @@ def match_entry(db: EntityDb, orig_bin: PEImage, recomp_bin: PEImage):
 
 
 def create_crt_functions(db: EntityDb, image_id: ImageId, binfile: PEImage):
-    crt_arrays = tuple(read_crt_arrays(db, image_id, binfile))
+    """Create entities for all functions found to be part of the CRT array.
+    This includes any functions (thunks) called indirectly."""
+    crt_arrays = detect_crt_startup_arrays(db, image_id, binfile)
 
     with db.batch() as batch:
-        for base_name, array in crt_arrays:
-            if array is None:
-                continue
-
-            for addr in array:
+        for array_type, array in crt_arrays.items():
+            # All entities get the same base name.
+            # We could use more specific names when we have more confidence in the format.
+            # e.g. "atexit_setter"
+            base_name = get_crt_function_name(array_type)
+            for addr in [*array.functions, *array.thunks.values()]:
                 batch.set(
                     image_id,
                     addr,

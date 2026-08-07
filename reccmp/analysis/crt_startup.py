@@ -179,84 +179,76 @@ def find_crt_startup_labels(db: EntityDb, image_id: ImageId) -> dict[str, int]:
     return found
 
 
-INITIALIZER_THUNK_MAX_JUMP_OFFSET = 16
-"""Some MSVC dynamic initializers are thunked. By observation, the thunked function is
-usually at the next 16-byte-aligned address. Tweak this value if necessary."""
+JMP_THUNK = b"\xe9\x0b\x00\x00\x00"
+"""Observed thunk pattern for CRT init:
+jump to the function at start + 16 to set the variable."""
+
+CALL_JMP_THUNK = b"\xe8\x0b\x00\x00\x00\xe9\x16\x00\x00\x00"
+"""Observed thunk pattern for CRT init:
+call the function at start + 16 to set the variable,
+then jump to the function at start + 32 to set the atexit handler."""
 
 
 def unwrap_jump(binfile: Image, addr: int) -> tuple[bool, int]:
-    """If there is a 5-byte JMP or CALL instruction at the given address,
-    follow it by calculating the destination address.
+    """The address in the CRT array may not be the function that sets the variable
+    or calls the constructor. Detect thunk patterns we have observed in MSVC binaries.
+    The first thunked function (by either a CALL or JMP) is the "main" function
+    that we will use to identify (fingerprint) the variable.
     Returns either (True, jmp_destination) or (False, starting_addr)."""
-    jmp = binfile.read(addr, 5)
-    # Check for CALL (0xE8) or JMP (0xE9) opcodes.
-    if jmp[0] in (0xE8, 0xE9):
-        (offset,) = struct.unpack("<i", jmp[1:])
-        # Add 5 because the offset is based on the address of
-        # the *next* instruction after the JMP.
-        destination = addr + 5 + offset
-        # Follow the jump only if it is small.
-        if abs(destination - addr) <= INITIALIZER_THUNK_MAX_JUMP_OFFSET:
-            return (True, destination)
+    data = binfile.read(addr, len(CALL_JMP_THUNK))
+
+    if data[:5] == JMP_THUNK or data == CALL_JMP_THUNK:
+        return (True, addr + 16)
 
     return (False, addr)
 
 
-def analyze_crt_startup_functions(
-    db: EntityDb, image_id: ImageId, binfile: PEImage, span: range
-) -> CrtStartupArray:
-    """Read the functions for a single CRT startup array and find the identifying "fingerprint"
-    of which variables are referenced."""
-    funcs = tuple(read_crt_array(binfile, span))
+def read_crt_functions(binfile: PEImage, span: range) -> CrtStartupArray:
+    """Create the CRT array structure using the given range of addresses.
+    For each function in the array that matches a known thunk pattern,
+    "unwrap" the indirection so we can search the most likely place for
+    the instruction that sets the variable."""
+    functions: dict[int, tuple[UsedAddress, ...]] = {}
+    thunks: dict[int, int] = {}
 
-    fingerprints = {}
-    thunks = {}
-
-    for xc_addr in funcs:
+    for array_addr in read_crt_array(binfile, span):
         # n.b. The first value in the array is zero. It was excluded by read_crt_array.
-        was_thunk, real_addr = unwrap_jump(binfile, xc_addr)
-        fp = get_function_fingerprint(db, image_id, binfile, real_addr)
-        fingerprints[real_addr] = fp
+        was_thunk, real_addr = unwrap_jump(binfile, array_addr)
+        functions[real_addr] = ()
         if was_thunk:
-            thunks[real_addr] = xc_addr
+            thunks[real_addr] = array_addr
 
-    return CrtStartupArray(fingerprints, thunks)
+    return CrtStartupArray(functions, thunks)
+
+
+def fingerprint_crt_functions(
+    db: EntityDb, image_id: ImageId, binfile: PEImage, array: CrtStartupArray
+):
+    """Update the CRT array structure so that the detected functions have a characteristic
+    set of addresses (the "fingerprint") read or written to by their instructions."""
+    for addr in array.functions.keys():
+        array.functions[addr] = get_function_fingerprint(db, image_id, binfile, addr)
+
+
+def iter_crt_array_ranges(
+    db: EntityDb, image_id: ImageId
+) -> Iterator[tuple[CrtStartupArrayType, range]]:
+    """For each CRT array whose start and end labels are known, return the array type and address range."""
+    labels = find_crt_startup_labels(db, image_id)
+    for array_type, (label_start, label_end) in _CRT_STARTUP_ARRAY_BOUNDARIES.items():
+        if label_start in labels and label_end in labels:
+            array_range = range(labels[label_start], labels[label_end])
+            yield (array_type, array_range)
 
 
 def detect_crt_startup_arrays(
     db: EntityDb, image_id: ImageId, binfile: PEImage
-) -> Iterator[tuple[CrtStartupArrayType, CrtStartupArray | None]]:
-    """For the CRT startup arrays in the given binary, if the start and end labels are known,
-    analyze the functions in each array."""
-    labels = find_crt_startup_labels(db, image_id)
-    for array_type, (label_start, label_end) in _CRT_STARTUP_ARRAY_BOUNDARIES.items():
-        if label_start in labels and label_end in labels:
-            array_range = range(labels[label_start], labels[label_end])
-            yield (
-                array_type,
-                analyze_crt_startup_functions(db, image_id, binfile, array_range),
-            )
-        else:
-            yield (array_type, None)
-
-
-def read_crt_arrays(
-    db: EntityDb, image_id: ImageId, binfile: PEImage
-) -> Iterator[tuple[str, list[int]]]:
-    labels = find_crt_startup_labels(db, image_id)
-    for array_type, (label_start, label_end) in _CRT_STARTUP_ARRAY_BOUNDARIES.items():
-        if label_start in labels and label_end in labels:
-            array_range = range(labels[label_start], labels[label_end])
-            base_name = get_crt_function_name(array_type)
-            addrs = []
-
-            for addr in read_crt_array(binfile, array_range):
-                addrs.append(addr)
-                was_thunk, real_addr = unwrap_jump(binfile, addr)
-                if was_thunk:
-                    addrs.append(real_addr)
-
-            yield (base_name, addrs)
+) -> dict[CrtStartupArrayType, CrtStartupArray]:
+    """Return a map of CRT startup array types to each list of functions."""
+    return {
+        array_type: read_crt_functions(binfile, array_range)
+        for array_type, array_range in iter_crt_array_ranges(db, image_id)
+    }
 
 
 def create_crt_matches(
