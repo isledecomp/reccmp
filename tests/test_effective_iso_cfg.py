@@ -17,6 +17,7 @@ import pytest
 
 from reccmp.compare.asm.effective import (
     FunctionMetadata,
+    estimate_isomorphic_cfg_semantic_similarity,
     verify_effective_match,
     verify_isomorphic_cfg_effective_match,
 )
@@ -286,6 +287,70 @@ def test_reject_different_store_value_after_join():
     assert (
         verify_isomorphic_cfg_effective_match(orig, recomp, targets, list(targets))
         is False
+    )
+
+
+def test_semantic_similarity_counts_one_local_edit_without_cascade():
+    """One wrong constant is one repair unit even though register allocation
+    makes every raw line in the computation look different."""
+    orig = [
+        "mov eax, dword ptr [ebp - 4]",
+        "add eax, 5",
+        "mov dword ptr [esi], eax",
+        "ret",
+    ]
+    recomp = [
+        "mov ecx, dword ptr [ebp - 4]",
+        "add ecx, 6",
+        "mov dword ptr [esi], ecx",
+        "ret",
+    ]
+    targets: list[int | None] = [None] * 4
+    score = estimate_isomorphic_cfg_semantic_similarity(
+        orig,
+        recomp,
+        targets,
+        list(targets),
+        metadata=FunctionMetadata(return_kind="void"),
+    )
+    assert score == pytest.approx(0.75)
+
+
+def test_semantic_similarity_decreases_for_an_independent_edit():
+    orig = [
+        "mov eax, dword ptr [ebp - 4]",
+        "add eax, 5",
+        "mov dword ptr [esi], eax",
+        "ret",
+    ]
+    recomp = [
+        "mov ecx, dword ptr [ebp - 4]",
+        "add ecx, 6",
+        "mov dword ptr [edi], ecx",
+        "ret",
+    ]
+    targets: list[int | None] = [None] * 4
+    score = estimate_isomorphic_cfg_semantic_similarity(
+        orig,
+        recomp,
+        targets,
+        list(targets),
+        metadata=FunctionMetadata(return_kind="void"),
+    )
+    assert score == pytest.approx(0.5)
+
+
+def test_semantic_similarity_is_unavailable_for_different_cfgs():
+    orig = ["test eax, eax", "je 0x2", "inc ebx", "ret"]
+    recomp = ["test eax, eax", "inc ebx", "je 0x1", "ret"]
+    assert (
+        estimate_isomorphic_cfg_semantic_similarity(
+            orig,
+            recomp,
+            [None, 3, None, None],
+            [None, None, 3, None],
+        )
+        is None
     )
 
 

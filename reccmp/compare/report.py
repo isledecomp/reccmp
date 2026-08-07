@@ -77,6 +77,11 @@ class ReccmpComparedEntity:
     def effective_accuracy(self) -> float:
         return 1.0 if self.is_effective_match else self.accuracy
 
+    @property
+    def semantic_similarity(self) -> float | None:
+        """Per-function diagnostic similarity, never an aggregate score."""
+        return self.analysis.semantic_similarity
+
 
 class ReccmpStatusReport:
     filename: str
@@ -334,6 +339,8 @@ def _side_json(side: DifferenceSide) -> dict[str, object]:
 
 def _analysis_json(analysis: ComparisonAnalysis) -> dict[str, object]:
     value: dict[str, object] = {"status": analysis.status.value}
+    if analysis.semantic_similarity is not None:
+        value["semantic_similarity"] = analysis.semantic_similarity
     if analysis.effective_reasons:
         value["effective_reasons"] = list(analysis.effective_reasons)
     if analysis.difference is not None:
@@ -378,6 +385,12 @@ def _parse_analysis(value: object) -> ComparisonAnalysis:
         raise ReccmpReportDeserializeError
     try:
         status = ComparisonStatus(value["status"])
+        semantic_similarity = value.get("semantic_similarity")
+        if semantic_similarity is not None and (
+            isinstance(semantic_similarity, bool)
+            or not isinstance(semantic_similarity, (int, float))
+        ):
+            raise ReccmpReportDeserializeError
         difference_value = value.get("difference")
         difference = None
         if difference_value is not None:
@@ -395,6 +408,9 @@ def _parse_analysis(value: object) -> ComparisonAnalysis:
                 _parse_side(value["inconclusive_location"])
                 if value.get("inconclusive_location") is not None
                 else None
+            ),
+            semantic_similarity=(
+                float(semantic_similarity) if semantic_similarity is not None else None
             ),
         )
     except (KeyError, TypeError, ValueError) as ex:

@@ -3461,6 +3461,142 @@ def _align_block_lines(
     return result
 
 
+@dataclass
+class _SemanticSimilarityRecorder:
+    """Unique aligned units collected by the diagnostic recovery pass.
+
+    CFG blocks may execute more than once while their entry phis converge, so
+    units are keyed by instruction indices instead of counted per visit.  An
+    edit always wins over an earlier tentative match for the same unit.
+    """
+
+    matched: set[tuple[int, int]] = field(default_factory=set)
+    edits: set[tuple[int, int]] = field(default_factory=set)
+    completed: bool = False
+
+    def match(self, index_o: int, index_r: int) -> None:
+        key = (index_o, index_r)
+        if key not in self.edits:
+            self.matched.add(key)
+
+    def edit(self, index_o: int, index_r: int) -> None:
+        key = (index_o, index_r)
+        self.matched.discard(key)
+        self.edits.add(key)
+
+    def score(self) -> float | None:
+        total = len(self.matched) + len(self.edits)
+        if not self.completed or not self.edits or total == 0:
+            return None
+        return len(self.matched) / total
+
+
+def _changed_registers(before: SideState, after: SideState) -> list[str]:
+    return [family for family in FAMILIES if before.regs[family] != after.regs[family]]
+
+
+def _local_outputs_equivalent(
+    before_o: SideState,
+    before_r: SideState,
+    orig: SideState,
+    recomp: SideState,
+) -> bool:
+    """Whether a paired instruction produced the same canonical outputs.
+
+    Physical destination registers are ignored: only the multiset of newly
+    written symbolic values matters.  This is the local counterpart of the
+    full verifier's register-allocation proof.
+    """
+
+    changed_o = _changed_registers(before_o, orig)
+    changed_r = _changed_registers(before_r, recomp)
+    if sorted((orig.regs[f] for f in changed_o), key=repr) != sorted(
+        (recomp.regs[f] for f in changed_r), key=repr
+    ):
+        return False
+
+    for attr in ("flags", "carry", "fpu_flags"):
+        changed = getattr(before_o, attr) != getattr(orig, attr) or getattr(
+            before_r, attr
+        ) != getattr(recomp, attr)
+        if changed and getattr(orig, attr) != getattr(recomp, attr):
+            return False
+
+    changed_x87 = (
+        before_o.x87.state_key() != orig.x87.state_key()
+        or before_r.x87.state_key() != recomp.x87.state_key()
+    )
+    return not changed_x87 or orig.x87.state_key() == recomp.x87.state_key()
+
+
+def _recover_local_outputs(
+    before_o: SideState,
+    before_r: SideState,
+    orig: SideState,
+    recomp: SideState,
+    key: tuple[int, int],
+) -> bool:
+    """Resume after one diagnostic edit without resetting unrelated state.
+
+    Only locations written by the aligned pair are assigned shared opaque
+    values.  If output roles or x87 shapes cannot be paired, the diagnostic
+    score is unavailable rather than widened with whole-machine havoc.
+    """
+
+    changed_o = _changed_registers(before_o, orig)
+    changed_r = _changed_registers(before_r, recomp)
+    if len(changed_o) != len(changed_r):
+        return False
+    for role, (family_o, family_r) in enumerate(zip(changed_o, changed_r)):
+        reg_value: Value = ("semantic_edit", *key, "reg", role)
+        orig.regs[family_o] = reg_value
+        recomp.regs[family_r] = reg_value
+
+    for attr in ("flags", "carry", "fpu_flags"):
+        changed = getattr(before_o, attr) != getattr(orig, attr) or getattr(
+            before_r, attr
+        ) != getattr(recomp, attr)
+        if changed:
+            attr_value: Value = ("semantic_edit", *key, attr)
+            setattr(orig, attr, attr_value)
+            setattr(recomp, attr, attr_value)
+
+    changed_x87 = (
+        before_o.x87.state_key() != orig.x87.state_key()
+        or before_r.x87.state_key() != recomp.x87.state_key()
+    )
+    if changed_x87:
+        if (
+            len(orig.x87.known) != len(recomp.x87.known)
+            or orig.x87.deep_pops != recomp.x87.deep_pops
+            or orig.x87.epoch != recomp.x87.epoch
+        ):
+            return False
+        values = [
+            ("semantic_edit", *key, "x87", slot) for slot in range(len(orig.x87.known))
+        ]
+        orig.x87.known = list(values)
+        recomp.x87.known = list(values)
+
+    # A differing load is already charged to this edit.  Equalize the
+    # block-local fault-obligation log so that it does not cascade into a
+    # second diagnostic edit later in the block.
+    combined_loads = orig.load_log | recomp.load_log
+    orig.load_log = set(combined_loads)
+    recomp.load_log = set(combined_loads)
+    return True
+
+
+def _observations_touch_memory(observations: list) -> bool:
+    for entry in observations:
+        kind = entry[0]
+        if kind in ("store", "call"):
+            return True
+        if isinstance(kind, tuple) and STRING_OPS.get(kind[0], ("", "", False))[2]:
+            return True
+    return False
+
+
 def verify_isomorphic_cfg_effective_match(
     orig_asm: list[str],
     recomp_asm: list[str],
@@ -3470,6 +3606,7 @@ def verify_isomorphic_cfg_effective_match(
     orig_meta: list[InstructionMeta | None] | None = None,
     recomp_meta: list[InstructionMeta | None] | None = None,
     recorder: AnalysisRecorder | None = None,
+    similarity: _SemanticSimilarityRecorder | None = None,
 ) -> bool:
     """CFG verification that tolerates different instruction counts:
     per-side block graphs matched structurally, block contents aligned
@@ -3589,6 +3726,8 @@ def verify_isomorphic_cfg_effective_match(
                 if _same_meta_effects(meta_o, meta_r) and _meta_step(
                     orig_state, recomp_state, meta_o, index_o
                 ):
+                    if similarity is not None:
+                        similarity.match(index_o, index_r)
                     continue
                 if not fully_synced(orig_state, recomp_state):
                     if recorder is not None:
@@ -3597,10 +3736,25 @@ def verify_isomorphic_cfg_effective_match(
                         )
                     return False
                 resync((orig_state, recomp_state), index_o, ctx)
+                if similarity is not None:
+                    similarity.match(index_o, index_r)
                 continue
 
             guard_state_size(orig_state, ctx)
             guard_state_size(recomp_state, ctx)
+
+            if similarity is not None and _callee_save_swap(
+                ctx,
+                ins_o,
+                ins_r,
+                obs_o,
+                obs_r,
+                orig_state,
+                recomp_state,
+            ):
+                similarity.match(index_o, index_r)
+                _commit_memory(ctx, obs_o, index_o)
+                continue
 
             # Canonicalize local control-flow targets: the block pairing
             # already proved that both sides' edges lead to the same matched
@@ -3630,7 +3784,42 @@ def verify_isomorphic_cfg_effective_match(
                     meta_o,
                     meta_r,
                 )
-                return False
+                if similarity is None:
+                    return False
+                similarity.edit(index_o, index_r)
+                if not _recover_local_outputs(
+                    state_before_o,
+                    state_before_r,
+                    orig_state,
+                    recomp_state,
+                    (index_o, index_r),
+                ):
+                    return False
+                if _observations_touch_memory(obs_o) or _observations_touch_memory(
+                    obs_r
+                ):
+                    _commit_clobber(ctx, ("semantic_edit", index_o, index_r))
+                    ctx.receiver_values.clear()
+                continue
+
+            if similarity is not None:
+                if not _local_outputs_equivalent(
+                    state_before_o,
+                    state_before_r,
+                    orig_state,
+                    recomp_state,
+                ):
+                    similarity.edit(index_o, index_r)
+                    if not _recover_local_outputs(
+                        state_before_o,
+                        state_before_r,
+                        orig_state,
+                        recomp_state,
+                        (index_o, index_r),
+                    ):
+                        return False
+                else:
+                    similarity.match(index_o, index_r)
             _invalidate_save_slots(ctx, obs_o)
             for obs_entry in obs_o:
                 ctx.add_matched(obs_entry)
@@ -3733,4 +3922,38 @@ def verify_isomorphic_cfg_effective_match(
         return False
     if any_shifted and recorder is not None:
         recorder.reasons.add("instruction_reorder")
+    if similarity is not None:
+        similarity.completed = True
+        return not similarity.edits
     return True
+
+
+def estimate_isomorphic_cfg_semantic_similarity(
+    orig_asm: list[str],
+    recomp_asm: list[str],
+    orig_targets: list[int | None],
+    recomp_targets: list[int | None],
+    metadata: FunctionMetadata | None = None,
+    orig_meta: list[InstructionMeta | None] | None = None,
+    recomp_meta: list[InstructionMeta | None] | None = None,
+) -> float | None:
+    """Estimate normalized repair similarity for a concrete mismatch.
+
+    The ordinary verifier remains the proof authority.  This pass reuses its
+    CFG alignment and symbolic execution but may recover after a local edit;
+    any recovery that would require whole-state havoc leaves the score absent.
+    """
+    # pylint: disable=too-many-arguments,too-many-positional-arguments
+
+    similarity = _SemanticSimilarityRecorder()
+    verify_isomorphic_cfg_effective_match(
+        orig_asm,
+        recomp_asm,
+        orig_targets,
+        recomp_targets,
+        metadata=metadata,
+        orig_meta=orig_meta,
+        recomp_meta=recomp_meta,
+        similarity=similarity,
+    )
+    return similarity.score()

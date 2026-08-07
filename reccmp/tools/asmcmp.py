@@ -67,6 +67,18 @@ def triage_status_note(analysis: ComparisonAnalysis) -> str | None:
     return None
 
 
+def semantic_similarity_text(match: ReccmpComparedEntity) -> str | None:
+    """Render the optional repair-oriented score without implying proof."""
+    if (
+        match.analysis.status != ComparisonStatus.MISMATCH
+        or match.semantic_similarity is None
+    ):
+        return None
+    semantic = percent_string(match.semantic_similarity)
+    raw = percent_string(match.accuracy)
+    return f"{semantic} semantic similarity (diagnostic; {raw} raw)"
+
+
 def print_match_verbose(match: ReccmpComparedEntity, show_both_addrs: bool = False):
     percenttext = percent_string(match.effective_accuracy, match.is_effective_match)
 
@@ -97,10 +109,13 @@ def print_match_verbose(match: ReccmpComparedEntity, show_both_addrs: bool = Fal
 
     else:
         print_combined_diff(udiff, show_both_addrs)
-
-        print(
-            f"\n{match.name} is only {percenttext} similar to the original, diff above"
-        )
+        semantic = semantic_similarity_text(match)
+        if semantic is not None:
+            print(f"\n{match.name} has {semantic}; diff above")
+        else:
+            print(
+                f"\n{match.name} is only {percenttext} similar to the original, diff above"
+            )
         if note is not None:
             print(note)
 
@@ -118,7 +133,11 @@ def print_match_oneline(match: ReccmpComparedEntity, show_both_addrs: bool = Fal
     if match.is_stub:
         print(f"  {match.name} ({addrs}) is a stub.")
     else:
-        print(f"  {match.name} ({addrs}) is {percenttext} similar to the original")
+        semantic = semantic_similarity_text(match)
+        if semantic is not None:
+            print(f"  {match.name} ({addrs}) has {semantic}")
+        else:
+            print(f"  {match.name} ({addrs}) is {percenttext} similar to the original")
 
 
 def parse_args() -> argparse.Namespace:

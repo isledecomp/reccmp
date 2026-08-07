@@ -6,6 +6,7 @@ from reccmp.compare.asm.effective import (
     FunctionMetadata,
     LineEffects,
     effects_conflict,
+    estimate_isomorphic_cfg_semantic_similarity,
     flags_dead_at,
     sequence_effects,
     verify_cfg_effective_match,
@@ -83,6 +84,12 @@ def analyze_effective_match(  # pylint: disable=too-many-arguments
 
     orig_addr_list = list(orig_addrs) if orig_addrs is not None else None
     recomp_addr_list = list(recomp_addrs) if recomp_addrs is not None else None
+    raw_matches = sum(i2 - i1 for tag, i1, i2, _, __ in codes if tag == "equal")
+    raw_similarity = (
+        2.0 * raw_matches / (len(orig_asm) + len(recomp_asm))
+        if orig_asm or recomp_asm
+        else 1.0
+    )
 
     def new_recorder() -> AnalysisRecorder:
         return AnalysisRecorder(orig_addr_list, recomp_addr_list)
@@ -187,14 +194,38 @@ def analyze_effective_match(  # pylint: disable=too-many-arguments
         logger.debug("effective match: isomorphic cfg")
         return finish(iso.effective_analysis())
 
+    def failure(recorder: AnalysisRecorder) -> ComparisonAnalysis:
+        analysis = recorder.failure_analysis()
+        if (
+            analysis.status == ComparisonStatus.MISMATCH
+            and analysis.difference is not None
+            and full_orig_targets is not None
+            and full_recomp_targets is not None
+        ):
+            similarity = estimate_isomorphic_cfg_semantic_similarity(
+                orig_asm,
+                recomp_asm,
+                full_orig_targets,
+                full_recomp_targets,
+                metadata=metadata,
+                orig_meta=orig_meta,
+                recomp_meta=recomp_meta,
+            )
+            if similarity is not None:
+                return ComparisonAnalysis.mismatch(
+                    analysis.difference,
+                    semantic_similarity=max(raw_similarity, similarity),
+                )
+        return analysis
+
     # Only positional lockstep and the two CFG strategies establish trusted
     # program points. Diff alignment and relocation are proof-only.
     if cfg_attempted and cfg.best_difference is not None:
-        return cfg.failure_analysis()
+        return failure(cfg)
     if lockstep.best_difference is not None:
-        return lockstep.failure_analysis()
+        return failure(lockstep)
     if iso_attempted and iso.best_difference is not None:
-        return iso.failure_analysis()
+        return failure(iso)
     if not cfg_attempted:
         cfg.mark_inconclusive("missing_metadata")
     for candidate in (iso, cfg, lockstep):

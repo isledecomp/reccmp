@@ -208,6 +208,33 @@ def test_immediate_value_difference():
     assert result.difference.orig.facts["value"] == 4
 
 
+def test_mismatch_analysis_carries_diagnostic_semantic_similarity():
+    orig = [
+        "mov eax, dword ptr [ebp - 4]",
+        "add eax, 5",
+        "mov dword ptr [esi], eax",
+        "ret",
+    ]
+    recomp = [
+        "mov ecx, dword ptr [ebp - 4]",
+        "add ecx, 6",
+        "mov dword ptr [esi], ecx",
+        "ret",
+    ]
+    result = analyze(
+        orig,
+        recomp,
+        orig_addrs=[0x1000, 0x1002, 0x1005, 0x1007],
+        recomp_addrs=[0x2000, 0x2002, 0x2005, 0x2007],
+        orig_meta=[None] * 4,
+        recomp_meta=[None] * 4,
+        metadata=FunctionMetadata(return_kind="void"),
+    )
+    assert result.status == ComparisonStatus.MISMATCH
+    assert result.difference.kind == "immediate_value"
+    assert result.semantic_similarity == 0.75
+
+
 def test_branch_condition_difference():
     result = analyze(
         ["cmp eax, ebx", "je 0x2", "ret"],
