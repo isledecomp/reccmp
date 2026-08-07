@@ -24,7 +24,7 @@ from reccmp.analysis.crt_startup import (
     detect_crt_startup_arrays,
     get_crt_function_name,
 )
-from .db import EntityDb, entity_name_from_string
+from .db import EntityDb, ReccmpEntity, entity_name_from_string
 from .queries import get_floats_without_data, get_strings_without_data
 
 logger = logging.getLogger(__name__)
@@ -449,7 +449,79 @@ def normalize_original_zero_size_data(db: EntityDb, binfile: PEImage) -> None:
                     type=EntityType.VTABLE,
                     name=match.group(1),
                     size=slot_count * 4,
+                    inferred_vtable=True,
                 )
+
+
+def _vtable_class_name(name: str | None) -> str | None:
+    if not name:
+        return None
+    match = re.match(r"(.+?)::`vftable'", name)
+    return match.group(1) if match else name
+
+
+def _vtable_slot_identities(
+    db: EntityDb, image_id: ImageId, binfile: PEImage, addr: int, size: int
+) -> tuple[int | None, ...] | None:
+    try:
+        raw = binfile.read(addr, size)
+    except (InvalidVirtualAddressError, InvalidVirtualReadError):
+        return None
+    identities: list[int | None] = []
+    for (target,) in struct.iter_unpack("<I", raw):
+        if target == 0:
+            identities.append(None)
+            continue
+        canonical = db.alias_canonical_orig(image_id, target)
+        if canonical is None:
+            return None
+        identities.append(canonical)
+    return tuple(identities)
+
+
+def match_inferred_vtables_by_slots(
+    db: EntityDb, orig_bin: PEImage, recomp_bin: PEImage
+) -> None:
+    """Pair inferred retail vtables only through exact canonical slot identities."""
+    recomp_by_class: dict[str, list[ReccmpEntity]] = {}
+    for entity in db.unexplained(ImageId.RECOMP):
+        if entity.get("type") != EntityType.VTABLE:
+            continue
+        class_name = _vtable_class_name(entity.best_name())
+        if class_name is not None:
+            recomp_by_class.setdefault(class_name, []).append(entity)
+
+    pairs: list[tuple[int, int]] = []
+    for original in db.unexplained(ImageId.ORIG):
+        if not original.get("inferred_vtable"):
+            continue
+        orig_addr = original.orig_addr
+        orig_size = original.size(ImageId.ORIG)
+        class_name = _vtable_class_name(original.best_name())
+        if orig_addr is None or orig_size is None or class_name is None:
+            continue
+        orig_slots = _vtable_slot_identities(
+            db, ImageId.ORIG, orig_bin, orig_addr, orig_size
+        )
+        if orig_slots is None:
+            continue
+        equivalent: list[int] = []
+        for recomp in recomp_by_class.get(class_name, []):
+            recomp_addr = recomp.recomp_addr
+            recomp_size = recomp.size(ImageId.RECOMP)
+            if (
+                recomp_addr is None
+                or recomp_size != orig_size
+                or _vtable_slot_identities(
+                    db, ImageId.RECOMP, recomp_bin, recomp_addr, recomp_size
+                )
+                != orig_slots
+            ):
+                continue
+            equivalent.append(recomp_addr)
+        if len(equivalent) == 1:
+            pairs.append((orig_addr, equivalent[0]))
+    db.bulk_match(pairs)
 
 
 def classify_exact_vtable_aliases(

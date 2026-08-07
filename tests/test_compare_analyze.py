@@ -21,6 +21,7 @@ from reccmp.compare.analyze import (
     create_seh_entities,
     normalize_original_zero_size_data,
     classify_exact_vtable_aliases,
+    match_inferred_vtables_by_slots,
 )
 from reccmp.analysis.funcinfo import (
     ExceptionRegistration,
@@ -603,6 +604,7 @@ def test_normalize_original_zero_size_data(db: EntityDb):
     vtable = db.get(ImageId.ORIG, 0x4000)
     assert vtable.get("type") == EntityType.VTABLE
     assert vtable.get("name") == "Sample"
+    assert vtable.get("inferred_vtable") is True
     assert vtable.size(ImageId.ORIG) == 12
     assert db.get(ImageId.ORIG, 0x4020).get("type") == EntityType.DATA
 
@@ -623,3 +625,61 @@ def test_classify_exact_vtable_aliases(db: EntityDb):
     classify_exact_vtable_aliases(db, orig_bin, recomp_bin)
 
     assert db.alias_canonical_orig(ImageId.ORIG, 0x1100) == 0x1000
+
+
+def test_match_inferred_vtables_requires_exact_slot_identities(db: EntityDb):
+    with db.batch() as batch:
+        for orig_addr, recomp_addr in zip(
+            (0x1000, 0x1010, 0x1020), (0x2000, 0x2010, 0x2020)
+        ):
+            batch.set(ImageId.ORIG, orig_addr, type=EntityType.FUNCTION, size=1)
+            batch.set(ImageId.RECOMP, recomp_addr, type=EntityType.FUNCTION, size=1)
+            batch.match(orig_addr, recomp_addr)
+        batch.set(
+            ImageId.ORIG,
+            0x3000,
+            type=EntityType.VTABLE,
+            name="Exact",
+            size=12,
+            inferred_vtable=True,
+        )
+        batch.set(
+            ImageId.RECOMP,
+            0x4000,
+            type=EntityType.VTABLE,
+            name="Exact::`vftable'",
+            size=12,
+        )
+        batch.set(
+            ImageId.ORIG,
+            0x3100,
+            type=EntityType.VTABLE,
+            name="Mismatch",
+            size=12,
+            inferred_vtable=True,
+        )
+        batch.set(
+            ImageId.RECOMP,
+            0x4100,
+            type=EntityType.VTABLE,
+            name="Mismatch::`vftable'",
+            size=12,
+        )
+
+    orig_tables = {
+        0x3000: struct.pack("<III", 0x1000, 0x1010, 0x1020),
+        0x3100: struct.pack("<III", 0x1000, 0x1010, 0x1020),
+    }
+    recomp_tables = {
+        0x4000: struct.pack("<III", 0x2000, 0x2010, 0x2020),
+        0x4100: struct.pack("<III", 0x2000, 0x2010, 0x9999),
+    }
+    orig_bin = Mock(spec=PEImage)
+    recomp_bin = Mock(spec=PEImage)
+    orig_bin.read.side_effect = lambda addr, size: orig_tables[addr][:size]
+    recomp_bin.read.side_effect = lambda addr, size: recomp_tables[addr][:size]
+
+    match_inferred_vtables_by_slots(db, orig_bin, recomp_bin)
+
+    assert db.is_match(0x3000, 0x4000)
+    assert not db.is_match(0x3100, 0x4100)

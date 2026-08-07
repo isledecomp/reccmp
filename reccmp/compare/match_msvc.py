@@ -227,7 +227,11 @@ def match_vtables(db: EntityDb, report: ReccmpReportProtocol = reccmp_report_nop
     with db.batch() as batch:
         for ent in db.unmatched(ImageId.ORIG):
             class_name = ent.get("name")
-            if not class_name or ent.get("type") != EntityType.VTABLE:
+            if (
+                not class_name
+                or ent.get("type") != EntityType.VTABLE
+                or ent.get("inferred_vtable")
+            ):
                 continue
 
             assert ent.orig_addr is not None
