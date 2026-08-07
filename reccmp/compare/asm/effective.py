@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 from functools import cache
 from typing import Callable
 
-from reccmp.compare.diagnosis import AnalysisRecorder
+from reccmp.compare.diagnosis import AnalysisRecorder, FactValue
 from reccmp.compare.asm.instgen import InstructionMeta
 
 # A symbolic value. Nested tuples of str/int; compared structurally.
@@ -2021,7 +2021,14 @@ def verify_effective_match(
     aligned = _aligned_indices(codes, len(orig_asm), len(recomp_asm))
     if aligned is None:
         if recorder is not None:
-            recorder.mark_inconclusive("alignment_failure")
+            recorder.mark_inconclusive(
+                "alignment_failure",
+                facts={
+                    "stage": "stream_alignment",
+                    "orig_instruction_count": len(orig_asm),
+                    "recomp_instruction_count": len(recomp_asm),
+                },
+            )
         return False
 
     orig = SideState()
@@ -2043,7 +2050,10 @@ def verify_effective_match(
                 if not _one_sided_ok(side, other_side, ctx, idx, line):
                     if recorder is not None:
                         recorder.mark_inconclusive(
-                            "alignment_failure", index_o, index_r
+                            "alignment_failure",
+                            index_o,
+                            index_r,
+                            {"stage": "one_sided_instruction"},
                         )
                     return False
                 continue
@@ -2847,6 +2857,26 @@ def _join_states(
     )
 
 
+def _join_failure_facts(entry: _CfgState, incoming: _CfgState) -> dict[str, FactValue]:
+    """Compact state-shape evidence for a failed CFG join."""
+    return {
+        "entry_orig_x87_depth": len(entry.orig.x87.known),
+        "entry_recomp_x87_depth": len(entry.recomp.x87.known),
+        "incoming_orig_x87_depth": len(incoming.orig.x87.known),
+        "incoming_recomp_x87_depth": len(incoming.recomp.x87.known),
+        "entry_x87_deep_pops_equal": (
+            entry.orig.x87.deep_pops == entry.recomp.x87.deep_pops
+        ),
+        "incoming_x87_deep_pops_equal": (
+            incoming.orig.x87.deep_pops == incoming.recomp.x87.deep_pops
+        ),
+        "entry_x87_epochs_equal": entry.orig.x87.epoch == entry.recomp.x87.epoch,
+        "incoming_x87_epochs_equal": (
+            incoming.orig.x87.epoch == incoming.recomp.x87.epoch
+        ),
+    }
+
+
 def _states_equal(a: _CfgState, b: _CfgState) -> bool:
     return (
         a.memory == b.memory
@@ -2926,7 +2956,16 @@ def verify_cfg_effective_match(
         or total == 0
     ):
         if recorder is not None:
-            recorder.mark_inconclusive("alignment_failure")
+            recorder.mark_inconclusive(
+                "alignment_failure",
+                facts={
+                    "stage": "positional_cfg_precondition",
+                    "orig_instruction_count": total,
+                    "recomp_instruction_count": len(recomp_asm),
+                    "orig_target_count": len(orig_targets),
+                    "recomp_target_count": len(recomp_targets),
+                },
+            )
         return False
     if orig_targets != recomp_targets:
         if recorder is not None:
@@ -2975,9 +3014,24 @@ def verify_cfg_effective_match(
         return kinds
 
     kinds = classify(orig_asm)
-    if kinds != classify(recomp_asm):
+    recomp_kinds = classify(recomp_asm)
+    if kinds != recomp_kinds:
         if recorder is not None:
-            recorder.mark_inconclusive("unsupported_control_flow")
+            differing = next(
+                i
+                for i, (kind_o, kind_r) in enumerate(zip(kinds, recomp_kinds))
+                if kind_o != kind_r
+            )
+            recorder.mark_inconclusive(
+                "non_isomorphic_cfg",
+                differing,
+                differing,
+                {
+                    "failure": "instruction_control_kind",
+                    "orig_kind": kinds[differing],
+                    "recomp_kind": recomp_kinds[differing],
+                },
+            )
         return False
     leaders = {0}
     for i in range(total):
@@ -2985,13 +3039,26 @@ def verify_cfg_effective_match(
         if target is not None:
             if not 0 <= target < total:
                 if recorder is not None:
-                    recorder.mark_inconclusive("unsupported_control_flow")
+                    recorder.mark_inconclusive(
+                        "invalid_control_flow_target",
+                        i,
+                        i,
+                        {"target_instruction_index": target},
+                    )
                 return False
             if kinds[target] == "data":
                 # A control-flow edge into bytes classified as a table is an
                 # inconsistent disassembly, not a block this verifier can run.
                 if recorder is not None:
-                    recorder.mark_inconclusive("unsupported_control_flow")
+                    recorder.mark_inconclusive(
+                        "jump_table_data",
+                        i,
+                        i,
+                        {
+                            "target_instruction_index": target,
+                            "data_line": orig_asm[target],
+                        },
+                    )
                 return False
             leaders.add(target)
         if kinds[i] in ("jcc", "jmp", "ret", "data") and i + 1 < total:
@@ -3128,7 +3195,7 @@ def verify_cfg_effective_match(
             # path is attempted.
             if any(obs_entry[0] == "jmpind" for obs_entry in obs_o):
                 if recorder is not None:
-                    recorder.mark_inconclusive("unsupported_control_flow")
+                    recorder.mark_inconclusive("indirect_jump", i, i)
                 return False
 
             # A direct edge outside the excerpt exposes the complete machine
@@ -3137,7 +3204,12 @@ def verify_cfg_effective_match(
             if kinds[i] in ("jmp", "jcc") and target is None:
                 if not _converged(orig_state, recomp_state):
                     if recorder is not None:
-                        recorder.mark_inconclusive("unsupported_control_flow")
+                        recorder.mark_inconclusive(
+                            "external_control_flow_state",
+                            i,
+                            i,
+                            {"edge_kind": kinds[i]},
+                        )
                     return False
             _commit_memory(ctx, obs_o, i)
 
@@ -3169,7 +3241,12 @@ def verify_cfg_effective_match(
                 joined = _join_states(entry[successor], outgoing, successor)
                 if joined is None:
                     if recorder is not None:
-                        recorder.mark_inconclusive("unsupported_control_flow")
+                        recorder.mark_inconclusive(
+                            "state_join_failure",
+                            order[successor],
+                            order[successor],
+                            _join_failure_facts(entry[successor], outgoing),
+                        )
                     return False
                 if not _states_equal(joined, entry[successor]):
                     entry[successor] = joined
@@ -3233,20 +3310,80 @@ class _SideCfg:
     kinds: list[str]
 
 
-def _build_side_cfg(asm: list[str], targets: list[int | None]) -> _SideCfg | None:
+def _mark_side_inconclusive(
+    recorder: AnalysisRecorder | None,
+    side: str,
+    reason: str,
+    index: int | None,
+    facts: dict[str, str | int | bool | None],
+) -> None:
+    if recorder is None:
+        return
+    if side == "orig":
+        recorder.mark_inconclusive(reason, orig_index=index, facts=facts)
+    else:
+        recorder.mark_inconclusive(reason, recomp_index=index, facts=facts)
+
+
+def _build_side_cfg(
+    asm: list[str],
+    targets: list[int | None],
+    *,
+    recorder: AnalysisRecorder | None = None,
+    side: str = "orig",
+) -> _SideCfg | None:
     """One side's basic-block structure, or None when the shape is outside
     this verifier's model (jump/data tables, invalid targets)."""
     total = len(asm)
-    if total == 0 or len(targets) != total:
+    if total == 0:
+        _mark_side_inconclusive(
+            recorder,
+            side,
+            "empty_control_flow",
+            None,
+            {"side": side, "instruction_count": 0},
+        )
+        return None
+    if len(targets) != total:
+        _mark_side_inconclusive(
+            recorder,
+            side,
+            "control_flow_metadata_mismatch",
+            None,
+            {
+                "side": side,
+                "instruction_count": total,
+                "target_count": len(targets),
+            },
+        )
         return None
     kinds = [_control_kind(line) for line in asm]
     if "data" in kinds:
+        first_data = kinds.index("data")
+        _mark_side_inconclusive(
+            recorder,
+            side,
+            "jump_table_data",
+            first_data,
+            {
+                "side": side,
+                "data_line_count": kinds.count("data"),
+                "data_line": asm[first_data],
+            },
+        )
         return None
     leaders = {0}
     for i in range(total):
         target = targets[i]
         if target is not None:
             if not 0 <= target < total:
+                _mark_side_inconclusive(
+                    recorder,
+                    side,
+                    "invalid_control_flow_target",
+                    i,
+                    {"side": side, "target_instruction_index": target},
+                )
                 return None
             leaders.add(target)
         if kinds[i] in ("jcc", "jmp", "ret") and i + 1 < total:
@@ -3280,7 +3417,11 @@ def _build_side_cfg(asm: list[str], targets: list[int | None]) -> _SideCfg | Non
     return _SideCfg(starts=list(order), ends=ends, succ=succ, kinds=kinds)
 
 
-def _pair_cfg_blocks(cfg_o: _SideCfg, cfg_r: _SideCfg) -> list[tuple[int, int]] | None:
+def _pair_cfg_blocks(
+    cfg_o: _SideCfg,
+    cfg_r: _SideCfg,
+    recorder: AnalysisRecorder | None = None,
+) -> list[tuple[int, int]] | None:
     """Match the two sides' reachable blocks into a structural bijection,
     starting from the entry blocks and following same-role edges. Returns
     the matched pairs in discovery order, or None if the reachable graphs
@@ -3295,6 +3436,19 @@ def _pair_cfg_blocks(cfg_o: _SideCfg, cfg_r: _SideCfg) -> list[tuple[int, int]] 
         seen_r = block_r in map_r
         if seen_o or seen_r:
             if map_o.get(block_o) != block_r or map_r.get(block_r) != block_o:
+                if recorder is not None:
+                    recorder.mark_inconclusive(
+                        "non_isomorphic_cfg",
+                        orig_index=cfg_o.starts[block_o],
+                        recomp_index=cfg_r.starts[block_r],
+                        facts={
+                            "failure": "block_mapping_conflict",
+                            "orig_block_count": len(cfg_o.starts),
+                            "recomp_block_count": len(cfg_r.starts),
+                            "orig_block": block_o,
+                            "recomp_block": block_r,
+                        },
+                    )
                 return None
             continue
         map_o[block_o] = block_r
@@ -3303,10 +3457,37 @@ def _pair_cfg_blocks(cfg_o: _SideCfg, cfg_r: _SideCfg) -> list[tuple[int, int]] 
         edges_o = cfg_o.succ[block_o]
         edges_r = cfg_r.succ[block_r]
         if set(edges_o) != set(edges_r):
+            if recorder is not None:
+                recorder.mark_inconclusive(
+                    "non_isomorphic_cfg",
+                    orig_index=cfg_o.starts[block_o],
+                    recomp_index=cfg_r.starts[block_r],
+                    facts={
+                        "failure": "edge_roles",
+                        "orig_block_count": len(cfg_o.starts),
+                        "recomp_block_count": len(cfg_r.starts),
+                        "orig_edge_roles": ",".join(sorted(edges_o)),
+                        "recomp_edge_roles": ",".join(sorted(edges_r)),
+                    },
+                )
             return None
         for role, to_o in edges_o.items():
             to_r = edges_r[role]
             if (to_o == "external") != (to_r == "external"):
+                if recorder is not None:
+                    recorder.mark_inconclusive(
+                        "non_isomorphic_cfg",
+                        orig_index=cfg_o.starts[block_o],
+                        recomp_index=cfg_r.starts[block_r],
+                        facts={
+                            "failure": "external_edge",
+                            "edge_role": role,
+                            "orig_external": to_o == "external",
+                            "recomp_external": to_r == "external",
+                            "orig_block_count": len(cfg_o.starts),
+                            "recomp_block_count": len(cfg_r.starts),
+                        },
+                    )
                 return None
             if to_o != "external":
                 assert isinstance(to_o, int) and isinstance(to_r, int)
@@ -3616,16 +3797,14 @@ def verify_isomorphic_cfg_effective_match(
     # pylint: disable=too-many-branches,too-many-statements,too-many-return-statements
     # pylint: disable=too-many-locals
     # pylint: disable=too-many-arguments,too-many-positional-arguments
-    cfg_o = _build_side_cfg(orig_asm, orig_targets)
-    cfg_r = _build_side_cfg(recomp_asm, recomp_targets)
+    cfg_o = _build_side_cfg(orig_asm, orig_targets, recorder=recorder, side="orig")
+    cfg_r = _build_side_cfg(
+        recomp_asm, recomp_targets, recorder=recorder, side="recomp"
+    )
     if cfg_o is None or cfg_r is None:
-        if recorder is not None:
-            recorder.mark_inconclusive("unsupported_control_flow")
         return False
-    pairs = _pair_cfg_blocks(cfg_o, cfg_r)
+    pairs = _pair_cfg_blocks(cfg_o, cfg_r, recorder)
     if pairs is None:
-        if recorder is not None:
-            recorder.mark_inconclusive("unsupported_control_flow")
         return False
     pair_ids = {pair: n for n, pair in enumerate(pairs)}
 
@@ -3638,7 +3817,18 @@ def verify_isomorphic_cfg_effective_match(
         aligned = _align_block_lines(orig_asm[start_o:end_o], recomp_asm[start_r:end_r])
         if aligned is None:
             if recorder is not None:
-                recorder.mark_inconclusive("alignment_failure")
+                recorder.mark_inconclusive(
+                    "alignment_failure",
+                    start_o,
+                    start_r,
+                    {
+                        "stage": "block_alignment",
+                        "orig_block_length": end_o - start_o,
+                        "recomp_block_length": end_r - start_r,
+                        "orig_block_count": len(cfg_o.starts),
+                        "recomp_block_count": len(cfg_r.starts),
+                    },
+                )
             return False
         # The block terminators (control lines) must pair with each other:
         # a one-sided branch or return breaks the matched structure.
@@ -3647,7 +3837,16 @@ def verify_isomorphic_cfg_effective_match(
             kind_r = cfg_r.kinds[start_r + local_r] if local_r is not None else "code"
             if kind_o != kind_r or (local_o is None and kind_r != "code"):
                 if recorder is not None:
-                    recorder.mark_inconclusive("alignment_failure")
+                    recorder.mark_inconclusive(
+                        "alignment_failure",
+                        start_o + local_o if local_o is not None else None,
+                        start_r + local_r if local_r is not None else None,
+                        {
+                            "stage": "block_terminator_alignment",
+                            "orig_kind": kind_o,
+                            "recomp_kind": kind_r,
+                        },
+                    )
                 return False
         if any(local_o is None or local_r is None for local_o, local_r in aligned):
             any_shifted = True
@@ -3697,7 +3896,10 @@ def verify_isomorphic_cfg_effective_match(
                 if not _one_sided_ok(side, other_side, ctx, position, line):
                     if recorder is not None:
                         recorder.mark_inconclusive(
-                            "alignment_failure", index_o, index_r
+                            "alignment_failure",
+                            index_o,
+                            index_r,
+                            {"stage": "one_sided_instruction"},
                         )
                     return False
                 continue
@@ -3846,7 +4048,7 @@ def verify_isomorphic_cfg_effective_match(
                 ctx.categories.add("condition_inversion")
             if any(obs_entry[0] == "jmpind" for obs_entry in obs_o):
                 if recorder is not None:
-                    recorder.mark_inconclusive("unsupported_control_flow")
+                    recorder.mark_inconclusive("indirect_jump", index_o, index_r)
                 return False
 
             # A direct edge outside the excerpt exposes the complete machine
@@ -3856,7 +4058,12 @@ def verify_isomorphic_cfg_effective_match(
             ):
                 if not _converged(orig_state, recomp_state):
                     if recorder is not None:
-                        recorder.mark_inconclusive("unsupported_control_flow")
+                        recorder.mark_inconclusive(
+                            "external_control_flow_state",
+                            index_o,
+                            index_r,
+                            {"edge_kind": kind},
+                        )
                     return False
             _commit_memory(ctx, obs_o, index_o)
 
@@ -3874,7 +4081,11 @@ def verify_isomorphic_cfg_effective_match(
         if "fallout" in edges_o:
             # Falling out of the disassembled function is not a modeled exit.
             if recorder is not None:
-                recorder.mark_inconclusive("unsupported_control_flow")
+                recorder.mark_inconclusive(
+                    "function_fallthrough",
+                    cfg_o.ends[block_o] - 1,
+                    cfg_r.ends[block_r] - 1,
+                )
             return False
 
         outgoing = _CfgState(
@@ -3899,7 +4110,12 @@ def verify_isomorphic_cfg_effective_match(
                 joined = _join_states(entry[successor], outgoing, pair_ids[successor])
                 if joined is None:
                     if recorder is not None:
-                        recorder.mark_inconclusive("unsupported_control_flow")
+                        recorder.mark_inconclusive(
+                            "state_join_failure",
+                            cfg_o.starts[to_o],
+                            cfg_r.starts[to_r],
+                            _join_failure_facts(entry[successor], outgoing),
+                        )
                     return False
                 if not _states_equal(joined, entry[successor]):
                     entry[successor] = joined

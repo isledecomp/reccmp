@@ -23,10 +23,16 @@ from reccmp.compare.asm.effective import (
 )
 from reccmp.compare.asm.fixes import analyze_effective_match
 from reccmp.compare.asm.parse import ParseAsm
-from reccmp.compare.diagnosis import ComparisonStatus
+from reccmp.compare.diagnosis import AnalysisRecorder, ComparisonStatus
 from reccmp.compare.pinned_sequences import SequenceMatcherWithPins
 
 SAMPLES = Path(__file__).parent / "samples"
+
+
+def require_inconclusive_location(analysis):
+    location = analysis.inconclusive_location
+    assert location is not None
+    return location
 
 
 # --- The real thing ---------------------------------------------------------
@@ -368,12 +374,143 @@ def test_reject_divergent_branch_structure():
         "je 0x1",
         "ret",
     ]
-    assert (
-        verify_isomorphic_cfg_effective_match(
-            orig, recomp, [None, 3, None, None], [None, None, 3, None]
-        )
-        is False
+    recorder = AnalysisRecorder(
+        orig_addrs=[0x1000, 0x1002, 0x1004, 0x1005],
+        recomp_addrs=[0x2000, 0x2002, 0x2003, 0x2005],
     )
+    assert not verify_isomorphic_cfg_effective_match(
+        orig,
+        recomp,
+        [None, 3, None, None],
+        [None, None, 3, None],
+        recorder=recorder,
+    )
+    analysis = recorder.failure_analysis()
+    assert analysis.inconclusive_reason == "non_isomorphic_cfg"
+    location = require_inconclusive_location(analysis)
+    assert location.address == 0x1004
+    assert location.facts["failure"] == "edge_roles"
+    assert location.facts["orig_block_count"] == 3
+    assert location.facts["recomp_block_count"] == 2
+
+
+def test_jump_table_data_reports_side_location_and_count():
+    orig = ["jmp dword ptr [eax * 4]", "Jump table:", "0x1000"]
+    recomp = ["jmp dword ptr [ecx * 4]", "Jump table:", "0x2000"]
+    recorder = AnalysisRecorder(
+        orig_addrs=[0x1000, 0x1002, 0x1006],
+        recomp_addrs=[0x2000, 0x2002, 0x2006],
+    )
+    assert not verify_isomorphic_cfg_effective_match(
+        orig,
+        recomp,
+        [None, None, None],
+        [None, None, None],
+        recorder=recorder,
+    )
+    analysis = recorder.failure_analysis()
+    assert analysis.inconclusive_reason == "jump_table_data"
+    location = require_inconclusive_location(analysis)
+    assert location.address == 0x1002
+    assert location.facts == {
+        "side": "orig",
+        "data_line_count": 2,
+        "data_line": "Jump table:",
+    }
+
+
+def test_empty_control_flow_identifies_the_empty_side():
+    recorder = AnalysisRecorder(orig_addrs=[], recomp_addrs=[0x2000])
+    assert not verify_isomorphic_cfg_effective_match(
+        [], ["ret"], [], [None], recorder=recorder
+    )
+    analysis = recorder.failure_analysis()
+    assert analysis.inconclusive_reason == "empty_control_flow"
+    location = require_inconclusive_location(analysis)
+    assert location.instruction_index is None
+    assert location.facts == {
+        "side": "orig",
+        "instruction_count": 0,
+    }
+
+
+def test_invalid_control_flow_target_is_located():
+    recorder = AnalysisRecorder(orig_addrs=[0x1000], recomp_addrs=[0x2000])
+    assert not verify_isomorphic_cfg_effective_match(
+        ["jmp 0x10"], ["jmp 0x10"], [2], [2], recorder=recorder
+    )
+    analysis = recorder.failure_analysis()
+    assert analysis.inconclusive_reason == "invalid_control_flow_target"
+    location = require_inconclusive_location(analysis)
+    assert location.address == 0x1000
+    assert location.facts["target_instruction_index"] == 2
+
+
+def test_indirect_jump_is_located():
+    recorder = AnalysisRecorder(orig_addrs=[0x1000], recomp_addrs=[0x2000])
+    assert not verify_isomorphic_cfg_effective_match(
+        ["jmp dword ptr [eax]"],
+        ["jmp dword ptr [eax]"],
+        [None],
+        [None],
+        recorder=recorder,
+    )
+    analysis = recorder.failure_analysis()
+    assert analysis.inconclusive_reason == "indirect_jump"
+    assert require_inconclusive_location(analysis).address == 0x1000
+
+
+def test_external_edge_with_divergent_state_is_located():
+    recorder = AnalysisRecorder(
+        orig_addrs=[0x1000, 0x1005], recomp_addrs=[0x2000, 0x2005]
+    )
+    assert not verify_isomorphic_cfg_effective_match(
+        ["mov eax, 1", "jmp 0x10"],
+        ["mov eax, 2", "jmp 0x10"],
+        [None, None],
+        [None, None],
+        recorder=recorder,
+    )
+    assert recorder.inconclusive_reason == "external_control_flow_state"
+    location = recorder.inconclusive_location
+    assert location is not None
+    assert location.address == 0x1005
+    assert location.facts["edge_kind"] == "jmp"
+
+
+def test_function_fallthrough_is_located():
+    recorder = AnalysisRecorder(orig_addrs=[0x1000], recomp_addrs=[0x2000])
+    assert not verify_isomorphic_cfg_effective_match(
+        ["mov eax, ecx"], ["mov eax, ecx"], [None], [None], recorder=recorder
+    )
+    analysis = recorder.failure_analysis()
+    assert analysis.inconclusive_reason == "function_fallthrough"
+    assert require_inconclusive_location(analysis).address == 0x1000
+
+
+def test_incompatible_x87_paths_report_state_join_shape():
+    asm = [
+        "test eax, eax",
+        "je 0x4",
+        "fld1",
+        "jmp 0x5",
+        "nop",
+        "ret",
+    ]
+    targets = [None, 4, None, 5, None, None]
+    recorder = AnalysisRecorder(
+        orig_addrs=[0x1000, 0x1002, 0x1004, 0x1006, 0x1008, 0x1009],
+        recomp_addrs=[0x2000, 0x2002, 0x2004, 0x2006, 0x2008, 0x2009],
+    )
+    assert not verify_isomorphic_cfg_effective_match(
+        asm, list(asm), targets, list(targets), recorder=recorder
+    )
+    analysis = recorder.failure_analysis()
+    assert analysis.inconclusive_reason == "state_join_failure"
+    location = require_inconclusive_location(analysis)
+    assert location.address == 0x1009
+    facts = location.facts
+    assert facts["entry_orig_x87_depth"] != facts["incoming_orig_x87_depth"]
 
 
 def test_reject_mirrored_condition_with_live_difference():

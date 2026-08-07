@@ -191,7 +191,18 @@ def test_structured_comparison_schema_round_trip():
             ),
             semantic_similarity=0.875,
         ),
-        ComparisonAnalysis.inconclusive("unsupported_control_flow"),
+        ComparisonAnalysis.inconclusive(
+            "non_isomorphic_cfg",
+            DifferenceSide(
+                7,
+                0x400123,
+                {
+                    "failure": "edge_roles",
+                    "orig_block_count": 8,
+                    "recomp_block_count": 9,
+                },
+            ),
+        ),
     ]
     for index, analysis in enumerate(analyses):
         address = 0x400000 + index
@@ -224,7 +235,16 @@ def test_structured_comparison_schema_round_trip():
     assert value["data"][2]["comparison"]["semantic_similarity"] == 0.875
     assert value["data"][3]["comparison"] == {
         "status": "inconclusive",
-        "inconclusive_reason": "unsupported_control_flow",
+        "inconclusive_reason": "non_isomorphic_cfg",
+        "inconclusive_location": {
+            "instruction_index": 7,
+            "address": 0x400123,
+            "facts": {
+                "failure": "edge_roles",
+                "orig_block_count": 8,
+                "recomp_block_count": 9,
+            },
+        },
     }
 
     restored = deserialize_reccmp_report(serialized)

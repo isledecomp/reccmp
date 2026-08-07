@@ -79,6 +79,23 @@ def semantic_similarity_text(match: ReccmpComparedEntity) -> str | None:
     return f"{semantic} semantic similarity (diagnostic; {raw} raw)"
 
 
+def inconclusive_diagnostic_text(analysis: ComparisonAnalysis) -> str | None:
+    """Render the structured reason, location, and facts for an inconclusive result."""
+    if analysis.status != ComparisonStatus.INCONCLUSIVE:
+        return None
+    reason = (analysis.inconclusive_reason or "analysis_limit").replace("_", " ")
+    lines = [f"semantic analysis inconclusive: {reason}"]
+    location = analysis.inconclusive_location
+    if location is not None:
+        if location.address is not None:
+            lines.append(f"  location: {format_address(location.address)}")
+        elif location.instruction_index is not None:
+            lines.append(f"  instruction index: {location.instruction_index}")
+        for key, value in sorted(location.facts.items()):
+            lines.append(f"  {key.replace('_', ' ')}: {value}")
+    return "\n".join(lines)
+
+
 def print_match_verbose(match: ReccmpComparedEntity, show_both_addrs: bool = False):
     percenttext = percent_string(match.effective_accuracy, match.is_effective_match)
 
@@ -116,6 +133,9 @@ def print_match_verbose(match: ReccmpComparedEntity, show_both_addrs: bool = Fal
             print(
                 f"\n{match.name} is only {percenttext} similar to the original, diff above"
             )
+        diagnostic = inconclusive_diagnostic_text(match.analysis)
+        if diagnostic is not None:
+            print(diagnostic)
         if note is not None:
             print(note)
 

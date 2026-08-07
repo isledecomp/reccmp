@@ -9,6 +9,7 @@ from reccmp.compare.diagnosis import (
 )
 from reccmp.compare.report import ReccmpComparedEntity
 from reccmp.tools.asmcmp import (
+    inconclusive_diagnostic_text,
     parse_args,
     semantic_similarity_text,
     triage_status_note,
@@ -83,3 +84,25 @@ def test_semantic_similarity_text_keeps_raw_score_visible():
     assert "semantic similarity (diagnostic" in text
     assert "25.00%" in text
     assert "raw" in text
+
+
+def test_inconclusive_diagnostic_renders_reason_location_and_facts():
+    analysis = ComparisonAnalysis.inconclusive(
+        "non_isomorphic_cfg",
+        DifferenceSide(
+            4,
+            0x401020,
+            {
+                "failure": "edge_roles",
+                "orig_block_count": 8,
+                "recomp_block_count": 9,
+            },
+        ),
+    )
+    text = inconclusive_diagnostic_text(analysis)
+    assert text is not None
+    assert "non isomorphic cfg" in text
+    assert "0x401020" in text
+    assert "failure: edge_roles" in text
+    assert "orig block count: 8" in text
+    assert "recomp block count: 9" in text

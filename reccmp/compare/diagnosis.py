@@ -57,7 +57,18 @@ MISMATCH_KINDS = frozenset(
 INCONCLUSIVE_REASONS = frozenset(
     {
         "unsupported_instruction",
+        # Legacy report compatibility. New analyses emit a specific control-flow
+        # reason below instead of this umbrella value.
         "unsupported_control_flow",
+        "empty_control_flow",
+        "control_flow_metadata_mismatch",
+        "invalid_control_flow_target",
+        "jump_table_data",
+        "non_isomorphic_cfg",
+        "indirect_jump",
+        "external_control_flow_state",
+        "function_fallthrough",
+        "state_join_failure",
         "alignment_failure",
         "missing_metadata",
         "analysis_limit",
@@ -224,15 +235,17 @@ class AnalysisRecorder:
         reason: str,
         orig_index: int | None = None,
         recomp_index: int | None = None,
+        facts: dict[str, FactValue] | None = None,
     ) -> None:
         if reason not in INCONCLUSIVE_REASONS:
             raise ValueError(f"Unknown inconclusive reason: {reason}")
         if self.inconclusive_reason is None:
             self.inconclusive_reason = reason
-            if orig_index is not None:
-                self.inconclusive_location = self.side("orig", orig_index, {})
+            detail = dict(facts or {})
+            if orig_index is not None or (recomp_index is None and detail):
+                self.inconclusive_location = self.side("orig", orig_index, detail)
             elif recomp_index is not None:
-                self.inconclusive_location = self.side("recomp", recomp_index, {})
+                self.inconclusive_location = self.side("recomp", recomp_index, detail)
 
     @property
     def best_difference(self) -> ComparisonDifference | None:
