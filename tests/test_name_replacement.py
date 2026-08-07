@@ -14,10 +14,15 @@ def fixture_db() -> EntityDb:
 
 
 def create_lookup(
-    db, addrs: dict[int, int] | None = None, is_orig: bool = True
+    db,
+    addrs: dict[int, int] | None = None,
+    is_orig: bool = True,
+    jumps: dict[int, int] | None = None,
 ) -> NameReplacementProtocol:
     if addrs is None:
         addrs = {}
+    if jumps is None:
+        jumps = {}
 
     def bin_lookup(addr: int) -> int | None:
         return addrs.get(addr)
@@ -26,12 +31,40 @@ def create_lookup(
         return ""
 
     if is_orig:
-        return create_name_lookup(db, ImageId.ORIG, bin_lookup, offset_lookup)
+        return create_name_lookup(
+            db,
+            ImageId.ORIG,
+            bin_lookup,
+            offset_lookup,
+            jump_target=jumps.get,
+        )
 
-    return create_name_lookup(db, ImageId.RECOMP, bin_lookup, offset_lookup)
+    return create_name_lookup(
+        db,
+        ImageId.RECOMP,
+        bin_lookup,
+        offset_lookup,
+        jump_target=jumps.get,
+    )
 
 
 ####
+
+
+def test_raw_jump_chain_resolves_function_pointer_identity(db: EntityDb):
+    with db.batch() as batch:
+        batch.set(
+            ImageId.ORIG,
+            300,
+            name="CString::~CString",
+            symbol="??1CString@@QAE@XZ",
+            type=EntityType.FUNCTION,
+        )
+
+    lookup = create_lookup(db, jumps={100: 200, 200: 300})
+    name = lookup(100)
+    assert name is not None
+    assert "[CALLEE symbol:??1CString@@QAE@XZ]" in name
 
 
 def test_name_replacement(db):

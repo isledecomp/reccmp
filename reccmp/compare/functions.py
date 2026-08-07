@@ -5,6 +5,7 @@ import struct
 from itertools import pairwise
 from typing import Callable, Iterator
 from reccmp.compare.lines import LinesDb
+from reccmp.compare.thunk_resolve import read_e9_jmp_target
 from reccmp.compare.pinned_sequences import SequenceMatcherWithPins
 from reccmp.compare.asm.effective import CallAbi, FunctionMetadata
 from reccmp.compare.asm.fixes import analyze_effective_match, assert_fixup
@@ -145,6 +146,7 @@ class FunctionComparator:
                 create_bin_lookup(self.orig_bin),
                 self.types.get_name_for_offset,
                 self.equivalence_groups,
+                jump_target=lambda addr: read_e9_jmp_target(self.orig_bin, addr),
             ),
             is_32bit=self.is_32bit,
             collect_meta=False,
@@ -159,6 +161,7 @@ class FunctionComparator:
                 create_bin_lookup(self.recomp_bin),
                 self.types.get_name_for_offset,
                 self.equivalence_groups,
+                jump_target=lambda addr: read_e9_jmp_target(self.recomp_bin, addr),
             ),
             is_32bit=self.is_32bit,
             collect_meta=False,

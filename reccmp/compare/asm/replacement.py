@@ -79,12 +79,41 @@ def canonical_callee_name(
     return f"{display} [CALLEE {identity}]"
 
 
+def _resolve_raw_jump_entity(
+    db: EntityDb,
+    image_id: ImageId,
+    addr: int,
+    jump_target: Callable[[int], int | None] | None,
+) -> ReccmpEntity | None:
+    """Follow raw E9 chains whose intermediate islands have no entity row."""
+    if jump_target is None:
+        return None
+    seen: set[int] = set()
+    current = addr
+    for _ in range(8):
+        if current in seen:
+            return None
+        seen.add(current)
+        target = jump_target(current)
+        if target is None:
+            break
+        current = target
+    if current == addr:
+        return None
+    entity = db.get(image_id, current, exact=True)
+    if entity is None or entity.entity_type not in _CALLABLE_TYPES:
+        return None
+    return entity
+
+
 def create_name_lookup(
     db: EntityDb,
     image_id: ImageId,
     bin_read: Callable[[int], int | None],
     offset_name: Callable[[CvdumpTypeKey, int], str],
     equivalence_groups: dict[int, int] | None = None,
+    *,
+    jump_target: Callable[[int], int | None] | None = None,
 ) -> NameReplacementProtocol:
     """Function generator for name replacement"""
     assert image_id in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
@@ -257,10 +286,16 @@ def create_name_lookup(
         if indirect:
             return indirect_lookup(addr)
 
-        if exact:
-            entity = db.get(image_id, addr, exact=True)
-        else:
-            entity = paired_containing(addr) or db.get(image_id, addr, exact=False)
+        entity = db.get(image_id, addr, exact=True)
+        if entity is None or entity.entity_type == EntityType.THUNK:
+            raw_entity = _resolve_raw_jump_entity(db, image_id, addr, jump_target)
+            if raw_entity is not None:
+                return get_name(raw_entity, offset=0)
+
+        if not exact:
+            entity = (
+                paired_containing(addr) or entity or db.get(image_id, addr, exact=False)
+            )
 
         if entity is None:
             return None
