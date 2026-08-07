@@ -9,6 +9,7 @@ from reccmp.analysis.crt_startup import (
     create_crt_matches,
     UsedAddressCollector,
     unwrap_jump,
+    find_initializer_atexit_helpers,
 )
 from reccmp.compare.db import EntityDb
 from reccmp.formats import PEImage
@@ -342,3 +343,44 @@ def test_unwrap_jump_not_a_thunk(code: bytes):
 
     binfile = RawImage.from_memory(bytes(memory))
     assert unwrap_jump(binfile, 0x40) == (False, 0x40)
+
+
+def test_find_initializer_atexit_helpers_by_registered_function_identity():
+    initializer, helper, atexit = 0x0, 0x20, 0x30
+    call_addr = initializer + 5
+    rel = atexit - (call_addr + 5)
+    code = (
+        b"\x68" + struct.pack("<I", helper) + b"\xe8" + struct.pack("<i", rel) + b"\xc3"
+    )
+    image = RawImage.from_memory(code + b"\x90" * 0x40)
+    db = EntityDb()
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, initializer, type=EntityType.FUNCTION, size=len(code))
+        batch.set(ImageId.ORIG, helper, type=EntityType.FUNCTION, size=1)
+        batch.set(
+            ImageId.ORIG, atexit, type=EntityType.FUNCTION, name="_atexit", size=1
+        )
+
+    assert find_initializer_atexit_helpers(
+        db, ImageId.ORIG, image, iter([initializer])  # type: ignore[arg-type]
+    ) == {initializer: (helper,)}
+
+
+def test_find_initializer_atexit_helpers_rejects_non_atexit_call():
+    initializer, helper, target = 0x0, 0x20, 0x30
+    rel = target - (initializer + 10)
+    code = (
+        b"\x68" + struct.pack("<I", helper) + b"\xe8" + struct.pack("<i", rel) + b"\xc3"
+    )
+    image = RawImage.from_memory(code + b"\x90" * 0x40)
+    db = EntityDb()
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, initializer, type=EntityType.FUNCTION, size=len(code))
+        batch.set(ImageId.ORIG, helper, type=EntityType.FUNCTION, size=1)
+        batch.set(
+            ImageId.ORIG, target, type=EntityType.FUNCTION, name="ordinary", size=1
+        )
+
+    assert find_initializer_atexit_helpers(
+        db, ImageId.ORIG, image, iter([initializer])  # type: ignore[arg-type]
+    ) == {initializer: ()}

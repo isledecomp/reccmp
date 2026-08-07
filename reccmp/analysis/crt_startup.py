@@ -311,3 +311,74 @@ def create_crt_matches(
 
     matches.extend(thunks)
     return matches
+
+
+def _resolve_entity_name(db: EntityDb, image_id: ImageId, addr: int) -> str | None:
+    """Resolve a direct target through thunk/reference edges to its best name."""
+    ref_key = "ref_orig" if image_id == ImageId.ORIG else "ref_recomp"
+    seen: set[int] = set()
+    for _ in range(8):
+        if addr in seen:
+            return None
+        seen.add(addr)
+        entity = db.get(image_id, addr, exact=True)
+        if entity is None:
+            return None
+        name = entity.best_name()
+        if name is not None and "atexit" in name.lower():
+            return name
+        ref = entity.get(ref_key)
+        if not isinstance(ref, int):
+            return name
+        addr = ref
+    return None
+
+
+def find_initializer_atexit_helpers(
+    db: EntityDb,
+    image_id: ImageId,
+    binfile: PEImage,
+    initializer_addrs: Iterator[int],
+) -> dict[int, tuple[int, ...]]:
+    """Find helper functions registered by CRT C++ initializers.
+
+    The identity is structural: an immediate helper address must be pushed directly
+    before a call whose resolved target is ``atexit``. Unknown or indirect shapes are
+    ignored rather than inferred from unstable ``$E###`` names.
+    """
+    result: dict[int, tuple[int, ...]] = {}
+    for initializer_addr in initializer_addrs:
+        size = get_function_sample_size(db, image_id, initializer_addr)
+        raw = binfile.read(initializer_addr, size)
+        instructions: list[tuple[str, str]] = []
+        for section in InstructGen(raw, initializer_addr, True).sections:
+            if section.type == SectionType.CODE:
+                instructions.extend(
+                    (mnemonic, operands)
+                    for _, _, mnemonic, operands in section.contents
+                )
+
+        helpers: list[int] = []
+        for previous, current in zip(instructions, instructions[1:]):
+            mnemonic, operands = current
+            if mnemonic != "call":
+                continue
+            try:
+                call_target = int(operands, 16)
+            except ValueError:
+                continue
+            target_name = _resolve_entity_name(db, image_id, call_target)
+            if target_name is None or "atexit" not in target_name.lower():
+                continue
+            prev_mnemonic, prev_operands = previous
+            if prev_mnemonic != "push":
+                continue
+            try:
+                helper_addr = int(prev_operands, 16)
+            except ValueError:
+                continue
+            helper = db.get(image_id, helper_addr, exact=True)
+            if helper is not None and helper.get("type") == EntityType.FUNCTION:
+                helpers.append(helper_addr)
+        result[initializer_addr] = tuple(dict.fromkeys(helpers))
+    return result
