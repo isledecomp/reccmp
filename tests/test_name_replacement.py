@@ -117,6 +117,47 @@ def test_offset_name_no_size(db):
     assert lookup(101) is None
 
 
+def test_paired_containing_global_precedes_nearer_unpaired_interior(db: EntityDb):
+    with db.batch() as batch:
+        batch.set(
+            ImageId.ORIG,
+            100,
+            name="PairedArray",
+            type=EntityType.DATA,
+            size=16,
+        )
+        batch.set(
+            ImageId.RECOMP,
+            500,
+            name="PairedArray",
+            type=EntityType.DATA,
+            size=16,
+        )
+        batch.set(ImageId.ORIG, 104, name="MisleadingInterior", type=EntityType.OFFSET)
+        batch.match(100, 500)
+
+    lookup = create_lookup(db)
+    name = lookup(104)
+    assert name is not None
+    assert "PairedArray+4" in name
+    assert "MisleadingInterior" not in name
+
+
+def test_overlapping_paired_globals_choose_most_specific_object(db: EntityDb):
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 90, name="Broad", type=EntityType.DATA, size=32)
+        batch.set(ImageId.RECOMP, 490, name="Broad", type=EntityType.DATA, size=32)
+        batch.set(ImageId.ORIG, 100, name="Array", type=EntityType.DATA, size=12)
+        batch.set(ImageId.RECOMP, 600, name="Array", type=EntityType.DATA, size=12)
+        batch.match(90, 490)
+        batch.match(100, 600)
+
+    orig_lookup = create_lookup(db)
+    recomp_lookup = create_lookup(db, is_orig=False)
+    assert orig_lookup(104) == recomp_lookup(604)
+    assert "Array+4" in (orig_lookup(104) or "")
+
+
 def test_exact_restriction(db):
     """If exact=True, return a name only if the entity's address matches the search address.
     Otherwise we might return a name if the entity contains the search address."""
@@ -146,8 +187,7 @@ def test_indirect_function(db):
     entity = lookup(200, indirect=True)
     assert entity is not None
 
-    # Imitating ghidra asm display. Not every indirect lookup gets the arrow.
-    assert "->" in entity
+    assert "CALLEE" in entity
 
 
 def test_indirect_function_variable(db):
@@ -177,17 +217,48 @@ def test_indirect_import(db):
     # No mock needed here because we will not need to read any data.
     lookup = create_lookup(db)
 
-    # Should use arrow to suggest indirect call.
+    # Direct and import-table calls use the same canonical import identity.
     name = lookup(100, indirect=True)
     assert name is not None
     assert "Hello" in name
-    assert "->" in name
+    assert name == lookup(100, indirect=False)
 
-    # No arrow.
     name = lookup(100, indirect=False)
     assert name is not None
     assert "Hello" in name
-    assert "->" not in name
+
+
+def test_unpaired_same_named_functions_do_not_define_callee_identity(db: EntityDb):
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, name="Guess", type=EntityType.FUNCTION)
+        batch.set(ImageId.RECOMP, 500, name="Guess", type=EntityType.FUNCTION)
+
+    assert create_lookup(db)(100) != create_lookup(db, is_orig=False)(500)
+
+
+def test_decorated_symbol_defines_duplicate_body_callee_identity(db: EntityDb):
+    symbol = "?Helper@?$Template@H@@QAEXXZ"
+    with db.batch() as batch:
+        batch.set(
+            ImageId.ORIG,
+            100,
+            name="OriginalGuess",
+            symbol=symbol,
+            type=EntityType.FUNCTION,
+        )
+        batch.set(
+            ImageId.RECOMP,
+            500,
+            name="LinkedBody",
+            symbol=symbol,
+            type=EntityType.FUNCTION,
+        )
+
+    orig = create_lookup(db)(100)
+    recomp = create_lookup(db, is_orig=False)(500)
+    assert orig is not None and recomp is not None
+    assert "symbol:" in orig
+    assert orig == recomp
 
 
 def test_import_without_name(db):

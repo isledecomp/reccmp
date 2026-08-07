@@ -125,6 +125,36 @@ def test_cfg_accepts_identical_diamond():
     )
 
 
+def test_cfg_virtual_call_receiver_phi_uses_equivalent_inputs():
+    """Equivalent receiver inputs on both arms remain equivalent at the join,
+    even when the receiver and vtable use different physical registers."""
+    orig = [
+        "cmp ebx, 0",
+        "je 0x6",
+        "mov eax, dword ptr [esi + 4]",
+        "jmp 0x2",
+        "mov eax, dword ptr [esi + 4]",
+        "mov edx, dword ptr [eax]",
+        "mov ecx, eax",
+        "call dword ptr [edx + 0x94]",
+        "ret",
+    ]
+    recomp = [
+        "cmp ebx, 0",
+        "je 0x6",
+        "mov edx, dword ptr [esi + 4]",
+        "jmp 0x2",
+        "mov edx, dword ptr [esi + 4]",
+        "mov eax, dword ptr [edx]",
+        "mov ecx, edx",
+        "call dword ptr [eax + 0x94]",
+        "ret",
+    ]
+    targets = [None, 4, None, 5, None, None, None, None, None]
+    metadata = FunctionMetadata(return_kind="void")
+    assert verify_cfg_effective_match(orig, recomp, targets, targets, metadata) is True
+
+
 def test_cfg_rejects_structural_difference():
     """Branches that target different lines are a real difference."""
     orig = ["cmp ecx, 0", "je 0x4", "inc edx", "inc edx", "ret"]

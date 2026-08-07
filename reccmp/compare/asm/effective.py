@@ -928,6 +928,69 @@ def read_operand(state: SideState, ctx: Context, op) -> Value:
     raise Reject
 
 
+def _canonical_address_value(address: Value) -> Value:
+    """Return the arithmetic value computed by a simple LEA.
+
+    A compiler may spell pointer addition either as ``lea [value + offset]``
+    or as an integer ``add`` on the loaded pointer.  Keep symbolic/global and
+    stack addresses as address expressions, but canonicalize ordinary
+    scale-one pointer arithmetic through the same associative-add builder used
+    by ADD itself.
+    """
+    mem = _flatten_mem(address)
+    _, seg, terms, disp, syms = mem
+    if seg or syms or not isinstance(disp, int):
+        return ("addr", mem)
+    if any(scale != 1 or _stack_rooted(value) for value, scale in terms):
+        return ("addr", mem)
+
+    values = [value for value, _ in terms]
+    if disp or not values:
+        values.append(("imm", disp))
+    if len(values) == 1:
+        return values[0]
+
+    result = values[0]
+    for value in values[1:]:
+        result = _commutative_result("add", result, value)
+    return result
+
+
+def _canonical_virtual_target(target: Value) -> Value | None:
+    """Recognize ``load(load(receiver) + slot)`` as a virtual call target.
+
+    The physical register carrying the vtable is intentionally absent from
+    the result.  Existing symbolic-value and CFG-join equivalence then makes
+    register allocation, moved equivalent loads, and equivalent phi inputs
+    transparent while retaining the receiver and slot as the call identity.
+    """
+    if not (isinstance(target, tuple) and len(target) == 4 and target[0] == "load"):
+        return None
+
+    call_mem = _flatten_mem(target[1])
+    _, call_seg, call_terms, slot, call_syms = call_mem
+    if call_seg or call_syms or not isinstance(slot, int) or len(call_terms) != 1:
+        return None
+    vtable, scale = call_terms[0]
+    if scale != 1 or not (
+        isinstance(vtable, tuple) and len(vtable) == 4 and vtable[0] == "load"
+    ):
+        return None
+
+    receiver_mem = _flatten_mem(vtable[1])
+    _, receiver_seg, receiver_terms, receiver_disp, receiver_syms = receiver_mem
+    if (
+        receiver_seg
+        or receiver_syms
+        or receiver_disp != 0
+        or len(receiver_terms) != 1
+        or receiver_terms[0][1] != 1
+    ):
+        return None
+    receiver = receiver_terms[0][0]
+    return ("vcall", receiver, slot)
+
+
 def write_operand(state: SideState, ctx: Context, op, value: Value, obs: list) -> None:
     kind = op[0]
     if kind == "reg":
@@ -1029,9 +1092,8 @@ def execute(
         value = (mnemonic, width, read_operand(state, ctx, src))
         write_operand(state, ctx, ops[0], value, obs)
     elif mnemonic == "lea" and len(ops) == 2 and ops[1][0] == "mem":
-        write_operand(
-            state, ctx, ops[0], ("addr", mem_address(state, ops[1], escape=True)), obs
-        )
+        address = mem_address(state, ops[1], escape=True)
+        write_operand(state, ctx, ops[0], _canonical_address_value(address), obs)
     elif mnemonic == "xchg" and len(ops) == 2:
         a = read_operand(state, ctx, ops[0])
         b = read_operand(state, ctx, ops[1])
@@ -1180,11 +1242,14 @@ def execute(
         if ctx.metadata is not None and ctx.metadata.call_abi is not None:
             if ops[0][0] == "sym":
                 abi = ctx.metadata.call_abi(ops[0][1])
-        entry = ["call", read_operand(state, ctx, ops[0])]
-        if abi is None or abi.uses_ecx:
-            entry.append(state.read_reg("ecx"))
-        if abi is None or abi.uses_edx:
-            entry.append(state.read_reg("edx"))
+        target = read_operand(state, ctx, ops[0])
+        virtual_target = _canonical_virtual_target(target)
+        entry = ["call", virtual_target or target]
+        if virtual_target is None:
+            if abi is None or abi.uses_ecx:
+                entry.append(state.read_reg("ecx"))
+            if abi is None or abi.uses_edx:
+                entry.append(state.read_reg("edx"))
         obs.append(tuple(entry))
         for reg in ("eax", "ecx", "edx"):
             state.write_reg(reg, ("callret", idx, reg))
@@ -2370,6 +2435,14 @@ def sequence_effects(asm: list[str]) -> list[LineEffects] | None:
     return result
 
 
+def _foldable_address_value(value: Value, scale: int, segment: str) -> bool:
+    if scale != 1 or not isinstance(value, tuple):
+        return False
+    if value and value[0] == "add":
+        return True
+    return len(value) == 2 and value[0] == "addr" and value[1][1] in ("", segment)
+
+
 def _flatten_mem(addr: Value) -> Value:
     """Fold scale-1 base registers that hold a computed address (from lea)
     into the memory expression itself, so `[esi]` with esi = &[ebx + 0x1c6]
@@ -2379,22 +2452,25 @@ def _flatten_mem(addr: Value) -> Value:
         folded = None
         for term in terms:
             value, scale = term
-            if (
-                scale == 1
-                and isinstance(value, tuple)
-                and len(value) == 2
-                and value[0] == "addr"
-                and value[1][1] in ("", seg)
-            ):
+            if _foldable_address_value(value, scale, seg):
                 folded = term
                 break
         if folded is None:
             break
-        inner = folded[0][1]
-        terms = tuple(t for t in terms if t is not folded) + inner[2]
-        disp += inner[3]
-        syms = tuple(sorted(set(syms) | set(inner[4])))
-        seg = seg or inner[1]
+        value = folded[0]
+        terms = tuple(t for t in terms if t is not folded)
+        if value[0] == "addr":
+            inner = value[1]
+            terms += inner[2]
+            disp += inner[3]
+            syms = tuple(sorted(set(syms) | set(inner[4])))
+            seg = seg or inner[1]
+        else:
+            for leaf in value[1:]:
+                if isinstance(leaf, tuple) and leaf[0] == "imm":
+                    disp += leaf[1]
+                else:
+                    terms += ((leaf, 1),)
     return ("mem", seg, tuple(sorted(terms, key=repr)), disp, syms)
 
 
@@ -2404,13 +2480,15 @@ def _stack_rooted(value: Value) -> bool:
         return False
     if value in (("init", "sp"), ("init", "bp")):
         return True
-    if value[0] == "spadd":
-        return _stack_rooted(value[1])
-    if value[0] == "addr":
-        return any(_stack_rooted(v) for v, _ in value[1][2])
-    if value[0] == "ins_r16":
-        return _stack_rooted(value[1]) or _stack_rooted(value[2])
-    return False
+    tag = value[0]
+    children: tuple[Value, ...] = ()
+    if tag == "spadd":
+        children = (value[1],)
+    elif tag == "addr":
+        children = tuple(child for child, _ in value[1][2])
+    elif tag in ("add", "ins_r16"):
+        children = value[1:]
+    return any(_stack_rooted(child) for child in children)
 
 
 def _is_pure_global(mem: Value) -> bool:

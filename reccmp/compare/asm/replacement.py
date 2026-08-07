@@ -1,6 +1,7 @@
+import bisect
 from functools import cache
 from typing import Callable, Protocol
-from reccmp.compare.db import EntityDb, ReccmpEntity
+from reccmp.compare.db import EntityDb, EntityTypeLookup, ReccmpEntity
 from reccmp.cvdump.types import CvdumpTypeKey
 from reccmp.types import EntityType, ImageId
 
@@ -13,6 +14,63 @@ class NameReplacementProtocol(Protocol):
     def __call__(
         self, addr: int, exact: bool = False, indirect: bool = False
     ) -> str | None: ...
+
+
+_CALLABLE_TYPES = {
+    EntityType.FUNCTION,
+    EntityType.THUNK,
+    EntityType.VTORDISP,
+    EntityType.IMPORT,
+}
+
+
+def canonical_callee_name(
+    db: EntityDb,
+    image_id: ImageId,
+    entity: ReccmpEntity,
+    equivalence_groups: dict[int, int] | None = None,
+) -> str | None:
+    """Display name plus a stable identity for a callable entity.
+
+    Names remain useful diagnostics, but are not identities: FID guesses and
+    local wrapper names can disagree, while unrelated functions can share a
+    display name.  Prefer an explicitly configured original-address alias,
+    then a matched pair, a decorated symbol/import, and finally a side-local
+    opaque identity that cannot accidentally compare equal across images.
+    """
+    if entity.entity_type not in _CALLABLE_TYPES:
+        return entity.match_name()
+
+    canonical_entity = entity
+    canonical_orig = entity.orig_addr
+    if canonical_orig is not None and equivalence_groups:
+        canonical_orig = equivalence_groups.get(canonical_orig, canonical_orig)
+        configured = db.get(ImageId.ORIG, canonical_orig, exact=True)
+        if configured is not None:
+            canonical_entity = configured
+
+    if canonical_orig is not None and (
+        entity.matched
+        or canonical_orig != entity.orig_addr
+        or canonical_entity.matched
+        or entity.addr(image_id) is None
+    ):
+        identity = f"orig:{canonical_orig:x}"
+        display = canonical_entity.match_name() or entity.match_name()
+    elif symbol := canonical_entity.get("symbol") or entity.get("symbol"):
+        identity = f"symbol:{symbol}"
+        display = f"{symbol} ({EntityTypeLookup.get(entity.entity_type or -1, 'UNK')})"
+    elif entity.entity_type == EntityType.IMPORT:
+        identity = f"import:{canonical_entity.best_name() or entity.best_name()}"
+        display = canonical_entity.match_name() or entity.match_name()
+    else:
+        addr = entity.addr(image_id)
+        assert addr is not None
+        identity = f"{image_id.name.lower()}:{addr:x}"
+        display = canonical_entity.match_name() or entity.match_name()
+    if display is None:
+        return None
+    return f"{display} [CALLEE {identity}]"
 
 
 def create_name_lookup(
@@ -35,6 +93,57 @@ def create_name_lookup(
 
     ref_key = "ref_orig" if image_id == ImageId.ORIG else "ref_recomp"
 
+    # Build a small point-query index for paired data objects.  A paired
+    # containing object is stronger evidence than a nearer unpaired interior
+    # annotation.  Prefix maximum ends let each lookup stop as soon as no
+    # earlier interval can contain the requested address.
+    paired_ranges: list[tuple[int, int, ReccmpEntity]] = []
+    for candidate in db.all(image_id):
+        base = candidate.addr(image_id)
+        size = candidate.any_size(image_id)
+        if (
+            candidate.matched
+            and candidate.entity_type in (EntityType.DATA, EntityType.OFFSET)
+            and base is not None
+            and size > 0
+        ):
+            paired_ranges.append((base, base + size, candidate))
+    paired_ranges.sort(key=lambda item: item[0])
+    paired_starts = [item[0] for item in paired_ranges]
+    paired_max_ends: list[int] = []
+    maximum = 0
+    for _, end, _ in paired_ranges:
+        maximum = max(maximum, end)
+        paired_max_ends.append(maximum)
+
+    def paired_containing(addr: int) -> ReccmpEntity | None:
+        candidates: list[tuple[int, int, ReccmpEntity]] = []
+        index = bisect.bisect_right(paired_starts, addr) - 1
+        while index >= 0 and paired_max_ends[index] > addr:
+            start, end, candidate = paired_ranges[index]
+            if start <= addr < end:
+                other_image = (
+                    ImageId.RECOMP if image_id == ImageId.ORIG else ImageId.ORIG
+                )
+                other_size = candidate.size(other_image)
+                if other_size is not None and addr - start < other_size:
+                    candidates.append((start, end, candidate))
+            index -= 1
+        if not candidates:
+            return None
+
+        # The smallest paired object is the most specific ownership claim;
+        # original address makes the choice deterministic across both images.
+        def specificity(item: tuple[int, int, ReccmpEntity]) -> tuple[int, int]:
+            entity = item[2]
+            paired_size = max(
+                entity.size(ImageId.ORIG) or 0,
+                entity.size(ImageId.RECOMP) or 0,
+            )
+            return (paired_size, entity.orig_addr or 0)
+
+        return min(candidates, key=specificity)[2]
+
     def equivalence_canonical_name(entity: ReccmpEntity) -> str | None:
         """The canonical group member's name, when the entity's original
         address belongs to a configured equivalence group (fold islands,
@@ -52,7 +161,7 @@ def create_name_lookup(
         canonical_entity = db.get(ImageId.ORIG, canonical, exact=True)
         if canonical_entity is None:
             return None
-        return canonical_entity.match_name()
+        return canonical_callee_name(db, image_id, canonical_entity, equivalence_groups)
 
     def get_name(entity: ReccmpEntity, offset: int = 0) -> str | None:
         """The offset is the difference between the input search address and the entity's
@@ -67,8 +176,14 @@ def create_name_lookup(
                 if isinstance(ref_addr, int):
                     target = db.get(image_id, ref_addr, exact=True)
                     if target is not None and target.entity_type == EntityType.FUNCTION:
-                        return equivalence_canonical_name(target) or target.match_name()
-            return equivalence_canonical_name(entity) or entity.match_name()
+                        return equivalence_canonical_name(
+                            target
+                        ) or canonical_callee_name(
+                            db, image_id, target, equivalence_groups
+                        )
+            return equivalence_canonical_name(entity) or canonical_callee_name(
+                db, image_id, entity, equivalence_groups
+            )
 
         # We will not return an offset name if this is not a variable
         # or if the offset is outside the range of the entity.
@@ -97,9 +212,11 @@ def create_name_lookup(
                 return entity.match_name()
 
             if entity.entity_type == EntityType.IMPORT:
-                import_name = entity.match_name()
+                import_name = canonical_callee_name(
+                    db, image_id, entity, equivalence_groups
+                )
                 if import_name is not None:
-                    return "->" + import_name
+                    return import_name
 
                 # If there's no name for the import, don't bother going further.
                 # The pointer is a dead end.
@@ -113,11 +230,7 @@ def create_name_lookup(
 
         # Exact match only for indirect.
         # The 'addr' variable still points at the indirect addr.
-        name = get_name(entity, offset=0)
-        if name is not None:
-            return "->" + name
-
-        return None
+        return get_name(entity, offset=0)
 
     @cache
     def lookup(addr: int, exact: bool = False, indirect: bool = False) -> str | None:
@@ -131,7 +244,10 @@ def create_name_lookup(
         if indirect:
             return indirect_lookup(addr)
 
-        entity = db.get(image_id, addr, exact=exact)
+        if exact:
+            entity = db.get(image_id, addr, exact=True)
+        else:
+            entity = paired_containing(addr) or db.get(image_id, addr, exact=False)
 
         if entity is None:
             return None

@@ -153,6 +153,64 @@ def test_reject_different_call_target():
     assert verify_effective_match(orig, recomp) is False
 
 
+def test_virtual_call_uses_receiver_and_slot_not_vtable_register():
+    orig = [
+        "mov eax, dword ptr [esi + 4]",
+        "mov edx, dword ptr [eax]",
+        "mov ecx, eax",
+        "call dword ptr [edx + 0xc]",
+    ]
+    recomp = [
+        "mov ecx, dword ptr [esi + 4]",
+        "mov eax, dword ptr [ecx]",
+        "mov edx, ecx",
+        "call dword ptr [eax + 0xc]",
+    ]
+    assert verify_effective_match(orig, recomp) is True
+
+
+def test_virtual_call_tolerates_equivalent_vtable_reload():
+    orig = [
+        "mov eax, dword ptr [esi + 4]",
+        "mov edx, dword ptr [eax]",
+        "mov ecx, eax",
+        "call dword ptr [edx + 0x80]",
+    ]
+    recomp = [
+        "mov ecx, dword ptr [esi + 4]",
+        "mov eax, dword ptr [ecx]",
+        "mov edx, dword ptr [ecx]",
+        "call dword ptr [edx + 0x80]",
+    ]
+    assert verify_effective_match(orig, recomp) is True
+
+
+def test_reject_virtual_call_with_different_receiver():
+    orig = [
+        "mov ecx, dword ptr [esi + 4]",
+        "mov eax, dword ptr [ecx]",
+        "call dword ptr [eax + 0x94]",
+    ]
+    recomp = [
+        "mov ecx, dword ptr [esi + 8]",
+        "mov eax, dword ptr [ecx]",
+        "call dword ptr [eax + 0x94]",
+    ]
+    assert verify_effective_match(orig, recomp) is False
+
+
+def test_reject_virtual_call_with_different_slot():
+    orig = [
+        "mov eax, dword ptr [ecx]",
+        "call dword ptr [eax + 0x80]",
+    ]
+    recomp = [
+        "mov eax, dword ptr [ecx]",
+        "call dword ptr [eax + 0x84]",
+    ]
+    assert verify_effective_match(orig, recomp) is False
+
+
 def test_reject_different_return_value():
     orig = ["mov eax, dword ptr [g_first (DATA)]", "ret"]
     recomp = ["mov eax, dword ptr [g_second (DATA)]", "ret"]
@@ -227,6 +285,36 @@ def test_commutative_add_operand_swap():
         "mov eax, dword ptr [ebp - 8]",
         "add eax, dword ptr [ebp - 4]",
         "mov dword ptr [esi], eax",
+    ]
+    assert verify_effective_match(orig, recomp) is True
+
+
+def test_pointer_add_lea_equals_add():
+    orig = [
+        "mov eax, dword ptr [esi + 4]",
+        "lea eax, [eax + 4]",
+        "mov dword ptr [edi], eax",
+    ]
+    recomp = [
+        "mov ecx, dword ptr [esi + 4]",
+        "add ecx, 4",
+        "mov dword ptr [edi], ecx",
+    ]
+    assert verify_effective_match(orig, recomp) is True
+
+
+def test_pointer_add_order_and_nested_address_are_canonical():
+    orig = [
+        "mov eax, dword ptr [esi + 4]",
+        "add eax, 4",
+        "lea eax, [eax]",
+        "mov dword ptr [edi], eax",
+    ]
+    recomp = [
+        "mov ecx, 4",
+        "add ecx, dword ptr [esi + 4]",
+        "mov ecx, ecx",
+        "mov dword ptr [edi], ecx",
     ]
     assert verify_effective_match(orig, recomp) is True
 

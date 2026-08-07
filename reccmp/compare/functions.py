@@ -12,6 +12,7 @@ from reccmp.compare.asm.const import JUMP_MNEMONICS
 from reccmp.compare.asm.instgen import InstructGen, InstructionMeta, SectionType
 from reccmp.compare.asm.parse import AsmExcerpt, ParseAsm
 from reccmp.compare.asm.replacement import (
+    canonical_callee_name,
     create_name_lookup,
 )
 from reccmp.compare.db import EntityDb, ReccmpMatch
@@ -436,7 +437,12 @@ class FunctionComparator:
             node = self.func_nodes.get(recomp_addr)
             if node is None:
                 continue
-            name = entity.match_name()
+            name = canonical_callee_name(
+                self.db,
+                ImageId.RECOMP,
+                entity,
+                self.equivalence_groups,
+            )
             if name is None:
                 continue
             _, abi = self._signature_of_node(node)
