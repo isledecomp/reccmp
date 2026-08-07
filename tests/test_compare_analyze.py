@@ -19,8 +19,11 @@ from reccmp.compare.analyze import (
     create_import_thunks,
     create_seh_entities,
 )
-from reccmp.analysis.funcinfo import FuncInfo, UnwindMapEntry
-from reccmp.compare.match_msvc import match_ref
+from reccmp.analysis.funcinfo import (
+    ExceptionRegistration,
+    FuncInfo,
+    UnwindMapEntry,
+)
 
 
 @pytest.fixture(name="db")
@@ -514,15 +517,28 @@ def test_create_seh_entities(db: EntityDb, image_id: ImageId):
     mock_funcinfo_data = [
         (handler_addr, FuncInfo(funcinfo_addr, (UnwindMapEntry(-1, unwind_addr),)))
     ]
-    with patch(
-        "reccmp.compare.analyze.find_eh_handlers", return_value=iter(mock_funcinfo_data)
-    ) as find_fn:
+    registration = ExceptionRegistration(0x100, handler_addr, mock_funcinfo_data[0][1])
+    with db.batch() as batch:
+        batch.set(image_id, 0x100, type=EntityType.FUNCTION)
+    with (
+        patch(
+            "reccmp.compare.analyze.find_eh_handlers",
+            return_value=iter(mock_funcinfo_data),
+        ) as find_fn,
+        patch(
+            "reccmp.compare.analyze.find_exception_registrations",
+            return_value=iter([registration]),
+        ),
+    ):
         create_seh_entities(db, image_id, pe_image)
         find_fn.assert_called()
 
     e = db.get(image_id, handler_addr)
     assert e is not None
     assert e.get("type") == EntityType.LABEL
+    side = "orig" if image_id == ImageId.ORIG else "recomp"
+    assert e.get(f"seh_owner_{side}") == 0x100
+    assert e.get(f"seh_funcinfo_{side}") == funcinfo_addr
 
     e = db.get(image_id, unwind_addr)
     assert e is not None
@@ -531,51 +547,3 @@ def test_create_seh_entities(db: EntityDb, image_id: ImageId):
     e = db.get(image_id, funcinfo_addr)
     assert e is not None
     assert e.get("type") == EntityType.DATA
-
-
-def test_create_seh_entities_pairs_funcinfo_by_owner_without_handler_anchors(
-    db: EntityDb,
-):
-    orig_owner, recomp_owner = 0x1000, 0x2000
-    orig_handler, recomp_handler = 0x1100, 0x2100
-    orig_funcinfo, recomp_funcinfo = 0x3000, 0x4000
-    with db.batch() as batch:
-        batch.set(ImageId.ORIG, orig_owner, type=EntityType.FUNCTION, size=32)
-        batch.set(ImageId.RECOMP, recomp_owner, type=EntityType.FUNCTION, size=32)
-        batch.match(orig_owner, recomp_owner)
-
-    orig_image = Mock(spec=PEImage)
-    recomp_image = Mock(spec=PEImage)
-    handlers = {
-        id(orig_image): [(orig_handler, FuncInfo(orig_funcinfo, ()))],
-        id(recomp_image): [(recomp_handler, FuncInfo(recomp_funcinfo, ()))],
-    }
-    owners = {
-        id(orig_image): [(orig_owner, orig_handler)],
-        id(recomp_image): [(recomp_owner, recomp_handler)],
-    }
-
-    with (
-        patch(
-            "reccmp.compare.analyze.find_eh_handlers",
-            side_effect=lambda image: iter(handlers[id(image)]),
-        ),
-        patch(
-            "reccmp.compare.analyze.find_function_eh_handlers",
-            side_effect=lambda image, functions, known: iter(owners[id(image)]),
-        ),
-    ):
-        create_seh_entities(db, ImageId.ORIG, orig_image)
-        create_seh_entities(db, ImageId.RECOMP, recomp_image)
-
-    match_ref(db)
-
-    funcinfo = db.get(ImageId.ORIG, orig_funcinfo)
-    assert funcinfo is not None
-    assert funcinfo.recomp_addr == recomp_funcinfo
-
-    # Interior handler labels remain unpaired so they do not become CFG anchors in
-    # otherwise exact owning-function comparisons.
-    handler = db.get(ImageId.ORIG, orig_handler)
-    assert handler is not None
-    assert not handler.matched

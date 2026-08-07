@@ -16,7 +16,7 @@ from reccmp.analysis import (
     find_import_thunks,
     find_vtordisp,
     find_eh_handlers,
-    find_function_eh_handlers,
+    find_exception_registrations,
     is_likely_latin1,
 )
 from reccmp.analysis.crt_startup import (
@@ -109,49 +109,73 @@ def create_analysis_floats(db: EntityDb, img_id: ImageId, binfile: PEImage):
                 )
 
 
+def _seh_side_key(img_id: ImageId, field: str) -> str:
+    side = "orig" if img_id == ImageId.ORIG else "recomp"
+    return f"seh_{field}_{side}"
+
+
+def _find_exception_owner(
+    db: EntityDb, img_id: ImageId, registration_addr: int
+) -> int | None:
+    """Relate a registration site to a function only near its entry point."""
+    owner = None
+    for entity in db.all(img_id):
+        addr = entity.addr(img_id)
+        assert addr is not None
+        if addr > registration_addr:
+            break
+        if entity.get("type") == EntityType.FUNCTION:
+            owner = addr
+
+    # VC5's inline form can do a few loads between entry and ``push handler``.
+    if owner is None or registration_addr - owner > 32:
+        return None
+    return owner
+
+
 def create_seh_entities(db: EntityDb, img_id: ImageId, binfile: PEImage):
-    """Create and relationally identify VC5 structured-exception metadata."""
-    handlers = dict(find_eh_handlers(binfile))
-    functions = (
-        (addr, size)
-        for entity in db.get_all()
-        if entity.get("type") == EntityType.FUNCTION
-        and (addr := entity.addr(img_id)) is not None
-        and (size := entity.size(img_id)) is not None
-    )
-    handler_owners = {
-        handler_addr: function_addr
-        for function_addr, handler_addr in find_function_eh_handlers(
-            binfile, functions, set(handlers)
+    """Create SEH entities and record their structural relationships."""
+    handlers = tuple(find_eh_handlers(binfile))
+    registrations: dict[int, list[int]] = {}
+    for registration in find_exception_registrations(binfile, handlers):
+        registrations.setdefault(registration.handler_addr, []).append(
+            registration.addr
         )
-    }
 
     with db.batch() as batch:
-        for handler_addr, funcinfo in handlers.items():
+        for handler_addr, funcinfo in handlers:
+            handler_fields = {
+                _seh_side_key(img_id, "funcinfo"): funcinfo.addr,
+            }
+            sites = registrations.get(handler_addr, [])
+            if len(sites) == 1:
+                owner = _find_exception_owner(db, img_id, sites[0])
+                if owner is not None:
+                    handler_fields[_seh_side_key(img_id, "owner")] = owner
+
             # Using names derived from symbols in .cpp.s generated asm.
             batch.set(
                 img_id,
                 handler_addr,
                 type=EntityType.LABEL,
                 name="__ehhandler",
+                **handler_fields,
             )
-            owner_addr = handler_owners.get(handler_addr)
-
-            batch.set(
-                img_id,
-                funcinfo.addr,
-                type=EntityType.DATA,
-                name="__ehfuncinfo",
-            )
-            if owner_addr is not None:
-                # Pair FuncInfo through the already-paired owning function. Matching the
-                # interior handler labels themselves would make them CFG anchors and can
-                # perturb otherwise exact function comparisons.
-                batch.set_ref(
+            if img_id == ImageId.ORIG:
+                batch.set(
                     img_id,
                     funcinfo.addr,
-                    ref=owner_addr,
-                    displacement=(-0x534548, -0x534548),  # "SEH" relationship kind
+                    type=EntityType.DATA,
+                    name="__ehfuncinfo",
+                    seh_unwinds_orig=tuple(funcinfo.unwinds),
+                )
+            else:
+                batch.set(
+                    img_id,
+                    funcinfo.addr,
+                    type=EntityType.DATA,
+                    name="__ehfuncinfo",
+                    seh_unwinds_recomp=tuple(funcinfo.unwinds),
                 )
 
             for unwind in funcinfo.unwinds:

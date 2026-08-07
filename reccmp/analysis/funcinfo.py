@@ -17,9 +17,6 @@ FUNCINFO_MAGIC_RE = re.compile(rb"\x20\x05\x93\x19", flags=re.S)
 # Match `mov eax, ____` instructions followed by jmp opcode. `B8 .... E9`
 MOV_EAX_RE = re.compile(rb"(?=\xb8(.{4})\xe9)", flags=re.S)
 
-# VC5 exception-registration prologue: push -1; push <handler>.
-EH_REGISTRATION_RE = re.compile(rb"\x6a\xff\x68(.{4})", flags=re.S)
-
 
 class UnwindMapEntry(NamedTuple):
     target_state: int
@@ -29,6 +26,14 @@ class UnwindMapEntry(NamedTuple):
 class FuncInfo(NamedTuple):
     addr: int
     unwinds: tuple[UnwindMapEntry, ...]
+
+
+class ExceptionRegistration(NamedTuple):
+    """Reference from a VC5 exception-registration prologue to its handler."""
+
+    addr: int
+    handler_addr: int
+    funcinfo: FuncInfo
 
 
 def find_funcinfo_offsets_in_buffer(buf: Buffer) -> Iterator[int]:
@@ -91,38 +96,34 @@ def find_eh_handlers(image: PEImage) -> Iterator[tuple[int, FuncInfo]]:
                 yield (handler_addr, funcinfo)
 
 
-def find_function_eh_handlers(
+def find_exception_registrations(
     image: PEImage,
-    functions: Iterable[tuple[int, int]],
-    handler_addrs: set[int],
-) -> Iterator[tuple[int, int]]:
-    """Relate functions to handlers referenced by their VC5 EH prologue.
+    handlers: Iterable[tuple[int, FuncInfo]] | None = None,
+) -> Iterator[ExceptionRegistration]:
+    """Find VC5 function prologues that install a known EH handler.
 
-    Only mutually unique relationships are returned. This avoids assigning a shared or
-    coincidental handler-shaped operand by address order.
+    VC5 emits the handler address either as ``push imm32`` in the inline
+    registration sequence or as ``mov eax, imm32`` before calling its shared
+    EH-prologue helper.  A handler address is accepted only after its body has
+    independently been related to a valid FuncInfo record.
     """
-    owner_candidates: dict[int, set[int]] = {}
-    handler_candidates: dict[int, set[int]] = {}
+    if handlers is None:
+        handlers = find_eh_handlers(image)
 
-    for function_addr, function_size in functions:
-        if function_size <= 0:
-            continue
+    handler_to_funcinfo = dict(handlers)
+    if not handler_to_funcinfo:
+        return
 
-        # The registration record is emitted in the prologue. Limiting the search also
-        # prevents handler-looking constants in the body from becoming ownership proof.
-        body = image.read(function_addr, min(function_size, 64))
-        for match in EH_REGISTRATION_RE.finditer(body):
-            handler_addr = struct.unpack("<I", match.group(1))[0]
-            if handler_addr not in handler_addrs:
+    for region in image.get_code_regions():
+        buf = bytes(region.data)
+        # Both forms have a one-byte opcode followed by the handler address.
+        for offset in range(len(buf) - 4):
+            if buf[offset] not in (0x68, 0xB8):
                 continue
 
-            owner_candidates.setdefault(function_addr, set()).add(handler_addr)
-            handler_candidates.setdefault(handler_addr, set()).add(function_addr)
-
-    for function_addr, candidates in owner_candidates.items():
-        if len(candidates) != 1:
-            continue
-
-        (handler_addr,) = candidates
-        if handler_candidates[handler_addr] == {function_addr}:
-            yield function_addr, handler_addr
+            handler_addr = struct.unpack_from("<I", buf, offset + 1)[0]
+            funcinfo = handler_to_funcinfo.get(handler_addr)
+            if funcinfo is not None:
+                yield ExceptionRegistration(
+                    region.addr + offset, handler_addr, funcinfo
+                )

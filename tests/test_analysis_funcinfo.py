@@ -3,12 +3,13 @@
 from unittest.mock import Mock
 
 from reccmp.formats import PEImage
+from reccmp.formats.image import ImageRegion
 from reccmp.analysis.funcinfo import (
     UnwindMapEntry,
     find_mov_eax_jmp_in_buffer,
     find_eh_handlers,
+    find_exception_registrations,
     find_funcinfo,
-    find_function_eh_handlers,
 )
 
 
@@ -50,42 +51,36 @@ def test_funcinfo_handlers(binfile: PEImage):
     ]
 
 
-def test_find_function_eh_handlers_requires_mutual_uniqueness():
-    handler_a, handler_b, handler_c, handler_d = (
-        0x401100,
-        0x401200,
-        0x401300,
-        0x401400,
+def test_find_exception_registrations_vc5_forms():
+    funcinfo = Mock()
+    handler_push = 0x12345678
+    handler_mov = 0x23456789
+    code = (
+        b"\x6a\xff\x68"
+        + handler_push.to_bytes(4, "little")
+        + b"\xb8"
+        + handler_mov.to_bytes(4, "little")
+        + b"\xe8\0\0\0\0"
     )
     image = Mock(spec=PEImage)
-    bodies = {
-        0x401000: b"\x55\x8b\xec\x6a\xff\x68" + handler_a.to_bytes(4, "little"),
-        0x402000: b"\x6a\xff\x68" + handler_b.to_bytes(4, "little"),
-        0x403000: b"\x6a\xff\x68" + handler_b.to_bytes(4, "little"),
-        0x404000: (
-            b"\x6a\xff\x68"
-            + handler_c.to_bytes(4, "little")
-            + b"\x6a\xff\x68"
-            + handler_d.to_bytes(4, "little")
-        ),
-    }
-    image.read.side_effect = lambda addr, size: bodies[addr][:size]
+    image.get_code_regions.return_value = [ImageRegion(0x1000, memoryview(code))]
 
-    assert list(
-        find_function_eh_handlers(
+    registrations = list(
+        find_exception_registrations(
             image,
-            [(addr, len(body)) for addr, body in bodies.items()],
-            {handler_a, handler_b, handler_c, handler_d},
+            iter(((handler_push, funcinfo), (handler_mov, funcinfo))),
         )
-    ) == [(0x401000, handler_a)]
-
-
-def test_find_function_eh_handlers_ignores_body_constants_after_prologue():
-    handler = 0x401100
-    image = Mock(spec=PEImage)
-    body = b"\x90" * 64 + b"\x6a\xff\x68" + handler.to_bytes(4, "little")
-    image.read.return_value = body[:64]
-
-    assert not list(
-        find_function_eh_handlers(image, [(0x401000, len(body))], {handler})
     )
+
+    assert [(item.addr, item.handler_addr) for item in registrations] == [
+        (0x1002, handler_push),
+        (0x1007, handler_mov),
+    ]
+
+
+def test_find_exception_registrations_requires_known_handler():
+    image = Mock(spec=PEImage)
+    image.get_code_regions.return_value = [
+        ImageRegion(0x1000, memoryview(b"\x68\x78\x56\x34\x12"))
+    ]
+    assert not list(find_exception_registrations(image, iter(())))

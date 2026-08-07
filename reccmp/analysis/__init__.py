@@ -1,5 +1,5 @@
 from .float_const import find_float_consts
-from .funcinfo import find_eh_handlers, find_function_eh_handlers
+from .funcinfo import find_eh_handlers, find_exception_registrations
 from .imports import find_import_thunks
 from .string_const import is_likely_latin1
 from .vtordisp import find_vtordisp
