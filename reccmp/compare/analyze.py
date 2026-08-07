@@ -16,6 +16,7 @@ from reccmp.analysis import (
     find_import_thunks,
     find_vtordisp,
     find_eh_handlers,
+    find_function_eh_handlers,
     is_likely_latin1,
 )
 from reccmp.analysis.crt_startup import (
@@ -109,11 +110,24 @@ def create_analysis_floats(db: EntityDb, img_id: ImageId, binfile: PEImage):
 
 
 def create_seh_entities(db: EntityDb, img_id: ImageId, binfile: PEImage):
-    """Create entities for the SEH (structured exception handling)
-    handler and funcinfo struct. For images without a relocation table,
-    this will allow us to replace the addresses for both items."""
+    """Create and relationally identify VC5 structured-exception metadata."""
+    handlers = dict(find_eh_handlers(binfile))
+    functions = (
+        (addr, size)
+        for entity in db.get_all()
+        if entity.get("type") == EntityType.FUNCTION
+        and (addr := entity.addr(img_id)) is not None
+        and (size := entity.size(img_id)) is not None
+    )
+    handler_owners = {
+        handler_addr: function_addr
+        for function_addr, handler_addr in find_function_eh_handlers(
+            binfile, functions, set(handlers)
+        )
+    }
+
     with db.batch() as batch:
-        for handler_addr, funcinfo in find_eh_handlers(binfile):
+        for handler_addr, funcinfo in handlers.items():
             # Using names derived from symbols in .cpp.s generated asm.
             batch.set(
                 img_id,
@@ -121,12 +135,24 @@ def create_seh_entities(db: EntityDb, img_id: ImageId, binfile: PEImage):
                 type=EntityType.LABEL,
                 name="__ehhandler",
             )
+            owner_addr = handler_owners.get(handler_addr)
+
             batch.set(
                 img_id,
                 funcinfo.addr,
                 type=EntityType.DATA,
                 name="__ehfuncinfo",
             )
+            if owner_addr is not None:
+                # Pair FuncInfo through the already-paired owning function. Matching the
+                # interior handler labels themselves would make them CFG anchors and can
+                # perturb otherwise exact function comparisons.
+                batch.set_ref(
+                    img_id,
+                    funcinfo.addr,
+                    ref=owner_addr,
+                    displacement=(-0x534548, -0x534548),  # "SEH" relationship kind
+                )
 
             for unwind in funcinfo.unwinds:
                 if unwind.action_addr != 0:

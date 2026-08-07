@@ -3,7 +3,7 @@ https://www.openrce.org/articles/full_view/21"""
 
 import re
 import struct
-from typing import Iterator, NamedTuple
+from typing import Iterable, Iterator, NamedTuple
 from typing_extensions import Buffer
 from reccmp.formats import PEImage
 
@@ -16,6 +16,9 @@ FUNCINFO_MAGIC_RE = re.compile(rb"\x20\x05\x93\x19", flags=re.S)
 
 # Match `mov eax, ____` instructions followed by jmp opcode. `B8 .... E9`
 MOV_EAX_RE = re.compile(rb"(?=\xb8(.{4})\xe9)", flags=re.S)
+
+# VC5 exception-registration prologue: push -1; push <handler>.
+EH_REGISTRATION_RE = re.compile(rb"\x6a\xff\x68(.{4})", flags=re.S)
 
 
 class UnwindMapEntry(NamedTuple):
@@ -86,3 +89,40 @@ def find_eh_handlers(image: PEImage) -> Iterator[tuple[int, FuncInfo]]:
             if (funcinfo := bytes_to_addr.get(funcinfo_bytes)) is not None:
                 # Return the EH handler address and the referenced FuncInfo struct
                 yield (handler_addr, funcinfo)
+
+
+def find_function_eh_handlers(
+    image: PEImage,
+    functions: Iterable[tuple[int, int]],
+    handler_addrs: set[int],
+) -> Iterator[tuple[int, int]]:
+    """Relate functions to handlers referenced by their VC5 EH prologue.
+
+    Only mutually unique relationships are returned. This avoids assigning a shared or
+    coincidental handler-shaped operand by address order.
+    """
+    owner_candidates: dict[int, set[int]] = {}
+    handler_candidates: dict[int, set[int]] = {}
+
+    for function_addr, function_size in functions:
+        if function_size <= 0:
+            continue
+
+        # The registration record is emitted in the prologue. Limiting the search also
+        # prevents handler-looking constants in the body from becoming ownership proof.
+        body = image.read(function_addr, min(function_size, 64))
+        for match in EH_REGISTRATION_RE.finditer(body):
+            handler_addr = struct.unpack("<I", match.group(1))[0]
+            if handler_addr not in handler_addrs:
+                continue
+
+            owner_candidates.setdefault(function_addr, set()).add(handler_addr)
+            handler_candidates.setdefault(handler_addr, set()).add(function_addr)
+
+    for function_addr, candidates in owner_candidates.items():
+        if len(candidates) != 1:
+            continue
+
+        (handler_addr,) = candidates
+        if handler_candidates[handler_addr] == {function_addr}:
+            yield function_addr, handler_addr
