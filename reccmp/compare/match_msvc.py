@@ -399,6 +399,27 @@ def match_strings(db: EntityDb, report: ReccmpReportProtocol = reccmp_report_nop
                 )
 
 
+def classify_exact_string_aliases(db: EntityDb) -> None:
+    """Record side-local duplicate strings once a unique canonical pair exists."""
+    canonical: dict[tuple[EntityType, str], set[int]] = {}
+    for canonical_entity in db.get_matches():
+        entity_type = canonical_entity.get("type")
+        text = canonical_entity.get("name")
+        if entity_type in (EntityType.STRING, EntityType.WIDECHAR) and text:
+            canonical.setdefault((entity_type, text), set()).add(
+                canonical_entity.orig_addr
+            )
+
+    for image_id in (ImageId.ORIG, ImageId.RECOMP):
+        for candidate in tuple(db.unexplained(image_id)):
+            entity_type = candidate.get("type")
+            text = candidate.get("name")
+            identities = canonical.get((entity_type, text), set())
+            addr = candidate.addr(image_id)
+            if addr is not None and len(identities) == 1:
+                db.set_alias(image_id, addr, next(iter(identities)))
+
+
 def match_lines(
     db: EntityDb,
     lines: LinesDb,

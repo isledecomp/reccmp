@@ -13,6 +13,7 @@ from reccmp.compare.match_msvc import (
     match_vtables,
     match_ref,
     match_imports,
+    classify_exact_string_aliases,
 )
 from reccmp.compare.event import ReccmpEvent, ReccmpReportProtocol
 
@@ -941,3 +942,27 @@ def test_match_imports(db: EntityDb):
     e = db.get(ImageId.ORIG, 200)
     assert e is not None
     assert e.recomp_addr == 200
+
+
+def test_classify_exact_string_aliases_requires_unique_canonical(db):
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 0x1000, type=EntityType.STRING, name="same")
+        batch.set(ImageId.RECOMP, 0x2000, type=EntityType.STRING, name="same")
+        batch.match(0x1000, 0x2000)
+        batch.set(ImageId.ORIG, 0x1010, type=EntityType.STRING, name="same")
+        batch.set(ImageId.RECOMP, 0x2010, type=EntityType.STRING, name="same")
+        batch.set(ImageId.ORIG, 0x1100, type=EntityType.STRING, name="ambiguous")
+        batch.set(ImageId.RECOMP, 0x2100, type=EntityType.STRING, name="ambiguous")
+        batch.match(0x1100, 0x2100)
+        batch.set(ImageId.ORIG, 0x1110, type=EntityType.STRING, name="ambiguous")
+        batch.set(ImageId.RECOMP, 0x2110, type=EntityType.STRING, name="ambiguous")
+        batch.match(0x1110, 0x2110)
+        batch.set(ImageId.ORIG, 0x1120, type=EntityType.STRING, name="ambiguous")
+
+    classify_exact_string_aliases(db)
+
+    assert [entity.orig_addr for entity, _ in db.get_aliases(ImageId.ORIG)] == [0x1010]
+    assert [entity.recomp_addr for entity, _ in db.get_aliases(ImageId.RECOMP)] == [
+        0x2010
+    ]
+    assert db.alias_canonical_orig(ImageId.ORIG, 0x1120) is None

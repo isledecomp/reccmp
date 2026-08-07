@@ -3,6 +3,7 @@ These functions update the entity database based on analysis of the binary files
 """
 
 import logging
+import re
 import struct
 from reccmp.formats import Image, PEImage
 from reccmp.formats.exceptions import (
@@ -375,3 +376,115 @@ def complete_partial_strings(
                     image_id.name.lower(),
                     addr,
                 )
+
+
+def normalize_original_zero_size_data(db: EntityDb, binfile: PEImage) -> None:
+    """Retype structurally proven zero-size inventory rows conservatively.
+
+    Ghidra exports may describe interior code labels, E9 islands and named vtables as
+    generic DATA. Function containment, exact opcodes and pointer-run/name agreement
+    are sufficient type evidence; all other rows remain DATA for manual xref work.
+    """
+    functions: list[tuple[int, int]] = []
+    code_ranges = [region.range for region in binfile.get_code_regions()]
+    for entity in db.all(ImageId.ORIG):
+        if entity.get("type") != EntityType.FUNCTION:
+            continue
+        addr = entity.orig_addr
+        size = entity.size(ImageId.ORIG)
+        if addr is not None and size is not None and size > 0:
+            functions.append((addr, addr + size))
+    functions.sort()
+
+    def containing_function(addr: int) -> bool:
+        for start, end in functions:
+            if start >= addr:
+                return False
+            if addr < end:
+                return True
+        return False
+
+    def in_code(addr: int) -> bool:
+        return any(addr in region for region in code_ranges)
+
+    with db.batch() as batch:
+        for entity in tuple(db.unmatched(ImageId.ORIG)):
+            if entity.get("type") != EntityType.DATA or entity.size(ImageId.ORIG):
+                continue
+            addr = entity.orig_addr
+            if addr is None:
+                continue
+            if containing_function(addr):
+                batch.set(ImageId.ORIG, addr, type=EntityType.LABEL)
+                continue
+
+            if in_code(addr):
+                raw = binfile.read(addr, 5)
+                if raw[0] == 0xE9:
+                    target = addr + 5 + int.from_bytes(raw[1:5], "little", signed=True)
+                    batch.set(
+                        ImageId.ORIG,
+                        addr,
+                        type=EntityType.THUNK,
+                        size=5,
+                        skip=True,
+                    )
+                    batch.set_ref(ImageId.ORIG, addr, ref=target)
+                continue
+
+            name = entity.best_name() or ""
+            match = re.fullmatch(r"(.+?)::(?:'vftable'|vftable)", name)
+            if match is None:
+                continue
+            slot_count = 0
+            for offset in range(0, 1024, 4):
+                (target,) = struct.unpack("<I", binfile.read(addr + offset, 4))
+                if not in_code(target):
+                    break
+                slot_count += 1
+            if slot_count >= 3:
+                batch.set(
+                    ImageId.ORIG,
+                    addr,
+                    type=EntityType.VTABLE,
+                    name=match.group(1),
+                    size=slot_count * 4,
+                )
+
+
+def classify_exact_vtable_aliases(
+    db: EntityDb, orig_bin: PEImage, recomp_bin: PEImage
+) -> None:
+    """Record exact duplicate vtable emissions against a unique canonical pair."""
+    for image_id, binfile in (
+        (ImageId.ORIG, orig_bin),
+        (ImageId.RECOMP, recomp_bin),
+    ):
+        canonical: dict[tuple[str, bytes], set[int]] = {}
+        for canonical_entity in db.get_matches_by_type(EntityType.VTABLE):
+            addr = canonical_entity.addr(image_id)
+            size = canonical_entity.size(image_id)
+            name = canonical_entity.best_name()
+            if addr is None or size is None or size <= 0 or name is None:
+                continue
+            try:
+                raw = bytes(binfile.read(addr, size))
+            except (InvalidVirtualAddressError, InvalidVirtualReadError):
+                continue
+            canonical.setdefault((name, raw), set()).add(canonical_entity.orig_addr)
+
+        for candidate in tuple(db.unexplained(image_id)):
+            if candidate.get("type") != EntityType.VTABLE:
+                continue
+            addr = candidate.addr(image_id)
+            size = candidate.size(image_id)
+            name = candidate.best_name()
+            if addr is None or size is None or size <= 0 or name is None:
+                continue
+            try:
+                raw = bytes(binfile.read(addr, size))
+            except (InvalidVirtualAddressError, InvalidVirtualReadError):
+                continue
+            identities = canonical.get((name, raw), set())
+            if len(identities) == 1:
+                db.set_alias(image_id, addr, next(iter(identities)))
