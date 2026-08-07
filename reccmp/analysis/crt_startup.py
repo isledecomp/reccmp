@@ -183,10 +183,12 @@ JMP_THUNK = b"\xe9\x0b\x00\x00\x00"
 """Observed thunk pattern for CRT init:
 jump to the function at start + 16 to set the variable."""
 
-CALL_JMP_THUNK = b"\xe8\x0b\x00\x00\x00\xe9\x16\x00\x00\x00"
+CALL_JMP_THUNK = b"\xe8\x0b\x00\x00\x00\xe9"
 """Observed thunk pattern for CRT init:
 call the function at start + 16 to set the variable,
-then jump to the function at start + 32 to set the atexit handler."""
+then jump to the function that sets the atexit handler.
+The position of the atexit setter depends on the size of the called function.
+(It is probably at +32, but not guaranteed to be there.)"""
 
 
 def unwrap_jump(binfile: Image, addr: int) -> tuple[bool, int]:

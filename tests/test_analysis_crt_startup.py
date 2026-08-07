@@ -295,13 +295,18 @@ def test_collector_calls_and_jumps():
     ]
 
 
-def test_unwrap_jump_call_and_jmp():
-    """Follows the two-instruction thunk to the function at the next 16-byte boundary."""
+CRT_CALL_JMP_PATTERNS = (
+    b"\xe8\x0b\x00\x00\x00\xe9\x16\x00\x00\x00",  # call 0x10, jmp 0x20
+    b"\xe8\x0b\x00\x00\x00\xe9\x36\x00\x00\x00",  # call 0x10, jmp 0x40
+)
+
+
+@pytest.mark.parametrize("code", CRT_CALL_JMP_PATTERNS)
+def test_unwrap_jump_call_and_jmp(code: bytes):
+    """Follows the two-instruction thunk to the function at the next 16-byte boundary.
+    The called function can be larger than 16 bytes, so the jmp displacement varies."""
     memory = bytearray(128)
-    memory[0:10] = (
-        b"\xe8\x0b\x00\x00\x00"  # call 0x10
-        b"\xe9\x16\x00\x00\x00"  # jmp 0x20
-    )
+    memory[0 : len(code)] = code
     memory[0x10] = 0xC3  # RET
 
     binfile = RawImage.from_memory(bytes(memory))
@@ -321,7 +326,8 @@ def test_unwrap_jump_jmp_only():
 
 
 CRT_NOT_THUNK_PATTERNS = (
-    b"\xe8\x3b\x00\x00\x00",  # call +0x40
+    b"\xe8\x0b\x00\x00\x00\xc3",  # call +0x10 with no jmp to follow it
+    b"\xe8\x3b\x00\x00\x00\xc3",  # call +0x40
     b"\xe9\x3b\x00\x00\x00",  # jmp +0x40
     b"\xe9\xdb\xff\xff\xff",  # jmp -0x20
 )
