@@ -42,7 +42,9 @@ def _image(body: bytes) -> Mock:
     return image
 
 
-def _comparator(db: EntityDb, orig_body: bytes, recomp_body: bytes) -> FunctionComparator:
+def _comparator(
+    db: EntityDb, orig_body: bytes, recomp_body: bytes
+) -> FunctionComparator:
     lines_db = LinesDb()
     report = Mock(spec=ReccmpReportProtocol)
     return FunctionComparator(
@@ -71,7 +73,9 @@ def _annotate_callee(db: EntityDb) -> None:
         batch.match(ORIG_CALLEE, RECOMP_CALLEE)
 
 
-def test_identical_bodies_with_paired_operands_are_alias_equivalent(db: EntityDb) -> None:
+def test_identical_bodies_with_paired_operands_are_alias_equivalent(
+    db: EntityDb,
+) -> None:
     _annotate_callee(db)
     orig = _body(ORIG_BODY, ORIG_CALLEE)
     recomp = _body(RECOMP_BODY, RECOMP_CALLEE)
@@ -109,6 +113,7 @@ def test_truncated_read_is_not_alias_equivalent(db: EntityDb) -> None:
 
 
 def test_vtable_slot_accepts_only_proven_alias_targets(db: EntityDb) -> None:
+    # pylint: disable=protected-access
     _annotate_callee(db)
     orig = _body(ORIG_BODY, ORIG_CALLEE)
     recomp = _body(RECOMP_BODY, RECOMP_CALLEE)

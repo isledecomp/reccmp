@@ -6,6 +6,10 @@ import struct
 from typing import TYPE_CHECKING
 
 from reccmp.formats import Image
+from reccmp.formats.exceptions import (
+    InvalidVirtualAddressError,
+    InvalidVirtualReadError,
+)
 from reccmp.types import EntityType, ImageId
 
 if TYPE_CHECKING:
@@ -18,7 +22,7 @@ def read_e9_jmp_target(binfile: Image, addr: int) -> int | None:
     """If *addr* begins a 5-byte ``jmp rel32`` (0xE9), return the jump target."""
     try:
         data = binfile.read(addr, 5)
-    except Exception:
+    except (InvalidVirtualAddressError, InvalidVirtualReadError):
         return None
     if len(data) < 5 or data[0] != 0xE9:
         return None
@@ -34,7 +38,7 @@ def is_plausible_vtable_target(binfile: Image, addr: int) -> bool:
         return False
     try:
         data = binfile.read(addr, 1)
-    except Exception:
+    except (InvalidVirtualAddressError, InvalidVirtualReadError):
         return False
     if not data:
         return False
@@ -54,7 +58,7 @@ def effective_orig_vtable_size(binfile: Image, orig_addr: int, read_size: int) -
 
     try:
         table = binfile.read(orig_addr, read_size)
-    except Exception:
+    except (InvalidVirtualAddressError, InvalidVirtualReadError):
         return read_size
 
     last_nonzero_code = -1

@@ -1,4 +1,8 @@
-from reccmp.compare.exact import compare_relocation_masked, mask_relocations, stable_ranges
+from reccmp.compare.exact import (
+    compare_relocation_masked,
+    mask_relocations,
+    stable_ranges,
+)
 
 
 def test_relocation_masked_exact_comparison_reports_mode() -> None:

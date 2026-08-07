@@ -60,7 +60,7 @@ def test_source_index_joins_markers_to_clang_semantics(tmp_path: Path) -> None:
                                     },
                                     {"kind": "CompoundStmt"},
                                 ],
-                            }
+                            },
                         ],
                     },
                 ],
@@ -80,7 +80,9 @@ def test_source_index_joins_markers_to_clang_semantics(tmp_path: Path) -> None:
     assert declaration.owning_class == "N::Widget"
     assert declaration.is_virtual
     assert index.classes[0].bases == ("N::Base",)
-    assert [(field.name, field.type) for field in index.classes[0].fields] == [("value", "int")]
+    assert [(field.name, field.type) for field in index.classes[0].fields] == [
+        ("value", "int")
+    ]
     assert index.classes[0].vtable_address == 0x2000
 
 
@@ -116,9 +118,9 @@ def test_source_index_records_isle_style_base_vtables(tmp_path: Path) -> None:
 
     assert len(index.classes) == 1
     assert index.classes[0].vtable_address == 0x2000
-    assert [(item.address, item.base_class) for item in index.classes[0].base_vtables] == [
-        (0x2100, "Secondary")
-    ]
+    assert [
+        (item.address, item.base_class) for item in index.classes[0].base_vtables
+    ] == [(0x2100, "Secondary")]
 
 
 def test_source_index_preserves_template_specialization_owner(tmp_path: Path) -> None:
@@ -181,9 +183,7 @@ def test_source_index_joins_standalone_template_vtable_by_name(tmp_path: Path) -
                 "completeDefinition": True,
                 "loc": {"file": str(source), "line": 1},
                 "range": {"end": {"file": str(source), "line": 1}},
-                "inner": [
-                    {"kind": "TemplateArgument", "type": {"qualType": "float"}}
-                ],
+                "inner": [{"kind": "TemplateArgument", "type": {"qualType": "float"}}],
             }
         ],
     }
@@ -200,8 +200,7 @@ def test_source_index_preserves_standalone_template_vtable_without_ast_record(
 ) -> None:
     source = tmp_path / "vector.cpp"
     source.write_text(
-        "// VTABLE: TEST 0x2000\n"
-        "// class Vec<float>\n",
+        "// VTABLE: TEST 0x2000\n// class Vec<float>\n",
         encoding="utf-8",
     )
     ast = {"kind": "TranslationUnitDecl"}
@@ -248,7 +247,12 @@ def test_source_index_combines_distinct_marker_targets(tmp_path: Path) -> None:
         [(ast, first)],
     )
 
-    assert [(marker.address, marker.declaration.qualified_name) for marker in index.markers] == [
+    marker_names: list[tuple[int, str]] = []
+    for marker in index.markers:
+        assert marker.declaration is not None
+        marker_names.append((marker.address, marker.declaration.qualified_name))
+
+    assert marker_names == [
         (0x1000, "One"),
         (0x2000, "Two"),
     ]

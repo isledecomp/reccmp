@@ -1,6 +1,8 @@
 """Tests for the relational effective-match verifier
 (reccmp.compare.asm.effective.verify_effective_match)."""
 
+import difflib
+
 from reccmp.compare.asm.effective import (
     CallAbi,
     FunctionMetadata,
@@ -590,8 +592,6 @@ def test_one_sided_redundant_copy():
     """The recomp emits an extra register-to-register copy: instruction
     counts differ, but the extra copy has no observable effect and the
     copied-through value is consumed by the matched store."""
-    import difflib
-
     orig = [
         "mov eax, dword ptr [esi]",
         "mov dword ptr [edi], eax",
@@ -610,8 +610,6 @@ def test_one_sided_redundant_copy():
 def test_one_sided_store_rejected():
     """An unmatched instruction with an observable effect (a store) is a
     real difference."""
-    import difflib
-
     orig = ["mov eax, dword ptr [esi]", "push eax"]
     recomp = [
         "mov eax, dword ptr [esi]",
@@ -666,8 +664,6 @@ def test_reject_divergent_value_escaping_through_branch():
 def test_reject_one_sided_return_value():
     """An unmatched `mov eax, 1` before ret is a differing return value,
     not dead code."""
-    import difflib
-
     orig = ["ret"]
     recomp = ["mov eax, 1", "ret"]
     codes = difflib.SequenceMatcher(None, orig, recomp).get_opcodes()
@@ -684,8 +680,6 @@ def test_reject_callee_saved_clobber_hidden_by_containment():
 
 def test_reject_one_sided_faulting_load():
     """An unmatched memory load may fault even if its result is dead."""
-    import difflib
-
     orig = ["mov eax, 1", "ret"]
     recomp = ["mov ecx, dword ptr [<OFFSET1>]", "mov eax, 1", "ret"]
     codes = difflib.SequenceMatcher(None, orig, recomp).get_opcodes()

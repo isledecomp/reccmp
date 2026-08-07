@@ -43,8 +43,10 @@ def coff_name(data: bytes, raw: bytes, string_table: int) -> str:
     """Decode an inline or string-table COFF name."""
     if raw[:4] == b"\0\0\0\0":
         offset = struct.unpack_from("<I", raw, 4)[0]
-        return data[string_table + offset :].split(b"\0", 1)[0].decode(
-            "utf-8", errors="replace"
+        return (
+            data[string_table + offset :]
+            .split(b"\0", 1)[0]
+            .decode("utf-8", errors="replace")
         )
     return raw[:8].rstrip(b"\0").decode("utf-8", errors="replace")
 
@@ -56,20 +58,27 @@ def _source_name(name: str) -> str:
     return value
 
 
-def parse_coff_functions(path: Path) -> list[CoffFunction]:  # pylint: disable=too-many-locals
+def parse_coff_functions(path: Path) -> list[CoffFunction]:
     """Parse external function COMDATs from an i386 COFF object.
 
     A function body stops at the next external function symbol or the end of
     its section.  Alignment padding is removed, while associated jump-table
     bytes remain available for callers that know the PDB function extent.
     """
+    # pylint: disable=too-many-locals
 
     data = path.read_bytes()
     if len(data) < 20:
         raise RuntimeError(f"COFF object is too short: {path}")
-    machine, section_count, _timestamp, symbol_table, symbol_count, optional_size, _flags = (
-        struct.unpack_from("<HHIIIHH", data, 0)
-    )
+    (
+        machine,
+        section_count,
+        _timestamp,
+        symbol_table,
+        symbol_count,
+        optional_size,
+        _flags,
+    ) = struct.unpack_from("<HHIIIHH", data, 0)
     if machine != 0x14C or optional_size != 0:
         raise RuntimeError(f"not an i386 COFF object: {path}")
     string_table = symbol_table + symbol_count * 18
@@ -78,9 +87,15 @@ def parse_coff_functions(path: Path) -> list[CoffFunction]:  # pylint: disable=t
     for index in range(1, section_count + 1):
         header = data[section_offset : section_offset + 40]
         name = coff_name(data, header[:8], string_table)
-        size, raw_offset, relocation_offset, _lines, relocation_count, _line_count, _attrs = (
-            struct.unpack_from("<IIIIHHI", header, 16)
-        )
+        (
+            size,
+            raw_offset,
+            relocation_offset,
+            _lines,
+            relocation_count,
+            _line_count,
+            _attrs,
+        ) = struct.unpack_from("<IIIIHHI", header, 16)
         sections[index] = {
             "name": name,
             "data": data[raw_offset : raw_offset + size] if raw_offset else b"",
@@ -94,7 +109,9 @@ def parse_coff_functions(path: Path) -> list[CoffFunction]:  # pylint: disable=t
     symbols: list[tuple[str, int, int, int, int]] = []
     symbol_index = 0
     while symbol_index < symbol_count:
-        raw = data[symbol_table + symbol_index * 18 : symbol_table + symbol_index * 18 + 18]
+        raw = data[
+            symbol_table + symbol_index * 18 : symbol_table + symbol_index * 18 + 18
+        ]
         name = coff_name(data, raw, string_table)
         value, section, symbol_type, storage, auxiliary_count = struct.unpack_from(
             "<IhHBB", raw, 8
@@ -116,7 +133,11 @@ def parse_coff_functions(path: Path) -> list[CoffFunction]:  # pylint: disable=t
         section = sections[section_index]
         entries.sort(key=lambda item: (item[1], item[0]))
         for position, (name, start) in enumerate(entries):
-            end = entries[position + 1][1] if position + 1 < len(entries) else len(section["data"])
+            end = (
+                entries[position + 1][1]
+                if position + 1 < len(entries)
+                else len(section["data"])
+            )
             body = section["data"][start:end].rstrip(b"\x90")
             if not body:
                 continue

@@ -315,7 +315,9 @@ class Compare:
             self.equivalence_groups, orig_addr
         ) == canonical_orig_addr(self.equivalence_groups, recomp_orig_addr)
 
-    def _slot_alias_equivalent(self, raw_orig: int, recomp: "ReccmpEntity | None") -> bool:
+    def _slot_alias_equivalent(
+        self, raw_orig: int, recomp: "ReccmpEntity | None"
+    ) -> bool:
         """Recomputed compiler-alias acceptance for one vtable slot.
 
         MSVC folds identical COMDAT bodies, so one original address may

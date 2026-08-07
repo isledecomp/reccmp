@@ -284,6 +284,7 @@ class FunctionComparator:
         A bare original ``jmp rel32`` island (a stale incremental-link
         forwarder) is followed to the shared body it lands on.
         """
+        # pylint: disable=too-many-return-statements
 
         if size <= 0 or _depth > 3:
             return False
@@ -299,8 +300,8 @@ class FunctionComparator:
         if len(orig_raw) != size or len(recomp_raw) != size:
             return False
         if _is_bare_jmp_island(orig_raw):
-            island_target = orig_addr + 5 + int.from_bytes(
-                orig_raw[1:5], "little", signed=True
+            island_target = (
+                orig_addr + 5 + int.from_bytes(orig_raw[1:5], "little", signed=True)
             )
             return self.raw_pair_alias_equivalent(
                 island_target, recomp_addr, size, _depth=_depth + 1, _seen=seen
@@ -341,8 +342,8 @@ class FunctionComparator:
         comes from the annotated recomp entity; an unknown target is not
         evidence."""
 
-        (_, _, orig_mnemonic, orig_op) = orig_inst
-        (_, _, recomp_mnemonic, recomp_op) = recomp_inst
+        _, _, orig_mnemonic, orig_op = orig_inst
+        _, _, recomp_mnemonic, recomp_op = recomp_inst
         if orig_mnemonic != recomp_mnemonic:
             return False
         if orig_mnemonic != "call" and orig_mnemonic not in JUMP_MNEMONICS:

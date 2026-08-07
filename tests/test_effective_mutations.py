@@ -179,6 +179,7 @@ def _mutations(asm: list[str]):
     "name,orig,recomp,metadata", ACCEPTED_PAIRS, ids=[p[0] for p in ACCEPTED_PAIRS]
 )
 def test_pair_is_accepted(name, orig, recomp, metadata):
+    del name
     assert verify_effective_match(orig, recomp, metadata=metadata) is True
 
 
@@ -186,6 +187,7 @@ def test_pair_is_accepted(name, orig, recomp, metadata):
     "name,orig,recomp,metadata", ACCEPTED_PAIRS, ids=[p[0] for p in ACCEPTED_PAIRS]
 )
 def test_mutations_of_recomp_reject(name, orig, recomp, metadata):
+    del name
     survivors = []
     for description, mutated in _mutations(recomp):
         codes = difflib.SequenceMatcher(None, orig, mutated).get_opcodes()
@@ -200,6 +202,7 @@ def test_mutations_of_recomp_reject(name, orig, recomp, metadata):
     "name,orig,recomp,metadata", ACCEPTED_PAIRS, ids=[p[0] for p in ACCEPTED_PAIRS]
 )
 def test_mutations_of_orig_reject(name, orig, recomp, metadata):
+    del name
     survivors = []
     for description, mutated in _mutations(orig):
         codes = difflib.SequenceMatcher(None, mutated, recomp).get_opcodes()

@@ -480,6 +480,7 @@ class DecompParser:
             self._syntax_warning(AlertCode.UNKNOWN_ANNOTATION)
 
     def read_line(self, line: str):
+        # pylint: disable=too-many-return-statements,too-many-branches,too-many-statements
         if self.state == ReaderState.DONE:
             return
 

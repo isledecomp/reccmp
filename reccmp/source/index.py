@@ -444,7 +444,9 @@ def _ast_command(
         if argument in {"-c", "/c", "-o", "-MF", "-MT", "-MQ"}:
             skip_next = argument in {"-o", "-MF", "-MT", "-MQ"}
             continue
+        # codespell:ignore-begin
         if argument.startswith(("/Fo", "/Fd", "-o")):
+            # codespell:ignore-end
             continue
         filtered.append(argument)
     try:
