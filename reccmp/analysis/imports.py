@@ -1,6 +1,7 @@
 import re
 import struct
-from typing import Iterator, NamedTuple
+from collections.abc import Collection, Iterator
+from typing import NamedTuple
 from typing_extensions import Buffer
 from reccmp.formats import PEImage
 
@@ -28,20 +29,27 @@ def find_absolute_jumps_in_bytes(
         yield (base_addr + match.start() - 2, jmp_dest)
 
 
-def find_import_thunks(image: PEImage) -> Iterator[ImportThunk]:
-    """Imported functions may generate a thunk function somewhere in the code section.
-    These are 6-byte JMP instructions with absolute offset.
-    The functions given may or may not be thunks. For example: MSVC  _getSystemCP function
+def find_import_thunks(
+    image: PEImage, function_starts: Collection[int] = ()
+) -> Iterator[ImportThunk]:
+    """Find six-byte absolute jumps to known IAT entries.
+
+    A base relocation on the absolute operand is the usual evidence that the jump is an
+    import thunk. Fixed-base images can omit those relocations, so an exact function-start
+    entity is accepted as equivalent boundary evidence. Requiring either form of evidence
+    avoids treating an absolute import tail-jump inside a larger source function as a thunk.
     """
 
-    import_addrs = set(imp.addr for imp in image.imports)
+    import_addrs = {imp.addr for imp in image.imports}
     if not import_addrs:
         return
 
     for region in image.get_code_regions():
         for addr, jmp_dest in find_absolute_jumps_in_bytes(region.data, region.addr):
-            if addr + 2 not in image.relocations:
+            if jmp_dest not in import_addrs:
                 continue
 
-            if jmp_dest in import_addrs:
-                yield ImportThunk(addr, jmp_dest, 6)
+            if addr + 2 not in image.relocations and addr not in function_starts:
+                continue
+
+            yield ImportThunk(addr, jmp_dest, 6)

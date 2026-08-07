@@ -3,7 +3,8 @@
 import csv
 from pathlib import Path
 
-from reccmp.tools.roadmap import RoadmapRow, export_to_csv
+from reccmp.tools.roadmap import RoadmapRow, export_to_csv, match_type_abbreviation
+from reccmp.types import EntityType
 
 
 def _make_row(name: str, module: str = "LEGO1/define.cpp") -> RoadmapRow:
@@ -80,3 +81,8 @@ def test_export_to_csv_no_special_characters_unaffected(tmp_path):
             "module": "LEGO1/define.cpp",
         }
     ]
+
+
+def test_import_thunk_has_distinct_abbreviation():
+    assert match_type_abbreviation(EntityType.IMPORT) == "imp"
+    assert match_type_abbreviation(EntityType.IMPORT_THUNK) == "ith"

@@ -159,8 +159,16 @@ def create_import_thunks(db: EntityDb, image_id: ImageId, binfile: Image):
     if not isinstance(binfile, PEImage):
         return
 
+    function_starts = {
+        addr
+        for entity in db.get_all()
+        if entity.get("type") == EntityType.FUNCTION
+        and entity.size(image_id) == 6
+        and (addr := entity.addr(image_id)) is not None
+    }
+
     with db.batch() as batch:
-        for thunk in find_import_thunks(binfile):
+        for thunk in find_import_thunks(binfile, function_starts):
             batch.set(
                 image_id,
                 thunk.addr,

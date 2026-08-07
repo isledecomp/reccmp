@@ -1,5 +1,9 @@
 """Test find_import_thunks for PE images"""
 
+import struct
+from types import SimpleNamespace
+from unittest.mock import Mock
+
 import pytest
 from reccmp.formats import PEImage
 from reccmp.analysis.imports import (
@@ -33,3 +37,24 @@ def test_should_ignore_get_system_cp(binfile: PEImage):
     non-thunks because CALL instructions are relative (and not relocated)."""
     thunk_addrs = [thunk.addr for thunk in find_import_thunks(binfile)]
     assert 0x10091C6D not in thunk_addrs
+
+
+def test_fixed_base_import_thunk_requires_function_boundary():
+    """A fixed-base import jump is safe only at a known function entity boundary."""
+    thunk_addr = 0x401000
+    import_addr = 0x402000
+    image = Mock(spec=PEImage)
+    image.imports = [SimpleNamespace(addr=import_addr)]
+    image.relocations = set()
+    image.get_code_regions.return_value = [
+        SimpleNamespace(
+            addr=thunk_addr,
+            data=b"\xff\x25" + struct.pack("<I", import_addr),
+        )
+    ]
+
+    assert not list(find_import_thunks(image))
+    assert not list(find_import_thunks(image, function_starts={thunk_addr + 1}))
+    assert list(find_import_thunks(image, function_starts={thunk_addr})) == [
+        (thunk_addr, import_addr, 6)
+    ]

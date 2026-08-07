@@ -111,15 +111,21 @@ def print_sections(sections):
     print()
 
 
-ALLOWED_TYPE_ABBREVIATIONS = ["fun", "dat", "poi", "str", "vta", "flo"]
+TYPE_ABBREVIATIONS = {
+    EntityType.IMPORT: "imp",
+    EntityType.IMPORT_THUNK: "ith",
+}
+
+ALLOWED_TYPE_ABBREVIATIONS = ["fun", "dat", "poi", "str", "vta", "flo", "ith"]
 
 
 def match_type_abbreviation(mtype: int | None) -> str:
-    """Return abbreviation of the given EntityType name"""
+    """Return the stable roadmap abbreviation for an entity type."""
     if mtype is None:
         return ""
 
-    return EntityType(mtype).name.lower()[:3]
+    entity_type = EntityType(mtype)
+    return TYPE_ABBREVIATIONS.get(entity_type, entity_type.name.lower()[:3])
 
 
 def get_cmakefiles_prefix(module: str) -> str:

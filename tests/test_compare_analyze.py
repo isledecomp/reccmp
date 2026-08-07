@@ -464,6 +464,32 @@ def test_create_import_thunks(db: EntityDb):
     assert get_ref_addr(db, ImageId.ORIG, 0x2000) == 0x1000
 
 
+def test_create_fixed_base_import_thunk_from_six_byte_function(db: EntityDb):
+    """A six-byte PDB function entity supplies boundary evidence without relocations."""
+    with db.batch() as batch:
+        batch.set(ImageId.RECOMP, 0x2000, type=EntityType.FUNCTION, size=6)
+        batch.set(ImageId.RECOMP, 0x3000, type=EntityType.FUNCTION, size=7)
+
+    binfile = Mock(spec=PEImage)
+    binfile.imports = (ImageImport(addr=0x1000, module="TEST", name="Hello"),)
+    binfile.get_code_regions.return_value = (
+        ImageRegion(0x2000, b"\xff\x25\x00\x10\x00\x00"),
+        ImageRegion(0x3000, b"\xff\x25\x00\x10\x00\x00"),
+    )
+    binfile.relocations = set()
+
+    create_import_thunks(db, ImageId.RECOMP, binfile)
+
+    thunk = db.get(ImageId.RECOMP, 0x2000)
+    assert thunk is not None
+    assert thunk.get("type") == EntityType.IMPORT_THUNK
+    assert get_ref_addr(db, ImageId.RECOMP, 0x2000) == 0x1000
+
+    non_thunk = db.get(ImageId.RECOMP, 0x3000)
+    assert non_thunk is not None
+    assert non_thunk.get("type") == EntityType.FUNCTION
+
+
 def test_create_import_thunks_pe_only(db: EntityDb):
     """At the moment, we have seen import thunks on PE images only.
     create_import_thunks should be a no-op if the image is not PE."""
