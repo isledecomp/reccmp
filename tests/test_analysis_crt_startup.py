@@ -3,7 +3,8 @@ import pytest
 from reccmp.analysis.crt_startup import (
     get_function_fingerprint,
     find_crt_startup_labels,
-    analyze_crt_startup_functions,
+    read_crt_functions,
+    fingerprint_crt_functions,
     CrtStartupArray,
     create_crt_matches,
     UsedAddressCollector,
@@ -83,12 +84,13 @@ def test_xca_fingerprints_empty(binfile: PEImage):
     db = EntityDb()
 
     # Baseline: no entities so all fingerprints are empty
-    result = analyze_crt_startup_functions(db, ImageId.ORIG, binfile, XCA_XCZ_RANGE)
+    array = read_crt_functions(binfile, XCA_XCZ_RANGE)
+    fingerprint_crt_functions(db, ImageId.ORIG, binfile, array)
 
-    assert set(result.functions.keys()) == {addr for addr, _ in XCA_THUNK_MAPPING}
-    assert all(not v for v in result.functions.values())
+    assert set(array.functions.keys()) == {addr for addr, _ in XCA_THUNK_MAPPING}
+    assert all(not v for v in array.functions.values())
 
-    assert tuple(result.thunks.items()) == XCA_THUNK_MAPPING
+    assert tuple(array.thunks.items()) == XCA_THUNK_MAPPING
 
 
 def test_xca_fingerprints_not_variable(binfile: PEImage):
@@ -99,8 +101,9 @@ def test_xca_fingerprints_not_variable(binfile: PEImage):
         batch.set(ImageId.ORIG, 0x10102B28, name="g_spawnLocations")
         batch.match(0x10102B28, 0x10102B28)
 
-    result = analyze_crt_startup_functions(db, ImageId.ORIG, binfile, XCA_XCZ_RANGE)
-    assert not result.functions[0x1001A6D0]
+    array = read_crt_functions(binfile, XCA_XCZ_RANGE)
+    fingerprint_crt_functions(db, ImageId.ORIG, binfile, array)
+    assert not array.functions[0x1001A6D0]
 
 
 def test_xca_fingerprints_matched_variable(binfile: PEImage):
@@ -113,17 +116,17 @@ def test_xca_fingerprints_matched_variable(binfile: PEImage):
         )
         batch.match(0x10102B28, 0x10102B28)
 
-    result = analyze_crt_startup_functions(db, ImageId.ORIG, binfile, XCA_XCZ_RANGE)
-    assert result.functions[0x1001A6D0] == ((0x10102B28, False),)
+    array = read_crt_functions(binfile, XCA_XCZ_RANGE)
+    fingerprint_crt_functions(db, ImageId.ORIG, binfile, array)
+    assert array.functions[0x1001A6D0] == ((0x10102B28, False),)
 
 
 def test_xca_fingerprints_avoid_crash(binfile: PEImage):
-    db = EntityDb()
     # Misaligned end address will cause struct.iter_unpack to raise struct.error.
     modified_range = range(XCA_XCZ_RANGE.start, XCA_XCZ_RANGE.stop - 1)
 
     try:
-        analyze_crt_startup_functions(db, ImageId.ORIG, binfile, modified_range)
+        read_crt_functions(binfile, modified_range)
     except struct.error:
         assert False, "Should not throw"
 
@@ -292,52 +295,50 @@ def test_collector_calls_and_jumps():
     ]
 
 
-def jump_instruction(start: int, end: int, opcode: int = 0xE9) -> bytes:
-    """Create an instruction with the correct jump displacement."""
-    return struct.pack("<Bi", opcode, end - start - 5)
-
-
-CRT_THUNK_ORIENTATIONS = (
-    (0, 5),  # Thunk first, no gap
-    (0, 16),  # Thunk first, 16-byte-aligned
-    (5, 0),  # Function first, no gap
-    (16, 0),  # Function first, 16-byte-aligned
+CRT_CALL_JMP_PATTERNS = (
+    b"\xe8\x0b\x00\x00\x00\xe9\x16\x00\x00\x00",  # call 0x10, jmp 0x20
+    b"\xe8\x0b\x00\x00\x00\xe9\x36\x00\x00\x00",  # call 0x10, jmp 0x40
 )
 
 
-@pytest.mark.parametrize("opcode", (0xE8, 0xE9))  # CALL, JMP
-@pytest.mark.parametrize("thunk_addr, func_addr", CRT_THUNK_ORIENTATIONS)
-def test_unwrap_jump(thunk_addr: int, func_addr: int, opcode: int):
-    """Testing situations where we assume a jump or call is a thunk."""
-    thunk = jump_instruction(start=thunk_addr, end=func_addr, opcode=opcode)
-
-    # Prepare the instructions
+@pytest.mark.parametrize("code", CRT_CALL_JMP_PATTERNS)
+def test_unwrap_jump_call_and_jmp(code: bytes):
+    """Follows the two-instruction thunk to the function at the next 16-byte boundary.
+    The called function can be larger than 16 bytes, so the jmp displacement varies."""
     memory = bytearray(128)
-    memory[thunk_addr : thunk_addr + 5] = thunk
-    memory[func_addr] = 0xC3  # RET
+    memory[0 : len(code)] = code
+    memory[0x10] = 0xC3  # RET
 
     binfile = RawImage.from_memory(bytes(memory))
-    assert unwrap_jump(binfile, thunk_addr) == (True, func_addr)
-    assert unwrap_jump(binfile, func_addr) == (False, func_addr)
+    assert unwrap_jump(binfile, 0) == (True, 0x10)
+    assert unwrap_jump(binfile, 0x10) == (False, 0x10)
 
 
-CRT_NOT_A_THUNK_ORIENTATIONS = (
-    (0, 0x40),  # Thunk first
-    (0x60, 0),  # Function first
+def test_unwrap_jump_jmp_only():
+    """Follows the single-instruction thunk to the function at the next 16-byte boundary."""
+    memory = bytearray(128)
+    memory[0:5] = b"\xe9\x0b\x00\x00\x00"  # jmp 0x10
+    memory[0x10] = 0xC3  # RET
+
+    binfile = RawImage.from_memory(bytes(memory))
+    assert unwrap_jump(binfile, 0) == (True, 0x10)
+    assert unwrap_jump(binfile, 0x10) == (False, 0x10)
+
+
+CRT_NOT_THUNK_PATTERNS = (
+    b"\xe8\x0b\x00\x00\x00\xc3",  # call +0x10 with no jmp to follow it
+    b"\xe8\x3b\x00\x00\x00\xc3",  # call +0x40
+    b"\xe9\x3b\x00\x00\x00",  # jmp +0x40
+    b"\xe9\xdb\xff\xff\xff",  # jmp -0x20
 )
 
 
-@pytest.mark.parametrize("opcode", (0xE8, 0xE9))  # CALL, JMP
-@pytest.mark.parametrize("thunk_addr, func_addr", CRT_NOT_A_THUNK_ORIENTATIONS)
-def test_unwrap_jump_outside_thresh(thunk_addr: int, func_addr: int, opcode: int):
-    """Testing where we do NOT assume a jump or call is a thunk."""
-    thunk = jump_instruction(start=thunk_addr, end=func_addr, opcode=opcode)
-
-    # Prepare the instructions
+@pytest.mark.parametrize("code", CRT_NOT_THUNK_PATTERNS)
+def test_unwrap_jump_not_a_thunk(code: bytes):
+    """The function may begin with a call or jmp. It is not a thunk
+    unless the displacements match a thunk pattern exactly."""
     memory = bytearray(128)
-    memory[thunk_addr : thunk_addr + 5] = thunk
-    memory[func_addr] = 0xC3  # RET
+    memory[0x40 : 0x40 + len(code)] = code
 
     binfile = RawImage.from_memory(bytes(memory))
-    assert unwrap_jump(binfile, thunk_addr) == (False, thunk_addr)
-    assert unwrap_jump(binfile, func_addr) == (False, func_addr)
+    assert unwrap_jump(binfile, 0x40) == (False, 0x40)
