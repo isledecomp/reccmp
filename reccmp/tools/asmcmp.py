@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 import argparse
