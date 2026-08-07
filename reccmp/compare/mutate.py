@@ -91,6 +91,10 @@ def unique_names_for_overloaded_functions(db: EntityDb):
 
 
 def match_crt_startup(db: EntityDb, orig_bin: PEImage, recomp_bin: PEImage):
+    """Match CRT function entities established in create_crt_functions().
+    For best performance, call after set_max_size() has provided a limit for
+    CRT function size. Otherwise, the fingerprint sampler will read more
+    bytes than necessary for each function."""
     crt_orig = detect_crt_startup_arrays(db, ImageId.ORIG, orig_bin)
     crt_recomp = detect_crt_startup_arrays(db, ImageId.RECOMP, recomp_bin)
 
