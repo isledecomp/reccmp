@@ -118,8 +118,8 @@ def parse_args() -> argparse.Namespace:
     )
     argparse_add_project_target_args(parser)
 
-    input_group = parser.add_argument_group("Inputs")
-    output_group = parser.add_argument_group("Output options")
+    input_group = parser.add_argument_group(title="Inputs")
+    output_group = parser.add_argument_group(title="Output options")
     term_group = parser.add_argument_group(title="Terminal display options")
     asm_group = parser.add_argument_group(title="Asm rendering options")
 
@@ -263,8 +263,8 @@ def main() -> int:
     logging.basicConfig(level=args.loglevel, format="[%(levelname)s] %(message)s")
 
     compare = Compare.from_target(target)
-    compare.set_sanitize(args.sanitize)
-    compare.set_placeholder(args.placeholder)
+    compare.set_sanitize_option(args.sanitize)
+    compare.set_placeholder_option(args.placeholder)
 
     print()
 

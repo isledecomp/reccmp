@@ -469,9 +469,11 @@ def test_option_no_placeholders():
     """Demonstrating the use_placeholders=False option.
     Replace the value only if we have a name."""
     code = (
-        b"\xe8\xfb\x0f\x00\x00"  # call  0x2000
+        b"\xe8\xfb\x0f\x00\x00"  # call 0x2000
         b"\xa1\x34\x12\x00\x00"  # mov eax, dword ptr [0x1234]
         b"\x3d\x55\x55\x00\x00"  # cmp eax, 0x5555
+        b"\xff\x15\x34\x12\x00\x00"  # call dword ptr [0x1234]
+        b"\xff\x15\x00\x20\x00\x00"  # call dword ptr [0x2000]
     )
 
     # Assume everything is an address.
@@ -487,6 +489,8 @@ def test_option_no_placeholders():
         (0x1000, "call Hello"),
         (0x1005, "mov eax, dword ptr [0x1234]"),
         (0x100A, "cmp eax, 0x5555"),
+        (0x100F, "call dword ptr [0x1234]"),
+        (0x1015, "call dword ptr [Hello]"),
     ]
 
 

@@ -416,13 +416,13 @@ class Compare:
 
     ## Public API
 
-    def set_sanitize(self, value: bool) -> None:
+    def set_sanitize_option(self, value: bool) -> None:
         """Enable or disable replacing addresses with names or placeholders."""
-        self.function_comparator.set_sanitize(value)
+        self.function_comparator.set_sanitize_option(value)
 
-    def set_placeholder(self, value: bool) -> None:
+    def set_placeholder_option(self, value: bool) -> None:
         """Enable or disable using placeholders (`<OFFSET>`) in asm rendering."""
-        self.function_comparator.set_placeholder(value)
+        self.function_comparator.set_placeholder_option(value)
 
     def get_all(self) -> Iterator[ReccmpEntity]:
         return self._db.get_all()

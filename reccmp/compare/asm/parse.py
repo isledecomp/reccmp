@@ -116,6 +116,11 @@ class ParseAsm:
             self.indirect_replacements[addr] = name
             return name
 
+        if not self.options.use_placeholders:
+            # Ideally, you would get back the original string
+            # but we have already converted it to an int.
+            return hex(addr)
+
         placeholder = self._next_placeholder()
         self.indirect_replacements[addr] = placeholder
         return placeholder
