@@ -314,6 +314,31 @@ def test_complete_partial_strings_with_nulls(db: EntityDb):
     assert e.name == '"\\x00test"'
 
 
+def test_complete_partial_strings_trailing_null_spelling(db: EntityDb):
+    """A literal spelled "text\0" stores one more byte, which only the sized
+    (section contribution) reader can see; the unsized reader stops at the
+    first null. Both must produce the same name for the same bytes."""
+    binfile = Mock(spec=[])
+    binfile.read = Mock(return_value=b"text\x00\x00")
+    binfile.read_string = Mock(return_value=b"text")
+
+    with db.batch() as batch:
+        # Contribution-sized, like a recomp string from the PDB.
+        batch.set(ImageId.ORIG, 100, type=EntityType.STRING, size=6)
+        # No size metadata, like an orig string.
+        batch.set(ImageId.ORIG, 200, type=EntityType.STRING)
+
+    complete_partial_strings(db, ImageId.ORIG, binfile)
+
+    sized = db.get(ImageId.ORIG, 100)
+    unsized = db.get(ImageId.ORIG, 200)
+    assert sized is not None and unsized is not None
+    # Trailing nulls are storage, not content: the names agree.
+    assert sized.name == unsized.name == '"text"'
+    # The true extent stays on the sized entity.
+    assert sized.any_size() == 6
+
+
 def test_complete_partial_strings_widechar(db: EntityDb):
     """Should read data for a partially-initialized widechar entity."""
     binfile = Mock(spec=[])

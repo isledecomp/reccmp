@@ -10,8 +10,23 @@ from reccmp.types import EntityType, ImageId
 
 def entity_name_from_string(text: str, wide: bool = False) -> str:
     """Create an entity name for the given string by escaping
-    control characters and double quotes, then wrapping in double quotes."""
-    escaped = text.encode("unicode_escape").decode("utf-8").replace('"', '\\"')
+    control characters and double quotes, then wrapping in double quotes.
+
+    TRAILING null characters are stripped first, because the two images do not
+    report string extents the same way. In the recompiled image we know each
+    literal's true extent from its section contribution, so a source literal
+    spelled `"text\\0"` is read back as 'text\\x00'. In the original image there
+    is no such metadata and the reader stops at the first null, giving 'text'.
+    Substituting those two into the disassembly would make an operand pair that
+    refers to identical bytes compare as a difference -- i.e. it would score a
+    CORRECT source lower than an incorrect one. Trailing nulls are storage, not
+    content: a C string's identity for comparison purposes ends at its
+    terminator. Nulls in the INTERIOR are preserved, so the ability to read and
+    match strings containing embedded nulls (the reason the known extent is
+    used in the first place) is unaffected."""
+    escaped = (
+        text.rstrip("\0").encode("unicode_escape").decode("utf-8").replace('"', '\\"')
+    )
     return f'{"L" if wide else ""}"{escaped}"'
 
 

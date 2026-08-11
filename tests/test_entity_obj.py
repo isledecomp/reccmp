@@ -60,6 +60,16 @@ def test_entity_name_from_string():
     # Escaping double quotes (not part of unicode_escape conversion)
     assert entity_name_from_string('"quotes"') == '"\\"quotes\\""'
 
+    # Trailing nulls are storage, not content: the recomp reader knows each
+    # literal's true extent and includes the terminator, the orig reader stops
+    # at the first null. Strip them so both sides produce the same name.
+    assert entity_name_from_string("text\x00") == '"text"'
+    assert entity_name_from_string("text\x00", wide=True) == 'L"text"'
+    assert entity_name_from_string("\x00\x00") == '""'
+    # Interior nulls are content (embedded-null matching) and are preserved.
+    assert entity_name_from_string("a\x00b") == '"a\\x00b"'
+    assert entity_name_from_string("a\x00b\x00") == '"a\\x00b"'
+
     # Escaping extended ASCII (Latin1) character
     assert entity_name_from_string("®") == '"\\xae"'
     assert entity_name_from_string("®", wide=True) == 'L"\\xae"'
