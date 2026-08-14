@@ -262,7 +262,9 @@ class Compare:
         return compare
 
     def _compare_vtable(self, match: ReccmpMatch) -> EntityCompareResult:
-        vtable_size = match.any_size()
+        # Prefer the orig size if we have it (e.g. from a data source):
+        # the recomp size may be an estimate that over-reads the orig table.
+        vtable_size = match.any_size(ImageId.ORIG)
 
         # The vtable size should always be a multiple of 4 because that
         # is the pointer size. If it is not (for whatever reason)
