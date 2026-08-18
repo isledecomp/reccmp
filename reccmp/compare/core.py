@@ -1,6 +1,7 @@
 import logging
 import difflib
 import struct
+from itertools import zip_longest
 from typing import Callable, Iterator
 from typing_extensions import Self
 from reccmp.project.detect import RecCmpTarget
@@ -190,7 +191,7 @@ class Compare:
             set_max_size(self._db, img_id)
 
         match_crt_startup(self._db, self.orig_bin, self.recomp_bin)
-        check_vtables(self._db, self.orig_bin)
+        check_vtables(self._db, self.orig_bin, self.recomp_bin)
         match_ref(self._db, self.report)
         unique_names_for_overloaded_functions(self._db)
         name_thunks(self._db)
@@ -262,26 +263,46 @@ class Compare:
         return compare
 
     def _compare_vtable(self, match: ReccmpMatch) -> EntityCompareResult:
-        # Prefer the orig size if we have it (e.g. from a data source):
-        # the recomp size may be an estimate that over-reads the orig table.
-        vtable_size = match.any_size(ImageId.ORIG)
+        recomp_size = match.any_size(ImageId.RECOMP)
 
         # The vtable size should always be a multiple of 4 because that
         # is the pointer size. If it is not (for whatever reason)
         # it would cause iter_unpack to blow up so let's just fix it.
-        if vtable_size % 4 != 0:
+        if recomp_size % 4 != 0:
             logger.warning(
-                "Vtable for class %s has irregular size %d", match.name, vtable_size
+                "Vtable for class %s has irregular size %d", match.name, recomp_size
             )
-            vtable_size = 4 * (vtable_size // 4)
+            recomp_size = 4 * (recomp_size // 4)
 
-        orig_table = self.orig_bin.read(match.orig_addr, vtable_size)
-        recomp_table = self.recomp_bin.read(match.recomp_addr, vtable_size)
+        # The recomp size is an estimate (next-symbol distance or section
+        # contribution) and may over-count the table by a trailing alignment
+        # slot, so reading the orig table at that size can walk past the end of
+        # the real table. If a data source gives us the orig size, read each
+        # table at its own size instead.
+        orig_size = match.size(ImageId.ORIG)
+        if orig_size is None:
+            orig_size = recomp_size
+        elif orig_size % 4 != 0:
+            logger.warning(
+                "Vtable for class %s has irregular orig size %d", match.name, orig_size
+            )
+            orig_size = 4 * (orig_size // 4)
 
-        raw_addrs = zip(
-            [t for (t,) in struct.iter_unpack("<L", orig_table)],
-            [t for (t,) in struct.iter_unpack("<L", recomp_table)],
-        )
+        orig_table = self.orig_bin.read(match.orig_addr, orig_size)
+        recomp_table = self.recomp_bin.read(match.recomp_addr, recomp_size)
+
+        orig_addrs = [t for (t,) in struct.iter_unpack("<L", orig_table)]
+        recomp_addrs = [t for (t,) in struct.iter_unpack("<L", recomp_table)]
+
+        # Drop the trailing alignment slot that the recomp size may over-count,
+        # so it does not read as a virtual function that orig is missing.
+        # A real address past the end of the orig table is a virtual function
+        # that orig does not have, so keep it: zip_longest displays it with
+        # "(no match)" on the orig side.
+        while len(recomp_addrs) > len(orig_addrs) and recomp_addrs[-1] == 0:
+            recomp_addrs.pop()
+
+        raw_addrs = zip_longest(orig_addrs, recomp_addrs)
 
         def match_text(m: ReccmpEntity | None, raw_addr: int | None = None) -> str:
             """Format the function reference at this vtable index as text.
@@ -312,8 +333,14 @@ class Compare:
 
         # Now compare each pointer from the two vtables.
         for i, (raw_orig, raw_recomp) in enumerate(raw_addrs):
-            orig = self._db.get(ImageId.ORIG, raw_orig)
-            recomp = self._db.get(ImageId.RECOMP, raw_recomp)
+            orig = (
+                self._db.get(ImageId.ORIG, raw_orig) if raw_orig is not None else None
+            )
+            recomp = (
+                self._db.get(ImageId.RECOMP, raw_recomp)
+                if raw_recomp is not None
+                else None
+            )
 
             if (
                 orig is not None

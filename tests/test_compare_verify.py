@@ -13,11 +13,11 @@ def fixture_db() -> EntityDb:
     return EntityDb()
 
 
-def orig_bin_with_table(table: bytes) -> Mock:
-    """Stub binary whose read() serves a window into the given orig vtable bytes."""
-    orig_bin = Mock()
-    orig_bin.read = lambda addr, size: table[:size]
-    return orig_bin
+def stub_image(table: bytes) -> Mock:
+    """Stub binary whose read() serves a window into the given vtable bytes."""
+    image = Mock()
+    image.read = lambda addr, size: table[addr : addr + size]
+    return image
 
 
 def set_vtable_match(
@@ -29,7 +29,7 @@ def set_vtable_match(
     with db.batch() as batch:
         batch.set(
             ImageId.ORIG,
-            100,
+            0,
             name="Pet::`vftable'",
             type=EntityType.VTABLE,
             size=orig_size,
@@ -37,39 +37,63 @@ def set_vtable_match(
         )
         batch.set(
             ImageId.RECOMP,
-            500,
+            0,
             name="Pet::`vftable'",
             type=EntityType.VTABLE,
             size=recomp_size,
         )
-        batch.match(100, 500)
+        batch.match(0, 0)
 
 
-def test_known_orig_size_overrules_recomp_estimate(db, caplog):
-    """The recomp size is an estimate (next-symbol distance or section
-    contribution) that may include trailing alignment padding. A known orig
-    size must take priority so the padding bytes after the true table are
-    never scanned for null pointers."""
-    set_vtable_match(db, orig_size=8, recomp_size=16)
-    # Two real entries, then null alignment padding after the table.
-    table = struct.pack("<4L", 0x1000, 0x2000, 0, 0)
+def test_known_orig_size_ignores_recomp_padding(db, caplog):
+    """The recomp size may over-count the table by a trailing alignment slot.
+    That slot is not a virtual function, so it must not be reported as one."""
+    set_vtable_match(db, orig_size=8, recomp_size=12)
+    # Two real entries, then the alignment slot. Both tables are identical.
+    table = struct.pack("<3L", 0x1000, 0x2000, 0)
 
     with caplog.at_level("WARNING"):
-        check_vtables(db, orig_bin_with_table(table))
+        check_vtables(db, stub_image(table), stub_image(table))
 
     assert "is larger than orig vtable" not in caplog.text
 
 
+def test_known_orig_size_reports_real_extra_entry(db, caplog):
+    """A non-null pointer past the end of the orig table is a virtual function
+    that orig does not have, and is still reported."""
+    set_vtable_match(db, orig_size=8, recomp_size=12)
+    orig_table = struct.pack("<3L", 0x1000, 0x2000, 0)
+    recomp_table = struct.pack("<3L", 0x1000, 0x2000, 0x3000)
+
+    with caplog.at_level("WARNING"):
+        check_vtables(db, stub_image(orig_table), stub_image(recomp_table))
+
+    assert "is larger than orig vtable" in caplog.text
+
+
+def test_known_orig_size_equal_sizes_no_warning(db, caplog):
+    """Nothing to report when the two sizes agree."""
+    set_vtable_match(db, orig_size=8, recomp_size=8)
+    table = struct.pack("<2L", 0x1000, 0x2000)
+
+    with caplog.at_level("WARNING"):
+        check_vtables(db, stub_image(table), stub_image(table))
+
+    assert not caplog.text
+
+
 def test_known_orig_size_conflicts_with_upper_bound(db, caplog):
-    """A supplied orig size that exceeds the next-entity upper bound is
-    still reported."""
+    """A supplied orig size that exceeds the next-entity upper bound cannot be
+    correct. That is a problem with the data source, not a size difference, so
+    it is reported as its own thing."""
     set_vtable_match(db, orig_size=12, recomp_size=12, orig_max_size=8)
     table = struct.pack("<3L", 0x1000, 0x2000, 0x3000)
 
     with caplog.at_level("WARNING"):
-        check_vtables(db, orig_bin_with_table(table))
+        check_vtables(db, stub_image(table), stub_image(table))
 
-    assert "is larger than orig vtable" in caplog.text
+    assert "overruns the next entity" in caplog.text
+    assert "is larger than orig vtable" not in caplog.text
 
 
 def test_unknown_orig_size_max_size_heuristic(db, caplog):
@@ -79,7 +103,7 @@ def test_unknown_orig_size_max_size_heuristic(db, caplog):
     table = struct.pack("<3L", 0x1000, 0x2000, 0x3000)
 
     with caplog.at_level("WARNING"):
-        check_vtables(db, orig_bin_with_table(table))
+        check_vtables(db, stub_image(table), stub_image(table))
 
     assert "is larger than orig vtable" in caplog.text
 
@@ -91,7 +115,7 @@ def test_unknown_orig_size_null_scan_heuristic(db, caplog):
     table = struct.pack("<4L", 0x1000, 0x2000, 0, 0)
 
     with caplog.at_level("WARNING"):
-        check_vtables(db, orig_bin_with_table(table))
+        check_vtables(db, stub_image(table), stub_image(table))
 
     assert "is larger than orig vtable" in caplog.text
 
@@ -103,6 +127,6 @@ def test_unknown_orig_size_clean_table_no_warning(db, caplog):
     table = struct.pack("<3L", 0x1000, 0x2000, 0x3000)
 
     with caplog.at_level("WARNING"):
-        check_vtables(db, orig_bin_with_table(table))
+        check_vtables(db, stub_image(table), stub_image(table))
 
     assert "is larger than orig vtable" not in caplog.text

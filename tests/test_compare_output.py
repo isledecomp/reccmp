@@ -567,3 +567,88 @@ def test_report_function_accuracy():
         ]
     )
     assert report_function_accuracy(report) == (2, 1.5, 1.5)
+
+
+def test_compare_vtable_recomp_longer():
+    """A virtual function that exists only in recomp is still displayed in the
+    diff when we know the orig vtable's true size."""
+    function_bytes = b"\xc3\x00\x00\x00"  # `ret` padded to 4 bytes
+    functions = function_bytes + function_bytes
+
+    vtable_addr0 = b"\x00\x00\x00\x00"
+    vtable_addr4 = b"\x04\x00\x00\x00"
+
+    # Orig has one virtual function; recomp has a second one.
+    orig_mem = functions + vtable_addr0
+    recomp_mem = functions + vtable_addr0 + vtable_addr4
+
+    orig_bin = RawImage.from_memory(orig_mem)
+    recomp_bin = RawImage.from_memory(recomp_mem)
+
+    pdb = Mock(spec=CvdumpAnalysis)
+    compare = Compare(orig_bin, recomp_bin, pdb, "HELLO")
+
+    with get_db(compare).batch() as batch:
+        batch.set(ImageId.RECOMP, 0, type=EntityType.FUNCTION, name="func0", size=1)
+        batch.set(ImageId.RECOMP, 4, type=EntityType.FUNCTION, name="func1", size=1)
+        batch.set(ImageId.ORIG, 8, type=EntityType.VTABLE, name="hello", size=4)
+        batch.set(ImageId.RECOMP, 8, type=EntityType.VTABLE, name="hello", size=8)
+        batch.match(0, 0)
+        batch.match(4, 4)
+        batch.match(8, 8)
+
+    report = to_report(compare)
+    e = report.entities[8]
+    assert e is not None
+
+    # The extra entry is displayed and costs us the match.
+    assert e.accuracy != 1.0
+
+    udiff = get_udiff(e)
+    assert udiff is not None
+    rendered = repr(udiff)
+    assert "vtable0x04" in rendered
+    assert "func1" in rendered
+
+
+def test_compare_vtable_recomp_trailing_padding():
+    """The recomp size may over-count the table by a trailing alignment slot.
+    That slot is not a virtual function and must not appear in the diff."""
+    function_bytes = b"\xc3\x00\x00\x00"  # `ret` padded to 4 bytes
+    padding = b"\x00\x00\x00\x00"
+
+    vtable_addr0 = b"\x00\x00\x00\x00"
+
+    # Both tables hold one virtual function followed by an alignment slot.
+    orig_mem = function_bytes + vtable_addr0 + padding
+    recomp_mem = function_bytes + vtable_addr0 + padding
+
+    orig_bin = RawImage.from_memory(orig_mem)
+    recomp_bin = RawImage.from_memory(recomp_mem)
+
+    pdb = Mock(spec=CvdumpAnalysis)
+    compare = Compare(orig_bin, recomp_bin, pdb, "HELLO")
+
+    with get_db(compare).batch() as batch:
+        batch.set(ImageId.RECOMP, 0, type=EntityType.FUNCTION, name="func0", size=1)
+        batch.set(ImageId.ORIG, 4, type=EntityType.VTABLE, name="hello", size=4)
+        # The recomp size takes in the alignment slot after the table.
+        batch.set(ImageId.RECOMP, 4, type=EntityType.VTABLE, name="hello", size=8)
+        batch.match(0, 0)
+        batch.match(4, 4)
+
+    report = to_report(compare)
+    e = report.entities[4]
+    assert e is not None
+
+    # The padding slot is dropped, so the two tables match.
+    assert e.accuracy == 1.0
+
+    udiff = get_udiff(e)
+    assert udiff is not None
+    assert udiff == [
+        (
+            "@@ -vtable0x00,1 +vtable0x00,1 @@",
+            [{"both": [("vtable0x00", "(0x0 / 0x0)  :  func0", "vtable0x00")]}],
+        )
+    ]
