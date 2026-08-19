@@ -10,12 +10,12 @@ from reccmp.cvdump.runner import iter_cvdump_sections
 TYPES_16BIT = """
 *** Converting 16-bit types to 32-bit equivalents
 
-0x1000 : Length = 14, Leaf = 0x1201 LF_ARGLIST argument count = 1
+0x1000 : Length = 6, Leaf = 0x1201 LF_ARGLIST argument count = 0
 """
 
 # The same for a PDB whose type pool is already 32-bit.
 TYPES_32BIT = """
-0x1000 : Length = 14, Leaf = 0x1201 LF_ARGLIST argument count = 1
+0x1000 : Length = 6, Leaf = 0x1201 LF_ARGLIST argument count = 0
 """
 
 
@@ -57,7 +57,7 @@ def test_message_belongs_to_the_types_section():
         "\n",
         "*** Converting 16-bit types to 32-bit equivalents\n",
         "\n",
-        "0x1000 : Length = 14, Leaf = 0x1201 LF_ARGLIST argument count = 1\n",
+        "0x1000 : Length = 6, Leaf = 0x1201 LF_ARGLIST argument count = 0\n",
         "\n",
         "*** SYMBOLS\n",
         "\n",
