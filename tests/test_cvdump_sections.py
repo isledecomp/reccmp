@@ -1,6 +1,5 @@
-"""Tests for parsing the overall structure of cvdump text: how the output
-splits into sections, and the flags derived from section content — here, the
-16-bit type pool marker that decides the symbol truncation policy."""
+"""Tests for splitting cvdump output into sections, and for the 16-bit
+type pool marker that controls symbol truncation."""
 
 from reccmp.cvdump.parser import CvdumpParser
 from reccmp.cvdump.analysis import CvdumpAnalysis
@@ -20,9 +19,8 @@ TYPES_32BIT = """
 
 
 def test_16bit_type_pool_truncates():
-    """A TYPES section that opens with the 16-bit conversion message marks an
-    MSVC 4.x-era PDB, whose symbol names are truncated at 255 characters. Both
-    the parser flag and the derived truncation policy must reflect that."""
+    """The 16-bit conversion message means this is an MSVC 4.x-era PDB,
+    so symbol names are truncated at 255 characters."""
     parser = CvdumpParser()
     parser.read_section("TYPES", TYPES_16BIT)
 
@@ -31,10 +29,9 @@ def test_16bit_type_pool_truncates():
 
 
 def test_32bit_type_pool_does_not_truncate():
-    """A TYPES section without the 16-bit conversion message means the type
-    pool is already 32-bit and symbol names are not truncated at 255
-    characters. Truncating them anyway would make distinct long symbols
-    collide and produce arbitrary non-unique matches."""
+    """Without the conversion message, the type pool is 32-bit and symbol
+    names are not truncated. Truncating anyway could make different long
+    symbols collide and match incorrectly."""
     parser = CvdumpParser()
     parser.read_section("TYPES", TYPES_32BIT)
 
@@ -43,9 +40,9 @@ def test_32bit_type_pool_does_not_truncate():
 
 
 def test_no_types_section_assumes_truncation():
-    """Cvdump output with no TYPES section carries no evidence about the type
-    pool either way, so the parser reports None and the analysis falls back to
-    truncating symbol names — the historical behavior."""
+    """With no TYPES section we can't tell the PDB version. The parser
+    reports None and the analysis assumes truncation, which matches the
+    old behavior."""
     parser = CvdumpParser()
 
     assert parser.is_16bit_type_pool is None
@@ -53,10 +50,10 @@ def test_no_types_section_assumes_truncation():
 
 
 def test_converting_message_does_not_split_a_new_section():
-    """The 16-bit conversion message begins with three asterisks, just like a
-    section header. It must not start a new section: iter_cvdump_sections has
-    to keep it inside the body of the TYPES section, both so the split into
-    sections stays correct and so the parser can see the message at all."""
+    """The 16-bit conversion message starts with three asterisks, like a
+    section header. iter_cvdump_sections should keep it inside the TYPES
+    section body instead of starting a new section there, otherwise the
+    parser never sees the message."""
     stdout = [
         "\n",
         "*** TYPES\n",

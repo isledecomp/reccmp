@@ -147,11 +147,12 @@ class CvdumpAnalysis:
     @property
     def truncate_symbols(self) -> bool:
         """Whether symbol names in this PDB are truncated to 255 characters.
-        This is a limitation of the original design of MSVC 4.x-era PDBs
-        (see C4786); on later toolchains truncating makes distinct long
-        symbols collide and produces arbitrary non-unique matches. If the
-        TYPES section was not dumped we cannot tell, so assume truncation
-        and keep the historical behavior."""
+
+        MSVC 4.x-era PDBs truncate long symbol names (see C4786). Later
+        toolchains don't, and truncating their names anyway can make
+        different long symbols collide and match incorrectly. If the TYPES
+        section was not dumped, we can't tell the PDB version, so assume
+        truncation, which matches the old behavior."""
         return self.parser.is_16bit_type_pool is not False
 
     def __init__(self, parser: CvdumpParser):

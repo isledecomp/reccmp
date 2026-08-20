@@ -124,8 +124,8 @@ class CvdumpParser:
         self.symbols_parser = CvdumpSymbolsParser()
 
         self.is_16bit_type_pool: bool | None = None
-        """Whether the PDB has a 16-bit type pool, which identifies an MSVC 4.x-era
-        PDB. None if the TYPES section was not dumped, so we could not tell."""
+        """Whether the PDB has a 16-bit type pool (an MSVC 4.x-era PDB).
+        None if there was no TYPES section to check."""
 
     @property
     def symbols(self) -> list[SymbolsEntry]:
