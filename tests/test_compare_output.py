@@ -570,8 +570,8 @@ def test_report_function_accuracy():
 
 
 def test_compare_vtable_recomp_longer():
-    """A virtual function that exists only in recomp is still displayed in the
-    diff when we know the orig vtable's true size."""
+    """An extra virtual function on the recomp side should appear in the
+    diff when the orig vtable size is known."""
     function_bytes = b"\xc3\x00\x00\x00"  # `ret` padded to 4 bytes
     functions = function_bytes + function_bytes
 
@@ -601,7 +601,7 @@ def test_compare_vtable_recomp_longer():
     e = report.entities[8]
     assert e is not None
 
-    # The extra entry is displayed and costs us the match.
+    # The extra entry shows up in the diff and makes the match fail.
     assert e.accuracy != 1.0
 
     udiff = get_udiff(e)
@@ -612,8 +612,8 @@ def test_compare_vtable_recomp_longer():
 
 
 def test_compare_vtable_recomp_trailing_padding():
-    """The recomp size may over-count the table by a trailing alignment slot.
-    That slot is not a virtual function and must not appear in the diff."""
+    """Alignment padding after the recomp vtable should not show up in the
+    diff as an extra virtual function."""
     function_bytes = b"\xc3\x00\x00\x00"  # `ret` padded to 4 bytes
     padding = b"\x00\x00\x00\x00"
 
@@ -632,7 +632,7 @@ def test_compare_vtable_recomp_trailing_padding():
     with get_db(compare).batch() as batch:
         batch.set(ImageId.RECOMP, 0, type=EntityType.FUNCTION, name="func0", size=1)
         batch.set(ImageId.ORIG, 4, type=EntityType.VTABLE, name="hello", size=4)
-        # The recomp size takes in the alignment slot after the table.
+        # The recomp size includes the alignment padding after the table.
         batch.set(ImageId.RECOMP, 4, type=EntityType.VTABLE, name="hello", size=8)
         batch.match(0, 0)
         batch.match(4, 4)
@@ -641,7 +641,7 @@ def test_compare_vtable_recomp_trailing_padding():
     e = report.entities[4]
     assert e is not None
 
-    # The padding slot is dropped, so the two tables match.
+    # The padding is ignored, so the two tables match.
     assert e.accuracy == 1.0
 
     udiff = get_udiff(e)

@@ -274,11 +274,12 @@ class Compare:
             )
             recomp_size = 4 * (recomp_size // 4)
 
-        # The recomp size is an estimate (next-symbol distance or section
-        # contribution) and may over-count the table by a trailing alignment
-        # slot, so reading the orig table at that size can walk past the end of
-        # the real table. If a data source gives us the orig size, read each
-        # table at its own size instead.
+        # The PDB doesn't record a size for the vtable itself, so the recomp
+        # size is an estimate: it's either the gap between this symbol and the
+        # next, or the size listed in cvdump's SECTION CONTRIBUTIONS output.
+        # Either estimate can include alignment padding after the table, and
+        # reading the orig table with the padded size would run past the
+        # actual end of the table. Just use the orig size if known.
         orig_size = match.size(ImageId.ORIG)
         if orig_size is None:
             orig_size = recomp_size
@@ -294,10 +295,10 @@ class Compare:
         orig_addrs = [t for (t,) in struct.iter_unpack("<L", orig_table)]
         recomp_addrs = [t for (t,) in struct.iter_unpack("<L", recomp_table)]
 
-        # Drop the trailing alignment slot that the recomp size may over-count,
-        # so it does not read as a virtual function that orig is missing.
-        # A real address past the end of the orig table is a virtual function
-        # that orig does not have, so keep it: zip_longest displays it with
+        # Trailing null entries on the recomp side are alignment padding, not
+        # virtual functions missing from orig, so drop them. Non-null entries
+        # past the end of the orig table are kept: these are virtual functions
+        # that only exist in recomp, and zip_longest will show them with
         # "(no match)" on the orig side.
         while len(recomp_addrs) > len(orig_addrs) and recomp_addrs[-1] == 0:
             recomp_addrs.pop()

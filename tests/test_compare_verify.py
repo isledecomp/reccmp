@@ -37,8 +37,7 @@ def set_vtable_match(
 
 
 def test_size_difference_not_warned(db, caplog):
-    """A recomp vtable larger than orig is not reported here: the difference
-    shows up in the regular vtable comparison. (Warning dropped on review.)"""
+    """Size differences are reported by the vtable comparison, not here."""
     set_vtable_match(db, orig_size=8, recomp_size=12)
 
     with caplog.at_level("WARNING"):
@@ -48,9 +47,8 @@ def test_size_difference_not_warned(db, caplog):
 
 
 def test_known_orig_size_conflicts_with_upper_bound(db, caplog):
-    """A supplied orig size that exceeds the next-entity upper bound cannot be
-    correct. That is a problem with the data source, not a size difference, so
-    it is reported as its own thing."""
+    """Warn if the orig vtable size from the data source extends past the
+    next entity. A size like that can't be right."""
     set_vtable_match(db, orig_size=12, recomp_size=12, orig_max_size=8)
 
     with caplog.at_level("WARNING"):
@@ -60,7 +58,7 @@ def test_known_orig_size_conflicts_with_upper_bound(db, caplog):
 
 
 def test_unknown_orig_size_no_warning(db, caplog):
-    """Without an orig size there is nothing to validate."""
+    """No orig size means there is nothing to check."""
     set_vtable_match(db, recomp_size=16)
 
     with caplog.at_level("WARNING"):
