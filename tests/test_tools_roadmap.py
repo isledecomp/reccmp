@@ -1,12 +1,4 @@
-"""Testing the reccmp-roadmap tool's CSV export.
-
-Regression coverage for the unquoted-comma bug: `export_to_csv` used to build
-each line with a bare `",".join(...)`, so any field containing a comma (most
-commonly `name`, for a multi-argument template symbol like
-`set<MxAtom *,MxAtomCompare,allocator<MxAtom *> >`) produced a row with extra
-columns once read back. In this project that silently invented dozens of fake
-"modules" on the very first parse of a real dump.
-"""
+"""Tests for the reccmp-roadmap tool's CSV export."""
 
 import csv
 
@@ -28,15 +20,8 @@ def _make_row(name: str, module: str = "LEGO1/define.cpp") -> RoadmapRow:
 
 
 def test_export_to_csv_quotes_field_with_comma(tmp_path):
-    """A field containing a comma (as in a multi-argument template symbol)
-    must be quoted so a CSV reader recovers the original column count.
-
-    Mutation proof: reverting `export_to_csv` to
-    `f.write(",".join(map(or_blank, row)))` makes this fail two ways -- the
-    row-back-in has more than `len(RoadmapRow._fields)` columns (the comma
-    inside `name` gets read as two extra delimiters), and the recovered
-    `name`/`module` values no longer match what was written.
-    """
+    """A field with a comma in it (like a multi-argument template symbol)
+    has to be quoted so a CSV reader gets the original columns back."""
     template_name = "set<MxAtom *,MxAtomCompare,allocator<MxAtom *> >"
     row = _make_row(name=template_name)
 
@@ -69,8 +54,8 @@ def test_export_to_csv_quotes_field_with_comma(tmp_path):
 
 
 def test_export_to_csv_multiple_rows_stay_aligned(tmp_path):
-    """A comma-bearing field on one row must not shift the columns of
-    subsequent rows once read back."""
+    """A comma in one row shouldn't shift the columns of the rows after
+    it."""
     rows = [
         _make_row(name="foo<A,B>", module="ONE/a.cpp"),
         _make_row(name="bar", module="TWO/b.cpp"),
@@ -91,8 +76,8 @@ def test_export_to_csv_multiple_rows_stay_aligned(tmp_path):
 
 
 def test_export_to_csv_no_special_characters_unaffected(tmp_path):
-    """Plain values without commas/quotes still round-trip exactly
-    (no unwanted quoting introduced for the common case)."""
+    """Values without commas or quotes round-trip unchanged. The common
+    case gets no extra quoting."""
     row = _make_row(name="FUN_1000abcd", module="LEGO1/define.cpp")
 
     csv_file = tmp_path / "roadmap.csv"
