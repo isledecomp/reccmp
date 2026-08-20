@@ -191,7 +191,7 @@ class Compare:
             set_max_size(self._db, img_id)
 
         match_crt_startup(self._db, self.orig_bin, self.recomp_bin)
-        check_vtables(self._db, self.orig_bin, self.recomp_bin)
+        check_vtables(self._db)
         match_ref(self._db, self.report)
         unique_names_for_overloaded_functions(self._db)
         name_thunks(self._db)
