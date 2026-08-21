@@ -205,3 +205,23 @@ def test_string_reads(memory: bytes, expected_string: bytes, expected_widechar: 
     img = RawImage.from_memory(memory)
     assert img.read_string(0) == expected_string
     assert img.read_widechar(0) == expected_widechar
+
+
+@pytest.mark.parametrize("base_addr", (0x1000, 0x400000, 0x1000000))
+def test_base_addr(base_addr: int):
+    """`base_addr` defines the minimum address for the image.
+    Reads on addresses before `base_addr` should fail.
+    Reads on addresses after `base_addr` should work as expected."""
+    img = RawImage.from_memory(b"hello\x00", bss=10, base_addr=base_addr)
+
+    # Reads from zero (default base_addr) no longer work
+    with pytest.raises(InvalidVirtualAddressError):
+        img.read(0, 1)
+
+    assert img.read(base_addr, 1) == b"h"
+    assert img.read(base_addr + 10, 1) == b"\x00"
+    assert img.read_string(base_addr) == b"hello"
+
+    # Cannot read past the end of the image
+    with pytest.raises(InvalidVirtualAddressError):
+        img.read(base_addr + 16, 1)

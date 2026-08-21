@@ -38,6 +38,12 @@ _data_regex = re.compile(
 # e.g. 0004 "C:\work\lego-island\isle\3rdparty\smartheap\SHLW32MT.LIB" "check.obj"
 _module_regex = re.compile(r"(?P<id>\w{4})(?: \"(?P<lib>.+?)\")?(?: \"(?P<obj>.+?)\")")
 
+# cvdump prints this at the top of the TYPES section when the PDB has a 16-bit
+# type pool (TPI header version <= impv41), which identifies an MSVC 4.x-era PDB.
+# https://github.com/microsoft/microsoft-pdb/blob/805655a/cvdump/dumppdb.cpp#L244-L246
+# https://github.com/microsoft/microsoft-pdb/blob/805655a/PDB/dbi/tpi.cpp#L321-L324
+_CONVERT_16BIT_TYPES_MESSAGE = "*** Converting 16-bit types to 32-bit equivalents"
+
 
 class LinesEntry(NamedTuple):
     """User functions only"""
@@ -116,6 +122,10 @@ class CvdumpParser:
 
         self.types = CvdumpTypesParser()
         self.symbols_parser = CvdumpSymbolsParser()
+
+        self.is_16bit_type_pool: bool | None = None
+        """Whether the PDB has a 16-bit type pool (an MSVC 4.x-era PDB).
+        None if there was no TYPES section to check."""
 
     @property
     def symbols(self) -> list[SymbolsEntry]:
@@ -200,6 +210,7 @@ class CvdumpParser:
 
     def read_section(self, name: str, section: str):
         if name == "TYPES":
+            self.is_16bit_type_pool = _CONVERT_16BIT_TYPES_MESSAGE in section
             self.types.read_all(section)
 
         elif name == "SYMBOLS":
