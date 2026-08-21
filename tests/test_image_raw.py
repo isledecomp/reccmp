@@ -1,38 +1,13 @@
-import dataclasses
-from pathlib import Path
+"""Testing the RawImage class where the bare minimum API is implemented.
+This allows for testing the other methods like read() or read_string()
+with specific data or BSS region."""
+
 import pytest
-from reccmp.isledecomp.formats.image import Image
-from reccmp.isledecomp.formats.exceptions import (
+from reccmp.formats.exceptions import (
     InvalidVirtualAddressError,
     InvalidVirtualReadError,
 )
-
-
-@dataclasses.dataclass
-class RawImage(Image):
-    """For testing functions implemented in the base Image class."""
-
-    # Total size of the image.
-    # If it is more than the size of physical data, the remainder is uninitialized (all null).
-    size: int
-
-    @classmethod
-    def from_memory(cls, data: bytes, size: int = 0) -> "RawImage":
-        if size is None:
-            maxsize = len(data)
-        else:
-            maxsize = max(size, len(data))
-
-        view = memoryview(data).toreadonly()
-
-        image = cls(data=data, view=view, filepath=Path(""), size=maxsize)
-        return image
-
-    def seek(self, vaddr: int) -> tuple[bytes, int]:
-        if 0 <= vaddr < self.size:
-            return (self.data[vaddr:], self.size - vaddr)
-
-        raise InvalidVirtualAddressError
+from .raw_image import RawImage
 
 
 def test_raw_size_parameter():
@@ -42,18 +17,15 @@ def test_raw_size_parameter():
     img = RawImage.from_memory(b"test")
     assert img.size == 4
 
-    # Use the max of len(data) and size parameter.
-    img = RawImage.from_memory(b"test", size=0)
-    assert img.size == 4
-
-    img = RawImage.from_memory(b"test", size=10)
+    # BSS (uninitialized) bytes added to physical to comprise total footprint
+    img = RawImage.from_memory(b"test", bss=6)
     assert img.size == 10
 
-    # Size cannot be less than len(data) even if that is zero.
-    img = RawImage.from_memory(b"", size=-10)
-    assert img.size == 0
+    # BSS cannot be negative
+    with pytest.raises(AssertionError):
+        img = RawImage.from_memory(b"", bss=-10)
 
-    img = RawImage.from_memory(b"", size=10)
+    img = RawImage.from_memory(b"", bss=10)
     assert img.size == 10
 
 
@@ -107,7 +79,7 @@ def test_raw_all_initialized():
 
 
 def test_raw_partially_initialized():
-    img = RawImage.from_memory(b"test", size=10)
+    img = RawImage.from_memory(b"test", bss=6)
     # Seek should show only the physical bytes that exist.
     # The number of bytes remaining should take the full image size into account.
     assert img.seek(0) == (b"test", 10)
@@ -128,7 +100,7 @@ def test_raw_partially_initialized():
 
 
 def test_raw_all_uninitialized():
-    img = RawImage.from_memory(b"", size=10)
+    img = RawImage.from_memory(b"", bss=10)
     # There are no physical bytes but make sure the remaining count is correct.
     assert img.seek(0) == (b"", 10)
     assert img.seek(9) == (b"", 1)
@@ -174,7 +146,7 @@ def test_widechar_null_terminator_missing():
         img.read_widechar(0)
 
     # Throws InvalidVirtualAddressError if not for the uninitialized padding.
-    img = RawImage.from_memory(b"", size=1)
+    img = RawImage.from_memory(b"", bss=1)
     assert img.read_widechar(0) == b""
 
     # UTF-16 LE: 1 byte for null-terminator
@@ -233,3 +205,23 @@ def test_string_reads(memory: bytes, expected_string: bytes, expected_widechar: 
     img = RawImage.from_memory(memory)
     assert img.read_string(0) == expected_string
     assert img.read_widechar(0) == expected_widechar
+
+
+@pytest.mark.parametrize("base_addr", (0x1000, 0x400000, 0x1000000))
+def test_base_addr(base_addr: int):
+    """`base_addr` defines the minimum address for the image.
+    Reads on addresses before `base_addr` should fail.
+    Reads on addresses after `base_addr` should work as expected."""
+    img = RawImage.from_memory(b"hello\x00", bss=10, base_addr=base_addr)
+
+    # Reads from zero (default base_addr) no longer work
+    with pytest.raises(InvalidVirtualAddressError):
+        img.read(0, 1)
+
+    assert img.read(base_addr, 1) == b"h"
+    assert img.read(base_addr + 10, 1) == b"\x00"
+    assert img.read_string(base_addr) == b"hello"
+
+    # Cannot read past the end of the image
+    with pytest.raises(InvalidVirtualAddressError):
+        img.read(base_addr + 16, 1)

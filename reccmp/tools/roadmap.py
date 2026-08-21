@@ -6,32 +6,37 @@ report how "far off" the recomp symbol is from its proper place
 in the original binary.
 """
 
-import os
 import argparse
+import bisect
 import logging
+import os
 from pathlib import Path
 import statistics
-import bisect
 from typing import Iterator, NamedTuple
 import reccmp
-from reccmp.isledecomp import PEImage
-from reccmp.isledecomp.compare.db import ReccmpEntity
-from reccmp.isledecomp.cvdump import Cvdump
-from reccmp.isledecomp.compare import Compare as IsleCompare
-from reccmp.isledecomp.formats.exceptions import InvalidVirtualAddressError
-from reccmp.isledecomp.types import EntityType
+from reccmp.formats import PEImage
+from reccmp.compare.db import ReccmpEntity
+from reccmp.cvdump import Cvdump
+from reccmp.compare import Compare
+from reccmp.formats.exceptions import InvalidVirtualAddressError
+from reccmp.types import EntityType
 from reccmp.project.detect import (
     argparse_add_project_target_args,
     argparse_parse_project_target,
 )
 from reccmp.project.error import RecCmpProjectException
-from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
+from reccmp.project.logging import (
+    argparse_add_logging_args,
+    argparse_parse_logging,
+)
 
 logger = logging.getLogger(__name__)
 
 
 def or_blank(value) -> str:
     """Helper for dealing with potential None values in text output."""
+    if isinstance(value, int):
+        return hex(value)
     return "" if value is None else str(value)
 
 
@@ -69,20 +74,24 @@ class ModuleMap:
         ]
 
     def get_module(self, addr: int) -> tuple[str, str] | None:
+        # Avoid a crash if we did not read any section contributions.
+        if not self.section_contrib:
+            return None
+
         i = bisect.bisect_left(self.contrib_starts, addr)
         # If the addr matches the section contribution start, we are in the
         # right spot. Otherwise, we need to subtract one here.
         # We don't want the insertion point given by bisect, but the
         # section contribution that contains the address.
 
-        (potential_start, _, __) = self.section_contrib[i]
+        potential_start, _, __ = self.section_contrib[i]
         if potential_start != addr:
             i -= 1
 
         # Safety catch: clamp to range of indices from section_contrib.
         i = max(0, min(i, len(self.section_contrib) - 1))
 
-        (start, size, module_id) = self.section_contrib[i]
+        start, size, module_id = self.section_contrib[i]
         if start <= addr < start + size:
             if (module := self.module_lookup.get(module_id)) is not None:
                 return module
@@ -281,7 +290,7 @@ def suggest_order(results: list[RoadmapRow], module_map: ModuleMap, match_type: 
 
         print()
 
-    # Now display the order of all libaries in the final file.
+    # Now display the order of all libraries in the final file.
     library_order: dict[str, int] = {}
 
     for start, module in computed_order:
@@ -303,6 +312,7 @@ def suggest_order(results: list[RoadmapRow], module_map: ModuleMap, match_type: 
 
 def print_text_report(results: list[RoadmapRow]):
     """Print the result with original and recomp addresses."""
+
     for row in results:
         print(
             "  ".join(
@@ -322,6 +332,7 @@ def print_diff_report(results: list[RoadmapRow]):
     """Print only entries where we have the recomp address.
     This is intended for generating a file to diff against.
     The recomp addresses are always changing so we hide those."""
+
     for row in results:
         if row.orig_addr is None or row.recomp_addr is None:
             continue
@@ -340,10 +351,14 @@ def print_diff_report(results: list[RoadmapRow]):
 
 
 def export_to_csv(csv_file: str, results: list[RoadmapRow]):
+    header_renames = {
+        "sym_type": "row_type",
+    }
+    csv_header = list(header_renames.get(f, f) for f in RoadmapRow._fields)
+
     with open(csv_file, "w+", encoding="utf-8") as f:
-        f.write(
-            "orig_sect_ofs,recomp_sect_ofs,orig_addr,recomp_addr,displacement,row_type,size,name,module\n"
-        )
+        f.write(",".join(csv_header))
+        f.write("\n")
         for row in results:
             f.write(",".join(map(or_blank, row)))
             f.write("\n")
@@ -387,15 +402,20 @@ def main() -> int:
         logger.error(e.args[0])
         return 1
 
-    engine = IsleCompare.from_target(target)
+    engine = Compare.from_target(target)
     orig_bin = engine.orig_bin
     recomp_bin = engine.recomp_bin
+
+    if not isinstance(orig_bin, PEImage) or not isinstance(recomp_bin, PEImage):
+        raise ValueError("`roadmap` currently only supports 32-bit PE images")
 
     module_map = ModuleMap(target.recompiled_pdb, recomp_bin)
 
     def is_same_section(orig: int, recomp: int) -> bool:
-        """Compare the section name instead of the index.
-        LEGO1.dll adds extra sections for some reason. (Smacker library?)"""
+        """
+        It is better to compare the sections by name since orig and recomp might not have the same number of sections.
+        We have encountered this e.g. for LEGO1.
+        """
 
         try:
             orig_name = orig_bin.sections[orig - 1].name
@@ -420,18 +440,18 @@ def main() -> int:
             match.recomp_addr
         ):
             if (module_ref := module_map.get_module(match.recomp_addr)) is not None:
-                (_, module_name) = module_ref
+                _, module_name = module_ref
 
         row_type = match_type_abbreviation(match.entity_type)
 
         if match.orig_addr is not None:
             orig_addr = match.orig_addr
-            (orig_sect, orig_ofs) = orig_bin.get_relative_addr(match.orig_addr)
+            orig_sect, orig_ofs = orig_bin.get_relative_addr(match.orig_addr)
             orig_sect_ofs = f"{orig_sect:04}:{orig_ofs:08x}"
 
         if match.recomp_addr is not None:
             recomp_addr = match.recomp_addr
-            (recomp_sect, recomp_ofs) = recomp_bin.get_relative_addr(match.recomp_addr)
+            recomp_sect, recomp_ofs = recomp_bin.get_relative_addr(match.recomp_addr)
             recomp_sect_ofs = f"{recomp_sect:04}:{recomp_ofs:08x}"
 
         if (
@@ -450,7 +470,7 @@ def main() -> int:
             recomp_addr,
             displacement,
             row_type,
-            match.size,
+            match.any_size(),
             match.name,
             module_name,
         )

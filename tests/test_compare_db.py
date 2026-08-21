@@ -1,9 +1,9 @@
 """Testing compare database behavior, particularly matching"""
 
-import sqlite3
 from unittest.mock import patch
 import pytest
-from reccmp.isledecomp.compare.db import EntityDb
+from reccmp.compare.db import EntityDb
+from reccmp.types import EntityType, ImageId
 
 
 @pytest.fixture(name="db")
@@ -13,16 +13,22 @@ def fixture_db():
 
 def test_ignore_recomp_collision(db):
     """Duplicate recomp addresses are ignored"""
-    db.set_recomp_symbol(0x1234, name="hello", size=100)
-    db.set_recomp_symbol(0x1234, name="alias_for_hello", size=100)
+    with db.batch() as batch:
+        batch.set(ImageId.RECOMP, 0x1234, name="hello", size=100)
+
+    with db.batch() as batch:
+        batch.set(ImageId.RECOMP, 0x1234, name="alias_for_hello", size=100)
+
     syms = [*db.get_all()]
     assert len(syms) == 1
 
 
 def test_dynamic_metadata(db):
     """Using the API we have now"""
-    db.set_recomp_symbol(1234, hello="abcdef", option=True)
-    obj = db.get_by_recomp(1234)
+    with db.batch() as batch:
+        batch.set(ImageId.RECOMP, 1234, hello="abcdef", option=True)
+
+    obj = db.get(ImageId.RECOMP, 1234)
     assert obj.get("hello") == "abcdef"
 
     # Should preserve boolean type
@@ -35,8 +41,8 @@ def test_db_count(db):
     assert db.count() == 0
 
     with db.batch() as batch:
-        batch.set_orig(100)
-        batch.set_recomp(100)
+        batch.set(ImageId.ORIG, 100)
+        batch.set(ImageId.RECOMP, 100)
 
     assert db.count() == 2
 
@@ -52,10 +58,10 @@ def test_db_all_order(db):
     2. Unmatched entities with only a recomp_addr. Order by recomp_addr, ascending."""
     with db.batch() as batch:
         for addr in (600, 500, 300, 200):
-            batch.set_recomp(addr)
+            batch.set(ImageId.RECOMP, addr)
 
         for addr in (400, 300, 200, 100):
-            batch.set_orig(addr)
+            batch.set(ImageId.ORIG, addr)
 
         batch.match(200, 200)
         batch.match(300, 300)
@@ -73,61 +79,62 @@ def test_db_all_order(db):
 
 
 def test_get_by_exact(db):
-    """get_by_orig and get_by_recomp have two parameters: the address and the 'exact' option.
-    If exact=False, we return the entity at the address OR one at the preceding address if it exists.
+    """get() has two parameters: the address and the 'exact' option.
+    If exact=False, we return the entity at the address
+    OR one at the preceding address if it exists.
     """
 
     with db.batch() as batch:
-        batch.set_orig(100)
-        batch.set_recomp(100)
+        batch.set(ImageId.ORIG, 100)
+        batch.set(ImageId.RECOMP, 100)
 
     # If there is an exact addr match, return the entity.
-    assert db.get_by_orig(100) is not None
-    assert db.get_by_orig(100, exact=True) is not None
-    assert db.get_by_orig(100, exact=False) is not None
-    assert db.get_by_recomp(100) is not None
-    assert db.get_by_recomp(100, exact=True) is not None
-    assert db.get_by_recomp(100, exact=False) is not None
+    assert db.get(ImageId.ORIG, 100) is not None
+    assert db.get(ImageId.ORIG, 100, exact=True) is not None
+    assert db.get(ImageId.ORIG, 100, exact=False) is not None
+    assert db.get(ImageId.RECOMP, 100) is not None
+    assert db.get(ImageId.RECOMP, 100, exact=True) is not None
+    assert db.get(ImageId.RECOMP, 100, exact=False) is not None
 
     # If there is no exact match, return None.
-    assert db.get_by_orig(200) is None
-    assert db.get_by_orig(200, exact=True) is None
-    assert db.get_by_recomp(200) is None
-    assert db.get_by_recomp(200, exact=True) is None
+    assert db.get(ImageId.ORIG, 200) is None
+    assert db.get(ImageId.ORIG, 200, exact=True) is None
+    assert db.get(ImageId.RECOMP, 200) is None
+    assert db.get(ImageId.RECOMP, 200, exact=True) is None
 
     # Return the preceding entity if exact=False.
-    assert db.get_by_orig(200, exact=False) is not None
-    assert db.get_by_recomp(200, exact=False) is not None
+    assert db.get(ImageId.ORIG, 200, exact=False) is not None
+    assert db.get(ImageId.RECOMP, 200, exact=False) is not None
 
     # Should only return the preceding entity if one exists.
-    assert db.get_by_orig(50, exact=False) is None
-    assert db.get_by_recomp(50, exact=False) is None
+    assert db.get(ImageId.ORIG, 50, exact=False) is None
+    assert db.get(ImageId.RECOMP, 50, exact=False) is None
 
 
 def test_get_by_exact_keyword(db: EntityDb):
-    """For get_by_orig and get_by_recomp, the 'exact' keyword must be used to set its value."""
+    """For get(), the 'exact' keyword must be used to set its value."""
 
     # Should fail if called without the 'exact' keyword.
     # Disable mypy checking for these calls because we've intentionally created a typing error.
     with pytest.raises(TypeError):
-        db.get_by_orig(100, False)  # type: ignore
+        db.get(ImageId.ORIG, 100, False)  # type: ignore
 
     with pytest.raises(TypeError):
-        db.get_by_orig(100, True)  # type: ignore
+        db.get(ImageId.ORIG, 100, True)  # type: ignore
 
     with pytest.raises(TypeError):
-        db.get_by_recomp(100, True)  # type: ignore
+        db.get(ImageId.RECOMP, 100, True)  # type: ignore
 
     with pytest.raises(TypeError):
-        db.get_by_recomp(100, False)  # type: ignore
+        db.get(ImageId.RECOMP, 100, False)  # type: ignore
 
     # Succeeds with 'exact' keyword or if it the parameter is omitted.
-    db.get_by_orig(100)
-    db.get_by_orig(100, exact=False)
-    db.get_by_orig(100, exact=True)
-    db.get_by_recomp(100)
-    db.get_by_recomp(100, exact=False)
-    db.get_by_recomp(100, exact=True)
+    db.get(ImageId.ORIG, 100)
+    db.get(ImageId.ORIG, 100, exact=False)
+    db.get(ImageId.ORIG, 100, exact=True)
+    db.get(ImageId.RECOMP, 100)
+    db.get(ImageId.RECOMP, 100, exact=False)
+    db.get(ImageId.RECOMP, 100, exact=True)
 
 
 #### Testing new batch API ####
@@ -136,42 +143,43 @@ def test_get_by_exact_keyword(db: EntityDb):
 def test_batch(db):
     """Demonstrate batch with context manager"""
     with db.batch() as batch:
-        batch.set_orig(100, name="Hello")
-        batch.set_recomp(200, name="Test")
+        batch.set(ImageId.ORIG, 100, name="Hello")
+        batch.set(ImageId.RECOMP, 200, name="Test")
 
-    assert db.get_by_orig(100).name == "Hello"
-    assert db.get_by_recomp(200).name == "Test"
+    assert db.get(ImageId.ORIG, 100).name == "Hello"
+    assert db.get(ImageId.RECOMP, 200).name == "Test"
 
 
 def test_batch_upsert(db):
     """The 'set' methods overwrite existing values"""
-    db.set_orig_symbol(100, name="Hello")
-    db.set_recomp_symbol(200, name="Test")
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, name="Hello")
+        batch.set(ImageId.RECOMP, 200, name="Test")
 
     with db.batch() as batch:
-        batch.set_orig(100, name="abc")
-        batch.set_recomp(200, name="xyz")
+        batch.set(ImageId.ORIG, 100, name="abc")
+        batch.set(ImageId.RECOMP, 200, name="xyz")
 
-    assert db.get_by_orig(100).name == "abc"
-    assert db.get_by_recomp(200).name == "xyz"
+    assert db.get(ImageId.ORIG, 100).name == "abc"
+    assert db.get(ImageId.RECOMP, 200).name == "xyz"
 
 
 def test_batch_match_attach(db):
     """Match example with new orig addr.
     There is no existing entity with the orig addr being matched."""
     with db.batch() as batch:
-        batch.set_recomp(200, name="Hello")
+        batch.set(ImageId.RECOMP, 200, name="Hello")
         batch.match(100, 200)
 
     # Confirm match
-    assert db.get_by_orig(100).name == "Hello"
+    assert db.get(ImageId.ORIG, 100).name == "Hello"
 
 
 def test_batch_match_combine(db):
     """Match example with existing orig addr."""
     with db.batch() as batch:
-        batch.set_orig(100, name="Test")
-        batch.set_recomp(200, name="Hello")
+        batch.set(ImageId.ORIG, 100, name="Test")
+        batch.set(ImageId.RECOMP, 200, name="Hello")
 
     # Two entities
     assert len([*db.get_all()]) == 2
@@ -184,8 +192,8 @@ def test_batch_match_combine(db):
     assert len([*db.get_all()]) == 1
 
     # Confirm match. Both entities have the "name" attribute. Should use recomp value.
-    assert db.get_by_orig(100).recomp_addr == 200
-    assert db.get_by_orig(100).name == "Hello"
+    assert db.get(ImageId.ORIG, 100).recomp_addr == 200
+    assert db.get(ImageId.ORIG, 100).name == "Hello"
 
 
 def test_batch_match_combine_except_null(db):
@@ -193,44 +201,49 @@ def test_batch_match_combine_except_null(db):
     The exception is when the recomp entity has a NULL. We should use the orig attribute in this case.
     """
     with db.batch() as batch:
-        batch.set_orig(100, name="Test", test=123)
-        batch.set_recomp(200, name="Hello", test=None)
+        batch.set(ImageId.ORIG, 100, name="Test", test=123)
+        batch.set(ImageId.RECOMP, 200, name="Hello", test=None)
         batch.match(100, 200)
 
-    assert db.get_by_recomp(200).get("test") == 123
+    assert db.get(ImageId.RECOMP, 200).get("test") == 123
 
 
 def test_batch_match_combine_replace_null(db):
     """Confirm that we will replace a NULL on the orig side with a recomp value."""
     with db.batch() as batch:
-        batch.set_orig(100, name="Test", test=None)
-        batch.set_recomp(200, name="Hello", test=123)
+        batch.set(ImageId.ORIG, 100, name="Test", test=None)
+        batch.set(ImageId.RECOMP, 200, name="Hello", test=123)
         batch.match(100, 200)
 
-    assert db.get_by_recomp(200).get("test") == 123
+    assert db.get(ImageId.RECOMP, 200).get("test") == 123
 
 
-@pytest.mark.xfail(reason="Known limitation.")
-def test_batch_match_create(db):
-    """Matching requires either the orig or recomp entity to exist. It does not create entities."""
+def test_batch_match_create(db: EntityDb):
+    """Matching two addrs will create an entity."""
     with db.batch() as batch:
         batch.match(100, 200)
 
-    assert db.get_by_orig(100).recomp_addr == 200
+    ent = db.get(ImageId.ORIG, 100)
+    assert ent is not None
+    assert ent.recomp_addr == 200
+
+    ent = db.get(ImageId.RECOMP, 200)
+    assert ent is not None
+    assert ent.orig_addr == 100
 
 
 def test_batch_commit_twice(db):
     """Calling commit() clears the pending updates.
     Calling commit() again without adding new changes will not alter the database."""
     batch = db.batch()
-    batch.set_orig(100, name="Test")
+    batch.set(ImageId.ORIG, 100, name="Test")
 
-    with patch("reccmp.isledecomp.compare.db.EntityDb.bulk_orig_insert") as mock:
+    with patch("reccmp.compare.db.EntityDb.bulk_insert") as mock:
         batch.commit()
         batch.commit()
         mock.assert_called_once()
 
-    with patch("reccmp.isledecomp.compare.db.EntityDb.bulk_orig_insert") as mock:
+    with patch("reccmp.compare.db.EntityDb.bulk_insert") as mock:
         batch.commit()
         mock.assert_not_called()
 
@@ -240,18 +253,18 @@ def test_batch_cannot_alter_matched(db):
 
     # Set up the match
     with db.batch() as batch:
-        batch.set_recomp(200, name="Test")
+        batch.set(ImageId.RECOMP, 200, name="Test")
         batch.match(100, 200)
 
     # Confirm it is there
-    assert db.get_by_orig(100).recomp_addr == 200
+    assert db.get(ImageId.ORIG, 100).recomp_addr == 200
 
     # Try to change recomp=200 to match orig=101
     with db.batch() as batch:
         batch.match(101, 200)
 
     # Should not change it
-    assert db.get_by_recomp(200).orig_addr == 100
+    assert db.get(ImageId.RECOMP, 200).orig_addr == 100
 
 
 def test_batch_match_repeat_orig_addr(db):
@@ -259,71 +272,376 @@ def test_batch_match_repeat_orig_addr(db):
     As such, each orig and recomp address should appear only once. If either address is repeated
     and would collide with a previous staged match, ignore the new one."""
     with db.batch() as batch:
-        batch.set_recomp(200, name="Hello")
-        batch.set_recomp(201, name="Test")
+        batch.set(ImageId.RECOMP, 200, name="Hello")
+        batch.set(ImageId.RECOMP, 201, name="Test")
         batch.match(100, 200)
         batch.match(100, 201)
 
-    assert db.get_by_orig(100).recomp_addr == 200
-    assert db.get_by_recomp(201).orig_addr is None
+    assert db.get(ImageId.ORIG, 100).recomp_addr == 200
+    assert db.get(ImageId.RECOMP, 201).orig_addr is None
 
 
 def test_batch_match_repeat_recomp_addr(db):
     """Same as the previous test, except that we are repeating the recomp addr instead of orig."""
     with db.batch() as batch:
-        batch.set_recomp(200, name="Hello")
-        batch.set_recomp(201, name="Test")
+        batch.set(ImageId.RECOMP, 200, name="Hello")
+        batch.set(ImageId.RECOMP, 201, name="Test")
         batch.match(100, 200)
         batch.match(101, 200)
 
-    assert db.get_by_recomp(200).orig_addr == 100
-    assert db.get_by_orig(101) is None
+    assert db.get(ImageId.RECOMP, 200).orig_addr == 100
+    assert db.get(ImageId.ORIG, 101) is None
 
 
 def test_batch_exception_uncaught(db):
     """When using batch context manager, an uncaught exception should clear the staged changes."""
     try:
         with db.batch() as batch:
-            batch.set_orig(100, name="Test")
-            batch.set_recomp(200, test=123)
+            batch.set(ImageId.ORIG, 100, name="Test")
+            batch.set(ImageId.RECOMP, 200, test=123)
             batch.match(100, 200)
             _ = 1 / 0
     except ZeroDivisionError:
         pass
 
-    assert db.get_by_orig(100) is None
-    assert db.get_by_orig(200) is None
+    assert db.get(ImageId.ORIG, 100) is None
+    assert db.get(ImageId.ORIG, 200) is None
 
 
 def test_batch_exception_caught(db):
     """If the exception is caught, allow the batch to go through."""
     with db.batch() as batch:
-        batch.set_orig(100, name="Test")
-        batch.set_recomp(200, test=123)
+        batch.set(ImageId.ORIG, 100, name="Test")
+        batch.set(ImageId.RECOMP, 200, test=123)
         batch.match(100, 200)
         try:
             _ = 1 / 0
         except ZeroDivisionError:
             pass
 
-    assert db.get_by_orig(100) is not None
-    assert db.get_by_recomp(200) is not None
+    assert db.get(ImageId.ORIG, 100) is not None
+    assert db.get(ImageId.RECOMP, 200) is not None
 
 
-def test_batch_sqlite_exception(db):
-    """Should rollback if an exception occurs during the commit."""
+def test_generic_exists_function(db: EntityDb):
+    """exists() has a parameter to select which address space to check."""
+    assert db.exists(ImageId.ORIG, 100) is False
+    assert db.exists(ImageId.RECOMP, 100) is False
 
-    # Not using batch context for clarity
-    batch = db.batch()
-    batch.set_orig(100, name="Test")
-    batch.set_recomp(200, test=123)
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, name="Test")
 
-    # Insert bad data that will cause a binding error
-    batch.match(100, ("bogus",))
+    assert db.exists(ImageId.ORIG, 100) is True
+    assert db.exists(ImageId.RECOMP, 100) is False
 
-    with pytest.raises(sqlite3.Error):
-        batch.commit()
+    with db.batch() as batch:
+        batch.set(ImageId.RECOMP, 100, name="Test")
 
-    # Should rollback everything
-    assert db.get_by_orig(100) is None
-    assert db.get_by_recomp(200) is None
+    assert db.exists(ImageId.ORIG, 100) is True
+    assert db.exists(ImageId.RECOMP, 100) is True
+
+
+@pytest.mark.parametrize("image_id", ImageId)
+def test_generic_intersects_function(db: EntityDb, image_id: ImageId):
+    """intersects() checks both the given address and its footprint."""
+    assert db.intersects(image_id, 100) is False
+
+    with db.batch() as batch:
+        batch.set(image_id, 100, name="Test")
+
+    assert db.intersects(image_id, 100) is True
+    assert db.intersects(image_id, 105) is False
+    assert db.intersects(image_id, 110) is False
+
+    with db.batch() as batch:
+        batch.set(image_id, 100, size=8)
+
+    assert db.intersects(image_id, 100) is True
+    assert db.intersects(image_id, 105) is True
+    assert db.intersects(image_id, 110) is False
+
+
+def test_intersects_use_any_size(db: EntityDb):
+    """intersects() will use any size value in either address space."""
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, name="Test")
+        batch.set(ImageId.RECOMP, 100, size=8)
+        batch.match(100, 100)
+
+    assert db.intersects(ImageId.ORIG, 100) is True
+    assert db.intersects(ImageId.RECOMP, 100) is True
+    assert db.intersects(ImageId.ORIG, 105) is True
+    assert db.intersects(ImageId.RECOMP, 105) is True
+    assert db.intersects(ImageId.ORIG, 110) is False
+    assert db.intersects(ImageId.RECOMP, 110) is False
+
+
+def test_generic_exists_invalid_id(db: EntityDb):
+    """Should fail if the image id is outside the enum"""
+    with pytest.raises(AssertionError):
+        db.exists(2, 100)  # type: ignore
+
+
+def test_generic_set_function(db: EntityDb):
+    """set() has a parameter to select which address space to update."""
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, name="Test")
+
+    e = db.get(ImageId.ORIG, 100)
+    assert e is not None
+    assert e.name == "Test"
+
+    with db.batch() as batch:
+        batch.set(ImageId.RECOMP, 100, name="Test")
+
+    e = db.get(ImageId.RECOMP, 100)
+    assert e is not None
+    assert e.name == "Test"
+
+
+def test_generic_set_invalid_id(db: EntityDb):
+    """Should fail if the image id is outside the enum"""
+    with pytest.raises(AssertionError):
+        with db.batch() as batch:
+            batch.set(2, 100, name="Test")  # type: ignore
+
+
+def test_generic_get_function(db: EntityDb):
+    """get() has a parameter to select which address space to check."""
+    assert db.get(ImageId.ORIG, 100) is None
+    assert db.get(ImageId.ORIG, 110, exact=False) is None
+
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, name="Test")
+
+    e = db.get(ImageId.ORIG, 100)
+    assert e is not None
+    assert e.get("name") == "Test"
+    assert db.get(ImageId.ORIG, 110, exact=False) is not None
+
+    assert db.get(ImageId.RECOMP, 100) is None
+    assert db.get(ImageId.RECOMP, 110, exact=False) is None
+
+    with db.batch() as batch:
+        batch.set(ImageId.RECOMP, 100, name="Test")
+
+    e = db.get(ImageId.RECOMP, 100)
+    assert e is not None
+    assert e.get("name") == "Test"
+    assert db.get(ImageId.RECOMP, 110, exact=False) is not None
+
+
+def test_generic_get_invalid_id(db: EntityDb):
+    """Should fail if the image id is outside the enum"""
+    with pytest.raises(AssertionError):
+        db.get(2, 100)  # type: ignore
+
+
+@pytest.mark.parametrize("image_id", ImageId)
+def test_get_max_size_no_sections(db: EntityDb, image_id: ImageId):
+    """Cannot estimate size without section data?"""
+    with db.batch() as batch:
+        batch.set(image_id, 100, type=EntityType.FUNCTION)
+        batch.set(image_id, 200, type=EntityType.FUNCTION)
+
+    assert db.get_max_size(image_id, 100) is None
+    assert db.get_max_size(image_id, 200) is None
+
+
+@pytest.mark.parametrize("image_id", ImageId)
+def test_get_max_size_with_sections(db: EntityDb, image_id: ImageId):
+    """All requirements met to apply max size."""
+    db.add_section(image_id, range(100, 300))
+
+    with db.batch() as batch:
+        batch.set(image_id, 100, type=EntityType.FUNCTION)
+        batch.set(image_id, 200, type=EntityType.FUNCTION)
+
+    # Distance to next entity
+    assert db.get_max_size(image_id, 100) == 100
+
+    # Distance to end of section
+    assert db.get_max_size(image_id, 200) == 100
+
+
+@pytest.mark.parametrize("image_id", ImageId)
+def test_get_max_size_skip_none_type(db: EntityDb, image_id: ImageId):
+    """An entity with type=None is ignored when calculating
+    the max size of the preceding entity."""
+    db.add_section(image_id, range(100, 300))
+
+    with db.batch() as batch:
+        batch.set(image_id, 100, type=EntityType.FUNCTION)
+        batch.set(image_id, 200)
+
+    # Ignored entity at addr=200. Calculated against the end of the section.
+    assert db.get_max_size(image_id, 100) == 200
+
+    # Behavior differs from `set_max_size` because we do not require a specific
+    # type for the entity or for the entity to exist at all.
+    assert db.get_max_size(image_id, 200) == 100
+    assert db.get_max_size(image_id, 250) == 50
+
+
+@pytest.mark.parametrize("image_id", ImageId)
+def test_get_max_size_skip_non_compared_type(db: EntityDb, image_id: ImageId):
+    """When measuring max size, skip entities that are not a "solid" type.
+    Entities with a null type are also skipped."""
+    db.add_section(image_id, range(100, 300))
+
+    with db.batch() as batch:
+        batch.set(image_id, 100, type=EntityType.FUNCTION)
+        batch.set(image_id, 110, type=EntityType.LINE)
+        batch.set(image_id, 120)
+        batch.set(image_id, 130, type=EntityType.LINE)
+        batch.set(image_id, 200, type=EntityType.FUNCTION)
+        batch.set(image_id, 210, type=EntityType.LINE)
+        batch.set(image_id, 220, type=EntityType.LINE)
+
+    # Distance to next entity
+    assert db.get_max_size(image_id, 100) == 100
+
+    # Distance to end of section
+    assert db.get_max_size(image_id, 200) == 100
+
+
+@pytest.mark.parametrize("image_id", ImageId)
+def test_get_max_size_section_boundaries(db: EntityDb, image_id: ImageId):
+    """Do not cross section boundaries when measuring entities."""
+    db.add_section(image_id, range(100, 300))
+    db.add_section(image_id, range(500, 600))
+
+    with db.batch() as batch:
+        batch.set(image_id, 100, type=EntityType.FUNCTION)
+        batch.set(image_id, 500, type=EntityType.FUNCTION)
+
+    # Distance to end of section
+    assert db.get_max_size(image_id, 100) == 200
+
+    # Distance to end of section
+    assert db.get_max_size(image_id, 500) == 100
+
+
+@pytest.mark.parametrize("image_id", ImageId)
+def test_get_all_in_range(db: EntityDb, image_id: ImageId):
+    """Demonstrate how all_in_range() returns entities."""
+    with db.batch() as batch:
+        batch.set(image_id, 100, type=EntityType.FUNCTION)
+        batch.set(image_id, 200, type=EntityType.FUNCTION)
+
+    def checker(img: ImageId, range_: range) -> tuple[int | None, ...]:
+        return tuple(ent.addr(img) for ent in db.all_in_range(img, range_))
+
+    assert checker(image_id, range(300)) == (100, 200)
+
+    # Returns addrs inside the input range.
+    # Inclusive on start, exclusive on stop.
+    assert checker(image_id, range(100, 201)) == (100, 200)
+    assert checker(image_id, range(100, 200)) == (100,)
+    assert checker(image_id, range(101, 200)) == tuple()
+
+
+@pytest.mark.parametrize(
+    "image_id, other_id",
+    [(ImageId.ORIG, ImageId.RECOMP), (ImageId.RECOMP, ImageId.ORIG)],
+)
+def test_size_functions(db: EntityDb, image_id: ImageId, other_id: ImageId):
+    """Demonstrate the behavior of size() and any_size() for unmatched entities."""
+    with db.batch() as batch:
+        batch.set(image_id, 100, size=1)
+        batch.set(image_id, 200)
+
+    # Entity with size set
+    entity = db.get(image_id, 100)
+    assert entity is not None
+    assert entity.size(image_id) == 1
+    assert entity.size(other_id) is None
+    assert entity.any_size() == 1
+    assert entity.any_size(image_id) == 1
+    assert entity.any_size(other_id) == 1
+
+    # Entity with null size
+    entity = db.get(image_id, 200)
+    assert entity is not None
+    assert entity.size(image_id) is None
+    assert entity.size(other_id) is None
+    assert entity.any_size() == 0
+    assert entity.any_size(image_id) == 0
+    assert entity.any_size(other_id) == 0
+
+
+def test_size_functions_matched_both_have_size(db: EntityDb):
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, size=1)
+        batch.set(ImageId.RECOMP, 100, size=5)
+        batch.match(100, 100)
+
+    entity = db.get(ImageId.ORIG, 100)
+    assert entity is not None
+    assert entity.size(ImageId.ORIG) == 1
+    assert entity.size(ImageId.RECOMP) == 5
+    assert entity.any_size() == 5
+    assert entity.any_size(ImageId.ORIG) == 1
+    assert entity.any_size(ImageId.RECOMP) == 5
+
+
+def test_size_functions_matched_orig_null(db: EntityDb):
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100)
+        batch.set(ImageId.RECOMP, 100, size=5)
+        batch.match(100, 100)
+
+    entity = db.get(ImageId.ORIG, 100)
+    assert entity is not None
+    assert entity.size(ImageId.ORIG) is None
+    assert entity.size(ImageId.RECOMP) == 5
+    assert entity.any_size() == 5
+    assert entity.any_size(ImageId.ORIG) == 5
+    assert entity.any_size(ImageId.RECOMP) == 5
+
+
+def test_size_functions_matched_recomp_null(db: EntityDb):
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, size=1)
+        batch.set(ImageId.RECOMP, 100)
+        batch.match(100, 100)
+
+    entity = db.get(ImageId.ORIG, 100)
+    assert entity is not None
+    assert entity.size(ImageId.ORIG) == 1
+    assert entity.size(ImageId.RECOMP) is None
+    assert entity.any_size() == 1
+    assert entity.any_size(ImageId.ORIG) == 1
+    assert entity.any_size(ImageId.RECOMP) == 1
+
+
+def test_independent_sets(db: EntityDb):
+    """If we modify a matched entity, the new values should be accessible
+    whether we access the entity via ORIG or RECOMP address space."""
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, name="Hello")
+        batch.set(ImageId.RECOMP, 200, name="Hello")
+        batch.match(100, 200)
+
+    # baseline
+    ent = db.get(ImageId.RECOMP, 200)
+    assert ent is not None
+    assert ent.get("name") == "Hello"
+
+    # update recomp side
+    with db.batch() as batch:
+        batch.set(ImageId.RECOMP, 200, name="asdf")
+
+    # reflected in orig
+    ent = db.get(ImageId.ORIG, 100)
+    assert ent is not None
+    assert ent.get("name") == "asdf"
+
+    # update orig side
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, name="test")
+
+    # reflected in recomp
+    ent = db.get(ImageId.RECOMP, 200)
+    assert ent is not None
+    assert ent.get("name") == "test"

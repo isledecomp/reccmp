@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from pydantic import AliasChoices, BaseModel, Field
 import ruamel.yaml
-
+from .yml_extensions import PathSequence
 
 _yaml = ruamel.yaml.YAML()
 
@@ -38,10 +38,19 @@ class YmlGhidraConfig(BaseModel):
         default_factory=list,
         validation_alias=AliasChoices("name-substitutions", "name_substitutions"),
     )
+    allow_hash_mismatch: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("allow-hash-mismatch", "allow_hash_mismatch"),
+    )
 
     @classmethod
     def default(cls) -> "YmlGhidraConfig":
-        return cls(ignore_types=[], ignore_functions=[], name_substitutions=[])
+        return cls(
+            ignore_types=[],
+            ignore_functions=[],
+            name_substitutions=[],
+            allow_hash_mismatch=False,
+        )
 
 
 class YmlReportConfig(BaseModel):
@@ -50,9 +59,15 @@ class YmlReportConfig(BaseModel):
         validation_alias=AliasChoices("ignore-functions", "ignore_functions"),
     )
 
+    ignore_variables: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("ignore-variables", "ignore_variables"),
+    )
+    icon: Path | None = Field(default=None)
+
     @classmethod
     def default(cls) -> "YmlReportConfig":
-        return cls(ignore_functions=[])
+        return cls(ignore_functions=[], ignore_variables=[])
 
 
 @dataclass
@@ -64,12 +79,22 @@ class ProjectFileTarget(BaseModel):
     """Target schema for reccmp-project.yml"""
 
     filename: str
-    source_root: Path = Field(
-        validation_alias=AliasChoices("source-root", "source_root")
+    source_root: PathSequence = Field(
+        validation_alias=AliasChoices("source-root", "source_root"),
+        default_factory=tuple,
     )
     hash: Hash
+    data_sources: list[Path] = Field(
+        validation_alias=AliasChoices("data-sources", "data_sources"),
+        default_factory=list,
+    )
+    encoding: str | None = Field(default=None)
     ghidra: YmlGhidraConfig = Field(default_factory=YmlGhidraConfig.default)
     report: YmlReportConfig = Field(default_factory=YmlReportConfig.default)
+    marker_aliases: dict[str, str] = Field(
+        validation_alias=AliasChoices("marker-aliases", "marker_aliases"),
+        default_factory=dict,
+    )
 
 
 class ProjectFile(YmlFileModel):

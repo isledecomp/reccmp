@@ -5,7 +5,9 @@ build
 *.pyo
 __pycache__/
 dist
-.venv/
+/.venv*
+/.pytest_cache
+/pytest_cache
 
 # VS Code
 .vscode/

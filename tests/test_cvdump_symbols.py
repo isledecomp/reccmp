@@ -1,6 +1,7 @@
 """Test Cvdump SYMBOLS parser, reading function stack/params"""
 
-from reccmp.isledecomp.cvdump.symbols import CvdumpSymbolsParser
+from reccmp.cvdump.symbols import CvdumpSymbolsParser
+from reccmp.cvdump.cvinfo import CvdumpTypeKey, CVInfoTypeEnum
 
 PROC_WITH_BLOC = """
 (000638) S_GPROC32: [0001:000C6135], Cb: 00000361, Type:             0x10ED, RegistrationBook::ReadyWorld
@@ -35,7 +36,31 @@ def test_sblock32():
 
     # Make sure we can read the proc and all its stack references
     assert len(parser.symbols) == 1
-    assert len(parser.symbols[0].stack_symbols) == 8
+    assert len(parser.symbols[0].symbols) == 8
+    assert parser.symbols[0].symbols[0].data_type == CvdumpTypeKey(0x10EC)
+
+
+LOCAL_PROC = """
+(0000A4) S_LPROC32: [0001:00000180], Cb: 0000002F, Type:             0x1078, check_watchlist
+         Parent: 00000000, End: 000000EC, Next: 00000000
+         Debug start: 00000000, Debug end: 0000002E
+
+(0000DC)  S_REGISTER: esi, Type:    T_32PVOID(0403), ptr
+
+(0000EC) S_END
+"""
+
+
+def test_local_proc():
+    """S_LPROC32 blocks should be processed as well, since these functions
+    may use different calling conventions from S_GPROC32 functions."""
+    parser = CvdumpSymbolsParser()
+    for line in LOCAL_PROC.split("\n"):
+        parser.read_line(line)
+
+    # Make sure we can read the proc
+    assert len(parser.symbols) == 1
+    assert parser.symbols[0].func_type == CvdumpTypeKey(0x1078)
 
 
 LDATA32_INSIDE_FUNCTION = """\
@@ -57,10 +82,15 @@ def test_ldata32_inside_function():
         parser.read_line(line)
 
     assert len(parser.symbols) == 1
+    assert parser.symbols[0].func_type == CvdumpTypeKey(0x1010)
     assert len(parser.symbols[0].static_variables) == 2
     assert [v.name for v in parser.symbols[0].static_variables] == [
         "got_it_already",
         "cd_pathname",
+    ]
+    assert [v.type for v in parser.symbols[0].static_variables] == [
+        CVInfoTypeEnum.T_INT4,
+        CvdumpTypeKey(0x100B),
     ]
 
 
@@ -76,3 +106,45 @@ def test_ldata32_outside_function():
     # ignored... for now.
     # Should not crash with a failed assert. See GH issue #183.
     assert len(parser.symbols) == 0
+
+
+# from MSVC 6.0
+COMPILE2_BLOCK = """
+(000018) S_COMPILE2:
+         Language: LINK
+         Target processor: 80386
+         Compiled for edit and continue: no
+         Compiled without debugging info: no
+         Compiled with LTCG: no
+         Compiled with /bzalign: no
+         Managed code present: no
+         Compiled with /GS: no
+         Compiled with /hotpatch: no
+         Converted by CVTCIL: no
+         MSIL module: no
+         Pad bits = 0x0000
+         Frontend Version: Major = 0, Minor = 0, Build = 0
+         Backend Version: Major = 6, Minor = 0, Build = 8168
+         Version string: Microsoft (R) LINK
+         Command block:
+"""
+
+
+def test_compile2_block():
+    """These blocks are currently not interpreted, but shouldn't lead to 'Unhandled line' logs."""
+    parser = CvdumpSymbolsParser()
+    for line in COMPILE2_BLOCK.split("\n"):
+        parser.read_line(line)
+
+    assert not parser.unhandled_lines
+
+
+def test_module_statements():
+    """These blocks are currently not interpreted, but shouldn't lead to 'Unhandled line' logs."""
+    parser = CvdumpSymbolsParser()
+    parser.read_line(
+        '** Module: "build\\intel\\mt_obj\\delete.obj" from "C:\\Users\\MyUser\\MSVC600-8168\\VC98\\Bin\\..\\LIB\\LIBCMT.lib"'
+    )
+    parser.read_line('** Module: "* Linker *" from ""')
+
+    assert not parser.unhandled_lines

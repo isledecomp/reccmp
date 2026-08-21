@@ -1,0 +1,471 @@
+import base64
+import enum
+from datetime import datetime
+from pathlib import Path
+from typing import Callable, Iterable, Iterator
+import logging
+from pystache import Renderer  # type: ignore[import-untyped]
+from reccmp.assets import get_asset_file
+import reccmp.color
+from reccmp.compare.report import (
+    ReccmpStatusReport,
+    ReccmpComparedEntity,
+    serialize_reccmp_report,
+    format_address,
+)
+
+
+def safe_denominator(v: int) -> int:
+    if v == 0:
+        return 1
+    return v
+
+
+def reccmp_pack_generator(lines: Iterable[str]) -> Iterator[str]:
+    """Emits only lines between the "reccmp-pack-begin" and "reccmp-pack-end" markers.
+    Intended to remove ES6 imports and exports that are not compatible with our
+    HTML report as served through the file:/// protocol."""
+    copy = False
+
+    for line in lines:
+        if line.strip() == "// reccmp-pack-begin":
+            copy = True
+        elif line.strip() == "// reccmp-pack-end":
+            copy = False
+        elif copy:
+            yield line
+
+    yield "\n"
+
+
+def read_js_file(filename: str) -> str:
+    """Read the given file from the assets directory and prepare
+    to be packed into the main distribution .js file.
+    This only captures lines between "reccmp-pack-begin" and "reccmp-pack-end"
+    and adds a header with the source filename."""
+    js_path = get_asset_file(filename)
+    lines = []
+
+    with open(js_path, "r", encoding="utf-8") as f:
+        lines = list(reccmp_pack_generator(f))
+
+    file_header = f"/{'*' * 78}/\n// {filename}\n"
+    return file_header + "".join(lines)
+
+
+def get_base64_icon(path: Path) -> str:
+    if path.suffix.lower() != ".png":
+        logging.getLogger().error("Icon must be PNG image: %s", path)
+        return ""
+
+    try:
+        with path.open("rb") as f:
+            return base64.b64encode(f.read()).decode("utf-8")
+    except FileNotFoundError:
+        logging.getLogger().error("Could not open icon: %s", path)
+        return ""
+
+
+# pylint: disable=too-many-positional-arguments
+def gen_svg(
+    svg_file: str,
+    name_svg: str,
+    icon: Path | None,
+    svg_implemented_funcs: int,
+    total_funcs: int,
+    raw_accuracy: float,
+):
+    """Render the progress SVG badge from the bundled template."""
+    icon_data = None
+    if icon:
+        icon_data = get_base64_icon(icon)
+
+    total_statistic = raw_accuracy / total_funcs
+    full_percentbar_width = 127.18422
+    output_data = Renderer().render_path(
+        get_asset_file("../assets/template.svg"),
+        {
+            "name": name_svg,
+            "icon": icon_data,
+            "implemented": f"{(svg_implemented_funcs / safe_denominator(total_funcs) * 100):.2f}% ({svg_implemented_funcs}/{total_funcs})",
+            "accuracy": f"{(raw_accuracy / safe_denominator(svg_implemented_funcs) * 100):.2f}%",
+            "progbar": total_statistic * full_percentbar_width,
+            "percent": f"{(total_statistic * 100):.2f}%",
+        },
+    )
+    with open(svg_file, "w", encoding="utf-8") as svgfile:
+        svgfile.write(output_data)
+
+
+def write_html_report(
+    html_file: str, report: ReccmpStatusReport, icon: Path | None = None
+):
+    """Create the interactive HTML diff viewer with the given report."""
+    # For the flat-file report, the component JS files must be added in a particular order
+    # so that any dependencies required by a particular file have already been resolved.
+    js_files = [
+        "globals.js",
+        "events.js",
+        "state.js",
+        "provider.js",
+        "components/clickToCopy.js",
+        "components/diffDisplay.js",
+        "components/hidePerfect.js",
+        "components/hideStub.js",
+        "components/listingTable.js",
+        "components/nextPageButton.js",
+        "components/pageNumberOf.js",
+        "components/pageSelect.js",
+        "components/prevPageButton.js",
+        "components/resultCount.js",
+        "components/showRecomp.js",
+        "components/searchbar.js",
+        "components/searchOptions.js",
+        "main.js",
+    ]
+    reccmp_js = ""
+    for file in js_files:
+        reccmp_js += read_js_file(file)
+
+    # Convert the report to a JSON string to insert in the HTML template.
+    report_str = serialize_reccmp_report(report, diff_included=True)
+
+    favicon = ""
+    if icon:
+        favicon = get_base64_icon(icon)
+
+    output_data = Renderer().render_path(
+        get_asset_file("template.html"),
+        {"report": report_str, "reccmp_js": reccmp_js, "favicon": favicon},
+    )
+
+    with open(html_file, "w", encoding="utf-8") as htmlfile:
+        htmlfile.write(output_data)
+
+
+def print_combined_diff(udiff, plain: bool = False, show_both: bool = False):
+    if udiff is None:
+        return
+
+    # We don't know how long the address string will be ahead of time.
+    # Set this value for each address to try to line things up.
+    padding_size = 0
+
+    for slug, subgroups in udiff:
+        if plain:
+            print("---")
+            print("+++")
+            print(slug)
+        else:
+            print(f"{reccmp.color.Fore.RED}---")
+            print(f"{reccmp.color.Fore.GREEN}+++")
+            print(f"{reccmp.color.Fore.BLUE}{slug}")
+            print(reccmp.color.Style.RESET_ALL, end="")
+
+        for subgroup in subgroups:
+            equal = subgroup.get("both") is not None
+
+            if equal:
+                for orig_addr, line, recomp_addr in subgroup["both"]:
+                    padding_size = max(padding_size, len(orig_addr))
+                    if show_both:
+                        print(f"{orig_addr} / {recomp_addr} : {line}")
+                    else:
+                        print(f"{orig_addr} : {line}")
+            else:
+                for orig_addr, line in subgroup["orig"]:
+                    padding_size = max(padding_size, len(orig_addr))
+                    addr_prefix = (
+                        f"{orig_addr} / {'':{padding_size}}" if show_both else orig_addr
+                    )
+
+                    if plain:
+                        print(f"{addr_prefix} : -{line}")
+                    else:
+                        print(
+                            f"{addr_prefix} : {reccmp.color.Fore.RED}-{line}{reccmp.color.Style.RESET_ALL}"
+                        )
+
+                for recomp_addr, line in subgroup["recomp"]:
+                    padding_size = max(padding_size, len(recomp_addr))
+                    addr_prefix = (
+                        f"{'':{padding_size}} / {recomp_addr}"
+                        if show_both
+                        else " " * padding_size
+                    )
+
+                    if plain:
+                        print(f"{addr_prefix} : +{line}")
+                    else:
+                        print(
+                            f"{addr_prefix} : {reccmp.color.Fore.GREEN}+{line}{reccmp.color.Style.RESET_ALL}"
+                        )
+
+        # Newline between each diff subgroup.
+        print()
+
+
+def print_diff(udiff):
+    """Print diff in difflib.unified_diff format."""
+    if udiff is None:
+        return False
+
+    has_diff = False
+    for line in udiff:
+        has_diff = True
+        color = ""
+        if line.startswith("++") or line.startswith("@@") or line.startswith("--"):
+            # Skip unneeded parts of the diff for the brief view
+            continue
+        # Work out color if we are printing color
+        if line.startswith("+"):
+            color = reccmp.color.Fore.GREEN
+        elif line.startswith("-"):
+            color = reccmp.color.Fore.RED
+        print(f"{color}{line}{reccmp.color.Style.RESET_ALL}")
+    return has_diff
+
+
+def get_percent_color(value: float) -> str:
+    """Return colorama ANSI escape character for the given decimal value."""
+    if value == 1.0:
+        return reccmp.color.Fore.GREEN
+    if value > 0.8:
+        return reccmp.color.Fore.YELLOW
+
+    return reccmp.color.Fore.RED
+
+
+def percent_string(
+    ratio: float, is_effective: bool = False, is_plain: bool = False
+) -> str:
+    """Helper to construct a percentage string from the given ratio.
+    If is_effective (i.e. effective match), indicate that with the asterisk.
+    If is_plain, don't use colorama ANSI codes."""
+
+    percenttext = f"{(ratio * 100):.2f}%"
+    effective_star = "*" if is_effective else ""
+
+    if is_plain:
+        return percenttext + effective_star
+
+    return "".join(
+        [
+            get_percent_color(ratio),
+            percenttext,
+            reccmp.color.Fore.RED if is_effective else "",
+            effective_star,
+            reccmp.color.Style.RESET_ALL,
+        ]
+    )
+
+
+def diff_json_display(
+    show_both_addrs: bool = False, is_plain: bool = False
+) -> Callable[[int, ReccmpComparedEntity | None, ReccmpComparedEntity | None], str]:
+    """Generate a function that will display the diff according to
+    the reccmp display preferences."""
+
+    def formatter(
+        orig_addr: int,
+        saved: ReccmpComparedEntity | None,
+        new: ReccmpComparedEntity | None,
+    ) -> str:
+        old_pct = "new"
+        new_pct = "gone"
+        name = ""
+        recomp_addr_str = "n/a"
+
+        if new is not None:
+            new_pct = (
+                "stub"
+                if new.is_stub
+                else percent_string(
+                    new.effective_accuracy, new.is_effective_match, is_plain
+                )
+            )
+
+            # Prefer the current name of this function if we have it.
+            # We are using the original address as the key.
+            # A function being renamed is not of interest here.
+            name = new.name
+            if new.recomp_addr is None:
+                recomp_addr_str = "various" if new.recomp_addr_varies else "n/a"
+            else:
+                recomp_addr_str = format_address(new.recomp_addr)
+
+        if saved is not None:
+            old_pct = (
+                "stub"
+                if saved.is_stub
+                else percent_string(
+                    saved.effective_accuracy, saved.is_effective_match, is_plain
+                )
+            )
+
+            if name == "":
+                name = saved.name
+
+        orig_addr_str = format_address(orig_addr)
+
+        if show_both_addrs:
+            addr_string = f"{orig_addr_str} / {recomp_addr_str:10}"
+        else:
+            addr_string = orig_addr_str
+
+        # The ANSI codes from colorama counted towards string length,
+        # so displaying this as an ascii-like spreadsheet
+        # (using f-string formatting) would take some effort.
+        return f"{addr_string} - {name} ({old_pct} -> {new_pct})"
+
+    return formatter
+
+
+class ReccmpDiffJudgement(enum.Enum):
+    NO_CHANGE = enum.auto()
+    """The entity did not change in a way worth reporting."""
+    NEW = enum.auto()
+    """This entity did not appear in the saved report."""
+    INCREASE = enum.auto()
+    """This entity's accuracy increased from the saved report."""
+    DECREASE = enum.auto()
+    """This entity's accuracy decreased from the saved report."""
+    DROPPED = enum.auto()
+    """This entity no longer exists."""
+    ENTROPY = enum.auto()
+    """This entity's accuracy changed, but we have determined it to be functionally-equivalent."""
+
+
+# pylint: disable=too-many-return-statements
+def entity_diff_change(
+    saved: ReccmpComparedEntity | None, new: ReccmpComparedEntity | None
+) -> ReccmpDiffJudgement:
+    if saved is None and new is not None:
+        return ReccmpDiffJudgement.NEW
+
+    if saved is not None and new is None:
+        return ReccmpDiffJudgement.DROPPED
+
+    assert saved and new
+
+    # Do not report changes if the entity is a stub in both reports.
+    # (Regression in GH #405)
+    if saved.is_stub and new.is_stub:
+        return ReccmpDiffJudgement.NO_CHANGE
+
+    if saved.is_stub and not new.is_stub:
+        return ReccmpDiffJudgement.INCREASE
+
+    if not saved.is_stub and new.is_stub:
+        return ReccmpDiffJudgement.DECREASE
+
+    # The entity is still functionally equivalent despite the degradation.
+    if saved.accuracy == 1.0 and new.is_effective_match:
+        return ReccmpDiffJudgement.ENTROPY
+
+    # GH #431.
+    # Previously, we reported changes in either direction as ENTROPY.
+    if saved.is_effective_match and new.accuracy == 1.0:
+        return ReccmpDiffJudgement.INCREASE
+
+    # Don't report internal accuracy changes if it is still an effective match.
+    if saved.is_effective_match and new.is_effective_match:
+        return ReccmpDiffJudgement.NO_CHANGE
+
+    # Don't consider accuracy if either report has an effective match.
+    if saved.is_effective_match and not new.is_effective_match:
+        return ReccmpDiffJudgement.DECREASE
+
+    if not saved.is_effective_match and new.is_effective_match:
+        return ReccmpDiffJudgement.INCREASE
+
+    # It is not a stub or effective match. Compare raw accuracy.
+    if saved.accuracy < new.accuracy:
+        return ReccmpDiffJudgement.INCREASE
+
+    if saved.accuracy > new.accuracy:
+        return ReccmpDiffJudgement.DECREASE
+
+    return ReccmpDiffJudgement.NO_CHANGE
+
+
+def diff_json(
+    saved_data: ReccmpStatusReport,
+    new_data: ReccmpStatusReport,
+    show_both_addrs: bool = False,
+    is_plain: bool = False,
+):
+    """Compare two status report files, determine what items changed, and print the result."""
+
+    # Don't try to diff a report generated for a different binary file
+    if not saved_data.has_same_source(new_data):
+        logging.getLogger().error(
+            "Diff report for '%s' does not match current file '%s'",
+            saved_data.filename,
+            new_data.filename,
+        )
+        return
+
+    if saved_data.timestamp is not None:
+        now = datetime.now().replace(microsecond=0)
+        then = saved_data.timestamp.replace(microsecond=0)
+
+        print(
+            " ".join(
+                [
+                    "Saved diff report generated",
+                    then.strftime("%B %d %Y, %H:%M:%S"),
+                    f"({str(now - then)} ago)",
+                ]
+            )
+        )
+
+        print()
+
+    # The report can now hold unmatched entities.
+    # Keep the old behavior for now: only matched entities are displayed in the diff.
+    # In the future, we could add a "discovered" bucket for newly identified entities.
+    all_addrs: set[int] = set()
+    all_addrs.update(
+        addr for addr, ent in saved_data.entities.items() if ent.is_matched()
+    )
+    all_addrs.update(
+        addr for addr, ent in new_data.entities.items() if ent.is_matched()
+    )
+
+    # Put all the information in one place so we can decide how each item changed.
+    combined = {
+        addr: (
+            saved_data.entities.get(addr),
+            new_data.entities.get(addr),
+        )
+        for addr in sorted(all_addrs)
+    }
+
+    judgements = {
+        key: entity_diff_change(*diff_pair) for key, diff_pair in combined.items()
+    }
+
+    get_diff_str = diff_json_display(show_both_addrs, is_plain)
+
+    for diff_name, diff_judgement in [
+        ("New", ReccmpDiffJudgement.NEW),
+        ("Increased", ReccmpDiffJudgement.INCREASE),
+        ("Decreased", ReccmpDiffJudgement.DECREASE),
+        ("Dropped", ReccmpDiffJudgement.DROPPED),
+        ("Compiler entropy", ReccmpDiffJudgement.ENTROPY),
+    ]:
+        diff_dict = {
+            key: value
+            for key, value in combined.items()
+            if judgements.get(key) == diff_judgement
+        }
+        if len(diff_dict) == 0:
+            continue
+
+        print(f"{diff_name} ({len(diff_dict)}):")
+
+        for addr, (saved, new) in diff_dict.items():
+            print(get_diff_str(addr, saved, new))
+
+        print()

@@ -10,7 +10,7 @@ jobs:
 
     - name: Restore original binaries
       id: cache
-      uses: actions/cache@v3
+      uses: actions/cache@v6
       with:
         path: binfiles
         key: skibin

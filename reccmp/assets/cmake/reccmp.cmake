@@ -1,3 +1,14 @@
+# Find reccmp-ghidra-import for adding reccmp-import-ghidra-<ID> build targets
+find_program(RECCMP_GHIDRA_IMPORT_BIN
+    NAMES reccmp-ghidra-import
+    DOC "Path of reccmp-ghidra-import"
+)
+if(EXISTS "${RECCMP_GHIDRA_IMPORT_BIN}")
+    # Avoid running multiple reccmp-ghidra-import in parallel
+    set_property(GLOBAL APPEND PROPERTY JOB_POOLS "reccmp_import_ghidra_job_pool=1")
+    add_custom_target(reccmp-import-ghidra)
+endif()
+
 function(reccmp_find_project RESULT)
     set(curdir "${CMAKE_CURRENT_SOURCE_DIR}")
     while(1)
@@ -21,6 +32,24 @@ function(reccmp_add_target TARGET)
     endif()
     set_property(TARGET ${TARGET} PROPERTY INTERFACE_RECCMP_ID "${ARGS_ID}")
     set_property(GLOBAL APPEND PROPERTY RECCMP_TARGETS ${TARGET})
+    if(EXISTS "${RECCMP_GHIDRA_IMPORT_BIN}")
+        set(RECCMP_${ARGS_ID}_GHIDRA_LOCAL_PROJECT_PATH "" CACHE FILEPATH "Path of Ghidra ${ARGS_ID} project, e.g. '/some-dir/foo.gpr'.")
+        set(RECCMP_${ARGS_ID}_GHIDRA_FILE "" CACHE STRING "Name of the file inside the Ghidra project, e.g. '/foo.exe'.")
+        if(EXISTS "${RECCMP_${ARGS_ID}_GHIDRA_LOCAL_PROJECT_PATH}" AND NOT "${RECCMP_${ARGS_ID}_GHIDRA_FILE}" STREQUAL "")
+            get_filename_component(ghidra_project_dir "${RECCMP_${ARGS_ID}_GHIDRA_LOCAL_PROJECT_PATH}" DIRECTORY)
+            get_filename_component(ghidra_project_name "${RECCMP_${ARGS_ID}_GHIDRA_LOCAL_PROJECT_PATH}" NAME_WE)
+            add_custom_target(reccmp-import-ghidra-${ARGS_ID}
+                COMMAND "${RECCMP_GHIDRA_IMPORT_BIN}"
+                    --target "${ARGS_ID}"
+                    --local-project-dir "${ghidra_project_dir}"
+                    --local-project-name "${ghidra_project_name}"
+                    --file "${RECCMP_${ARGS_ID}_GHIDRA_FILE}"
+                JOB_POOL "reccmp_import_ghidra_job_pool"
+                WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+            )
+            add_dependencies(reccmp-import-ghidra reccmp-import-ghidra-${ARGS_ID})
+        endif()
+    endif()
 endfunction()
 
 function(reccmp_configure)

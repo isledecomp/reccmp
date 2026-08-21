@@ -17,7 +17,6 @@ from .detect import RecCmpProject, RecCmpPartialTarget, GhidraConfig, ReportConf
 from .error import RecCmpProjectException
 from .util import get_path_sha256, unique_targets
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -43,14 +42,12 @@ def executable_or_library(path: Path) -> TargetType:
 
 def get_default_cmakelists_txt(project_name: str, targets: dict[str, Path]) -> str:
     """Generate template CMakeLists.txt file contents to build each target."""
-    result = textwrap.dedent(
-        f"""\
+    result = textwrap.dedent(f"""\
         cmake_minimum_required(VERSION 3.20)
         project({project_name})
 
         include("${{CMAKE_CURRENT_SOURCE_DIR}}/cmake/reccmp.cmake")
-    """
-    )
+    """)
 
     for target_name, target_path in targets.items():
         target_type = executable_or_library(target_path)
@@ -68,8 +65,7 @@ def get_default_cmakelists_txt(project_name: str, targets: dict[str, Path]) -> s
                 add_executable_or_library = "add_library"
                 maybe_shared = "SHARED"
         result += "\n"
-        result += textwrap.dedent(
-            f"""\
+        result += textwrap.dedent(f"""\
             {add_executable_or_library}({target_name} {maybe_shared}
                 main_{target_name}.cpp
                 main_{target_name}.hpp
@@ -78,22 +74,18 @@ def get_default_cmakelists_txt(project_name: str, targets: dict[str, Path]) -> s
             set_property(TARGET {target_name} PROPERTY OUTPUT_NAME "{target_path.stem}")
             set_property(TARGET {target_name} PROPERTY PREFIX "{target_prefix}")
             set_property(TARGET {target_name} PROPERTY SUFFIX "{target_suffix}")
-        """
-        )
+        """)
 
     result += "\n"
-    result += textwrap.dedent(
-        """\
+    result += textwrap.dedent("""\
         reccmp_configure()
-    """
-    )
+    """)
     return result
 
 
 def get_default_main_hpp(target_id: str) -> str:
     """Generate template C++ header for the given target."""
-    return textwrap.dedent(
-        f"""\
+    return textwrap.dedent(f"""\
         #ifndef {target_id.upper()}_HPP
         #define {target_id.upper()}_HPP
 
@@ -105,8 +97,7 @@ def get_default_main_hpp(target_id: str) -> str:
         }};
 
         #endif /* {target_id.upper()}_HPP */
-        """
-    )
+        """)
 
 
 def get_default_main_cpp(target_id: str, original_path: Path, hpp_path: Path) -> str:
@@ -115,8 +106,7 @@ def get_default_main_cpp(target_id: str, original_path: Path, hpp_path: Path) ->
     target_type = executable_or_library(original_path)
     match target_type:
         case TargetType.EXECUTABLE:
-            entry_function = textwrap.dedent(
-                f"""\
+            entry_function = textwrap.dedent(f"""\
                 #ifdef _WIN32
                 #include <windows.h>
 
@@ -130,11 +120,9 @@ def get_default_main_cpp(target_id: str, original_path: Path, hpp_path: Path) ->
                     return 0;
                 }}
                 #endif
-            """
-            )
+            """)
         case TargetType.SHARED_LIBRARY:
-            entry_function = textwrap.dedent(
-                f"""\
+            entry_function = textwrap.dedent(f"""\
                 #ifdef _WIN32
                 #include <windows.h>
 
@@ -143,11 +131,8 @@ def get_default_main_cpp(target_id: str, original_path: Path, hpp_path: Path) ->
                     return TRUE;
                 }}
                 #endif
-            """
-            )
-    return (
-        textwrap.dedent(
-            f"""\
+            """)
+    return textwrap.dedent(f"""\
         #include "{hpp_path.name}"
 
         // FUNCTION: {target_id} 0x10000000
@@ -157,11 +142,7 @@ def get_default_main_cpp(target_id: str, original_path: Path, hpp_path: Path) ->
         // GLOBAL: {target_id} 0x10102000
         // STRING: {target_id} 0x10101f00
         const char* g_globalString = "A global string";
-    """
-        )
-        + "\n"
-        + entry_function
-    )
+    """) + "\n" + entry_function
 
 
 def create_project(
@@ -190,6 +171,11 @@ def create_project(
         if not original_path.is_file():
             raise FileNotFoundError(f"Original binary ({original_path}) is not a file")
 
+    cmakelists_path = project_directory / "CMakeLists.txt"
+
+    if cmake and cmakelists_path.exists():
+        raise RecCmpProjectException("CMakeLists.txt already exists")
+
     # reccmp-user.yml location
     user_config_path = project_directory / RECCMP_USER_CONFIG
 
@@ -215,7 +201,7 @@ def create_project(
 
         project_config_data.targets[target_id] = ProjectFileTarget(
             filename=target_filename,
-            source_root=project_directory,
+            source_root=(Path("."),),
             hash=Hash(sha256=hash_sha256),
         )
 
@@ -223,7 +209,7 @@ def create_project(
             target_id=target_id,
             filename=target_filename,
             sha256=hash_sha256,
-            source_root=project_directory,
+            source_paths=(Path("."),),
             ghidra_config=GhidraConfig(),
             report_config=ReportConfig(),
         )
@@ -260,15 +246,16 @@ def create_project(
                 f.write(f"{RECCMP_BUILD_CONFIG}\n")
 
     if cmake:
-        # Generate tempalte files so you can start building each target with CMake.
+        # Generate template files so you can start building each target with CMake.
         project_cmake_dir = project_directory / "cmake"
+        reccmp_cmake_path = project_cmake_dir / "reccmp.cmake"
         project_cmake_dir.mkdir(exist_ok=True)
 
         # Copy template CMake script that generates reccmp-build.yml
         logger.debug("Copying %s...", "cmake/reccmp.cmake")
         shutil.copy(
             get_asset_file("cmake/reccmp.cmake"),
-            project_directory / "cmake/reccmp.cmake",
+            reccmp_cmake_path,
         )
 
         # Use first target ID as cmake project name
@@ -278,7 +265,6 @@ def create_project(
         )
 
         # Create CMakeLists.txt
-        cmakelists_path = project_directory / "CMakeLists.txt"
         logger.debug("Creating %s...", cmakelists_path)
         with cmakelists_path.open("w") as f:
             f.write(cmakelists_txt)

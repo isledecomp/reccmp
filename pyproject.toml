@@ -1,5 +1,8 @@
 [project]
 name = "reccmp"
+description = "Collection of decompilation tools."
+license-files = ["COPYING", "reccmp/bin/LICENSE*.txt"]
+readme = "docs/intro.md"
 dynamic = ["classifiers", "dependencies", "license", "scripts", "version"]
 requires-python = ">= 3.10"
 
@@ -10,6 +13,7 @@ max-line-length = 120
 [tool.mypy]
 check_untyped_defs = true
 
-[[tool.mypy.overrides]]
-module = ["ghidra", "ghidra.*"]
-ignore_missing_imports = true
+[tool.pytest.ini_options]
+# The default `.pytest_cache` path is rejected by Ghidra 12.1.
+cache_dir="pytest_cache"
+xfail_strict=true

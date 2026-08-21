@@ -1,9 +1,8 @@
-capstone
+capstone==5.0.9
 colorama>=0.4.6
-pystache
-pydantic==2.9.2
-ruamel.yaml
+pystache==0.6.8
+pydantic==2.13.4
+ruamel.yaml==0.19.1
 pydemumble==0.0.1
-# requirement of capstone due to python dropping distutils.
-# see: https://github.com/capstone-engine/capstone/issues/2223
-setuptools ; python_version >= "3.12"
+pyghidra==3.1.0
+cydifflib==1.2.0

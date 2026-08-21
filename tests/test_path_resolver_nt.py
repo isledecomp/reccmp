@@ -1,7 +1,6 @@
 from os import name as os_name
 import pytest
-from reccmp.isledecomp.dir import PathResolver
-
+from reccmp.dir import PathResolver
 
 if os_name != "nt":
     pytest.skip(reason="Skip Windows-only tests", allow_module_level=True)

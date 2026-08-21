@@ -12,3 +12,9 @@ test('Entity names with HTML-escaped characters', async ({ page }) => {
   await expect(page.locator('tr[data-address]').getByText('list<ROI *,allocator<ROI *> >::_Buynode')).toBeAttached();
   await expect(page.locator('tr[data-address]').getByText("MxParam::`scalar deleting destructor'")).toBeAttached();
 });
+
+test('Effective match display', async ({ page }) => {
+  // Should display '100.00%*' for effective matches even though the raw accuracy is less than 1.
+  const effectiveRow = page.locator('tr[data-address]').filter({ hasText: 'WndProc' });
+  await expect(effectiveRow).toContainText('100.00%*');
+});

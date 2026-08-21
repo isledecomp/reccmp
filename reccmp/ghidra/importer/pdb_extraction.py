@@ -1,0 +1,168 @@
+from dataclasses import dataclass
+import logging
+
+from reccmp.formats.exceptions import InvalidVirtualAddressError
+from reccmp.cvdump.symbols import SymbolsEntry
+from reccmp.compare import Compare
+from reccmp.compare.db import ReccmpMatch
+from reccmp.cvdump.types import CvdumpKeyError
+from reccmp.cvdump.cvinfo import CvdumpTypeKey, CVInfoTypeEnum
+
+logger = logging.getLogger(__file__)
+
+
+@dataclass
+class CppStackOrRegisterSymbol:
+    name: str
+    data_type: CvdumpTypeKey
+
+
+@dataclass
+class CppStackSymbol(CppStackOrRegisterSymbol):
+    stack_offset: int
+    """Should have a value iff `symbol_type=='S_BPREL32'."""
+
+
+@dataclass
+class CppRegisterSymbol(CppStackOrRegisterSymbol):
+    register: str
+    """Should have a value iff `symbol_type=='S_REGISTER'.` Should always be set/converted to lowercase."""
+
+
+@dataclass
+class FunctionSignature:
+    call_type: str
+    arglist: list[CvdumpTypeKey]
+    return_type: CvdumpTypeKey
+    class_type: CvdumpTypeKey | None
+    symbols: list[CppStackOrRegisterSymbol]
+    # if non-zero: an offset to the `this` parameter in a __thiscall
+    this_adjust: int
+
+
+@dataclass
+class PdbFunction:
+    match_info: ReccmpMatch
+    signature: FunctionSignature | None
+    is_stub: bool
+
+
+class PdbFunctionExtractor:
+    """
+    Extracts all information on a given function from the parsed PDB
+    and prepares the data for the import in Ghidra.
+    """
+
+    def __init__(self, compare: Compare):
+        self.compare = compare
+
+    _call_type_map = {
+        "ThisCall": "__thiscall",
+        "C Near": "default",
+        "STD Near": "__stdcall",
+        "Fast Near": "__fastcall",
+    }
+
+    def _get_func_signature(self, fn: SymbolsEntry) -> FunctionSignature | None:
+        function_type_key = fn.func_type
+        if function_type_key == CVInfoTypeEnum.T_NOTYPE:
+            logger.debug("Treating NOTYPE function as thunk: %s", fn.name)
+            return None
+
+        # get corresponding function type
+
+        try:
+            function_type = self.compare.types.from_key(function_type_key)
+        except CvdumpKeyError:
+            logger.error(
+                "Could not find function type %s for function %s", fn.func_type, fn.name
+            )
+            return None
+
+        class_type = function_type.get("class_type")
+
+        assert "arg_list_type" in function_type
+        arg_list_type = self.compare.types.from_key(function_type["arg_list_type"])
+        arg_list_pdb_types = arg_list_type.get("args", [])
+        assert arg_list_type["argcount"] == len(arg_list_pdb_types)
+
+        symbols: list[CppStackOrRegisterSymbol] = []
+
+        # for some unexplained reason, the reported stack is offset by 4 when this flag is set.
+        # Note that this affects the arguments (ebp + ...) but not the function stack (ebp - ...)
+        stack_offset_delta = -4 if fn.frame_pointer_present else 0
+
+        for symbol in fn.symbols:
+            if symbol.symbol_type == "S_REGISTER":
+                symbols.append(
+                    CppRegisterSymbol(
+                        symbol.name,
+                        symbol.data_type,
+                        symbol.location,
+                    )
+                )
+            elif symbol.symbol_type == "S_BPREL32":
+                stack_offset = int(symbol.location[1:-1], 16)
+                symbols.append(
+                    CppStackSymbol(
+                        symbol.name,
+                        symbol.data_type,
+                        stack_offset + stack_offset_delta,
+                    )
+                )
+
+        call_type = self._call_type_map[function_type["call_type"]]
+        this_adjust = function_type.get("this_adjust", 0)
+
+        return FunctionSignature(
+            call_type=call_type,
+            arglist=arg_list_pdb_types,
+            return_type=function_type["return_type"],
+            class_type=class_type,
+            symbols=symbols,
+            this_adjust=this_adjust,
+        )
+
+    def get_function_list(self) -> list[PdbFunction]:
+        handled = (
+            self._handle_matched_function(match)
+            for match in self.compare.get_functions()
+        )
+        return [signature for signature in handled if signature is not None]
+
+    def _handle_matched_function(self, match_info: ReccmpMatch) -> PdbFunction | None:
+        function_data = next(
+            (
+                y
+                for y in self.compare.cvdump_analysis.nodes
+                if y.addr == match_info.recomp_addr
+            ),
+            None,
+        )
+        if function_data is None:
+            try:
+                # this can be either a thunk (which we want) or an external function
+                # (which we don't want), so we tell them apart based on the validity of their address.
+                self.compare.orig_bin.get_relative_addr(match_info.orig_addr)
+                return PdbFunction(match_info, None, is_stub=False)
+            except InvalidVirtualAddressError:
+                logger.debug(
+                    "Skipping external function %s (address 0x%x not in original binary)",
+                    match_info.name,
+                    match_info.orig_addr,
+                )
+                return None
+
+        function_symbol = function_data.symbol_entry
+        if function_symbol is None:
+            logger.debug(
+                "Could not find function symbol '%s' (likely a PUBLICS entry), importing by name only",
+                match_info.name,
+            )
+            return PdbFunction(match_info, None, is_stub=False)
+
+        function_signature = self._get_func_signature(function_symbol)
+
+        is_stub = bool(match_info.get("stub", False))
+
+        return PdbFunction(match_info, function_signature, is_stub)

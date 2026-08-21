@@ -1,0 +1,206 @@
+import re
+from enum import Enum
+
+TargetAliases = dict[str, str]
+ProjectAliases = dict[str, TargetAliases]
+
+
+class MarkerCategory(Enum):
+    """For the purposes of grouping multiple different DecompMarkers together,
+    assign a rough "category" for the MarkerType values below.
+    It's really only the function types that have to get folded down, but
+    we'll do that in a structured way to permit future expansion."""
+
+    FUNCTION = 1
+    VARIABLE = 2
+    STRING = 3
+    VTABLE = 4
+    LINE = 5
+    ADDRESS = 100  # i.e. no comparison required or possible
+
+
+class MarkerType(Enum):
+    UNKNOWN = -100
+    FUNCTION = 1
+    STUB = 2
+    SYNTHETIC = 3
+    TEMPLATE = 4
+    GLOBAL = 5
+    VTABLE = 6
+    STRING = 7
+    LIBRARY = 8
+    LINE = 9
+
+
+markerRegex = re.compile(
+    r"\s*//\s*(?P<type>\w+):\s*(?P<module>\w+)\s+(?P<offset>0x[a-f0-9]+) *(?P<extra>\S.+\S)?",
+    flags=re.I,
+)
+
+
+markerExactRegex = re.compile(
+    r"\s*// (?P<type>[A-Z]+): (?P<module>[A-Z0-9]+) (?P<offset>0x[a-f0-9]+)(?: (?P<extra>\S.+\S))?\n?$"
+)
+
+
+class DecompMarker:
+    def __init__(
+        self, marker_type: str, module: str, offset: int, extra: str | None = None
+    ) -> None:
+        try:
+            self._type = MarkerType[marker_type.upper()]
+        except KeyError:
+            self._type = MarkerType.UNKNOWN
+
+        # Convert to upper here. A lot of other analysis depends on this name
+        # being consistent and predictable. If the name is _not_ capitalized
+        # we will emit a syntax error.
+        self._module: str = module.upper()
+        self._offset: int = offset
+        self._extra: str | None = extra
+
+    @property
+    def type(self) -> MarkerType:
+        return self._type
+
+    @property
+    def module(self) -> str:
+        return self._module
+
+    @property
+    def offset(self) -> int:
+        return self._offset
+
+    @property
+    def extra(self) -> str | None:
+        return self._extra
+
+    @property
+    def category(self) -> MarkerCategory:
+        if self.is_vtable():
+            return MarkerCategory.VTABLE
+
+        if self.is_variable():
+            return MarkerCategory.VARIABLE
+
+        if self.is_string():
+            return MarkerCategory.STRING
+
+        # TODO: worth another look if we add more types, but this covers it
+        if self.is_regular_function() or self.is_explicit_byname():
+            return MarkerCategory.FUNCTION
+
+        return MarkerCategory.ADDRESS
+
+    @property
+    def key(self) -> tuple[MarkerCategory, str, str | None]:
+        """For use with the MarkerDict. To detect/avoid marker collision."""
+        return (self.category, self.module, self.extra)
+
+    def is_regular_function(self) -> bool:
+        """Regular function, meaning: not an explicit byname lookup. FUNCTION
+        markers can be _implicit_ byname.
+        FUNCTION and STUB markers are (currently) the only heterogeneous marker types that
+        can be lumped together, although the reasons for doing so are a little vague."""
+        return self._type in (MarkerType.FUNCTION, MarkerType.STUB)
+
+    def is_explicit_byname(self) -> bool:
+        return self._type in (
+            MarkerType.SYNTHETIC,
+            MarkerType.TEMPLATE,
+            MarkerType.LIBRARY,
+        )
+
+    def is_variable(self) -> bool:
+        return self._type == MarkerType.GLOBAL
+
+    def is_synthetic(self) -> bool:
+        return self._type == MarkerType.SYNTHETIC
+
+    def is_template(self) -> bool:
+        return self._type == MarkerType.TEMPLATE
+
+    def is_vtable(self) -> bool:
+        return self._type == MarkerType.VTABLE
+
+    def is_library(self) -> bool:
+        return self._type == MarkerType.LIBRARY
+
+    def is_string(self) -> bool:
+        return self._type == MarkerType.STRING
+
+    def is_line(self) -> bool:
+        return self._type == MarkerType.LINE
+
+    def allowed_in_func(self) -> bool:
+        return self._type in (MarkerType.GLOBAL, MarkerType.STRING, MarkerType.LINE)
+
+
+def normalize_target_aliases(aliases: TargetAliases) -> TargetAliases:
+    """Drop invalid aliases that meet one of these criteria:
+    1. They try to overwrite a built-in marker type. e.g. FUNCTION -> GLOBAL
+    2. They do not point to a built-in marker type. e.g. TEST -> HELLO
+    3. They repeat a previous alias. e.g. aliases on "Func" and "func" (different case)
+    """
+    builtin_types = {t.name for t in MarkerType}
+    allowed_pairs = []
+    seen_keys = set()
+
+    for key, value in aliases.items():
+        if (
+            key.upper() not in builtin_types
+            and value.upper() in builtin_types
+            and key.upper() not in seen_keys
+        ):
+            # Key name converted for lookup
+            seen_keys.add(key.upper())
+            allowed_pairs.append((key.upper(), value))
+
+    return dict(allowed_pairs)
+
+
+def normalize_project_aliases(project_aliases: ProjectAliases) -> ProjectAliases:
+    output = {}
+
+    for target, aliases in project_aliases.items():
+        normalized = normalize_target_aliases(aliases)
+        # Drop this target if there are no valid aliases left.
+        if normalized:
+            # Target name converted for lookup
+            output[target.upper()] = normalized
+
+    return output
+
+
+def resolve_alias(marker_type: str, target_name: str, aliases: ProjectAliases) -> str:
+    if not aliases or target_name.upper() not in aliases:
+        return marker_type
+
+    return aliases[target_name.upper()].get(marker_type.upper(), marker_type)
+
+
+def match_marker(
+    line: str, aliases: ProjectAliases | None = None
+) -> DecompMarker | None:
+    if aliases is None:
+        aliases = {}
+
+    match = markerRegex.match(line)
+    if match is None:
+        return None
+
+    marker_type = match.group("type")
+    target_name = match.group("module")
+
+    marker_type = resolve_alias(marker_type, target_name, aliases)
+
+    return DecompMarker(
+        marker_type=marker_type,
+        module=target_name,
+        offset=int(match.group("offset"), 16),
+        extra=match.group("extra"),
+    )
+
+
+def is_marker_exact(line: str) -> bool:
+    return markerExactRegex.match(line) is not None

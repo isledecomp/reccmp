@@ -6,7 +6,10 @@ from pathlib import Path
 
 import reccmp
 from reccmp.project.error import RecCmpProjectException
-from reccmp.project.logging import argparse_add_logging_args, argparse_parse_logging
+from reccmp.project.logging import (
+    argparse_add_logging_args,
+    argparse_parse_logging,
+)
 from reccmp.project.common import RECCMP_PROJECT_CONFIG
 from reccmp.project.create import create_project
 from reccmp.project.detect import (
@@ -14,7 +17,6 @@ from reccmp.project.detect import (
     find_filename_recursively,
     DetectWhat,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +26,7 @@ class ProjectSubcommand(enum.Enum):
     DETECT = enum.auto()
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(
         description="Project management", allow_abbrev=False
     )

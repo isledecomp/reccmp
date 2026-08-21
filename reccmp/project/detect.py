@@ -3,7 +3,7 @@ import enum
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Sequence
+from typing import Iterable, Iterator, Sequence
 
 from .config import (
     BuildFile,
@@ -22,7 +22,6 @@ from .error import (
     IncompleteReccmpTargetError,
 )
 from .util import get_path_sha256
-
 
 logger = logging.getLogger(__file__)
 
@@ -106,11 +105,28 @@ class GhidraConfig:
 
     Example value: `[r"FUN_([0-9a-f]{8})", r"LEGO1_\\1"]`.
     """
+    allow_hash_mismatch: bool = False
+    """
+    When enabled, we allow the Ghidra import to continue even if the hash of the
+    binary reported by Ghidra does not match the target hash in reccmp-project.yml.
+
+    By default, we stop the import if the hashes do not match.
+
+    This is intended as a safety feature to prevent the user from adding metadata to the
+    wrong Ghidra file.
+    """
 
 
 @dataclass
 class ReportConfig:
     ignore_functions: list[str] = field(default_factory=list)
+    """Functions matching these names will be omitted from the reccmp-reccmp report."""
+
+    ignore_variables: list[str] = field(default_factory=list)
+    """Variables matching these names will be omitted from the reccmp-datacmp report."""
+
+    icon: Path | None = None
+    """Path to icon (PNG image) to use in SVG and HTML reports."""
 
 
 @dataclass
@@ -137,17 +153,26 @@ class RecCmpPartialTarget:
     # SHA-256 checksum of the original binary.
     sha256: str
 
+    # Encoding of the source code files for this target.
+    encoding: str | None = None
+
+    # Relative (to project root) directory of source code files for this target.
+    source_paths: tuple[Path, ...] = tuple()
+
     # Ghidra-specific options for this target.
     ghidra_config: GhidraConfig | None = None
 
     # Report options for this target
     report_config: ReportConfig | None = None
 
-    # Relative (to project root) directory of source code files for this target.
-    source_root: Path | None = None
     original_path: Path | None = None
     recompiled_path: Path | None = None
     recompiled_pdb: Path | None = None
+
+    # Data to set directly in the database (addresses refer to orig binary)
+    data_sources: list[Path] | None = None
+
+    marker_aliases: dict[str, str] | None = None
 
 
 @dataclass
@@ -169,8 +194,11 @@ class RecCmpTarget:
     # SHA-256 checksum of the original binary.
     sha256: str
 
+    # Encoding of the source code files for this target.
+    encoding: str | None
+
     # Relative (to project root) directory of source code files for this target.
-    source_root: Path
+    source_paths: tuple[Path, ...]
 
     # Ghidra-specific options for this target.
     ghidra_config: GhidraConfig
@@ -181,6 +209,11 @@ class RecCmpTarget:
     original_path: Path
     recompiled_path: Path
     recompiled_pdb: Path
+
+    # Data to set directly in the database (addresses refer to orig binary)
+    data_sources: list[Path] = field(default_factory=list)
+
+    marker_aliases: dict[str, str] = field(default_factory=dict)
 
 
 class RecCmpProject:
@@ -214,22 +247,20 @@ class RecCmpProject:
         # The error message should display the full list of missing attributes
         # so we check it here instead of waiting for a single assert to fail.
         required_attrs = (
-            "source_root",
+            "source_paths",
             "original_path",
             "recompiled_path",
             "recompiled_pdb",
         )
 
-        missing_attrs = [
-            attr for attr in required_attrs if getattr(target, attr) is None
-        ]
+        missing_attrs = [attr for attr in required_attrs if not getattr(target, attr)]
         if missing_attrs:
             raise IncompleteReccmpTargetError(
                 f"Target {target_id} is missing data: {','.join(missing_attrs)}"
             )
 
         # This list should match the one above. These asserts are for mypy.
-        assert target.source_root is not None
+        assert target.source_paths  # Must have at least one
         assert target.original_path is not None
         assert target.recompiled_path is not None
         assert target.recompiled_pdb is not None
@@ -238,6 +269,9 @@ class RecCmpProject:
             ghidra = target.ghidra_config
         else:
             ghidra = GhidraConfig()
+
+        data_sources = target.data_sources or []
+        marker_aliases = target.marker_aliases or {}
 
         if target.report_config is not None:
             report = target.report_config
@@ -251,8 +285,11 @@ class RecCmpProject:
             original_path=target.original_path,
             recompiled_path=target.recompiled_path,
             recompiled_pdb=target.recompiled_pdb,
-            source_root=target.source_root,
+            encoding=target.encoding,
+            source_paths=target.source_paths,
             ghidra_config=ghidra,
+            data_sources=data_sources,
+            marker_aliases=marker_aliases,
             report_config=report,
         )
 
@@ -319,7 +356,9 @@ class RecCmpProject:
         # We must have found the project if we are here.
         assert project.project_config_path is not None
         project_directory = project.project_config_path.parent
-        user_data = project.find_user_config(project_directory)
+        # As of this writing, the user config must be located next to the project config
+        user_config_directory = project_directory
+        user_data = project.find_user_config(user_config_directory)
 
         verify_target_names(
             project_keys=set(project_data.targets) if project_data else set(),
@@ -335,24 +374,42 @@ class RecCmpProject:
                     ignore_types=target.ghidra.ignore_types,
                     ignore_functions=target.ghidra.ignore_functions,
                     name_substitutions=target.ghidra.name_substitutions,
+                    allow_hash_mismatch=target.ghidra.allow_hash_mismatch,
                 )
             else:
                 ghidra = None
             if target.report is not None:
+                target_icon = (
+                    project_directory / target.report.icon
+                    if target.report.icon
+                    else None
+                )
                 report = ReportConfig(
                     ignore_functions=target.report.ignore_functions,
+                    ignore_variables=target.report.ignore_variables,
+                    icon=target_icon,
                 )
             else:
                 report = None
 
-            source_root = project_directory / target.source_root
+            # Assumes these are relative paths. If they are not, the second path
+            # will replace the first instead of adding onto it.
+            source_paths = tuple(
+                project_directory / target_dir for target_dir in target.source_root
+            )
+            data_sources = [
+                project_directory / ds_path for ds_path in target.data_sources
+            ]
 
             project.targets[target_id] = RecCmpPartialTarget(
                 target_id=target_id,
                 filename=target.filename,
                 sha256=target.hash.sha256,
-                source_root=source_root,
+                encoding=target.encoding,
+                source_paths=source_paths,
                 ghidra_config=ghidra,
+                data_sources=data_sources,
+                marker_aliases=target.marker_aliases,
                 report_config=report,
             )
 
@@ -362,7 +419,9 @@ class RecCmpProject:
                 if target_id not in project.targets:
                     continue
 
-                project.targets[target_id].original_path = user_target.path
+                project.targets[target_id].original_path = (
+                    user_config_directory / user_target.path
+                )
 
         # Apply reccmp-build.yml
         if build_data is not None:
@@ -372,11 +431,11 @@ class RecCmpProject:
                 if target_id not in project.targets:
                     continue
 
-                project.targets[target_id].recompiled_path = build_directory.joinpath(
-                    build_target.path
+                project.targets[target_id].recompiled_path = (
+                    build_directory / build_target.path
                 )
-                project.targets[target_id].recompiled_pdb = build_directory.joinpath(
-                    build_target.pdb
+                project.targets[target_id].recompiled_pdb = (
+                    build_directory / build_target.pdb
                 )
 
         return project
@@ -387,15 +446,22 @@ class RecCmpPathsAction(argparse.Action):
         self, parser, namespace, values: Sequence[str] | None, option_string=None
     ):
         assert isinstance(values, Sequence)
-        original, recompiled, pdb, source_root = list(Path(o) for o in values)
+        original, recompiled, pdb, source_paths = list(Path(o) for o in values)
+
+        # Assumes base filename of the original binary is the module name.
+        target_id = original.stem.upper()
+        # This happens before argparse_parse_logging() is called, so it will not match our format.
+        logger.warning('Assuming target name is "%s"', target_id)
+
         target = RecCmpTarget(
-            target_id=original.stem.upper(),
+            target_id=target_id,
             filename=original.name,
             sha256=get_path_sha256(original),
             original_path=original,
             recompiled_path=recompiled,
             recompiled_pdb=pdb,
-            source_root=source_root,
+            encoding="utf-8",
+            source_paths=(source_paths,),
             ghidra_config=GhidraConfig(),
             report_config=ReportConfig(),
         )
@@ -451,10 +517,11 @@ def argparse_parse_project_target(
             f"Symbols PDB {target.recompiled_pdb} does not exist"
         )
 
-    if not target.source_root.is_dir():
-        raise RecCmpProjectException(
-            f"Source directory {target.source_root} does not exist"
-        )
+    for source_path in target.source_paths:
+        if not source_path.exists():
+            raise RecCmpProjectException(
+                f"Source code search path '{source_path}' does not exist"
+            )
     return target
 
 
@@ -464,6 +531,19 @@ class DetectWhat(enum.Enum):
 
     def __str__(self):
         return self.value
+
+
+def search_path_append_file(
+    search_paths: Iterable[Path], filename: str
+) -> Iterator[Path]:
+    """Search paths can point to directories or files.
+    If the path is a directory, combine it with the given filename.
+    If the path is a file, return it unchanged."""
+    for path in search_paths:
+        if path.is_dir():
+            yield path / filename
+        else:
+            yield path
 
 
 def detect_project(
@@ -484,8 +564,7 @@ def detect_project(
 
         for target_id, target_data in project_data.targets.items():
             filename = target_data.filename
-            for search_path_folder in search_path:
-                p = search_path_folder / filename
+            for p in search_path_append_file(search_path, filename):
                 if not p.is_file():
                     continue
 
@@ -504,9 +583,7 @@ def detect_project(
                 logger.info("Found %s -> %s", target_id, p)
                 break
             else:
-                logger.warning(
-                    "Could not find %s under %s", filename, search_path_folder
-                )
+                logger.warning("Could not find %s under %s", filename, p)
 
         logger.info("Updating %s", user_config_path)
         user_data.write_file(user_config_path)
@@ -519,19 +596,28 @@ def detect_project(
         build_config_path = build_directory / RECCMP_BUILD_CONFIG
         build_data = BuildFile(project=project_directory.resolve(), targets={})
 
-        for target_id, target_data in project_data.targets.items():
-            filename = target_data.filename
-            for search_path_folder in search_path:
-                p = search_path_folder / filename
-                pdb = p.with_suffix(".pdb")
-                if p.is_file() and pdb.is_file():
-                    build_data.targets.setdefault(
-                        target_id, BuildFileTarget(path=p, pdb=pdb)
+        def detect_recompiled(filename: str):
+            for binary in search_path_append_file(search_path, filename):
+                pdb = binary.with_suffix(".pdb")
+                if binary.is_file():
+                    if pdb.is_file():
+                        build_data.targets.setdefault(
+                            target_id, BuildFileTarget(path=binary, pdb=pdb)
+                        )
+                        logger.info("Found %s -> %s", target_id, binary)
+                        logger.info("Found %s -> %s", target_id, pdb)
+                        return
+
+                    logger.warning(
+                        "Missing PDB file '%s' next to binary '%s'",
+                        pdb.name,
+                        str(binary),
                     )
-                    logger.info("Found %s -> %s", target_id, p)
-                    logger.info("Found %s -> %s", target_id, pdb)
-                    break
-            else:
-                logger.warning("Could not find %s", filename)
+
+            logger.warning("Failed to detect a recompile for '%s'", filename)
+
+        for target_id, target_data in project_data.targets.items():
+            detect_recompiled(target_data.filename)
+
         logger.info("Updating %s", build_config_path)
         build_data.write_file(build_config_path)
