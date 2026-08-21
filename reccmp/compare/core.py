@@ -164,8 +164,9 @@ class Compare:
         load_data_sources(self._db, self.data_sources)
 
         # Match using PDB and annotation data
-        match_symbols(self._db, self.report, truncate=True)
-        match_functions(self._db, self.report, truncate=True)
+        truncate = self.cvdump_analysis.truncate_symbols
+        match_symbols(self._db, self.report, truncate=truncate)
+        match_functions(self._db, self.report, truncate=truncate)
         match_vtables(self._db, self.report)
         match_static_variables(self._db, self.report)
         match_variables(self._db, self.report)
