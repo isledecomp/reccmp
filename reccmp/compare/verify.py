@@ -10,13 +10,9 @@ logger = logging.getLogger(__name__)
 
 
 def check_vtables(db: EntityDb):
-    """Check vtable sizes provided by the data source.
-
-    Size differences between the orig and recomp vtables are reported by the
-    vtable comparison, so they are not checked here. The only check is that a
-    user-provided orig vtable size does not extend past the next entity in the
-    binary. If it does, the size can't be right, so warn about it.
-    """
+    """Check for entities (vtables only, for now) where the known size and
+    the calculated max size are in conflict. A known size that extends past
+    the next entity in the binary can't be right, so warn about it."""
     for match in db.get_matches_by_type(EntityType.VTABLE):
         assert match.name is not None
 

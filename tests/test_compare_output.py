@@ -572,33 +572,46 @@ def test_report_function_accuracy():
 def test_compare_vtable_recomp_longer():
     """An extra virtual function on the recomp side should appear in the
     diff when the orig vtable size is known."""
+    base_addr = 0x400000
     function_bytes = b"\xc3\x00\x00\x00"  # `ret` padded to 4 bytes
     functions = function_bytes + function_bytes
 
-    vtable_addr0 = b"\x00\x00\x00\x00"
-    vtable_addr4 = b"\x04\x00\x00\x00"
+    func0_ptr = base_addr.to_bytes(4, "little")
+    func1_ptr = (base_addr + 4).to_bytes(4, "little")
 
     # Orig has one virtual function; recomp has a second one.
-    orig_mem = functions + vtable_addr0
-    recomp_mem = functions + vtable_addr0 + vtable_addr4
+    orig_mem = functions + func0_ptr
+    recomp_mem = functions + func0_ptr + func1_ptr
 
-    orig_bin = RawImage.from_memory(orig_mem)
-    recomp_bin = RawImage.from_memory(recomp_mem)
+    orig_bin = RawImage.from_memory(orig_mem, base_addr=base_addr)
+    recomp_bin = RawImage.from_memory(recomp_mem, base_addr=base_addr)
 
     pdb = Mock(spec=CvdumpAnalysis)
     compare = Compare(orig_bin, recomp_bin, pdb, "HELLO")
 
     with get_db(compare).batch() as batch:
-        batch.set(ImageId.RECOMP, 0, type=EntityType.FUNCTION, name="func0", size=1)
-        batch.set(ImageId.RECOMP, 4, type=EntityType.FUNCTION, name="func1", size=1)
-        batch.set(ImageId.ORIG, 8, type=EntityType.VTABLE, name="hello", size=4)
-        batch.set(ImageId.RECOMP, 8, type=EntityType.VTABLE, name="hello", size=8)
-        batch.match(0, 0)
-        batch.match(4, 4)
-        batch.match(8, 8)
+        batch.set(
+            ImageId.RECOMP, base_addr, type=EntityType.FUNCTION, name="func0", size=1
+        )
+        batch.set(
+            ImageId.RECOMP,
+            base_addr + 4,
+            type=EntityType.FUNCTION,
+            name="func1",
+            size=1,
+        )
+        batch.set(
+            ImageId.ORIG, base_addr + 8, type=EntityType.VTABLE, name="hello", size=4
+        )
+        batch.set(
+            ImageId.RECOMP, base_addr + 8, type=EntityType.VTABLE, name="hello", size=8
+        )
+        batch.match(base_addr, base_addr)
+        batch.match(base_addr + 4, base_addr + 4)
+        batch.match(base_addr + 8, base_addr + 8)
 
     report = to_report(compare)
-    e = report.entities[8]
+    e = report.entities[base_addr + 8]
     assert e is not None
 
     # The extra entry shows up in the diff and makes the match fail.
@@ -614,31 +627,38 @@ def test_compare_vtable_recomp_longer():
 def test_compare_vtable_recomp_trailing_padding():
     """Alignment padding after the recomp vtable should not show up in the
     diff as an extra virtual function."""
+    base_addr = 0x400000
     function_bytes = b"\xc3\x00\x00\x00"  # `ret` padded to 4 bytes
     padding = b"\x00\x00\x00\x00"
 
-    vtable_addr0 = b"\x00\x00\x00\x00"
+    func0_ptr = base_addr.to_bytes(4, "little")
 
     # Both tables hold one virtual function followed by an alignment slot.
-    orig_mem = function_bytes + vtable_addr0 + padding
-    recomp_mem = function_bytes + vtable_addr0 + padding
+    orig_mem = function_bytes + func0_ptr + padding
+    recomp_mem = function_bytes + func0_ptr + padding
 
-    orig_bin = RawImage.from_memory(orig_mem)
-    recomp_bin = RawImage.from_memory(recomp_mem)
+    orig_bin = RawImage.from_memory(orig_mem, base_addr=base_addr)
+    recomp_bin = RawImage.from_memory(recomp_mem, base_addr=base_addr)
 
     pdb = Mock(spec=CvdumpAnalysis)
     compare = Compare(orig_bin, recomp_bin, pdb, "HELLO")
 
     with get_db(compare).batch() as batch:
-        batch.set(ImageId.RECOMP, 0, type=EntityType.FUNCTION, name="func0", size=1)
-        batch.set(ImageId.ORIG, 4, type=EntityType.VTABLE, name="hello", size=4)
+        batch.set(
+            ImageId.RECOMP, base_addr, type=EntityType.FUNCTION, name="func0", size=1
+        )
+        batch.set(
+            ImageId.ORIG, base_addr + 4, type=EntityType.VTABLE, name="hello", size=4
+        )
         # The recomp size includes the alignment padding after the table.
-        batch.set(ImageId.RECOMP, 4, type=EntityType.VTABLE, name="hello", size=8)
-        batch.match(0, 0)
-        batch.match(4, 4)
+        batch.set(
+            ImageId.RECOMP, base_addr + 4, type=EntityType.VTABLE, name="hello", size=8
+        )
+        batch.match(base_addr, base_addr)
+        batch.match(base_addr + 4, base_addr + 4)
 
     report = to_report(compare)
-    e = report.entities[4]
+    e = report.entities[base_addr + 4]
     assert e is not None
 
     # The padding is ignored, so the two tables match.
@@ -649,6 +669,12 @@ def test_compare_vtable_recomp_trailing_padding():
     assert udiff == [
         (
             "@@ -vtable0x00,1 +vtable0x00,1 @@",
-            [{"both": [("vtable0x00", "(0x0 / 0x0)  :  func0", "vtable0x00")]}],
+            [
+                {
+                    "both": [
+                        ("vtable0x00", "(0x400000 / 0x400000)  :  func0", "vtable0x00")
+                    ]
+                }
+            ],
         )
     ]
