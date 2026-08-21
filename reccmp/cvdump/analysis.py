@@ -189,31 +189,31 @@ class CvdumpAnalysis:
 
                 node_dict[key] = CvdumpNode.from_node_key(key)
 
+            # If the variable does not have a name yet, add this one.
+            # Replace an existing name only if the data type size is larger.
+            node_dict[key].node_type = EntityType.DATA
+            if node_dict[key].friendly_name is None:
+                node_dict[key].friendly_name = glo.name
+
             try:
                 # Check our types database for type information.
                 # If we did not parse the TYPES section, we can only
                 # get information for built-in "T_" types.
                 g_info = parser.types.get(glo.type)
-                # If we already have a symbol for the given key, only override
-                # the type if the new type is larger. This fixes issues when
-                # symbols are repeated in the pdb with different types.
-                # (eg. when a global is declared as an array without a size)
-                if (
-                    node_dict[key].confirmed_size is None
-                    or node_dict[key].confirmed_size < g_info.size
-                ):
-                    node_dict[key].node_type = EntityType.DATA
+
+                # mypy coercion.
+                current_size = node_dict[key].confirmed_size or 0
+                new_size = g_info.size or 0
+
+                if new_size >= current_size:
+                    # Replace variable name with the GLOBALS
+                    # entry that has the largest type.
                     node_dict[key].friendly_name = glo.name
                     node_dict[key].confirmed_size = g_info.size
                     node_dict[key].data_type = g_info
-                # Previously we set the symbol type to POINTER here if
-                # the variable was known to be a pointer. We can derive this
-                # information later when it's time to compare the variable,
-                # so let's set these to symbol type DATA instead.
-                # POINTER will be reserved for non-variable pointer data.
-                # e.g. thunks, unwind section.
+
             except (CvdumpKeyError, CvdumpIntegrityError):
-                # No big deal if we don't have complete type information.
+                # We can still create the variable entity without type information.
                 pass
 
         self.lines = parser.lines
