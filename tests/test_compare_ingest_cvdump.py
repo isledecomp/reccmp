@@ -783,3 +783,37 @@ def test_variable_types_of_equal_size(binfile: PEImage):
     assert entity.get("name") == "test2"
     assert entity.get("data_type") == 0x1001
     assert entity.size(ImageId.RECOMP) == 4
+
+
+def test_lproc32_gproc32_collision(binfile: PEImage):
+    """Should not overwrite an S_GPROC32 entry with one at the same section:offset
+    that is an S_LPROC32. In real data, this has been observed to occur with _setjmp,
+    _longjmp, and _unwind_handler in MSVC 7.0. Possibly related to SEH. (GH #204)"""
+    db = EntityDb()
+    parser = CvdumpParser()
+    parser.read_section(
+        "SYMBOLS",
+        dedent("""\
+        (0000B0) S_GPROC32: [0001:00000000], Cb: 0000006E, Type:             0x1071, Score::Score
+                 Parent: 00000000, End: 000000E4, Next: 00000000
+                 Debug start: 0000001C, Debug end: 00000050
+
+        (0000E4) S_END
+
+        (000110) S_LPROC32: [0001:00000000], Cb: 00000000, Type:             0x104F, Score::Score
+                 Parent: 00000000, End: 00000140, Next: 00000000
+                 Debug start: 00000000, Debug end: 00000000
+
+        (000140) S_END
+        """),
+    )
+
+    cvdump_analysis = CvdumpAnalysis(parser)
+    load_cvdump(cvdump_analysis, db, binfile)
+
+    entity = db.get(ImageId.RECOMP, 0x10001000)
+    assert entity is not None
+    assert entity.get("name") == "Score::Score"
+    assert entity.get("type") == EntityType.FUNCTION
+    # Should not overwrite with size 0 after reading the S_LPROC32 node.
+    assert entity.size(ImageId.RECOMP) == 0x6E
