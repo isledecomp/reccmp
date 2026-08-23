@@ -8,6 +8,7 @@ in the original binary.
 
 import argparse
 import bisect
+import csv
 import logging
 import os
 from pathlib import Path
@@ -356,12 +357,11 @@ def export_to_csv(csv_file: str, results: list[RoadmapRow]):
     }
     csv_header = list(header_renames.get(f, f) for f in RoadmapRow._fields)
 
-    with open(csv_file, "w+", encoding="utf-8") as f:
-        f.write(",".join(csv_header))
-        f.write("\n")
+    with open(csv_file, "w+", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(csv_header)
         for row in results:
-            f.write(",".join(map(or_blank, row)))
-            f.write("\n")
+            writer.writerow(list(map(or_blank, row)))
 
 
 def parse_args() -> argparse.Namespace:
