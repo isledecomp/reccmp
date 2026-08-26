@@ -44,6 +44,7 @@ jobs:
             '# codespell:ignore-begin.*?codespell:ignore-end *\n' \
           --ignore-regex remote-checkin-comment \
           -L SEH \
+          -S ./tests/cvdump_sample/*.txt \
           ./reccmp ./tests
 
   js-format:
