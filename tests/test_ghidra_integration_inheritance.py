@@ -505,7 +505,7 @@ def test_padding_between_two_virtual_bases(type_helper: GhidraTypeTestHelper):
     Note the difference in size between C and D, which extend A and B in
     different orders. In the case of D, there is padding between B and A.
     We cannot set the correct offsets by simply adding the size of B and A.
-    We could guess the default byte alignmen but a `#pragma pack` directive
+    We could guess the default byte alignment but a `#pragma pack` directive
     will change this without any indication that this has happened.
     """
     sample = load_cvdump_sample("vbase-padding")
