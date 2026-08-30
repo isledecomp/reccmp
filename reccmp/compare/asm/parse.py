@@ -8,12 +8,28 @@ placeholder string."""
 
 import re
 from functools import cache
+from typing import Mapping
 from typing_extensions import Buffer
 from .const import JUMP_MNEMONICS, SINGLE_OPERAND_INSTS
 from .instgen import DisasmLiteTuple, InstructGen, SectionType
 from .replacement import AddrTestProtocol, NameReplacementProtocol
 
 AsmExcerpt = list[tuple[int | None, str]]
+
+OpRecord = tuple[str, tuple[tuple[int, str, bool], ...]]
+"""Record of the address operands in one sanitized instruction:
+(final instruction text,
+ ((operand address, replacement text, strict), ...)).
+The replacement text is the exact string that was inserted into (or, for
+an immediate that we chose not to replace, kept in) the instruction text.
+strict is True for operands that can only refer to the exact start of an
+entity: a call target or an indirect pointer slot. Used for cross-side
+operand equivalence."""
+
+SectionLayout = tuple[tuple[str, int, int], ...]
+"""Shape of the disassembly: one (section type name, relative start, item
+count) triple per section, with the start relative to the function start.
+Two functions with the same code should produce the same layout."""
 
 ptr_replace_regex = re.compile(r"(?<=\[)(0x[0-9a-f]+)(?=\])")
 
@@ -34,6 +50,7 @@ def from_hex(string: str) -> int | None:
 
 
 class ParseAsm:
+    # pylint: disable=too-many-instance-attributes
     def __init__(
         self,
         addr_test: AddrTestProtocol | None = None,
@@ -48,9 +65,23 @@ class ParseAsm:
         self.indirect_replacements: dict[int, str] = {}
         self.number_placeholders = True
 
+        # Address operands of each sanitized instruction from the last
+        # parse_asm() call, keyed by instruction address.
+        self.op_records: dict[int, OpRecord] = {}
+        self._cur_ops: list[tuple[int, str, bool]] = []
+
+        # Section layout and confirmed table locations (relative to the
+        # function start) from the last parse_asm() call.
+        self.last_layout: SectionLayout = ()
+        self.last_tables: dict[int, SectionType] = {}
+
     def reset(self):
         self.replacements = {}
         self.indirect_replacements = {}
+        self.op_records = {}
+        self._cur_ops = []
+        self.last_layout = ()
+        self.last_tables = {}
 
     def is_addr(self, value: int) -> bool:
         """Wrapper for user-provided address test"""
@@ -75,30 +106,34 @@ class ParseAsm:
         number = len(self.replacements) + len(self.indirect_replacements) + 1
         return f"<OFFSET{number}>" if self.number_placeholders else "<OFFSET>"
 
+    def _record_op(self, addr: int, text: str, strict: bool = False):
+        """Note an address operand of the instruction being sanitized."""
+        self._cur_ops.append((addr, text, strict))
+
     def replace(self, addr: int, exact: bool = False) -> str:
         """Provide a replacement name for the given address."""
         if addr in self.replacements:
-            return self.replacements[addr]
+            text = self.replacements[addr]
+        elif (name := self.lookup(addr, exact=exact)) is not None:
+            self.replacements[addr] = text = name
+        else:
+            text = self._next_placeholder()
+            self.replacements[addr] = text
 
-        if (name := self.lookup(addr, exact=exact)) is not None:
-            self.replacements[addr] = name
-            return name
-
-        placeholder = self._next_placeholder()
-        self.replacements[addr] = placeholder
-        return placeholder
+        self._record_op(addr, text, strict=exact)
+        return text
 
     def indirect_replace(self, addr: int) -> str:
         if addr in self.indirect_replacements:
-            return self.indirect_replacements[addr]
+            text = self.indirect_replacements[addr]
+        elif (name := self.lookup(addr, exact=True, indirect=True)) is not None:
+            self.indirect_replacements[addr] = text = name
+        else:
+            text = self._next_placeholder()
+            self.indirect_replacements[addr] = text
 
-        if (name := self.lookup(addr, exact=True, indirect=True)) is not None:
-            self.indirect_replacements[addr] = name
-            return name
-
-        placeholder = self._next_placeholder()
-        self.indirect_replacements[addr] = placeholder
-        return placeholder
+        self._record_op(addr, text, strict=True)
+        return text
 
     def hex_replace_always(self, match: re.Match) -> str:
         """If a pointer value was matched, always insert a placeholder"""
@@ -121,8 +156,13 @@ class ParseAsm:
         value = int(match.group(1), 16)
         placeholder = self.lookup(value)
         if placeholder is not None:
+            self._record_op(value, placeholder)
             return placeholder
 
+        # Even though we keep the raw value, record it as a potential
+        # address operand so that cross-side refinement can still try to
+        # match it up against the other side.
+        self._record_op(value, match.group(0))
         return match.group(0)
 
     def hex_replace_indirect(self, match: re.Match) -> str:
@@ -193,11 +233,25 @@ class ParseAsm:
 
         return (inst_mnemonic, op_str)
 
-    def parse_asm(self, data: Buffer, start_addr: int) -> AsmExcerpt:
+    def parse_asm(
+        self,
+        data: Buffer,
+        start_addr: int,
+        table_seeds: Mapping[int, SectionType] | None = None,
+    ) -> AsmExcerpt:
+        """Disassemble and sanitize the given code.
+        table_seeds provides known jump/data table locations, relative to
+        start_addr, to guide the disassembly. (e.g. shared from the
+        disassembly of the same function in the other image)"""
         self.reset()
         asm: AsmExcerpt = []
 
-        ig = InstructGen(bytes(data), start_addr, self.is_32bit)
+        seeds = (
+            {start_addr + rel: type_ for rel, type_ in table_seeds.items()}
+            if table_seeds is not None
+            else None
+        )
+        ig = InstructGen(bytes(data), start_addr, self.is_32bit, seeds=seeds)
 
         for section in ig.sections:
             if section.type == SectionType.CODE:
@@ -217,7 +271,13 @@ class ParseAsm:
                         or inst_size > 4
                         or not self.is_32bit
                     ):
+                        self._cur_ops = []
                         result = self.sanitize(inst)
+                        if self._cur_ops:
+                            self.op_records[inst_address] = (
+                                " ".join(result),
+                                tuple(self._cur_ops),
+                            )
                     else:
                         result = (inst_mnemonic, inst_op_str)
 
@@ -238,5 +298,19 @@ class ParseAsm:
                 asm.append((None, "Data table:"))
                 for ofs, b in section.contents:
                     asm.append((ofs, hex(b)))
+
+        self.last_layout = tuple(
+            (
+                section.type.name,
+                (section.contents[0][0] - start_addr) if section.contents else -1,
+                len(section.contents),
+            )
+            for section in ig.sections
+        )
+        self.last_tables = {
+            addr - start_addr: type_
+            for addr, type_ in ig.confirmed_addrs.items()
+            if type_ != SectionType.CODE
+        }
 
         return asm

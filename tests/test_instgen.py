@@ -262,3 +262,64 @@ def test_movzx_data_table():
         SectionType.ADDR_TAB,
         SectionType.DATA_TAB,
     ]
+
+
+# Synthetic function with a jump table that comes BEFORE the instruction
+# that reads it, at 0x1004:
+#   0x1000: jmp 0x1014            (over the table)
+#   0x1002: nop / nop             (padding)
+#   0x1004: jump table            (4 entries, all 0x1014)
+#   0x1014: mov eax, 5
+#   0x1019: jmp [eax*4 + 0x1004]  (the table read)
+#   0x1020: ret
+BACKWARD_TABLE = (
+    b"\xeb\x12\x90\x90"
+    b"\x14\x10\x00\x00\x14\x10\x00\x00\x14\x10\x00\x00\x14\x10\x00\x00"
+    b"\xb8\x05\x00\x00\x00"
+    b"\xff\x24\x85\x04\x10\x00\x00"
+    b"\xc3"
+)
+
+
+def test_backward_table():
+    """A jump table that comes before the JMP into it is detected too
+    late: we have already disassembled the table bytes as code. We only
+    get the (junk) code sections, but the confirmed address of the table
+    must be reported so that another run can be seeded with it."""
+    ig = InstructGen(BACKWARD_TABLE, 0x1000)
+    assert all(section.type == SectionType.CODE for section in ig.sections)
+    assert ig.confirmed_addrs.get(0x1004) == SectionType.ADDR_TAB
+
+
+def test_backward_table_seeded():
+    """Given the location of the jump table up front, the sections can be
+    split correctly even though the JMP into the table comes after it."""
+    ig = InstructGen(BACKWARD_TABLE, 0x1000, seeds={0x1004: SectionType.ADDR_TAB})
+
+    assert [section.type for section in ig.sections] == [
+        SectionType.CODE,
+        SectionType.ADDR_TAB,
+        SectionType.CODE,
+    ]
+
+    # The code before the table: jmp and two nops.
+    assert len(ig.sections[0].contents) == 3
+
+    # All four table entries.
+    assert ig.sections[1].contents == [
+        (0x1004, 0x1014),
+        (0x1008, 0x1014),
+        (0x100C, 0x1014),
+        (0x1010, 0x1014),
+    ]
+
+    # The code after the table, starting at the table target.
+    assert ig.sections[2].contents[0][0] == 0x1014
+    assert len(ig.sections[2].contents) == 3
+
+
+def test_seeds_do_not_affect_normal_functions():
+    """Out-of-range seeds are ignored."""
+    ig = InstructGen(b"\x33\xc0\xc3", 0x1000, seeds={0x5000: SectionType.ADDR_TAB})
+    assert len(ig.sections) == 1
+    assert len(ig.sections[0].contents) == 2

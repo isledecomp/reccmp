@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass
 from functools import cache
 import struct
@@ -6,8 +7,11 @@ from typing import Callable, Iterator
 from reccmp.compare.lines import LinesDb
 from reccmp.compare.pinned_sequences import SequenceMatcherWithPins
 from reccmp.compare.asm.fixes import assert_fixup, find_effective_match
+from reccmp.compare.asm.instgen import SectionType
 from reccmp.compare.asm.parse import AsmExcerpt, ParseAsm
+from reccmp.compare.asm.refine import OperandRefiner
 from reccmp.compare.asm.replacement import (
+    create_candidate_lookup,
     create_name_lookup,
 )
 from reccmp.compare.db import EntityDb, ReccmpMatch
@@ -64,6 +68,9 @@ def create_bin_lookup(bin_file: Image) -> Callable[[int], int | None]:
     return lookup
 
 
+logger = logging.getLogger(__name__)
+
+
 @dataclass
 class FunctionComparator:
     # pylint: disable=too-many-instance-attributes
@@ -98,6 +105,8 @@ class FunctionComparator:
             ),
             is_32bit=self.is_32bit,
         )
+        self.orig_candidates = create_candidate_lookup(self.db, ImageId.ORIG)
+        self.recomp_candidates = create_candidate_lookup(self.db, ImageId.RECOMP)
 
     def _source_ref_of_recomp_addr(self, recomp_addr: int | None) -> str | None:
         if recomp_addr is None:
@@ -142,8 +151,9 @@ class FunctionComparator:
         except IndexError:
             pass
 
-        orig_combined = self.orig_sanitize.parse_asm(orig_raw, match.orig_addr)
-        recomp_combined = self.recomp_sanitize.parse_asm(recomp_raw, match.recomp_addr)
+        orig_combined, recomp_combined = self._parse_asm_with_shared_tables(
+            match, orig_raw, recomp_raw
+        )
 
         # Check for assert calls only if we expect to find them
         if has_asserts(self.orig_bin):
@@ -158,8 +168,82 @@ class FunctionComparator:
             orig_combined, recomp_combined, line_annotations
         )
 
+        refiner = OperandRefiner(
+            orig_candidates=self.orig_candidates,
+            recomp_candidates=self.recomp_candidates,
+            orig_start=match.orig_addr,
+            recomp_start=match.recomp_addr,
+            # Strictly interior to the function in both images. Anything
+            # past the last byte may belong to a different neighbor
+            # function in each image.
+            self_reach=min(orig_size, recomp_size),
+        )
+
         return self._compare_function_assembly(
-            orig_combined, recomp_combined, split_points
+            orig_combined, recomp_combined, split_points, refiner
+        )
+
+    def _parse_asm_with_shared_tables(
+        self, match: ReccmpMatch, orig_raw: bytes, recomp_raw: bytes
+    ) -> tuple[AsmExcerpt, AsmExcerpt]:
+        """Disassemble and sanitize both sides of the match.
+
+        A jump or data table is only detected once we disassemble the
+        instruction that reads it. If that instruction comes after the
+        table, the table bytes have already been read as junk code, and
+        the junk differs between the images (the table contents are
+        relocated), or one side even stops early on an undecodable byte.
+        The result is a diff mismatch on code that is not actually
+        different.
+
+        If the two sides disagree on the section layout, share the table
+        locations (which are function-relative) between the sides and
+        re-parse, so both get the chance to split their sections in the
+        same spot. Keep the result only if the sides converge on the same
+        layout."""
+        orig_combined = self.orig_sanitize.parse_asm(orig_raw, match.orig_addr)
+        recomp_combined = self.recomp_sanitize.parse_asm(recomp_raw, match.recomp_addr)
+
+        if self.orig_sanitize.last_layout == self.recomp_sanitize.last_layout or (
+            not self.orig_sanitize.last_tables and not self.recomp_sanitize.last_tables
+        ):
+            return (orig_combined, recomp_combined)
+
+        tables = (self.orig_sanitize.last_tables, self.recomp_sanitize.last_tables)
+        for _ in range(3):
+            # Merge the tables detected by each side. If both sides claim
+            # the same location, prefer the jump table: it is detected
+            # from the more specific instruction pattern.
+            seeds: dict[int, SectionType] = {}
+            for side in tables:
+                for rel_addr, type_ in side.items():
+                    if seeds.get(rel_addr) != SectionType.ADDR_TAB:
+                        seeds[rel_addr] = type_
+
+            orig_combined = self.orig_sanitize.parse_asm(
+                orig_raw, match.orig_addr, table_seeds=seeds
+            )
+            recomp_combined = self.recomp_sanitize.parse_asm(
+                recomp_raw, match.recomp_addr, table_seeds=seeds
+            )
+
+            new_tables = (
+                self.orig_sanitize.last_tables,
+                self.recomp_sanitize.last_tables,
+            )
+            if new_tables == tables:
+                break
+
+            tables = new_tables
+
+        if self.orig_sanitize.last_layout == self.recomp_sanitize.last_layout:
+            return (orig_combined, recomp_combined)
+
+        # The sides did not converge: the code is presumably really
+        # different. Restore the unseeded parse.
+        return (
+            self.orig_sanitize.parse_asm(orig_raw, match.orig_addr),
+            self.recomp_sanitize.parse_asm(recomp_raw, match.recomp_addr),
         )
 
     @staticmethod
@@ -183,19 +267,48 @@ class FunctionComparator:
         orig: AsmExcerpt,
         recomp: AsmExcerpt,
         split_points: list[tuple[int, int]],
+        refiner: OperandRefiner,
     ) -> EntityCompareResult:
         # Detach addresses from asm lines for the text diff.
         orig_asm = [x[1] for x in orig]
         recomp_asm = [x[1] for x in recomp]
 
         diff = SequenceMatcherWithPins(orig_asm, recomp_asm, split_points)
+        codes = diff.get_opcodes()
+        ratio = diff.ratio()
 
-        if diff.ratio() != 1.0:
+        if ratio != 1.0:
+            # Some of the mismatching line pairs may differ only in
+            # operands that refer to the same thing on both sides.
+            refined = refiner.refine(
+                orig,
+                recomp,
+                codes,
+                self.orig_sanitize.op_records,
+                self.recomp_sanitize.op_records,
+            )
+            if refined is not None:
+                logger.debug(
+                    "refined %d operand pair(s) in function at 0x%x",
+                    refined.refined_pairs,
+                    refiner.orig_start,
+                )
+                recomp = refined.recomp
+                recomp_asm = [x[1] for x in recomp]
+                codes = refined.opcodes
+
+                # The refinement turns mismatching pairs into matches and
+                # moves nothing else, so the ratio follows directly from
+                # the patched opcodes. (2*matches / total lines, as in
+                # difflib.SequenceMatcher.ratio)
+                total = len(orig_asm) + len(recomp_asm)
+                matched = sum(i2 - i1 for tag, i1, i2, _, _ in codes if tag == "equal")
+                ratio = 2 * matched / total if total > 0 else 1.0
+
+        if ratio != 1.0:
             # Check whether we can resolve register swaps which are actually
             # perfect matches modulo compiler entropy.
-            is_effective = find_effective_match(
-                diff.get_opcodes(), orig_asm, recomp_asm
-            )
+            is_effective = find_effective_match(codes, orig_asm, recomp_asm)
         else:
             is_effective = False
 
@@ -220,12 +333,12 @@ class FunctionComparator:
 
         return EntityCompareResult(
             diff=RawDiffOutput(
-                codes=diff.get_opcodes(),
+                codes=codes,
                 orig_inst=orig_for_printing,
                 recomp_inst=recomp_for_printing,
             ),
             is_effective_match=is_effective,
-            match_ratio=diff.ratio(),
+            match_ratio=ratio,
         )
 
     def _collect_line_annotations(self, recomp: AsmExcerpt) -> list[ReccmpMatch]:
