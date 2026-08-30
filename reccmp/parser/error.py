@@ -57,6 +57,18 @@ class AlertCode(Enum):
     # WARN: The alias does not point to a valid marker type and has no effect.
     ALIAS_GOES_NOWHERE = 114
 
+    # WARN: A nameref annotation used different marker types.
+    # e.g. SYNTHETIC + FUNCTION
+    VARYING_MARKER_TYPES = 115
+
+    # WARN: Each line in the marker block must have the same tab stops
+    # as the completion token.
+    MARKER_NOT_ALIGNED = 116
+
+    # WARN: Each line in the marker block must have the same number of slashes.
+    # If this is a nameref, the completion token must also match.
+    VARYING_SLASH_DEPTH = 117
+
     # This code or higher is an error, not a warning
     DECOMP_ERROR_START = 200
 
