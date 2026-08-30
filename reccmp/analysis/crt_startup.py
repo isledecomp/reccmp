@@ -301,6 +301,35 @@ def create_crt_matches(
         if not matched_this_pass:
             break
 
+    # Positional fallback for functions the fingerprints cannot pair: startup
+    # arrays are populated in link order, which a faithful recompilation
+    # preserves, so entries whose fingerprint is EMPTY on both sides (their
+    # code references no known entity; common for CRT-internal initializers)
+    # can be paired by their position in the array. Only do this when both
+    # arrays have the same length, every fingerprint match agrees with the
+    # shared order, and both entries at the position are still unmatched.
+    # Entries with a non-empty but ambiguous fingerprint are left unmatched
+    # as before.
+    orig_order = list(orig_array.functions)
+    recomp_order = list(recomp_array.functions)
+    if len(orig_order) == len(recomp_order):
+        orig_index = {addr: i for i, addr in enumerate(orig_order)}
+        recomp_index = {addr: i for i, addr in enumerate(recomp_order)}
+        if all(
+            orig_index[orig_addr] == recomp_index[recomp_addr]
+            for orig_addr, recomp_addr in matches
+        ):
+            matched_orig = {orig_addr for orig_addr, _ in matches}
+            matched_recomp = {recomp_addr for _, recomp_addr in matches}
+            for orig_addr, recomp_addr in zip(orig_order, recomp_order):
+                if (
+                    orig_addr not in matched_orig
+                    and recomp_addr not in matched_recomp
+                    and not orig_array.functions[orig_addr]
+                    and not recomp_array.functions[recomp_addr]
+                ):
+                    matches.append((orig_addr, recomp_addr))
+
     # Add any pairs of thunks that point to an already matched function.
     thunks = []
     for orig_addr, recomp_addr in matches:

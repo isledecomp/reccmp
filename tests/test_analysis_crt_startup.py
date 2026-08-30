@@ -163,10 +163,57 @@ def test_create_match_single_with_thunks_two_sided():
 
 
 def test_create_match_blank_fingerprint():
-    """Should not match functions if their fingerprint has no addresses."""
+    """Functions whose fingerprint has no addresses on both sides are paired
+    by their position in the array. The arrays are populated in link order,
+    which a faithful recompilation preserves, and an empty fingerprint (e.g. a
+    CRT-internal initializer referencing no known entity) can never produce a
+    fingerprint match."""
     x_array = CrtStartupArray(functions={100: ()}, thunks={})
     y_array = CrtStartupArray(functions={200: ()}, thunks={})
+    assert create_crt_matches(x_array, y_array) == [(100, 200)]
+
+
+def test_create_match_blank_fingerprint_length_mismatch():
+    """Positional fallback requires both arrays to have the same length."""
+    x_array = CrtStartupArray(functions={100: ()}, thunks={})
+    y_array = CrtStartupArray(functions={200: (), 300: ()}, thunks={})
     assert not create_crt_matches(x_array, y_array)
+
+
+def test_create_match_blank_fingerprint_one_sided():
+    """Positional fallback requires the fingerprint to be empty on BOTH sides.
+    A one-sided empty fingerprint is a disagreement, not evidence."""
+    write_sample = (1234, True)
+    x_array = CrtStartupArray(functions={100: ()}, thunks={})
+    y_array = CrtStartupArray(functions={200: (write_sample,)}, thunks={})
+    assert not create_crt_matches(x_array, y_array)
+
+
+def test_create_match_blank_fingerprint_with_thunks():
+    """A positionally matched function also matches its two-sided thunk."""
+    x_array = CrtStartupArray(functions={100: ()}, thunks={100: 500})
+    y_array = CrtStartupArray(functions={200: ()}, thunks={200: 600})
+    assert create_crt_matches(x_array, y_array) == [(100, 200), (500, 600)]
+
+
+def test_create_match_blank_fingerprint_after_fingerprint_match():
+    """Fingerprint matches and positional fallback can combine when the
+    fingerprint matches agree with the array order."""
+    write_sample = (1234, True)
+    x_array = CrtStartupArray(functions={100: (write_sample,), 110: ()}, thunks={})
+    y_array = CrtStartupArray(functions={200: (write_sample,), 210: ()}, thunks={})
+    assert create_crt_matches(x_array, y_array) == [(100, 200), (110, 210)]
+
+
+def test_create_match_blank_fingerprint_order_violation():
+    """No positional fallback if a fingerprint match contradicts the shared
+    array order."""
+    write_sample = (1234, True)
+    # The fingerprint match pairs index 0 of x with index 1 of y, so array
+    # positions cannot be trusted for the leftover empty entries.
+    x_array = CrtStartupArray(functions={100: (write_sample,), 110: ()}, thunks={})
+    y_array = CrtStartupArray(functions={210: (), 200: (write_sample,)}, thunks={})
+    assert create_crt_matches(x_array, y_array) == [(100, 200)]
 
 
 def test_create_match_non_unique_fingerprint():
