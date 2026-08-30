@@ -89,15 +89,15 @@ def test_marker_exact(line: str, exact: bool, _):
 
 def test_marker_dict_simple():
     d = MarkerDict()
-    d.insert(DecompMarker("FUNCTION", "TEST", 0x1234))
+    d.insert(DecompMarker(MarkerType.FUNCTION, "TEST", 0x1234))
     markers = list(d.iter())
     assert len(markers) == 1
 
 
 def test_marker_dict_ofs_replace():
     d = MarkerDict()
-    d.insert(DecompMarker("FUNCTION", "TEST", 0x1234))
-    d.insert(DecompMarker("FUNCTION", "TEST", 0x555))
+    d.insert(DecompMarker(MarkerType.FUNCTION, "TEST", 0x1234))
+    d.insert(DecompMarker(MarkerType.FUNCTION, "TEST", 0x555))
     markers = list(d.iter())
     assert len(markers) == 1
     assert markers[0].offset == 0x1234
@@ -105,8 +105,8 @@ def test_marker_dict_ofs_replace():
 
 def test_marker_dict_type_replace():
     d = MarkerDict()
-    d.insert(DecompMarker("FUNCTION", "TEST", 0x1234))
-    d.insert(DecompMarker("STUB", "TEST", 0x1234))
+    d.insert(DecompMarker(MarkerType.FUNCTION, "TEST", 0x1234))
+    d.insert(DecompMarker(MarkerType.STUB, "TEST", 0x1234))
     markers = list(d.iter())
     assert len(markers) == 1
     assert markers[0].type == MarkerType.FUNCTION
