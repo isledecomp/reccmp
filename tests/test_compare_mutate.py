@@ -1,5 +1,6 @@
 import pytest
 from reccmp.compare.mutate import (
+    match_span_anchored_functions,
     name_thunks,
     set_max_size,
 )
@@ -383,3 +384,122 @@ def test_set_max_size_section_boundaries(db: EntityDb, image_id: ImageId):
     ent = db.get(image_id, 500)
     assert ent is not None
     assert ent.max_size(image_id) == 100
+
+
+def _span_db(db: EntityDb, *, close_recomp: int = 1200) -> EntityDb:
+    """Two matched functions at (100, 1100) and (200, close_recomp) with an
+    unmatched annotated static function at 150 between them."""
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, type=EntityType.FUNCTION, name="alpha")
+        batch.match(100, 1100)
+        batch.set(ImageId.ORIG, 150, type=EntityType.FUNCTION, name="static_helper")
+        batch.set(ImageId.ORIG, 200, type=EntityType.FUNCTION, name="omega")
+        batch.match(200, close_recomp)
+
+    return db
+
+
+def test_span_anchor_matches_static(db: EntityDb):
+    """An unmatched function between two matched functions whose span is
+    preserved is matched at the same offset in the recomp image."""
+    match_span_anchored_functions(_span_db(db))
+
+    ent = db.get(ImageId.ORIG, 150)
+    assert ent is not None
+    assert ent.matched
+    assert ent.addr(ImageId.RECOMP) == 1150
+
+
+def test_span_anchor_requires_preserved_span(db: EntityDb):
+    """No match when the span between the anchors differs."""
+    match_span_anchored_functions(_span_db(db, close_recomp=1210))
+
+    ent = db.get(ImageId.ORIG, 150)
+    assert ent is not None
+    assert not ent.matched
+
+
+def test_span_anchor_requires_vacant_recomp_addr(db: EntityDb):
+    """No match when any entity already exists at the anchored address.
+    The symbol table disagrees with the anchoring in that case."""
+    _span_db(db)
+    with db.batch() as batch:
+        batch.set(ImageId.RECOMP, 1150, name="occupied")
+
+    match_span_anchored_functions(db)
+
+    ent = db.get(ImageId.ORIG, 150)
+    assert ent is not None
+    assert not ent.matched
+
+
+def test_span_anchor_requires_both_anchors(db: EntityDb):
+    """No match without a matched function on both sides of the static."""
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, type=EntityType.FUNCTION, name="alpha")
+        batch.match(100, 1100)
+        batch.set(ImageId.ORIG, 150, type=EntityType.FUNCTION, name="static_helper")
+
+    match_span_anchored_functions(db)
+
+    ent = db.get(ImageId.ORIG, 150)
+    assert ent is not None
+    assert not ent.matched
+
+
+def test_span_anchor_before_first_match(db: EntityDb):
+    """No match for an unmatched function that precedes every matched one."""
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 50, type=EntityType.FUNCTION, name="static_helper")
+        batch.set(ImageId.ORIG, 100, type=EntityType.FUNCTION, name="alpha")
+        batch.match(100, 1100)
+        batch.set(ImageId.ORIG, 200, type=EntityType.FUNCTION, name="omega")
+        batch.match(200, 1200)
+
+    match_span_anchored_functions(db)
+
+    ent = db.get(ImageId.ORIG, 50)
+    assert ent is not None
+    assert not ent.matched
+
+
+def test_span_anchor_skips_stubs(db: EntityDb):
+    """A STUB-annotated function is not eligible for anchoring."""
+    _span_db(db)
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 150, stub=True)
+
+    match_span_anchored_functions(db)
+
+    ent = db.get(ImageId.ORIG, 150)
+    assert ent is not None
+    assert not ent.matched
+
+
+def test_span_anchor_multiple_statics(db: EntityDb):
+    """Each unmatched function in a preserved span is anchored independently."""
+    _span_db(db)
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 170, type=EntityType.FUNCTION, name="static_helper2")
+
+    match_span_anchored_functions(db)
+
+    for orig_addr, recomp_addr in ((150, 1150), (170, 1170)):
+        ent = db.get(ImageId.ORIG, orig_addr)
+        assert ent is not None
+        assert ent.matched
+        assert ent.addr(ImageId.RECOMP) == recomp_addr
+
+
+def test_span_anchor_ignores_non_functions(db: EntityDb):
+    """Only FUNCTION entities participate: an unmatched DATA entity in the
+    span is not anchored, and matched DATA entities are not span anchors."""
+    _span_db(db)
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 160, type=EntityType.DATA, name="g_value")
+
+    match_span_anchored_functions(db)
+
+    ent = db.get(ImageId.ORIG, 160)
+    assert ent is not None
+    assert not ent.matched

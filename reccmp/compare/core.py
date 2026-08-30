@@ -61,6 +61,7 @@ from .mutate import (
     name_thunks,
     unique_names_for_overloaded_functions,
     match_crt_startup,
+    match_span_anchored_functions,
     set_max_size,
 )
 from .verify import (
@@ -192,6 +193,7 @@ class Compare:
             set_max_size(self._db, img_id)
 
         match_crt_startup(self._db, self.orig_bin, self.recomp_bin)
+        match_span_anchored_functions(self._db)
         check_vtables(self._db)
         match_ref(self._db, self.report)
         unique_names_for_overloaded_functions(self._db)
