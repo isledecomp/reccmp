@@ -426,15 +426,9 @@ def test_slim_vbase_with_vftable(type_helper: GhidraTypeTestHelper):
         B : virtual A    size 20
         C : B            size 24
 
-    B declares both a virtual function and a virtual base, so it carries a
-    vftable pointer and a vbase pointer. LF_VFUNCTAB has no offset, so we place
-    the vftable pointer at 0 by assumption. The field list gives vbpoff = 4,
-    which is where the vbase pointer lands once the vftable takes the first four
-    bytes. This is the only sample where the assumed offset and an offset we
-    read could collide.
-
-    B's slim copy keeps both pointers, so it is 12 bytes rather than 8, and C's
-    own member starts at 12.
+    The slim copy of B should contain the vftable and vbaseptr.
+    By convention the vftable appears at offset 0. The field list for B
+    specifies vbpoff 4, so we know there is a gap where the vftable can fit.
     """
     sample = load_cvdump_sample("vbase-vftable")
     type_helper.set_up_cvdump_types(sample.text)
@@ -444,6 +438,7 @@ def test_slim_vbase_with_vftable(type_helper: GhidraTypeTestHelper):
     assert components_of(leaf) == [
         (0, "base", "B_vbase_slim"),
         (12, "m_c0", "int"),
+        # A?
     ]
 
     slim = component(leaf, 0)
