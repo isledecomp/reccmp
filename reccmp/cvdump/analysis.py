@@ -144,6 +144,17 @@ class CvdumpAnalysis:
     parser: CvdumpParser
     lines: dict[PureWindowsPath, list[LineValue]]
 
+    @property
+    def truncate_symbols(self) -> bool:
+        """Whether symbol names in this PDB are truncated to 255 characters.
+
+        MSVC 4.x-era PDBs truncate long symbol names (see C4786). Later
+        toolchains don't, and truncating their names anyway can make
+        different long symbols collide and match incorrectly. If the TYPES
+        section was not dumped, we can't tell the PDB version, so assume
+        truncation, which matches the old behavior."""
+        return self.parser.is_16bit_type_pool is not False
+
     def __init__(self, parser: CvdumpParser):
         """Read in as much information as we have from the parser.
         The more sections we have, the better our information will be."""
@@ -178,24 +189,31 @@ class CvdumpAnalysis:
 
                 node_dict[key] = CvdumpNode.from_node_key(key)
 
+            # If the variable does not have a name yet, add this one.
+            # Replace an existing name only if the data type size is larger.
             node_dict[key].node_type = EntityType.DATA
-            node_dict[key].friendly_name = glo.name
+            if node_dict[key].friendly_name is None:
+                node_dict[key].friendly_name = glo.name
 
             try:
                 # Check our types database for type information.
                 # If we did not parse the TYPES section, we can only
                 # get information for built-in "T_" types.
                 g_info = parser.types.get(glo.type)
-                node_dict[key].confirmed_size = g_info.size
-                node_dict[key].data_type = g_info
-                # Previously we set the symbol type to POINTER here if
-                # the variable was known to be a pointer. We can derive this
-                # information later when it's time to compare the variable,
-                # so let's set these to symbol type DATA instead.
-                # POINTER will be reserved for non-variable pointer data.
-                # e.g. thunks, unwind section.
+
+                # mypy coercion.
+                current_size = node_dict[key].confirmed_size or 0
+                new_size = g_info.size or 0
+
+                if new_size >= current_size:
+                    # Replace variable name with the GLOBALS
+                    # entry that has the largest type.
+                    node_dict[key].friendly_name = glo.name
+                    node_dict[key].confirmed_size = g_info.size
+                    node_dict[key].data_type = g_info
+
             except (CvdumpKeyError, CvdumpIntegrityError):
-                # No big deal if we don't have complete type information.
+                # We can still create the variable entity without type information.
                 pass
 
         self.lines = parser.lines

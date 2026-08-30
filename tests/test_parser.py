@@ -1,7 +1,6 @@
 from textwrap import dedent
 import pytest
 from reccmp.parser.parser import (
-    ReaderState,
     DecompParser,
 )
 from reccmp.parser.error import AlertCode
@@ -14,14 +13,13 @@ def fixture_parser():
 
 def test_missing_sig(parser):
     """In the hopefully rare scenario that the function signature and marker
-    are swapped, we still have enough to match witch reccmp"""
+    are swapped, we still have enough to match with reccmp"""
     parser.read(dedent("""\
         void my_function()
         // FUNCTION: TEST 0x1234
         {
         }
         """))
-    assert parser.state == ReaderState.SEARCH
     assert len(parser.functions) == 1
     assert parser.functions[0].line_number == 3
 
@@ -32,15 +30,20 @@ def test_missing_sig(parser):
 def test_not_exact_syntax(parser):
     """Alert to inexact syntax right here in the parser instead of kicking it downstream.
     Doing this means we don't have to save the actual text."""
-    parser.read("// function: test 0x1234")
+    parser.read("""\
+        // function: test 0x1234
+        void test() {}
+        """)
     assert len(parser.alerts) == 1
     assert parser.alerts[0].code == AlertCode.NOT_STRICT_FORMAT
 
 
 def test_invalid_marker(parser):
     """We matched a decomp marker, but it's not one we care about"""
-    parser.read("// BANANA: TEST 0x1234")
-    assert parser.state == ReaderState.SEARCH
+    parser.read("""\
+        // BANANA: TEST 0x1234
+        // Banana::Test
+        """)
 
     assert len(parser.alerts) == 1
     assert parser.alerts[0].code == AlertCode.UNKNOWN_ANNOTATION
@@ -51,8 +54,8 @@ def test_incompatible_marker(parser):
     parser.read("""\
         // FUNCTION: TEST 0x1234
         // GLOBAL: TEST 0x5000
+        void test() {}
         """)
-    assert parser.state == ReaderState.SEARCH
     assert len(parser.alerts) == 1
     assert parser.alerts[0].code == AlertCode.INCOMPATIBLE_MARKER
 
@@ -72,6 +75,7 @@ def test_synthetic_plus_marker(parser):
     parser.read("""\
         // SYNTHETIC: HEY 0x555
         // FUNCTION: HOWDY 0x1234
+        void test() {}
         """)
     assert len(parser.functions) == 0
     assert len(parser.alerts) == 1
@@ -120,7 +124,6 @@ def test_unexpected_synthetic(parser):
         }
         """)
 
-    assert parser.state == ReaderState.SEARCH
     assert len(parser.functions) == 0
     assert len(parser.alerts) == 1
     assert parser.alerts[0].code == AlertCode.INCOMPATIBLE_MARKER
@@ -168,7 +171,7 @@ def test_multiple_vtables(parser):
     parser.read("""\
         // VTABLE: HELLO 0x1234
         // VTABLE: TEST 0x5432
-        class MxString : public MxCore {
+        class MxString : public MxCore {};
         """)
     assert len(parser.alerts) == 0
     assert len(parser.vtables) == 2
@@ -180,7 +183,7 @@ def test_multiple_vtables_same_module(parser):
     parser.read("""\
         // VTABLE: HELLO 0x1234
         // VTABLE: HELLO 0x5432
-        class MxString : public MxCore {
+        class MxString : public MxCore {};
         """)
     assert len(parser.alerts) == 1
     assert parser.alerts[0].code == AlertCode.DUPLICATE_MODULE
@@ -214,12 +217,11 @@ def test_synthetic_no_comment(parser):
     """Synthetic marker followed by a code line (i.e. non-comment)"""
     parser.read("""\
         // SYNTHETIC: TEST 0x1234
-        int x = 123;
+        void function() {}
         """)
     assert len(parser.functions) == 0
     assert len(parser.alerts) == 1
     assert parser.alerts[0].code == AlertCode.BAD_NAMEREF
-    assert parser.state == ReaderState.SEARCH
 
 
 @pytest.mark.xfail(reason="Gap in state machine logic where we do not raise an error.")
@@ -230,8 +232,9 @@ def test_function_unexpected_end(parser: DecompParser):
         void test()
         }
         """))
-    assert len(parser.alerts) != 0
     assert len(parser.functions) == 0
+    assert len(parser.alerts) == 1
+    assert parser.alerts[0].code == AlertCode.MISSED_START_OF_FUNCTION
 
 
 def test_implicit_lookup_by_name(parser):
@@ -242,7 +245,6 @@ def test_implicit_lookup_by_name(parser):
         // FUNCTION: TEST 0x1234
         // TestClass::TestMethod()
         """)
-    assert parser.state == ReaderState.SEARCH
     assert len(parser.functions) == 1
     assert parser.functions[0].lookup_by_name is True
     assert parser.functions[0].name == "TestClass::TestMethod()"
@@ -348,7 +350,7 @@ def test_reject_global_return(parser):
 
     parser.read("""\
         // FUNCTION: TEST 0x5555
-        void test_function() {
+        const char* test_function() {
             // GLOBAL: TEST 0x8888
             return "test";
         }
@@ -684,17 +686,11 @@ def test_unexpected_marker(parser):
     assert parser.alerts[0].code == AlertCode.UNEXPECTED_MARKER
 
 
-def test_issue_137(parser):
-    """GH issue #137: unexpected_marker error displayed as decomp_error_start"""
-    parser.read("""\
-        // FUNCTION: HELLO 0x1234
-        int test()
-        // STUB: TEST 0x5555
-        """)
-
-    assert len(parser.alerts) == 1
-    assert parser.alerts[0].code == AlertCode.UNEXPECTED_MARKER
-    assert parser.alerts[0].code.name == "UNEXPECTED_MARKER"
+def test_issue_137():
+    """GH issue #137: unexpected_marker error displayed as decomp_error_start.
+    Caused by AlertCode enums UNEXPECTED_MARKER and DECOMP_ERROR_START sharing the same value.
+    """
+    assert AlertCode.UNEXPECTED_MARKER.name == "UNEXPECTED_MARKER"
 
 
 def test_widechar_string(parser):
