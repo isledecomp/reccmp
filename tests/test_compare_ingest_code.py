@@ -9,6 +9,7 @@ from reccmp.formats import PEImage, TextFile
 from reccmp.compare.ingest import load_markers
 from reccmp.compare.db import EntityDb
 from reccmp.compare.lines import LinesDb
+from .raw_image import RawImage
 
 
 @pytest.fixture(name="db")
@@ -352,7 +353,7 @@ def test_load_code_widechar(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
 
     entity = db.get(ImageId.ORIG, 0x100DAAA0)
     assert entity is not None
-    assert entity.get("type") == EntityType.STRING
+    assert entity.get("type") == EntityType.WIDECHAR
     assert entity.any_size() == 14
     assert entity.get("name") == 'L"(null)"'
 
@@ -387,25 +388,92 @@ def test_read_gb2312_string(db: EntityDb, lines_db: LinesDb):
     assert entity.name == f'"{string_text}"'.encode("unicode_escape").decode()
 
 
-def test_load_code_string_with_nulls(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
-    """Should read string with nulls included.
-    Using the unicode string '(null)' from the above example."""
+def test_load_code_string_with_trailing_nulls(db: EntityDb, lines_db: LinesDb):
+    """Should read string with trailing nulls and report its exact length."""
+    image = RawImage.from_memory(b"Test\x00\x00", base_addr=0x10000000)
     files = (
         TextFile(
             PurePath("test.cpp"),
             dedent("""\
-                // STRING: TEST 0x100daaa0
-                char* nullstr = "(\\x00n\\x00u\\x00l\\x00l\\x00)";
+                // STRING: TEST 0x10000000
+                char* test = "Test\\0";
                 """),
         ),
     )
-    load_markers(files, lines_db, binfile, "TEST", db)
+    load_markers(files, lines_db, image, "TEST", db)
 
-    entity = db.get(ImageId.ORIG, 0x100DAAA0)
+    entity = db.get(ImageId.ORIG, 0x10000000)
     assert entity is not None
     assert entity.get("type") == EntityType.STRING
+    assert entity.any_size() == 6
+    assert entity.get("name") == '"Test\\x00"'
+
+
+def test_load_code_widechar_with_trailing_nulls(db: EntityDb, lines_db: LinesDb):
+    """Should read widechar string with trailing nulls and report its exact length."""
+    image = RawImage.from_memory(
+        "Test".encode("utf-16-le") + b"\x00\x00\x00\x00", base_addr=0x10000000
+    )
+    files = (
+        TextFile(
+            PurePath("test.cpp"),
+            dedent("""\
+                // STRING: TEST 0x10000000
+                wchar_t* test = L"Test\\0";
+                """),
+        ),
+    )
+    load_markers(files, lines_db, image, "TEST", db)
+
+    entity = db.get(ImageId.ORIG, 0x10000000)
+    assert entity is not None
+    assert entity.get("type") == EntityType.WIDECHAR
     assert entity.any_size() == 12
-    assert entity.get("name") == '"(\\x00n\\x00u\\x00l\\x00l\\x00)"'
+    assert entity.get("name") == 'L"Test\\x00"'
+
+
+def test_load_code_string_with_internal_nulls(db: EntityDb, lines_db: LinesDb):
+    """Should read a string with nulls included."""
+    image = RawImage.from_memory(b"Te\x00st\x00", base_addr=0x10000000)
+    files = (
+        TextFile(
+            PurePath("test.cpp"),
+            dedent("""\
+                // STRING: TEST 0x10000000
+                char* nullstr = "Te\\0st";
+                """),
+        ),
+    )
+    load_markers(files, lines_db, image, "TEST", db)
+
+    entity = db.get(ImageId.ORIG, 0x10000000)
+    assert entity is not None
+    assert entity.get("type") == EntityType.STRING
+    assert entity.any_size() == 6
+    assert entity.get("name") == '"Te\\x00st"'
+
+
+def test_load_code_widechar_with_internal_nulls(db: EntityDb, lines_db: LinesDb):
+    """Should read a widechar string with nulls included."""
+    image = RawImage.from_memory(
+        "Te\x00st".encode("utf-16-le") + b"\x00\x00", base_addr=0x10000000
+    )
+    files = (
+        TextFile(
+            PurePath("test.cpp"),
+            dedent("""\
+                // STRING: TEST 0x10000000
+                char* nullstr = L"Te\\0st";
+                """),
+        ),
+    )
+    load_markers(files, lines_db, image, "TEST", db)
+
+    entity = db.get(ImageId.ORIG, 0x10000000)
+    assert entity is not None
+    assert entity.get("type") == EntityType.WIDECHAR
+    assert entity.any_size() == 12
+    assert entity.get("name") == 'L"Te\\x00st"'
 
 
 def test_load_code_widechar_invalid(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
