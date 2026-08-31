@@ -434,13 +434,13 @@ def test_load_code_widechar_with_trailing_nulls(db: EntityDb, lines_db: LinesDb)
 
 def test_load_code_string_with_internal_nulls(db: EntityDb, lines_db: LinesDb):
     """Should read a string with nulls included."""
-    image = RawImage.from_memory(b"Te\x00st\x00", base_addr=0x10000000)
+    image = RawImage.from_memory(b"aa\x00bb\x00", base_addr=0x10000000)
     files = (
         TextFile(
             PurePath("test.cpp"),
             dedent("""\
                 // STRING: TEST 0x10000000
-                char* nullstr = "Te\\0st";
+                char* nullstr = "aa\\0bb";
                 """),
         ),
     )
@@ -450,20 +450,20 @@ def test_load_code_string_with_internal_nulls(db: EntityDb, lines_db: LinesDb):
     assert entity is not None
     assert entity.get("type") == EntityType.STRING
     assert entity.any_size() == 6
-    assert entity.get("name") == '"Te\\x00st"'
+    assert entity.get("name") == '"aa\\x00bb"'
 
 
 def test_load_code_widechar_with_internal_nulls(db: EntityDb, lines_db: LinesDb):
     """Should read a widechar string with nulls included."""
     image = RawImage.from_memory(
-        "Te\x00st".encode("utf-16-le") + b"\x00\x00", base_addr=0x10000000
+        "aa\x00bb".encode("utf-16-le") + b"\x00\x00", base_addr=0x10000000
     )
     files = (
         TextFile(
             PurePath("test.cpp"),
             dedent("""\
                 // STRING: TEST 0x10000000
-                char* nullstr = L"Te\\0st";
+                char* nullstr = L"aa\\0bb";
                 """),
         ),
     )
@@ -473,7 +473,7 @@ def test_load_code_widechar_with_internal_nulls(db: EntityDb, lines_db: LinesDb)
     assert entity is not None
     assert entity.get("type") == EntityType.WIDECHAR
     assert entity.any_size() == 12
-    assert entity.get("name") == 'L"Te\\x00st"'
+    assert entity.get("name") == 'L"aa\\x00bb"'
 
 
 def test_load_code_widechar_invalid(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
