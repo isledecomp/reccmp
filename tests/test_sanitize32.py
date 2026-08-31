@@ -465,6 +465,63 @@ def test_consistent_numbering():
     assert p.replacements[0x2000] == "<OFFSET3>"
 
 
+def test_option_no_placeholders():
+    """Demonstrating the use_placeholders=False option.
+    Replace the value only if we have a name."""
+    code = (
+        b"\xe8\xfb\x0f\x00\x00"  # call 0x2000
+        b"\xa1\x34\x12\x00\x00"  # mov eax, dword ptr [0x1234]
+        b"\x3d\x55\x55\x00\x00"  # cmp eax, 0x5555
+        b"\xff\x15\x34\x12\x00\x00"  # call dword ptr [0x1234]
+        b"\xff\x15\x00\x20\x00\x00"  # call dword ptr [0x2000]
+    )
+
+    # Assume everything is an address.
+    addr_test = Mock(spec=AddrTestProtocol, return_value=True)
+
+    def name_lookup(addr: int, *_, **__) -> str | None:
+        return "Hello" if addr == 0x2000 else None
+
+    p = ParseAsm(addr_test=addr_test, name_lookup=name_lookup)
+    p.options.use_placeholders = False
+
+    assert p.parse_asm(code, 0x1000) == [
+        (0x1000, "call Hello"),
+        (0x1005, "mov eax, dword ptr [0x1234]"),
+        (0x100A, "cmp eax, 0x5555"),
+        (0x100F, "call dword ptr [0x1234]"),
+        (0x1015, "call dword ptr [Hello]"),
+    ]
+
+
+def test_option_no_sanitize():
+    """Demonstrating the sanitize=False option.
+    The operand string from capstone is only altered for jump instructions.
+    No names or placeholders are used."""
+    code = (
+        b"\xe8\xfb\x0f\x00\x00"  # call  0x2000
+        b"\xa1\x34\x12\x00\x00"  # mov eax, dword ptr [0x1234]
+        b"\x3d\x55\x55\x00\x00"  # cmp eax, 0x5555
+        b"\xe9\xf6\x6f\x00\x00"  # jmp 0x8000
+        b"\x74\x02"  # je 0x9
+    )
+
+    name_lookup = Mock(spec=NameReplacementProtocol, return_value="Hello")
+    p = ParseAsm(name_lookup=name_lookup)
+    p.options.do_sanitize = False
+
+    assert p.parse_asm(code, 0x1000) == [
+        (0x1000, "call 0x2000"),
+        (0x1005, "mov eax, dword ptr [0x1234]"),
+        (0x100A, "cmp eax, 0x5555"),
+        (0x100F, "jmp 0x6ff6"),
+        (0x1014, "je 0x2"),
+    ]
+
+    name_lookup.assert_not_called()
+    assert len(p.replacements) == 0
+
+
 def test_16bit_mode():
     """Demonstrating the difference in asm output."""
     code = b"\xe8\xbb\x00\xd1\xe3"
