@@ -208,6 +208,10 @@ class DecompParser:
     def strings(self) -> list[ParserString]:
         return [s for s in self._symbols if isinstance(s, ParserString)]
 
+    @property
+    def lines(self) -> list[ParserLineSymbol]:
+        return [s for s in self._symbols if isinstance(s, ParserLineSymbol)]
+
     def iter_symbols(self, module: str | None = None) -> Iterator[ParserSymbol]:
         for s in self._symbols:
             if module is None or s.module == module:

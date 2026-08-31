@@ -291,3 +291,4 @@ def test_function_with_line_marker_inside(parser: DecompParser):
     assert len(parser.alerts) == 0
     assert parser.functions[0].line_number == 2
     assert parser.functions[0].end_line == 6
+    assert parser.lines[0].line_number == 4
