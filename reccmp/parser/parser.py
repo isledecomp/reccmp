@@ -411,6 +411,7 @@ class DecompParser:
         if self.state == ReaderState.IN_FUNC and marker.type not in (
             MarkerType.GLOBAL,
             MarkerType.STRING,
+            MarkerType.LINE,
         ):
             self._syntax_warning(AlertCode.MISSED_END_OF_FUNCTION)
             self._function_done(unexpected=True)
