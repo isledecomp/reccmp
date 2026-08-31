@@ -8,6 +8,7 @@ from reccmp.analysis.crt_startup import (
     CrtStartupArray,
     create_crt_matches,
     UsedAddressCollector,
+    UsedHow,
     unwrap_jump,
 )
 from reccmp.compare.db import EntityDb
@@ -44,7 +45,7 @@ def test_get_function_fingerprint_matched(binfile: PEImage):
         batch.match(G_MUTEX_ADDR, G_MUTEX_ADDR)
 
     assert get_function_fingerprint(db, ImageId.ORIG, binfile, SET_DO_MUTEX_ADDR) == (
-        (G_MUTEX_ADDR, True),
+        (G_MUTEX_ADDR, UsedHow.WRITE),
     )
 
 
@@ -118,7 +119,7 @@ def test_xca_fingerprints_matched_variable(binfile: PEImage):
 
     array = read_crt_functions(binfile, XCA_XCZ_RANGE)
     fingerprint_crt_functions(db, ImageId.ORIG, binfile, array)
-    assert array.functions[0x1001A6D0] == ((0x10102B28, False),)
+    assert array.functions[0x1001A6D0] == ((0x10102B28, UsedHow.READ),)
 
 
 def test_xca_fingerprints_avoid_crash(binfile: PEImage):
@@ -140,7 +141,7 @@ def test_create_match_baseline():
 
 def test_create_match_single():
     """Should create match for unique fingerprint."""
-    write_sample = (1234, True)
+    write_sample = (1234, UsedHow.WRITE)
     x_array = CrtStartupArray(functions={100: (write_sample,)}, thunks={})
     y_array = CrtStartupArray(functions={200: (write_sample,)}, thunks={})
     assert create_crt_matches(x_array, y_array) == [(100, 200)]
@@ -148,7 +149,7 @@ def test_create_match_single():
 
 def test_create_match_single_with_thunks_one_sided():
     """Should not add thunk match unless it exists in both arrays."""
-    write_sample = (1234, True)
+    write_sample = (1234, UsedHow.WRITE)
     x_array = CrtStartupArray(functions={100: (write_sample,)}, thunks={100: 500})
     y_array = CrtStartupArray(functions={200: (write_sample,)}, thunks={})
     assert create_crt_matches(x_array, y_array) == [(100, 200)]
@@ -156,7 +157,7 @@ def test_create_match_single_with_thunks_one_sided():
 
 def test_create_match_single_with_thunks_two_sided():
     """Should match function and thunk."""
-    write_sample = (1234, True)
+    write_sample = (1234, UsedHow.WRITE)
     x_array = CrtStartupArray(functions={100: (write_sample,)}, thunks={100: 500})
     y_array = CrtStartupArray(functions={200: (write_sample,)}, thunks={200: 600})
     assert create_crt_matches(x_array, y_array) == [(100, 200), (500, 600)]
@@ -171,7 +172,7 @@ def test_create_match_blank_fingerprint():
 
 def test_create_match_non_unique_fingerprint():
     """Should not match functions if their fingerprint is not unique."""
-    write_sample = (1234, True)
+    write_sample = (1234, UsedHow.WRITE)
     x_array = CrtStartupArray(
         functions={100: (write_sample,), 200: (write_sample,)}, thunks={}
     )
@@ -183,8 +184,8 @@ def test_create_match_non_unique_fingerprint():
 
 def test_create_match_with_elimination():
     """Can create unique matches by eliminating already-matched functions."""
-    write_sample = (1234, True)
-    read_sample = (5000, False)
+    write_sample = (1234, UsedHow.WRITE)
+    read_sample = (5000, UsedHow.READ)
     # `write_sample` can be used to match uniquely on the first pass.
     # `read_sample` will provide a unique match after deleting the functions that contain `write_sample`.
     x_array = CrtStartupArray(
@@ -216,8 +217,8 @@ def test_collector_small_addrs_ignored():
     collector.analyze(code, 0)
 
     assert collector.seen_addrs == [
-        (0x400000, True),
-        (0x10000000, True),
+        (0x400000, UsedHow.WRITE),
+        (0x10000000, UsedHow.WRITE),
     ]
 
 
@@ -235,9 +236,9 @@ def test_collector_repeated_addrs():
     collector.analyze(code, 0)
 
     assert collector.seen_addrs == [
-        (0x400000, True),
-        (0x400000, True),
-        (0x400000, False),
+        (0x400000, UsedHow.WRITE),
+        (0x400000, UsedHow.WRITE),
+        (0x400000, UsedHow.READ),
     ]
 
 
@@ -255,9 +256,9 @@ def test_collector_classify_float_instructions_as_read_or_write():
     collector.analyze(code, 0)
 
     assert collector.seen_addrs == [
-        (0x401000, False),
-        (0x402000, False),
-        (0x403000, True),
+        (0x401000, UsedHow.READ),
+        (0x402000, UsedHow.READ),
+        (0x403000, UsedHow.WRITE),
     ]
 
 
@@ -272,14 +273,13 @@ def test_collector_not_all_dst_operands_are_writes():
     collector.analyze(code, 0)
 
     assert collector.seen_addrs == [
-        (0x400000, False),
-        (0x410000, False),
+        (0x400000, UsedHow.READ),
+        (0x410000, UsedHow.READ),
     ]
 
 
 def test_collector_calls_and_jumps():
-    """Jumps are ignored. Calls are collected as read addresses.
-    (We may choose to classify them differently in the future.)"""
+    """Jumps are ignored. Calls are collected as exec addresses."""
     code = (
         b"\xe8\xfb\x0f\x00\x00"  # call 0x401000
         b"\xe9\xf6\x1f\x00\x00"  # jmp 0x402000
@@ -291,7 +291,7 @@ def test_collector_calls_and_jumps():
     collector.analyze(code, 0x400000)
 
     assert collector.seen_addrs == [
-        (0x401000, False),
+        (0x401000, UsedHow.EXEC),
     ]
 
 
