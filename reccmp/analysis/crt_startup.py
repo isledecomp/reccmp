@@ -46,7 +46,13 @@ def get_crt_function_name(type_: CrtStartupArrayType) -> str:
     return _CRT_FUNCTION_NAMES[type_]
 
 
-UsedAddress = tuple[int, bool]
+class UsedHow(enum.Enum):
+    READ = enum.auto()
+    WRITE = enum.auto()
+    CALL = enum.auto()
+
+
+UsedAddress = tuple[int, UsedHow]
 
 
 @dataclass
@@ -80,11 +86,11 @@ class UsedAddressCollector:
         self.is_entity = is_entity
         self.seen_addrs = []
 
-    def _append_addrs(self, text: str, is_write: bool):
+    def _append_addrs(self, text: str, used_how: UsedHow):
         for hex_str in ADDR_REGEX.findall(text):
             addr = int(hex_str, 16)
             if self.is_entity(addr):
-                self.seen_addrs.append((addr, is_write))
+                self.seen_addrs.append((addr, used_how))
 
     def analyze(self, data: Buffer, start_addr: int):
         ig = InstructGen(bytes(data), start_addr, True)
@@ -99,12 +105,15 @@ class UsedAddressCollector:
                     if inst_mnemonic in JUMP_MNEMONICS:
                         continue
 
-                    if inst_mnemonic in ("mov", "fstp"):
+                    if inst_mnemonic in ("call",):
+                        self._append_addrs(inst_op_str, UsedHow.CALL)
+                        # self._append_addrs(inst_op_str, UsedHow.READ)
+                    elif inst_mnemonic in ("mov", "fstp"):
                         dst_operand, _, src_operand = inst_op_str.partition(", ")
-                        self._append_addrs(dst_operand, True)
-                        self._append_addrs(src_operand, False)
+                        self._append_addrs(dst_operand, UsedHow.WRITE)
+                        self._append_addrs(src_operand, UsedHow.READ)
                     else:
-                        self._append_addrs(inst_op_str, False)
+                        self._append_addrs(inst_op_str, UsedHow.READ)
 
 
 def get_function_sample_size(db: EntityDb, image_id: ImageId, addr: int) -> int:
@@ -126,7 +135,7 @@ def get_function_sample_size(db: EntityDb, image_id: ImageId, addr: int) -> int:
 
 
 def get_function_fingerprint(
-    db: EntityDb, image_id: ImageId, binfile: PEImage, addr: int
+    db: EntityDb, image_id: ImageId, binfile: Image, addr: int
 ) -> tuple[UsedAddress, ...]:
     """Create lists of addresses written to and read from by this function.
     Filter the addresses that point to a matched variable entity.
@@ -139,14 +148,18 @@ def get_function_fingerprint(
     collector.analyze(raw, addr)
 
     normalized_addrs = []
-    for sample_addr, is_write in collector.seen_addrs:
+    for sample_addr, used_how in collector.seen_addrs:
         ent = db.get(image_id, sample_addr)
         # Only matched entities are candidates for the fingerprint
         # because we have an address in both address spaces.
-        if ent and ent.matched and ent.get("type") == EntityType.DATA:
+        if (
+            ent
+            and ent.matched
+            and ent.get("type") in (EntityType.FUNCTION, EntityType.DATA)
+        ):
             normalized_addr = ent.addr(ImageId.ORIG)
             assert isinstance(normalized_addr, int)
-            normalized_addrs.append((normalized_addr, is_write))
+            normalized_addrs.append((normalized_addr, used_how))
 
     return tuple(normalized_addrs)
 
