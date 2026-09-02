@@ -135,7 +135,7 @@ def get_function_sample_size(db: EntityDb, image_id: ImageId, addr: int) -> int:
 
 
 def get_function_fingerprint(
-    db: EntityDb, image_id: ImageId, binfile: PEImage, addr: int
+    db: EntityDb, image_id: ImageId, binfile: Image, addr: int
 ) -> tuple[UsedAddress, ...]:
     """Create lists of addresses written to and read from by this function.
     Filter the addresses that point to a matched variable entity.

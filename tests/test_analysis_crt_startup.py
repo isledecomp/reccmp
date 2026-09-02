@@ -49,6 +49,73 @@ def test_get_function_fingerprint_matched(binfile: PEImage):
     )
 
 
+def test_get_function_fingerprint_called_function():
+    """Called functions appear as CALLs in the fingerprint list."""
+    start_addr = 0x400000
+    other_addr = 0x401000
+    code = (
+        b"\xe8\xfb\x0f\x00\x00"  # call 0x401000
+        b"\xc3"  # ret
+    )
+    binfile = RawImage.from_memory(code, base_addr=start_addr)
+
+    db = EntityDb()
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, start_addr, size=len(code))
+        batch.set(ImageId.ORIG, other_addr, name="test", type=EntityType.FUNCTION)
+        batch.match(other_addr, other_addr)
+
+    assert get_function_fingerprint(db, ImageId.ORIG, binfile, start_addr) == (
+        (other_addr, UsedHow.EXEC),
+    )
+
+
+def test_get_function_fingerprint_function_pointer():
+    """Function entities that are not used in a call instruction appear as
+    READ entries in the fingerprint list."""
+    start_addr = 0x400000
+    other_addr = 0x401000
+    code = (
+        b"\x68\x00\x10\x40\x00"  # push 0x401000
+        b"\xc3"  # ret
+    )
+    binfile = RawImage.from_memory(code, base_addr=start_addr)
+
+    db = EntityDb()
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, start_addr, size=len(code))
+        batch.set(ImageId.ORIG, other_addr, name="test", type=EntityType.FUNCTION)
+        batch.match(other_addr, other_addr)
+
+    assert get_function_fingerprint(db, ImageId.ORIG, binfile, start_addr) == (
+        (other_addr, UsedHow.READ),
+    )
+
+
+@pytest.mark.xfail(reason="Undecided on whether we need this")
+def test_get_function_fingerprint_indirect_call():
+    """Indirect function calls should have their own fingerprint category
+    that is distinct from regular calls."""
+    start_addr = 0x400000
+    other_addr = 0x401000
+    pointer = other_addr.to_bytes(4, "little")
+    code = (
+        b"\xff\x15\x00\x00\x40\x00"  # call dword ptr [0x400000]
+        b"\xc3"  # ret
+    )
+    binfile = RawImage.from_memory(pointer + code, base_addr=start_addr)
+    func_addr = start_addr + len(pointer)
+
+    db = EntityDb()
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, func_addr, size=len(code))
+        batch.set(ImageId.ORIG, other_addr, name="test", type=EntityType.FUNCTION)
+        batch.match(other_addr, other_addr)
+
+    # TODO: Add the fingerprints here if this feature is added.
+    assert get_function_fingerprint(db, ImageId.ORIG, binfile, func_addr)
+
+
 XCA_XCZ_RANGE = range(0x100F0000, 0x100F0020)
 
 
@@ -147,6 +214,22 @@ def test_create_match_single():
     assert create_crt_matches(x_array, y_array) == [(100, 200)]
 
 
+def test_create_match_single_call():
+    """Should create match for a unique function call."""
+    call_sample = (1234, UsedHow.EXEC)
+    x_array = CrtStartupArray(functions={100: (call_sample,)}, thunks={})
+    y_array = CrtStartupArray(functions={200: (call_sample,)}, thunks={})
+    assert create_crt_matches(x_array, y_array) == [(100, 200)]
+
+
+def test_create_match_call_is_not_a_read():
+    """Should not match a function that calls the address with one that
+    only reads it. e.g. passing the function pointer as an argument."""
+    x_array = CrtStartupArray(functions={100: ((1234, UsedHow.READ),)}, thunks={})
+    y_array = CrtStartupArray(functions={200: ((1234, UsedHow.EXEC),)}, thunks={})
+    assert not create_crt_matches(x_array, y_array)
+
+
 def test_create_match_single_with_thunks_one_sided():
     """Should not add thunk match unless it exists in both arrays."""
     write_sample = (1234, UsedHow.WRITE)
@@ -170,15 +253,12 @@ def test_create_match_blank_fingerprint():
     assert not create_crt_matches(x_array, y_array)
 
 
-def test_create_match_non_unique_fingerprint():
+@pytest.mark.parametrize("used_how", UsedHow)
+def test_create_match_non_unique_fingerprint(used_how: UsedHow):
     """Should not match functions if their fingerprint is not unique."""
-    write_sample = (1234, UsedHow.WRITE)
-    x_array = CrtStartupArray(
-        functions={100: (write_sample,), 200: (write_sample,)}, thunks={}
-    )
-    y_array = CrtStartupArray(
-        functions={200: (write_sample,), 300: (write_sample,)}, thunks={}
-    )
+    sample = (1234, used_how)
+    x_array = CrtStartupArray(functions={100: (sample,), 200: (sample,)}, thunks={})
+    y_array = CrtStartupArray(functions={200: (sample,), 300: (sample,)}, thunks={})
     assert not create_crt_matches(x_array, y_array)
 
 
