@@ -66,7 +66,7 @@ def test_get_function_fingerprint_called_function():
         batch.match(other_addr, other_addr)
 
     assert get_function_fingerprint(db, ImageId.ORIG, binfile, start_addr) == (
-        (other_addr, UsedHow.EXEC),
+        (other_addr, UsedHow.CALL),
     )
 
 
@@ -216,7 +216,7 @@ def test_create_match_single():
 
 def test_create_match_single_call():
     """Should create match for a unique function call."""
-    call_sample = (1234, UsedHow.EXEC)
+    call_sample = (1234, UsedHow.CALL)
     x_array = CrtStartupArray(functions={100: (call_sample,)}, thunks={})
     y_array = CrtStartupArray(functions={200: (call_sample,)}, thunks={})
     assert create_crt_matches(x_array, y_array) == [(100, 200)]
@@ -226,7 +226,7 @@ def test_create_match_call_is_not_a_read():
     """Should not match a function that calls the address with one that
     only reads it. e.g. passing the function pointer as an argument."""
     x_array = CrtStartupArray(functions={100: ((1234, UsedHow.READ),)}, thunks={})
-    y_array = CrtStartupArray(functions={200: ((1234, UsedHow.EXEC),)}, thunks={})
+    y_array = CrtStartupArray(functions={200: ((1234, UsedHow.CALL),)}, thunks={})
     assert not create_crt_matches(x_array, y_array)
 
 
@@ -371,7 +371,7 @@ def test_collector_calls_and_jumps():
     collector.analyze(code, 0x400000)
 
     assert collector.seen_addrs == [
-        (0x401000, UsedHow.EXEC),
+        (0x401000, UsedHow.CALL),
     ]
 
 

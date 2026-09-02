@@ -49,7 +49,7 @@ def get_crt_function_name(type_: CrtStartupArrayType) -> str:
 class UsedHow(enum.Enum):
     READ = enum.auto()
     WRITE = enum.auto()
-    EXEC = enum.auto()
+    CALL = enum.auto()
 
 
 UsedAddress = tuple[int, UsedHow]
@@ -106,7 +106,7 @@ class UsedAddressCollector:
                         continue
 
                     if inst_mnemonic in ("call",):
-                        self._append_addrs(inst_op_str, UsedHow.EXEC)
+                        self._append_addrs(inst_op_str, UsedHow.CALL)
                         # self._append_addrs(inst_op_str, UsedHow.READ)
                     elif inst_mnemonic in ("mov", "fstp"):
                         dst_operand, _, src_operand = inst_op_str.partition(", ")
