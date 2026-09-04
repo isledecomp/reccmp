@@ -5,7 +5,7 @@ from typing import NamedTuple
 
 # The goal here is to just read whatever is on the next line, so some
 # flexibility in the formatting seems OK
-templateCommentRegex = re.compile(r"\s*//\s+(.*)")
+templateCommentRegex = re.compile(r"\s*//\s*(.*)")
 
 # To remove any comment (//) or block comment (/*) and its leading spaces
 # from the end of a code line
@@ -33,7 +33,7 @@ def get_synthetic_name(line: str) -> str | None:
     template_match = templateCommentRegex.match(line)
 
     if template_match is not None:
-        return template_match.group(1)
+        return template_match.group(1).strip()
 
     return None
 
