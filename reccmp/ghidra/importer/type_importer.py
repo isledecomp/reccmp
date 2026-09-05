@@ -80,18 +80,18 @@ class PdbTypeImporter:
         return self.extraction.compare.types
 
     def import_pdb_type_into_ghidra(
-        self, type_index: CvdumpTypeKey, slim_for_vbase: bool = False
+        self, type_index: CvdumpTypeKey, *, as_base_class: bool = False
     ) -> DataType:
         """
         Recursively imports a type from the PDB into Ghidra.
         @param type_index Either a scalar type like `T_INT4(...)` or a PDB reference like `0x10ba`
-        @param slim_for_vbase If `True`, the current invocation
-            imports a superclass of some class where virtual inheritance is involved (directly or indirectly).
-            This case requires special handling: Let's say we have `class C: B` and `class B: virtual A`. Then cvdump
+        @param as_base_class If `True`, the current invocation
+            imports a superclass to be embedded in some derived class. Virtual inheritance may
+            be involved: Let's say we have `class C: B` and `class B: virtual A`. Then cvdump
             reports a size for B that includes both B's fields as well as the A contained at an offset within B,
             which is not the correct structure to be contained in C. Therefore, we need to create a "slim" version of B
             that fits inside C.
-            This value should always be `False` when the referenced type is not (a pointer to) a class.
+            This value should always be `False` when the referenced type is not a class.
         """
         if type_index.is_scalar():
             return self._import_scalar_type(type_index)
@@ -107,17 +107,20 @@ class PdbTypeImporter:
 
         # follow forward reference (class, struct, union)
         if type_pdb.get("is_forward_ref", False):
-            return self._import_forward_ref_type(type_index, type_pdb, slim_for_vbase)
+            return self._import_forward_ref_type(type_index, type_pdb, as_base_class)
+
+        if type_category in ["LF_CLASS", "LF_STRUCTURE"]:
+            return self._import_class_or_struct(type_pdb, as_base_class)
+
+        assert (
+            not as_base_class
+        ), f"Tried to import {type_index} ({type_category}) as base class"
 
         if type_category == "LF_POINTER":
             return get_or_add_pointer_type(
                 self.api,
-                self.import_pdb_type_into_ghidra(
-                    type_pdb["element_type"], slim_for_vbase
-                ),
+                self.import_pdb_type_into_ghidra(type_pdb["element_type"]),
             )
-        elif type_category in ["LF_CLASS", "LF_STRUCTURE"]:
-            return self._import_class_or_struct(type_pdb, slim_for_vbase)
         elif type_category == "LF_ARRAY":
             return self._import_array(type_pdb)
         elif type_category == "LF_ENUM":
@@ -150,7 +153,7 @@ class PdbTypeImporter:
         self,
         type_index: CvdumpTypeKey,
         type_pdb: CvdumpParsedType,
-        slim_for_vbase: bool = False,
+        as_base_class: bool = False,
     ) -> DataType:
         referenced_type = type_pdb.get("udt") or type_pdb.get("modifies")
         if referenced_type is None:
@@ -168,7 +171,9 @@ class PdbTypeImporter:
             type_index,
             referenced_type,
         )
-        return self.import_pdb_type_into_ghidra(referenced_type, slim_for_vbase)
+        return self.import_pdb_type_into_ghidra(
+            referenced_type, as_base_class=as_base_class
+        )
 
     def _import_array(self, type_pdb: CvdumpParsedType) -> DataType:
         inner_type = self.import_pdb_type_into_ghidra(type_pdb["array_type"])
@@ -226,14 +231,24 @@ class PdbTypeImporter:
     def _import_class_or_struct(
         self,
         type_in_pdb: CvdumpParsedType,
-        slim_for_vbase: bool = False,
+        as_base_class: bool = False,
     ) -> DataType:
         field_list_type = type_in_pdb["field_list_type"]
         field_list = self.types.from_key(field_list_type)
 
         class_size: int = type_in_pdb["size"]
         raw_name: str = type_in_pdb["name"]
-        if slim_for_vbase:
+        # Virtual inheritance requires that struct members are arranged in this order:
+        #
+        # 1. Members from non-virtual base classes.
+        # 2. Members from the derived class.
+        # 3. Members from virtual base classes.
+        #
+        # If this class has a direct virtual base class and we are creating it as the base for something else
+        # (i.e. if `as_base_class` is True) then we need to create a "slim" copy that contains only the
+        # non-virtual base classes and its own members.
+        make_slim = as_base_class and "vbase" in field_list
+        if make_slim:
             raw_name += "_vbase_slim"
         sanitized_name = sanitize_name(raw_name)
 
@@ -299,9 +314,7 @@ class PdbTypeImporter:
 
         components.sort(key=lambda c: c.offset)
 
-        if slim_for_vbase:
-            # Make a "slim" version: shrink the size to the fields that are actually present.
-            # This makes a difference when the current class uses virtual inheritance
+        if make_slim:
             assert (
                 len(components) > 0
             ), f"Error: {sanitized_name} should not be empty. There must be at least one direct or indirect vbase pointer."
@@ -325,11 +338,8 @@ class PdbTypeImporter:
         non_virtual_base_classes: dict[CvdumpTypeKey, int] = field_list.get("super", {})
 
         for super_type, offset in non_virtual_base_classes.items():
-            # If we have virtual inheritance _and_ a non-virtual base class here, we play safe and import slim version.
-            # This is technically not needed if only one of the superclasses uses virtual inheritance, but I am not aware of any instance.
-            import_slim_vbase_version_of_superclass = "vbase" in field_list
             ghidra_type = self.import_pdb_type_into_ghidra(
-                super_type, slim_for_vbase=import_slim_vbase_version_of_superclass
+                super_type, as_base_class=True
             )
 
             yield GhidraFieldListItem(

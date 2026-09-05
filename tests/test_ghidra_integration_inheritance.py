@@ -1,0 +1,594 @@
+"""Tests for importing classes with various inheritance patterns.
+
+By convention, the `vftable` pointer appears at offset 0 of a class with virtual functions.
+
+To represent inheritance, we create the base class struct (or use one created earlier in the run)
+and set its position to the offset given in the PDB fieldlist. The other option is to copy members
+from the base classes with new offsets, but we don't do it this way.
+
+Virtual inheritance presents a challenge because offsets for virtually-inherited members do not
+appear in the fieldlist. Any class with a direct or indirect virtual base class has its members
+arranged in this order:
+
+1. Members from non-virtual base classes.
+2. Members from the derived class.
+3. Members from virtual base classes.
+
+Consider the example: `C extends B`, `B virtually extends A`.
+
+In B, the members of B appear first, followed by the virtual members from A.
+
+In C, we cannot reference B, because the members of indirect virtual base class A must appear last.
+The order is: members from B, members from C, members from A.
+
+To import C correctly, we need to create a "slim" copy of B that contains only its non-virtually inherited members
+and any derived members.
+
+To make this work at runtime, the compiler creates a `vbtable` for each class with a direct virtual base in each
+inheritance scenario where it is used. Meaning: the `vbtable` for B alone is different from the one created for
+B as a parent of C. Each class with a direct virtual base includes a `VBasePtr*` member that points to the `vbtable`.
+
+The `vbtable` structure contains a list of offsets from the `VBasePtr*` member to each direct or indirect virtual base class.
+
+We do not currently have access to `vbtable` offsets, so we do not set the position of any direct or indirect
+virtual base class when creating Ghidra structs.
+"""
+
+import pytest
+from .cvdump_sample import load_cvdump_sample
+from .ghidra_integration_test_setup import (
+    GhidraTypeTestHelper,
+    component,
+    components_of,
+    dereference,
+)
+
+
+def test_multiple_inheritance_base_offsets(type_helper: GhidraTypeTestHelper):
+    """cvdump_sample/cpp/multiple_inheritance.cpp
+
+        A           size 12
+        B           size 12
+        C : A, B    size 28
+
+    Should create full-sized structs for A and B when creating C.
+    """
+    sample = load_cvdump_sample("multiple-inheritance")
+    type_helper.set_up_cvdump_types(sample.text)
+    class_c = type_helper.type_importer.import_pdb_type_into_ghidra(
+        sample.key("class-c")
+    )
+
+    assert class_c.getLength() == 28
+    assert components_of(class_c) == [
+        (0, "base", "A"),
+        (12, "base_B", "B"),
+        (24, "m_c0", "int"),
+    ]
+
+
+def test_duplicate_base_appears_twice(type_helper: GhidraTypeTestHelper):
+    """cvdump_sample/cpp/diamond_duplicate.cpp
+
+        A           size 8
+        B : A       size 12
+        C : A       size 12
+        D : B, C    size 28
+
+    Diamond inheritance pattern without virtual inheritance.
+    B and C each have their own copy of parent A. D extends both B and C, and
+    so it has two copies of A.
+    """
+    sample = load_cvdump_sample("diamond-duplicate")
+    type_helper.set_up_cvdump_types(sample.text)
+    class_d = type_helper.type_importer.import_pdb_type_into_ghidra(
+        sample.key("class-d")
+    )
+
+    assert class_d.getLength() == 28
+    assert components_of(class_d) == [
+        (0, "base", "B"),
+        (12, "base_C", "C"),
+        (24, "m_d0", "int"),
+    ]
+
+    class_b = component(class_d, 0)
+    assert components_of(class_b) == [
+        (0, "base", "A"),
+        (8, "m_b0", "int"),
+    ]
+
+    class_c = component(class_d, 12)
+    assert components_of(class_c) == [
+        (0, "base", "A"),
+        (8, "m_c0", "int"),
+    ]
+
+    # B and C point to the same A.
+    assert component(class_b, 0) == component(class_c, 0)
+
+
+def test_base_offsets_are_not_a_sum_of_sizes(type_helper: GhidraTypeTestHelper):
+    """cvdump_sample/cpp/base_padding.cpp
+
+        A              size 1
+        B              size 8
+        C              size 8
+        D : A, B, C    size 32
+
+    Use the offsets given in the field list for D when setting the position for
+    base classes. This is most important for A, because of the padding between
+    A and its sibling B. The struct for A does not include this padding.
+    """
+    sample = load_cvdump_sample("base-padding")
+    type_helper.set_up_cvdump_types(sample.text)
+    class_d = type_helper.type_importer.import_pdb_type_into_ghidra(
+        sample.key("class-d")
+    )
+
+    assert class_d.getLength() == 32
+    assert components_of(class_d) == [
+        (0, "base", "A"),
+        (4, "base_B", "B"),
+        (16, "base_C", "C"),
+        (24, "m_d0", "int"),
+    ]
+
+    # Structs created for each parent do not include padding.
+    assert component(class_d, 0).getLength() == 1
+    assert component(class_d, 4).getLength() == 8
+    assert component(class_d, 16).getLength() == 8
+
+
+def test_slim_vbase_at_offset_zero(type_helper: GhidraTypeTestHelper):
+    """cvdump_sample/cpp/vbase_simple.cpp
+
+        A                size 8
+        B : virtual A    size 16
+        C : B            size 20
+
+    Should create B with its `VBasePtr*` member according to the vbpoff in the fieldlist.
+    B has no other base classes, so the pointer is at offset 0 in B and C.
+    When we import C, we cannot use the full-sized B because its virtually-inherited members
+    must appear last. Thus we create the "slim" copy of B without the virtual members.
+    """
+    sample = load_cvdump_sample("vbase-simple")
+    type_helper.set_up_cvdump_types(sample.text)
+    class_c = type_helper.type_importer.import_pdb_type_into_ghidra(
+        sample.key("class-c")
+    )
+
+    assert class_c.getLength() == 20
+    assert components_of(class_c) == [
+        (0, "base", "B_vbase_slim"),
+        (8, "m_c0", "int"),
+        # A?
+    ]
+
+    slim_b = component(class_c, 0)
+    assert slim_b.getLength() == 8
+    assert components_of(slim_b) == [
+        (0, "vbase_offset", "VBasePtr *"),
+        (4, "m_b0", "int"),
+    ]
+
+    class_b = type_helper.type_importer.import_pdb_type_into_ghidra(
+        sample.key("class-b")
+    )
+
+    # Although they have the same members, the full-size B and the slim B are different types.
+    # (Full-size B should have members from A, but does not due to the acknowledged vbtable limitation.)
+    assert class_b != slim_b
+
+    assert class_b.getLength() == 16
+    assert components_of(class_b) == [
+        (0, "vbase_offset", "VBasePtr *"),
+        (4, "m_b0", "int"),
+        # A?
+    ]
+
+
+def test_slim_vbase_as_first_base(type_helper: GhidraTypeTestHelper):
+    """cvdump_sample/cpp/vbase_first_base.cpp
+
+        A                size 8
+        B : virtual A    size 16
+        C                size 12
+        D : B, C         size 32
+
+    Should position the two base classes of D correctly.
+    Here the class with virtual inheritance (B) is first.
+    """
+    sample = load_cvdump_sample("vbase-first-base")
+    type_helper.set_up_cvdump_types(sample.text)
+    class_d = type_helper.type_importer.import_pdb_type_into_ghidra(
+        sample.key("class-d")
+    )
+
+    assert class_d.getLength() == 32
+    assert components_of(class_d) == [
+        (0, "base", "B_vbase_slim"),
+        (8, "base_C", "C"),
+        (20, "m_d0", "int"),
+        # A?
+    ]
+
+    slim_b = component(class_d, 0)
+    assert slim_b.getLength() == 8
+    assert components_of(slim_b) == [
+        (0, "vbase_offset", "VBasePtr *"),
+        (4, "m_b0", "int"),
+        # A?
+    ]
+
+    class_c = component(class_d, 8)
+    assert class_c.getLength() == 12
+    assert components_of(class_c) == [
+        (0, "m_c0", "int"),
+        (4, "m_c1", "int"),
+        (8, "m_c2", "int"),
+    ]
+
+
+def test_slim_vbase_as_second_base(type_helper: GhidraTypeTestHelper):
+    """cvdump_sample/cpp/vbase_second_base.cpp
+
+        A                size 8
+        B                size 12
+        C : virtual A    size 16
+        D : B, C         size 32
+
+
+    Should position the two base classes of D correctly.
+    Here the class with virtual inheritance (C) is second.
+    """
+    sample = load_cvdump_sample("vbase-second-base")
+    type_helper.set_up_cvdump_types(sample.text)
+    class_d = type_helper.type_importer.import_pdb_type_into_ghidra(
+        sample.key("class-d")
+    )
+
+    assert class_d.getLength() == 32
+    assert components_of(class_d) == [
+        (0, "base", "B"),
+        (12, "base_C_vbase_slim", "C_vbase_slim"),
+        (20, "m_d0", "int"),
+        # A?
+    ]
+
+    class_b = component(class_d, 0)
+    assert class_b.getLength() == 12
+    assert components_of(class_b) == [
+        (0, "m_b0", "int"),
+        (4, "m_b1", "int"),
+        (8, "m_b2", "int"),
+    ]
+
+    slim_c = component(class_d, 12)
+    assert slim_c.getLength() == 8
+    assert components_of(slim_c) == [
+        (0, "vbase_offset", "VBasePtr *"),
+        (4, "m_c0", "int"),
+        # A?
+    ]
+
+
+def test_slim_base_ends_at_last_member(type_helper: GhidraTypeTestHelper):
+    """cvdump_sample/cpp/vbase_alignment.cpp
+
+        A                size 16
+        B : virtual A    size 32
+        C : B            size 32
+
+    There is padding between the non-virtual and derived members from B
+    and the first member in C. Make sure the padding is represented as a gap in C
+    rather than expanding the slim copy of B to fit.
+    """
+    sample = load_cvdump_sample("vbase-alignment")
+    type_helper.set_up_cvdump_types(sample.text)
+    class_c = type_helper.type_importer.import_pdb_type_into_ghidra(
+        sample.key("class-c")
+    )
+
+    assert components_of(class_c) == [
+        (0, "base", "B_vbase_slim"),
+        (12, "m_c0", "char"),
+        # A?
+    ]
+
+    assert class_c.getLength() == 32
+
+    slim_b = component(class_c, 0)
+    assert components_of(slim_b) == [
+        (0, "vbase_offset", "VBasePtr *"),
+        (4, "m_b0", "int"),
+        (8, "m_b1", "char"),
+    ]
+    assert slim_b.getLength() == 9
+
+
+def test_diamond_shares_one_virtual_base(type_helper: GhidraTypeTestHelper):
+    """cvdump_sample/cpp/diamond_virtual.cpp
+
+        A                size 8
+        B : virtual A    size 16
+        C : virtual A    size 16
+        D : B, C         size 28
+
+    Diamond inheritance pattern with virtual inheritance.
+    D contains only one copy of A: B and C point to the single A
+    using their vbtables. Notably, `sizeof(D) < sizeof(B) + sizeof(C)`.
+    """
+    sample = load_cvdump_sample("diamond-virtual")
+    type_helper.set_up_cvdump_types(sample.text)
+    class_d = type_helper.type_importer.import_pdb_type_into_ghidra(
+        sample.key("class-d")
+    )
+
+    assert class_d.getLength() == 28
+    assert components_of(class_d) == [
+        (0, "base", "B_vbase_slim"),
+        (8, "base_C_vbase_slim", "C_vbase_slim"),
+        (16, "m_d0", "int"),
+    ]
+
+    slim_b = component(class_d, 0)
+    assert components_of(slim_b) == [
+        (0, "vbase_offset", "VBasePtr *"),
+        (4, "m_b0", "int"),
+    ]
+
+    slim_c = component(class_d, 8)
+    assert components_of(slim_c) == [
+        (0, "vbase_offset", "VBasePtr *"),
+        (4, "m_c0", "int"),
+    ]
+
+    vbase_ptr_b = dereference(component(slim_b, 0))
+    vbase_ptr_c = dereference(component(slim_c, 0))
+
+    # Despite the name, these are not the same `VBasePtr`.
+    assert vbase_ptr_b != vbase_ptr_c
+
+    assert components_of(vbase_ptr_b) == [
+        (0, "o_self", "B_vbase_slim *"),
+        (4, "o_A", "APtrOffset"),
+    ]
+    assert components_of(vbase_ptr_c) == [
+        (0, "o_self", "C_vbase_slim *"),
+        (4, "o_A", "APtrOffset"),
+    ]
+
+
+def test_direct_virtual_base_at_nonzero_vbpoff(type_helper: GhidraTypeTestHelper):
+    """cvdump_sample/cpp/vbase_after_base.cpp
+
+        A                   size 8
+        B                   size 12
+        C : B, virtual A    size 28
+
+    We need to create a `VBasePtr*` in C to use with its direct virtual base A.
+    Make sure we follow the `vbpoff` value from the fieldlist rather than assume
+    it can be created at offset 0 in C.
+    """
+    sample = load_cvdump_sample("vbase-after-base")
+    type_helper.set_up_cvdump_types(sample.text)
+    class_c = type_helper.type_importer.import_pdb_type_into_ghidra(
+        sample.key("class-c")
+    )
+
+    assert class_c.getLength() == 28
+    assert components_of(class_c) == [
+        (0, "base", "B"),
+        (12, "vbase_offset", "VBasePtr *"),
+        (16, "m_c0", "int"),
+    ]
+
+    assert component(class_c, 0).getLength() == 12
+
+    vbase_ptr = dereference(component(class_c, 12))
+    assert components_of(vbase_ptr) == [
+        (0, "o_self", "C *"),
+        (4, "o_A", "APtrOffset"),
+    ]
+
+
+def test_vbaseptr_slots_for_two_virtual_bases(type_helper: GhidraTypeTestHelper):
+    """cvdump_sample/cpp/vbase_two.cpp
+
+        A                           size 8
+        B                           size 4
+        C : virtual A, virtual B    size 20
+
+    C has two direct virtual base classes. We only need one `VBasePtr*` member.
+    (i.e. do not create a member for each virtual base class. Obey the fieldlist.)
+    We also show the `vbtable` structure with one entry for each virtual base.
+    """
+    sample = load_cvdump_sample("vbase-two")
+    type_helper.set_up_cvdump_types(sample.text)
+    class_c = type_helper.type_importer.import_pdb_type_into_ghidra(
+        sample.key("class-c")
+    )
+
+    assert class_c.getLength() == 20
+    assert components_of(class_c) == [
+        (0, "vbase_offset", "VBasePtr *"),
+        (4, "m_c0", "int"),
+        # A?
+        # B?
+    ]
+
+    vbase_ptr = dereference(component(class_c, 0))
+    assert components_of(vbase_ptr) == [
+        (0, "o_self", "C *"),
+        (4, "o_A", "APtrOffset"),
+        (8, "o_B", "BPtrOffset"),
+    ]
+
+
+def test_chained_virtual_bases(type_helper: GhidraTypeTestHelper):
+    """cvdump_sample/cpp/vbase_chain.cpp
+
+        A                size 8
+        B : virtual A    size 16
+        C : virtual B    size 24
+        D : virtual C    size 32
+
+    The vbtable for D has three entries. The order must match the vbind index
+    values for each virtual base, not the order they appear in the fieldlist.
+    """
+    sample = load_cvdump_sample("vbase-chain")
+    type_helper.set_up_cvdump_types(sample.text)
+    class_d = type_helper.type_importer.import_pdb_type_into_ghidra(
+        sample.key("class-d")
+    )
+
+    assert class_d.getLength() == 32
+    assert components_of(class_d) == [
+        (0, "vbase_offset", "VBasePtr *"),
+        (4, "m_d0", "int"),
+        # A?
+        # B?
+        # C?
+    ]
+
+    vbase_ptr = dereference(component(class_d, 0))
+    assert components_of(vbase_ptr) == [
+        (0, "o_self", "D *"),
+        (4, "o_A", "APtrOffset"),
+        (8, "o_B", "BPtrOffset"),
+        (12, "o_C", "CPtrOffset"),
+    ]
+
+
+def test_slim_vbase_with_vftable(type_helper: GhidraTypeTestHelper):
+    """cvdump_sample/cpp/vbase_vftable.cpp
+
+        A                size 8
+        B : virtual A    size 20
+        C : B            size 24
+
+    The slim copy of B should contain the vftable and vbaseptr.
+    By convention the vftable appears at offset 0. The field list for B
+    specifies vbpoff 4, so we know there is a gap where the vftable can fit.
+    """
+    sample = load_cvdump_sample("vbase-vftable")
+    type_helper.set_up_cvdump_types(sample.text)
+    class_c = type_helper.type_importer.import_pdb_type_into_ghidra(
+        sample.key("class-c")
+    )
+
+    assert class_c.getLength() == 24
+    assert components_of(class_c) == [
+        (0, "base", "B_vbase_slim"),
+        (12, "m_c0", "int"),
+        # A?
+    ]
+
+    slim_b = component(class_c, 0)
+    assert slim_b.getLength() == 12
+    assert components_of(slim_b) == [
+        (0, "vftable", "void *"),
+        (4, "vbase_offset", "VBasePtr *"),
+        (8, "m_b0", "int"),
+    ]
+
+
+def test_multiple_inheritance_with_virtual_functions(
+    type_helper: GhidraTypeTestHelper,
+):
+    """cvdump_sample/cpp/multiple_inheritance_virtual_functions.cpp
+
+        A           size 12
+        B           size 8
+        C : A, B    size 24
+
+    A, B, and C each introduce a virtual function. Where do we create the `vftable` member?
+    According to the PDB, only the fieldlists for B and C have a VFUNCTAB leaf, so only their
+    structs get the member. The effect is that C's virtual function is "merged" into A's vtable.
+    (This may or may not be correct and we should revisit when we create a vtable struct during import.)
+    """
+    sample = load_cvdump_sample("multiple-inheritance-virtual-functions")
+    type_helper.set_up_cvdump_types(sample.text)
+    class_c = type_helper.type_importer.import_pdb_type_into_ghidra(
+        sample.key("class-c")
+    )
+
+    assert class_c.getLength() == 24
+    assert components_of(class_c) == [
+        (0, "base", "A"),
+        (12, "base_B", "B"),
+        (20, "m_c0", "int"),
+    ]
+
+    assert components_of(component(class_c, 0)) == [
+        (0, "vftable", "void *"),
+        (4, "m_a0", "int"),
+        (8, "m_a1", "int"),
+    ]
+    assert components_of(component(class_c, 12)) == [
+        (0, "vftable", "void *"),
+        (4, "m_b0", "int"),
+    ]
+
+
+@pytest.mark.xfail(reason="The importer does not place virtual base classes yet")
+def test_padding_between_two_virtual_bases(type_helper: GhidraTypeTestHelper):
+    """cvdump_sample/cpp/vbase_padding.cpp
+
+        A                           size 8
+        B                           size 1
+        C : virtual A, virtual B    size 25
+        D : virtual B, virtual A    size 32
+
+    The importer does not currently set the offset of a virtual base class.
+    The offsets are not given in any of the PDB data. We would need to read the
+    static vbtable (referenced by VBasePtr*) to position a base accurately.
+    Note the difference in size between C and D, which extend A and B in
+    different orders. In the case of D, there is padding between B and A.
+    We cannot set the correct offsets by simply adding the size of B and A.
+    We could guess the default byte alignment but a `#pragma pack` directive
+    will change this without any indication that this has happened.
+    """
+    sample = load_cvdump_sample("vbase-padding")
+    type_helper.set_up_cvdump_types(sample.text)
+    class_d = type_helper.type_importer.import_pdb_type_into_ghidra(
+        sample.key("class-d")
+    )
+
+    assert class_d.getLength() == 32
+    assert components_of(class_d) == [
+        (0, "vbase_offset", "VBasePtr *"),
+        (8, "m_d0", "double"),
+        (16, "vbase_B", "B"),
+        (24, "vbase_A", "A"),
+    ]
+
+
+@pytest.mark.xfail(reason="The importer does not place virtual base classes yet")
+def test_no_padding_between_two_virtual_bases(type_helper: GhidraTypeTestHelper):
+    """cvdump_sample/cpp/vbase_padding_packed.cpp
+
+        A                           size 8
+        B                           size 1
+        C : virtual A, virtual B    size 25
+        D : virtual B, virtual A    size 25
+
+    These are the same classes as `vbase_padding.cpp`, but wrapped with
+    `#pragma pack(1)`. This causes the `PACKED` attribute to appear in each
+    LF_CLASS. In this case, we could place the virtual bases reliably because
+    simply adding the struct size would be correct.
+    """
+    sample = load_cvdump_sample("vbase-padding-packed")
+    type_helper.set_up_cvdump_types(sample.text)
+    class_d = type_helper.type_importer.import_pdb_type_into_ghidra(
+        sample.key("class-d")
+    )
+
+    assert class_d.getLength() == 32
+    assert components_of(class_d) == [
+        (0, "vbase_offset", "VBasePtr *"),
+        (8, "m_d0", "double"),
+        (16, "vbase_B", "B"),
+        (17, "vbase_A", "A"),
+    ]

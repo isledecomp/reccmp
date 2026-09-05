@@ -10,6 +10,7 @@ from reccmp.compare.core import Compare
 from reccmp.compare.ingest import load_cvdump_types
 from reccmp.cvdump.analysis import CvdumpAnalysis
 from reccmp.cvdump.parser import CvdumpParser
+from .helpers import assert_instance
 from .raw_image import RawImage
 
 # Suppress linter warnings related to the fact that the header support for Ghidra is limited
@@ -19,6 +20,7 @@ from .raw_image import RawImage
 # pyright: reportMissingModuleSource=false
 
 if TYPE_CHECKING:
+    from ghidra.program.model.data import DataType, Structure
     from ghidra.program.model.listing import Program
     from ghidra.program.flatapi import FlatProgramAPI
     from reccmp.ghidra.importer.type_importer import PdbTypeImporter
@@ -166,6 +168,39 @@ class GhidraTypeTestHelper:
         parser.read_section("TYPES", cvdump_types)
         analysis = CvdumpAnalysis(parser)
         load_cvdump_types(analysis, self.compare.types)
+
+
+def as_structure(data_type: "DataType") -> "Structure":
+    from ghidra.program.model.data import Structure
+
+    return assert_instance(data_type, Structure)
+
+
+def components_of(data_type: "DataType") -> list[tuple[int, str, str]]:
+    """Returns (offset, field name, type name) for each defined component.
+    This should make the tests more idiomatic because it excludes the
+    `undefined` filler components.
+    """
+    return [
+        (c.getOffset(), c.getFieldName(), c.getDataType().getName())
+        for c in as_structure(data_type).getDefinedComponents()
+    ]
+
+
+def component(data_type: "DataType", offset: int) -> "DataType":
+    """Access the Ghidra DataType for the struct member at the given offset."""
+    for comp in as_structure(data_type).getDefinedComponents():
+        if comp.getOffset() == offset:
+            return comp.getDataType()
+
+    raise ValueError(f"No component at offset {offset} in '{data_type.getName()}'")
+
+
+def dereference(data_type: "DataType") -> "DataType":
+    from ghidra.program.model.data import Pointer
+
+    assert isinstance(data_type, Pointer)
+    return data_type.getDataType()
 
 
 class GhidraFunctionTestHelper:
