@@ -8,6 +8,7 @@ Based on the following resources:
 import dataclasses
 from enum import IntEnum, IntFlag
 from functools import cached_property
+from uuid import UUID
 from pathlib import Path
 import struct
 from typing import Iterable, Iterator, cast
@@ -385,22 +386,23 @@ class CodeViewHeaderNB10:
 @dataclasses.dataclass
 class CodeViewHeaderRSDS:
     cv_signature: bytes  # "RSDS"
-    signature: bytes  # GUID
+    uuid: UUID  # GUID
+    age: int  # age
     pdb_file_name: bytes  # zero terminated string with the name of the PDB file
 
     @classmethod
     def from_memory(cls, data: bytes, offset: int) -> "CodeViewHeaderRSDS | None":
-        struct_fmt = "<4s16s"
+        struct_fmt = "<4s16sI"
         if not cls.taste(data, offset):
             raise ValueError
-        items: tuple[bytes, bytes] = struct.unpack_from(struct_fmt, data, offset)
+        items: tuple[bytes, bytes, int] = struct.unpack_from(struct_fmt, data, offset)
         offset_pdb_filename = offset + struct.calcsize(struct_fmt)
         try:
             pos_null = data.index(0, offset_pdb_filename)
             pdb_file_name = data[offset_pdb_filename:pos_null]
         except ValueError:
             pdb_file_name = b""
-        return cls(*items, pdb_file_name=pdb_file_name)
+        return cls(items[0], UUID(bytes_le=items[1]), items[2], pdb_file_name)
 
     @classmethod
     def taste(cls, data: bytes, offset: int) -> bool:
