@@ -80,7 +80,7 @@ class PdbTypeImporter:
         return self.extraction.compare.types
 
     def import_pdb_type_into_ghidra(
-        self, type_index: CvdumpTypeKey, as_base_class: bool = False
+        self, type_index: CvdumpTypeKey, *, as_base_class: bool = False
     ) -> DataType:
         """
         Recursively imports a type from the PDB into Ghidra.
@@ -171,7 +171,9 @@ class PdbTypeImporter:
             type_index,
             referenced_type,
         )
-        return self.import_pdb_type_into_ghidra(referenced_type, as_base_class)
+        return self.import_pdb_type_into_ghidra(
+            referenced_type, as_base_class=as_base_class
+        )
 
     def _import_array(self, type_pdb: CvdumpParsedType) -> DataType:
         inner_type = self.import_pdb_type_into_ghidra(type_pdb["array_type"])
