@@ -11,6 +11,7 @@ from reccmp.dir import source_code_search
 from reccmp.compare.functions import FunctionComparator
 from reccmp.formats import (
     Image,
+    NEImage,
     PEImage,
     TextFile,
     detect_image,
@@ -133,9 +134,55 @@ class Compare:
             self.recomp_bin,
             self.report,
             self.types,
+            is_32bit=not isinstance(self.orig_bin, NEImage),
         )
 
+    def run_ne(self):
+        load_markers(
+            self.code_files,
+            self._lines_db,
+            self.orig_bin,
+            self.target_id,
+            self._db,
+            self.bin_encoding,
+            self.project_aliases,
+            self.report,
+        )
+
+        load_data_sources(self._db, self.data_sources)
+
+        # Match using PDB and annotation data
+        match_symbols(self._db, self.report, truncate=True)
+        match_functions(self._db, self.report, truncate=True)
+        match_vtables(self._db, self.report)
+        match_static_variables(self._db, self.report)
+        match_variables(self._db, self.report)
+        match_lines(self._db, self._lines_db, self.report)
+
+        # Detect floats first to eliminate potential overlap with string data
+        for img_id, binfile in (
+            (ImageId.ORIG, self.orig_bin),
+            (ImageId.RECOMP, self.recomp_bin),
+        ):
+            create_imports(self._db, img_id, binfile)
+            create_import_thunks(self._db, img_id, binfile)
+            import_sections(self._db, img_id, binfile)
+
+        match_imports(self._db)
+
+        for img_id in (ImageId.ORIG, ImageId.RECOMP):
+            set_max_size(self._db, img_id)
+
+        match_ref(self._db, self.report)
+        unique_names_for_overloaded_functions(self._db)
+
+        match_strings(self._db, self.report)
+
     def run(self):
+        if isinstance(self.orig_bin, NEImage):
+            self.run_ne()
+            return
+
         if not isinstance(self.orig_bin, PEImage) or not isinstance(
             self.recomp_bin, PEImage
         ):
