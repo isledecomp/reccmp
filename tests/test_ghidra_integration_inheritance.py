@@ -62,7 +62,7 @@ def test_duplicate_base_appears_twice(type_helper: GhidraTypeTestHelper):
         C : A       size 12
         D : B, C    size 28
 
-    Diamond inheritance pattern.
+    Diamond inheritance pattern without virtual inheritance.
     B and C each have their own copy of parent A. D extends both B and C, and
     so it has two copies of A.
     """
