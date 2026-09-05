@@ -44,10 +44,12 @@ def test_multiple_inheritance_base_offsets(type_helper: GhidraTypeTestHelper):
     """
     sample = load_cvdump_sample("multiple-inheritance")
     type_helper.set_up_cvdump_types(sample.text)
-    leaf = type_helper.type_importer.import_pdb_type_into_ghidra(sample.key("class-c"))
+    class_c = type_helper.type_importer.import_pdb_type_into_ghidra(
+        sample.key("class-c")
+    )
 
-    assert leaf.getLength() == 28
-    assert components_of(leaf) == [
+    assert class_c.getLength() == 28
+    assert components_of(class_c) == [
         (0, "base", "A"),
         (12, "base_B", "B"),
         (24, "m_c0", "int"),
@@ -68,20 +70,22 @@ def test_duplicate_base_appears_twice(type_helper: GhidraTypeTestHelper):
     """
     sample = load_cvdump_sample("diamond-duplicate")
     type_helper.set_up_cvdump_types(sample.text)
-    leaf = type_helper.type_importer.import_pdb_type_into_ghidra(sample.key("class-d"))
+    class_d = type_helper.type_importer.import_pdb_type_into_ghidra(
+        sample.key("class-d")
+    )
 
-    assert leaf.getLength() == 28
-    assert components_of(leaf) == [
+    assert class_d.getLength() == 28
+    assert components_of(class_d) == [
         (0, "base", "B"),
         (12, "base_C", "C"),
         (24, "m_d0", "int"),
     ]
 
-    assert components_of(component(leaf, 0)) == [
+    assert components_of(component(class_d, 0)) == [
         (0, "base", "A"),
         (8, "m_b0", "int"),
     ]
-    assert components_of(component(leaf, 12)) == [
+    assert components_of(component(class_d, 12)) == [
         (0, "base", "A"),
         (8, "m_c0", "int"),
     ]
@@ -101,10 +105,12 @@ def test_base_offsets_are_not_a_sum_of_sizes(type_helper: GhidraTypeTestHelper):
     """
     sample = load_cvdump_sample("base-padding")
     type_helper.set_up_cvdump_types(sample.text)
-    leaf = type_helper.type_importer.import_pdb_type_into_ghidra(sample.key("class-d"))
+    class_d = type_helper.type_importer.import_pdb_type_into_ghidra(
+        sample.key("class-d")
+    )
 
-    assert leaf.getLength() == 32
-    assert components_of(leaf) == [
+    assert class_d.getLength() == 32
+    assert components_of(class_d) == [
         (0, "base", "A"),
         (4, "base_B", "B"),
         (16, "base_C", "C"),
@@ -112,9 +118,9 @@ def test_base_offsets_are_not_a_sum_of_sizes(type_helper: GhidraTypeTestHelper):
     ]
 
     # Structs created for each parent do not include padding.
-    assert component(leaf, 0).getLength() == 1
-    assert component(leaf, 4).getLength() == 8
-    assert component(leaf, 16).getLength() == 8
+    assert component(class_d, 0).getLength() == 1
+    assert component(class_d, 4).getLength() == 8
+    assert component(class_d, 16).getLength() == 8
 
 
 def test_slim_vbase_at_offset_zero(type_helper: GhidraTypeTestHelper):
@@ -130,18 +136,20 @@ def test_slim_vbase_at_offset_zero(type_helper: GhidraTypeTestHelper):
     """
     sample = load_cvdump_sample("vbase-simple")
     type_helper.set_up_cvdump_types(sample.text)
-    leaf = type_helper.type_importer.import_pdb_type_into_ghidra(sample.key("class-c"))
+    class_c = type_helper.type_importer.import_pdb_type_into_ghidra(
+        sample.key("class-c")
+    )
 
-    assert leaf.getLength() == 20
-    assert components_of(leaf) == [
+    assert class_c.getLength() == 20
+    assert components_of(class_c) == [
         (0, "base", "B_vbase_slim"),
         (8, "m_c0", "int"),
         # A?
     ]
 
-    slim = component(leaf, 0)
-    assert slim.getLength() == 8
-    assert components_of(slim) == [
+    slim_b = component(class_c, 0)
+    assert slim_b.getLength() == 8
+    assert components_of(slim_b) == [
         (0, "vbase_offset", "VBasePtr *"),
         (4, "m_b0", "int"),
     ]
@@ -152,7 +160,7 @@ def test_slim_vbase_at_offset_zero(type_helper: GhidraTypeTestHelper):
 
     # Although they have the same members, the full-size B and the slim B are different types.
     # (Full-size B should have members from A, but does not due to the acknowledged vbtable limitation.)
-    assert class_b != slim
+    assert class_b != slim_b
 
     assert class_b.getLength() == 16
     assert components_of(class_b) == [
@@ -176,24 +184,26 @@ def test_slim_vbase_as_first_base(type_helper: GhidraTypeTestHelper):
     """
     sample = load_cvdump_sample("vbase-first-base")
     type_helper.set_up_cvdump_types(sample.text)
-    leaf = type_helper.type_importer.import_pdb_type_into_ghidra(sample.key("class-d"))
+    class_d = type_helper.type_importer.import_pdb_type_into_ghidra(
+        sample.key("class-d")
+    )
 
-    assert leaf.getLength() == 32
-    assert components_of(leaf) == [
+    assert class_d.getLength() == 32
+    assert components_of(class_d) == [
         (0, "base", "B_vbase_slim"),
         (8, "base_C", "C"),
         (20, "m_d0", "int"),
         # A?
     ]
 
-    slim_b = component(leaf, 0)
+    slim_b = component(class_d, 0)
     assert slim_b.getLength() == 8
     assert components_of(slim_b) == [
         (0, "vbase_offset", "VBasePtr *"),
         (4, "m_b0", "int"),
     ]
 
-    class_c = component(leaf, 8)
+    class_c = component(class_d, 8)
     assert class_c.getLength() == 12
     assert components_of(class_c) == [
         (0, "m_c0", "int"),
@@ -217,17 +227,19 @@ def test_slim_vbase_at_nonzero_offset(type_helper: GhidraTypeTestHelper):
     """
     sample = load_cvdump_sample("vbase-second-base")
     type_helper.set_up_cvdump_types(sample.text)
-    leaf = type_helper.type_importer.import_pdb_type_into_ghidra(sample.key("class-d"))
+    class_d = type_helper.type_importer.import_pdb_type_into_ghidra(
+        sample.key("class-d")
+    )
 
-    assert leaf.getLength() == 32
-    assert components_of(leaf) == [
+    assert class_d.getLength() == 32
+    assert components_of(class_d) == [
         (0, "base", "B"),
         (12, "base_C_vbase_slim", "C_vbase_slim"),
         (20, "m_d0", "int"),
         # A?
     ]
 
-    class_b = component(leaf, 0)
+    class_b = component(class_d, 0)
     assert class_b.getLength() == 12
     assert components_of(class_b) == [
         (0, "m_b0", "int"),
@@ -235,7 +247,7 @@ def test_slim_vbase_at_nonzero_offset(type_helper: GhidraTypeTestHelper):
         (8, "m_b2", "int"),
     ]
 
-    slim_c = component(leaf, 12)
+    slim_c = component(class_d, 12)
     assert slim_c.getLength() == 8
     assert components_of(slim_c) == [
         (0, "vbase_offset", "VBasePtr *"),
@@ -256,23 +268,25 @@ def test_slim_base_ends_at_last_member(type_helper: GhidraTypeTestHelper):
     """
     sample = load_cvdump_sample("vbase-alignment")
     type_helper.set_up_cvdump_types(sample.text)
-    leaf = type_helper.type_importer.import_pdb_type_into_ghidra(sample.key("class-c"))
+    class_c = type_helper.type_importer.import_pdb_type_into_ghidra(
+        sample.key("class-c")
+    )
 
-    assert components_of(leaf) == [
+    assert components_of(class_c) == [
         (0, "base", "B_vbase_slim"),
         (12, "m_c0", "char"),
         # A?
     ]
 
-    assert leaf.getLength() == 32
+    assert class_c.getLength() == 32
 
-    slim = component(leaf, 0)
-    assert components_of(slim) == [
+    slim_b = component(class_c, 0)
+    assert components_of(slim_b) == [
         (0, "vbase_offset", "VBasePtr *"),
         (4, "m_b0", "int"),
         (8, "m_b1", "char"),
     ]
-    assert slim.getLength() == 9
+    assert slim_b.getLength() == 9
 
 
 def test_diamond_shares_one_virtual_base(type_helper: GhidraTypeTestHelper):
@@ -289,22 +303,24 @@ def test_diamond_shares_one_virtual_base(type_helper: GhidraTypeTestHelper):
     """
     sample = load_cvdump_sample("diamond-virtual")
     type_helper.set_up_cvdump_types(sample.text)
-    leaf = type_helper.type_importer.import_pdb_type_into_ghidra(sample.key("class-d"))
+    class_d = type_helper.type_importer.import_pdb_type_into_ghidra(
+        sample.key("class-d")
+    )
 
-    assert leaf.getLength() == 28
-    assert components_of(leaf) == [
+    assert class_d.getLength() == 28
+    assert components_of(class_d) == [
         (0, "base", "B_vbase_slim"),
         (8, "base_C_vbase_slim", "C_vbase_slim"),
         (16, "m_d0", "int"),
     ]
 
-    slim_b = component(leaf, 0)
+    slim_b = component(class_d, 0)
     assert components_of(slim_b) == [
         (0, "vbase_offset", "VBasePtr *"),
         (4, "m_b0", "int"),
     ]
 
-    slim_c = component(leaf, 8)
+    slim_c = component(class_d, 8)
     assert components_of(slim_c) == [
         (0, "vbase_offset", "VBasePtr *"),
         (4, "m_c0", "int"),
@@ -339,18 +355,20 @@ def test_direct_virtual_base_at_nonzero_vbpoff(type_helper: GhidraTypeTestHelper
     """
     sample = load_cvdump_sample("vbase-after-base")
     type_helper.set_up_cvdump_types(sample.text)
-    leaf = type_helper.type_importer.import_pdb_type_into_ghidra(sample.key("class-c"))
+    class_c = type_helper.type_importer.import_pdb_type_into_ghidra(
+        sample.key("class-c")
+    )
 
-    assert leaf.getLength() == 28
-    assert components_of(leaf) == [
+    assert class_c.getLength() == 28
+    assert components_of(class_c) == [
         (0, "base", "B"),
         (12, "vbase_offset", "VBasePtr *"),
         (16, "m_c0", "int"),
     ]
 
-    assert component(leaf, 0).getLength() == 12
+    assert component(class_c, 0).getLength() == 12
 
-    vbase_ptr = dereference(component(leaf, 12))
+    vbase_ptr = dereference(component(class_c, 12))
     assert components_of(vbase_ptr) == [
         (0, "o_self", "C *"),
         (4, "o_A", "APtrOffset"),
@@ -368,17 +386,19 @@ def test_vbaseptr_slots_for_two_virtual_bases(type_helper: GhidraTypeTestHelper)
     """
     sample = load_cvdump_sample("vbase-two")
     type_helper.set_up_cvdump_types(sample.text)
-    leaf = type_helper.type_importer.import_pdb_type_into_ghidra(sample.key("class-c"))
+    class_c = type_helper.type_importer.import_pdb_type_into_ghidra(
+        sample.key("class-c")
+    )
 
-    assert leaf.getLength() == 20
-    assert components_of(leaf) == [
+    assert class_c.getLength() == 20
+    assert components_of(class_c) == [
         (0, "vbase_offset", "VBasePtr *"),
         (4, "m_c0", "int"),
         # A?
         # B?
     ]
 
-    vbase_ptr = dereference(component(leaf, 0))
+    vbase_ptr = dereference(component(class_c, 0))
     assert components_of(vbase_ptr) == [
         (0, "o_self", "C *"),
         (4, "o_A", "APtrOffset"),
@@ -399,10 +419,12 @@ def test_chained_virtual_bases(type_helper: GhidraTypeTestHelper):
     """
     sample = load_cvdump_sample("vbase-chain")
     type_helper.set_up_cvdump_types(sample.text)
-    leaf = type_helper.type_importer.import_pdb_type_into_ghidra(sample.key("class-d"))
+    class_d = type_helper.type_importer.import_pdb_type_into_ghidra(
+        sample.key("class-d")
+    )
 
-    assert leaf.getLength() == 32
-    assert components_of(leaf) == [
+    assert class_d.getLength() == 32
+    assert components_of(class_d) == [
         (0, "vbase_offset", "VBasePtr *"),
         (4, "m_d0", "int"),
         # A?
@@ -410,7 +432,7 @@ def test_chained_virtual_bases(type_helper: GhidraTypeTestHelper):
         # C?
     ]
 
-    vbase_ptr = dereference(component(leaf, 0))
+    vbase_ptr = dereference(component(class_d, 0))
     assert components_of(vbase_ptr) == [
         (0, "o_self", "D *"),
         (4, "o_A", "APtrOffset"),
@@ -432,18 +454,20 @@ def test_slim_vbase_with_vftable(type_helper: GhidraTypeTestHelper):
     """
     sample = load_cvdump_sample("vbase-vftable")
     type_helper.set_up_cvdump_types(sample.text)
-    leaf = type_helper.type_importer.import_pdb_type_into_ghidra(sample.key("class-c"))
+    class_c = type_helper.type_importer.import_pdb_type_into_ghidra(
+        sample.key("class-c")
+    )
 
-    assert leaf.getLength() == 24
-    assert components_of(leaf) == [
+    assert class_c.getLength() == 24
+    assert components_of(class_c) == [
         (0, "base", "B_vbase_slim"),
         (12, "m_c0", "int"),
         # A?
     ]
 
-    slim = component(leaf, 0)
-    assert slim.getLength() == 12
-    assert components_of(slim) == [
+    slim_b = component(class_c, 0)
+    assert slim_b.getLength() == 12
+    assert components_of(slim_b) == [
         (0, "vftable", "void *"),
         (4, "vbase_offset", "VBasePtr *"),
         (8, "m_b0", "int"),
@@ -465,21 +489,23 @@ def test_multiple_inheritance_with_virtual_functions(
     """
     sample = load_cvdump_sample("multiple-inheritance-virtual-functions")
     type_helper.set_up_cvdump_types(sample.text)
-    leaf = type_helper.type_importer.import_pdb_type_into_ghidra(sample.key("class-c"))
+    class_c = type_helper.type_importer.import_pdb_type_into_ghidra(
+        sample.key("class-c")
+    )
 
-    assert leaf.getLength() == 24
-    assert components_of(leaf) == [
+    assert class_c.getLength() == 24
+    assert components_of(class_c) == [
         (0, "base", "A"),
         (12, "base_B", "B"),
         (20, "m_c0", "int"),
     ]
 
-    assert components_of(component(leaf, 0)) == [
+    assert components_of(component(class_c, 0)) == [
         (0, "vftable", "void *"),
         (4, "m_a0", "int"),
         (8, "m_a1", "int"),
     ]
-    assert components_of(component(leaf, 12)) == [
+    assert components_of(component(class_c, 12)) == [
         (0, "vftable", "void *"),
         (4, "m_b0", "int"),
     ]
@@ -505,10 +531,12 @@ def test_padding_between_two_virtual_bases(type_helper: GhidraTypeTestHelper):
     """
     sample = load_cvdump_sample("vbase-padding")
     type_helper.set_up_cvdump_types(sample.text)
-    leaf = type_helper.type_importer.import_pdb_type_into_ghidra(sample.key("class-d"))
+    class_d = type_helper.type_importer.import_pdb_type_into_ghidra(
+        sample.key("class-d")
+    )
 
-    assert leaf.getLength() == 32
-    assert components_of(leaf) == [
+    assert class_d.getLength() == 32
+    assert components_of(class_d) == [
         (0, "vbase_offset", "VBasePtr *"),
         (8, "m_d0", "double"),
         (16, "vbase_B", "B"),
@@ -532,10 +560,12 @@ def test_no_padding_between_two_virtual_bases(type_helper: GhidraTypeTestHelper)
     """
     sample = load_cvdump_sample("vbase-padding-packed")
     type_helper.set_up_cvdump_types(sample.text)
-    leaf = type_helper.type_importer.import_pdb_type_into_ghidra(sample.key("class-d"))
+    class_d = type_helper.type_importer.import_pdb_type_into_ghidra(
+        sample.key("class-d")
+    )
 
-    assert leaf.getLength() == 32
-    assert components_of(leaf) == [
+    assert class_d.getLength() == 32
+    assert components_of(class_d) == [
         (0, "vbase_offset", "VBasePtr *"),
         (8, "m_d0", "double"),
         (16, "vbase_B", "B"),
