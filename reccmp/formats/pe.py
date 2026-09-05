@@ -22,6 +22,20 @@ from .mz import ImageDosHeader
 # pylint: disable=too-many-lines
 
 
+PE_COFF_SYMBOL_SIZE = 18
+
+
+def extract_strz(data: bytes, offset: int) -> str:
+    if offset >= len(data):
+        raise IndexError
+    end = data.find(b"\x00", offset)
+    if end == -1:
+        name_bytes = data[offset:]
+    else:
+        name_bytes = data[offset:end]
+    return name_bytes.decode("ascii")
+
+
 class PEHeaderNotFoundError(ValueError):
     """PE magic string not found."""
 
@@ -307,6 +321,16 @@ class PESectionFlags(IntFlag):
     IMAGE_SCN_MEM_WRITE = 0x80000000
 
 
+def lookup_section_name(name: str, *, data: bytes, offset_names_table: int) -> str:
+    if name.startswith("/"):
+        try:
+            name_offset = int(name[1:])
+            name = extract_strz(data, offset_names_table + name_offset)
+        except (IndexError, ValueError):
+            pass
+    return name
+
+
 @dataclasses.dataclass(frozen=True)
 class PEImageSectionHeader:
     name: str
@@ -322,13 +346,17 @@ class PEImageSectionHeader:
 
     @classmethod
     def from_memory(
-        cls, data: bytes, offset: int, count: int
+        cls, data: bytes, offset: int, count: int, offset_names_table: int
     ) -> tuple[tuple["PEImageSectionHeader", ...], int]:
         struct_fmt = "<8s6I2HI"
         s_size = struct.calcsize(struct_fmt)
         items = tuple(
             cls(
-                members[0].decode("ascii").rstrip("\x00"),
+                lookup_section_name(
+                    members[0].decode("ascii").rstrip("\x00"),
+                    data=data,
+                    offset_names_table=offset_names_table,
+                ),
                 *members[1:-1],
                 PESectionFlags(members[-1]),
             )
@@ -496,8 +524,15 @@ class PEImage(Image):
         optional_header, offset_sections = PEImageOptionalHeader.from_memory(
             data, offset=offset_optional
         )
+        offset_names_table = (
+            header.pointer_to_symbol_table
+            + header.number_of_symbols * PE_COFF_SYMBOL_SIZE
+        )
         section_headers, _ = PEImageSectionHeader.from_memory(
-            data, count=header.number_of_sections, offset=offset_sections
+            data,
+            count=header.number_of_sections,
+            offset=offset_sections,
+            offset_names_table=offset_names_table,
         )
         sections = tuple(
             get_pe_sections(section_headers, optional_header.image_base, view)
