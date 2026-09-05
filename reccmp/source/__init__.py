@@ -8,6 +8,8 @@ from .index import (
     SourceIndex,
     SourceIndexError,
     SourceMarker,
+    SourceCollector,
+    ast_command,
 )
 
 __all__ = [
@@ -18,4 +20,6 @@ __all__ = [
     "SourceIndex",
     "SourceIndexError",
     "SourceMarker",
+    "SourceCollector",
+    "ast_command",
 ]

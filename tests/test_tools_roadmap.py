@@ -18,6 +18,7 @@ def _make_row(name: str, module: str = "LEGO1/define.cpp") -> RoadmapRow:
         size=16,
         name=name,
         module=module,
+        pairing_state="paired",
     )
 
 
@@ -79,6 +80,7 @@ def test_export_to_csv_no_special_characters_unaffected(tmp_path):
             "size": "0x10",
             "name": "FUN_1000abcd",
             "module": "LEGO1/define.cpp",
+            "pairing_state": "paired",
         }
     ]
 

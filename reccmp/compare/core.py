@@ -248,6 +248,7 @@ class Compare:
             set_max_size(self._db, img_id)
 
         match_crt_startup(self._db, self.orig_bin, self.recomp_bin)
+        check_vtables(self._db)
         match_seh(self._db)
 
         match_ref(self._db, self.report)
@@ -387,7 +388,9 @@ class Compare:
         orig_max = match.max_size(ImageId.ORIG)
         if orig_max is not None:
             orig_size = min(orig_size, orig_max)
-        orig_size = effective_orig_vtable_size(self.orig_bin, match.orig_addr, orig_size)
+        orig_size = effective_orig_vtable_size(
+            self.orig_bin, match.orig_addr, orig_size
+        )
         orig_table = self.orig_bin.read(match.orig_addr, orig_size)
         recomp_table = self.recomp_bin.read(match.recomp_addr, recomp_size)
 
@@ -456,9 +459,17 @@ class Compare:
                 )
                 continue
 
-            orig = resolve_vtable_slot(self._db, ImageId.ORIG, self.orig_bin, raw_orig)
-            recomp = resolve_vtable_slot(
-                self._db, ImageId.RECOMP, self.recomp_bin, raw_recomp
+            orig = (
+                resolve_vtable_slot(self._db, ImageId.ORIG, self.orig_bin, raw_orig)
+                if raw_orig is not None
+                else None
+            )
+            recomp = (
+                resolve_vtable_slot(
+                    self._db, ImageId.RECOMP, self.recomp_bin, raw_recomp
+                )
+                if raw_recomp is not None
+                else None
             )
 
             slot_matches = (
@@ -469,7 +480,7 @@ class Compare:
                     or self._orig_addrs_equivalent(orig.orig_addr, recomp.orig_addr)
                 )
             )
-            if not slot_matches:
+            if not slot_matches and raw_orig is not None:
                 slot_matches = self._slot_alias_equivalent(raw_orig, recomp)
             if slot_matches:
                 ratio += 1

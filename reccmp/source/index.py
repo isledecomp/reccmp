@@ -8,9 +8,11 @@ JSON projections for downstream tools.
 
 from __future__ import annotations
 
+# The optional execution backend imports this record model when first used.
+# pylint: disable=cyclic-import
+
 import json
 import shlex
-import subprocess
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Mapping, Sequence
@@ -55,6 +57,16 @@ class SourceDeclaration:
     line: int
     end_line: int
     is_definition: bool
+    source_signature: str | None = None
+    parameter_references: tuple[bool, ...] = ()
+    parameter_reference_forms: tuple[str, ...] = ()
+
+    @property
+    def prototype(self) -> str:
+        """Render compiler-owned types for display, not ABI synchronization."""
+        parameters = ", ".join(self.parameter_types) or "void"
+        prefix = f"{self.return_type} " if self.return_type else ""
+        return f"{prefix}{self.qualified_name}({parameters})"
 
 
 @dataclass(frozen=True)
@@ -65,6 +77,8 @@ class SourceField:
     type: str
     source_file: str
     line: int
+
+    pointer_depth: int | None = None
 
 
 @dataclass(frozen=True)
@@ -103,6 +117,17 @@ class SourceMarker:
     line: int
     declaration: SourceDeclaration | None
     marker_name: str | None = None
+    folded: bool = False
+    target: str | None = None
+
+    @property
+    def name(self) -> str:
+        """Compiler identity, or the name attached to a non-body marker."""
+        return (
+            self.declaration.qualified_name
+            if self.declaration
+            else self.marker_name or ""
+        )
 
 
 @dataclass(frozen=True)
@@ -276,7 +301,7 @@ def _is_virtual(node: dict[str, Any]) -> bool:
     )
 
 
-class _AstCollector:
+class SourceCollector:
     def __init__(self, repository: Path, compilation_root: Path | None = None) -> None:
         self.repository = repository.resolve()
         self.compilation_root = compilation_root
@@ -285,6 +310,47 @@ class _AstCollector:
         self.classes: dict[str, SourceClass] = {}
         self.size_assertions: dict[str, int] = {}
         self.current_file = ""
+
+    def collect_records(self, records: str) -> None:
+        """Consume a compiler's newline-delimited JSON output."""
+        for line in records.splitlines():
+            if line.strip():
+                self.collect_record(json.loads(line))
+
+    def collect_record(self, record: Mapping[str, Any]) -> None:
+        """Merge one compiler record without mutating the caller's document.
+
+        Definitions replace declarations; the first located class wins.
+        Conflicting size assertions are errors, independent of input order.
+        """
+        values = dict(record)
+        kind = values.pop("record")
+        if kind == "declaration":
+            declaration = _declaration_from_dict(values)
+            previous = self.declarations.get(declaration.semantic_id)
+            if previous is None or (
+                declaration.is_definition and not previous.is_definition
+            ):
+                self.declarations[declaration.semantic_id] = declaration
+        elif kind == "class":
+            source_class = _class_from_dict(values)
+            previous_class = self.classes.get(source_class.semantic_id)
+            if previous_class is None or (
+                not previous_class.line and source_class.line
+            ):
+                self.classes[source_class.semantic_id] = source_class
+        elif kind == "size-assertion":
+            name, size = values["qualified_name"], values["asserted_size"]
+            previous_size = self.size_assertions.get(name)
+            if previous_size is not None and previous_size != size:
+                raise SourceIndexError(
+                    f"{name} has conflicting size assertions: {previous_size:#x} and {size:#x}"
+                )
+            self.size_assertions[name] = size
+        else:
+            raise SourceIndexError(
+                f"the source indexer emitted an unknown record: {kind!r}"
+            )
 
     def collect(self, document: dict[str, Any], main_file: Path) -> None:
         self._collect_contexts(document, "")
@@ -430,7 +496,7 @@ def _command_arguments(entry: dict[str, Any]) -> list[str]:
     return shlex.split(str(entry["command"]), posix=True)
 
 
-def _ast_command(
+def ast_command(
     entry: dict[str, Any], clang: str | None, command_prefix: Sequence[str]
 ) -> list[str]:
     arguments = _command_arguments(entry)
@@ -457,25 +523,25 @@ def _ast_command(
     return [*compiler, *filtered[:separator], *ast_options, *filtered[separator:]]
 
 
-def _emit_ast(
-    entry: dict[str, Any],
-    clang: str | None,
-    command_prefix: Sequence[str],
-    execution_cwd: Path | None,
-) -> dict[str, Any]:
-    result = subprocess.run(
-        _ast_command(entry, clang, command_prefix),
-        cwd=execution_cwd or entry.get("directory"),
-        check=False,
-        capture_output=True,
+def _declaration_from_dict(values: Mapping[str, Any]) -> SourceDeclaration:
+    data = dict(values)
+    for key in ("parameter_types", "parameter_references", "parameter_reference_forms"):
+        data[key] = tuple(data.get(key) or ())
+    return SourceDeclaration(**data)
+
+
+def _class_from_dict(values: Mapping[str, Any]) -> SourceClass:
+    return SourceClass(
+        **{
+            **values,
+            "bases": tuple(values["bases"]),
+            "fields": tuple(SourceField(**field) for field in values["fields"]),
+            "virtual_declarations": tuple(values["virtual_declarations"]),
+            "base_vtables": tuple(
+                SourceBaseVtable(**item) for item in values.get("base_vtables", ())
+            ),
+        }
     )
-    try:
-        return json.loads(result.stdout)
-    except json.JSONDecodeError as error:
-        stderr = result.stderr.decode(errors="replace")
-        raise SourceIndexError(
-            f"Clang did not emit an AST for {entry.get('file')}: {stderr}"
-        ) from error
 
 
 class SourceIndex:
@@ -497,85 +563,6 @@ class SourceIndex:
         )
 
     @classmethod
-    # The optional execution arguments allow compilation databases produced in
-    # containers to be replayed without teaching reccmp about one container runtime.
-    # pylint: disable=too-many-arguments
-    def from_compilation_database(
-        cls,
-        repository: Path,
-        compilation_database: Path,
-        target: str,
-        *,
-        marker_paths: Sequence[Path] | None = None,
-        translation_units: Sequence[Path] | None = None,
-        aliases: ProjectAliases | None = None,
-        clang: str | None = None,
-        command_prefix: Sequence[str] = (),
-        compilation_root: Path | None = None,
-        execution_cwd: Path | None = None,
-    ) -> "SourceIndex":
-        database = json.loads(compilation_database.read_text(encoding="utf-8"))
-        wanted_units = (
-            {path.resolve() for path in translation_units}
-            if translation_units is not None
-            else None
-        )
-        entries = [
-            entry
-            for entry in database
-            if wanted_units is None
-            or (Path(entry.get("directory") or ".") / entry["file"]).resolve()
-            in wanted_units
-        ]
-        collector = _AstCollector(repository, compilation_root)
-        for entry in entries:
-            collector.collect(
-                _emit_ast(entry, clang, command_prefix, execution_cwd),
-                Path(entry.get("directory") or ".") / entry["file"],
-            )
-        parsed_marker_paths = marker_paths or tuple(
-            (Path(entry.get("directory") or ".") / entry["file"]).resolve()
-            for entry in entries
-        )
-        return cls._from_collector(
-            repository, target, parsed_marker_paths, collector, aliases=aliases
-        )
-
-    @classmethod
-    # This is the multi-image form of from_compilation_database. The compiler
-    # AST is expensive, so collect it once and bind each marker target against
-    # its own physical source roots before combining the disposable index.
-    # pylint: disable=too-many-arguments
-    def from_compilation_database_targets(
-        cls,
-        repository: Path,
-        compilation_database: Path,
-        targets: Mapping[str, Sequence[Path]],
-        *,
-        aliases: ProjectAliases | None = None,
-        clang: str | None = None,
-        command_prefix: Sequence[str] = (),
-        compilation_root: Path | None = None,
-        execution_cwd: Path | None = None,
-    ) -> "SourceIndex":
-        database = json.loads(compilation_database.read_text(encoding="utf-8"))
-        collector = _AstCollector(repository, compilation_root)
-        for entry in database:
-            collector.collect(
-                _emit_ast(entry, clang, command_prefix, execution_cwd),
-                Path(entry.get("directory") or ".") / entry["file"],
-            )
-        indexes = [
-            cls._from_collector(repository, target, paths, collector, aliases=aliases)
-            for target, paths in targets.items()
-        ]
-        return cls(
-            declarations=(item for index in indexes for item in index.declarations),
-            classes=(item for index in indexes for item in index.classes),
-            markers=(item for index in indexes for item in index.markers),
-        )
-
-    @classmethod
     def from_ast_documents(
         cls,
         repository: Path,
@@ -585,11 +572,11 @@ class SourceIndex:
         *,
         aliases: ProjectAliases | None = None,
     ) -> "SourceIndex":
-        collector = _AstCollector(repository)
+        collector = SourceCollector(repository)
         for document, main_file in documents:
             collector.collect(document, main_file)
 
-        return cls._from_collector(
+        return cls.from_collector(
             repository, target, source_paths, collector, aliases=aliases
         )
 
@@ -604,11 +591,11 @@ class SourceIndex:
     ) -> "SourceIndex":
         """Bind several marker targets against one already-emitted Clang AST."""
 
-        collector = _AstCollector(repository)
+        collector = SourceCollector(repository)
         for document, main_file in documents:
             collector.collect(document, main_file)
         indexes = [
-            cls._from_collector(repository, target, paths, collector, aliases=aliases)
+            cls.from_collector(repository, target, paths, collector, aliases=aliases)
             for target, paths in targets.items()
         ]
         return cls(
@@ -618,12 +605,12 @@ class SourceIndex:
         )
 
     @classmethod
-    def _from_collector(
+    def from_collector(
         cls,
         repository: Path,
         target: str,
         source_paths: Sequence[Path],
-        collector: _AstCollector,
+        collector: SourceCollector,
         *,
         aliases: ProjectAliases | None = None,
     ) -> "SourceIndex":
@@ -673,6 +660,8 @@ class SourceIndex:
                     source_file=relative,
                     line=method_symbol.line_number,
                     declaration=marker_declaration,
+                    folded=method_symbol.is_folded,
+                    target=target,
                     marker_name=(
                         method_symbol.name if marker_declaration is None else None
                     ),
@@ -765,6 +754,99 @@ class SourceIndex:
 
         return cls(declarations=declarations, classes=classes, markers=markers)
 
+    @classmethod
+    def from_dict(cls, document: Mapping[str, Any]) -> "SourceIndex":
+        """Read the public JSON projection back into its canonical records."""
+        if document.get("schema") != "reccmp-source-index-v1":
+            raise SourceIndexError("unsupported source-index schema")
+        return cls(
+            declarations=(
+                _declaration_from_dict(item) for item in document["declarations"]
+            ),
+            classes=(_class_from_dict(item) for item in document["classes"]),
+            markers=(
+                SourceMarker(
+                    **{
+                        **item,
+                        "declaration": (
+                            _declaration_from_dict(item["declaration"])
+                            if item.get("declaration")
+                            else None
+                        ),
+                    }
+                )
+                for item in document["markers"]
+            ),
+        )
+
+    def functions_by_address(
+        self, *, target: str | None = None
+    ) -> dict[int, SourceMarker]:
+        """Return one owner per address, preferring an unfolded body over aliases."""
+        functions: dict[int, SourceMarker] = {}
+        for marker in self.markers:
+            if target is not None and marker.target != target:
+                continue
+            if not marker.name:
+                raise SourceIndexError(
+                    f"{marker.source_file}:{marker.line}: marker has no semantic identity"
+                )
+            previous = functions.get(marker.address)
+            if previous is not None:
+                if marker.folded and not previous.folded:
+                    continue
+                if marker.folded == previous.folded:
+                    raise SourceIndexError(
+                        f"0x{marker.address:08x} has more than one source owner"
+                    )
+            functions[marker.address] = marker
+        return functions
+
+    @classmethod
+    # pylint: disable=too-many-arguments
+    def from_compile_database(
+        cls,
+        repository: Path,
+        compilation_database: Path,
+        targets: Mapping[str, Sequence[Path]],
+        *,
+        clang: str | None = None,
+        jobs: int | None = None,
+        container_image: str | None = None,
+        mounts: Mapping[Path, str] | None = None,
+        compilation_root: Path | None = None,
+        cache_dir: Path | None = None,
+        cache_inputs: Sequence[Path] = (),
+        force: bool = False,
+        aliases: ProjectAliases | None = None,
+    ) -> "SourceIndex":
+        """Collect direct AST records in parallel, once for all marker targets.
+
+        A container image runs the whole batch in one container; mounts describe
+        the paths already used by its compile database. Native collection uses
+        each entry's working directory. The image/host needs Clang and LLVM 14
+        development libraries. Cache inputs must include every header dependency.
+        """
+        # Delay the execution backend until collection is requested. The record
+        # model remains importable without a Linux compiler environment.
+        # pylint: disable=import-outside-toplevel
+        from .batch import collect_compile_database
+
+        return collect_compile_database(
+            repository,
+            compilation_database,
+            targets,
+            clang=clang,
+            jobs=jobs,
+            container_image=container_image,
+            mounts=mounts,
+            compilation_root=compilation_root,
+            cache_dir=cache_dir,
+            cache_inputs=cache_inputs,
+            force=force,
+            aliases=aliases,
+        )
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "schema": "reccmp-source-index-v1",
@@ -775,4 +857,6 @@ class SourceIndex:
 
     def write(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(self.to_dict(), indent=2) + "\n", encoding="utf-8")
+        content = json.dumps(self.to_dict(), indent=2) + "\n"
+        if not path.is_file() or path.read_text(encoding="utf-8") != content:
+            path.write_text(content, encoding="utf-8")

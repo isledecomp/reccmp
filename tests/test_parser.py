@@ -2,6 +2,7 @@ from textwrap import dedent
 import pytest
 from reccmp.parser.parser import (
     DecompParser,
+    ReaderState,
 )
 from reccmp.parser.error import AlertCode
 

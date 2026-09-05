@@ -1,4 +1,5 @@
 include reccmp/bin/cvdump.exe
+include reccmp/source/indexer.cpp
 include reccmp/bin/LICENSE.cvdump.txt
 include reccmp/assets/cmake/reccmp.cmake
 include reccmp/assets/*.js

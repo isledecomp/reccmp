@@ -144,7 +144,7 @@ def _format_vtable_size_warning(
 
 
 def check_vtables(
-    db: EntityDb, orig_bin: Image, name_filter: str | None = None
+    db: EntityDb, orig_bin: Image | None = None, name_filter: str | None = None
 ) -> None:
     """Report why a recompiled vtable appears larger than the original.
 
@@ -156,6 +156,14 @@ def check_vtables(
     """
     for match in db.get_matches_by_type(EntityType.VTABLE):
         if name_filter is not None and name_filter not in (match.name or "").lower():
+            continue
+        if orig_bin is None:
+            orig_size = match.size(ImageId.ORIG)
+            orig_max = match.max_size(ImageId.ORIG)
+            if orig_size is not None and orig_max is not None and orig_max < orig_size:
+                logger.warning(
+                    "Orig vtable size for %s overruns the next entity", match.name
+                )
             continue
         assert (
             match.name is not None

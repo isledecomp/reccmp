@@ -84,6 +84,7 @@ def analyze_effective_match(  # pylint: disable=too-many-arguments
 
     orig_addr_list = list(orig_addrs) if orig_addrs is not None else None
     recomp_addr_list = list(recomp_addrs) if recomp_addrs is not None else None
+
     def new_recorder() -> AnalysisRecorder:
         return AnalysisRecorder(orig_addr_list, recomp_addr_list)
 
