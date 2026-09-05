@@ -1,26 +1,37 @@
 """Tests for importing classes with various inheritance patterns.
 
-Parent classes are embedded in the struct for the derived class instead of
-copying their members instead.
+By convention, the `vftable` pointer appears at offset 0 of a class with virtual functions.
 
-Vftable pointers are set to offset 0 of the class with virtual functions.
+To represent inheritance, we create the base class struct (or use one created earlier in the run)
+and set its position to the offset given in the PDB fieldlist. The other option is to copy members
+from the base classes with new offsets, but we don't do it this way.
 
-Classes with a direct virtual base class have an added VBasePtr* member
-that points to the static Vbtable struct. This contains a list of offsets
-from the derived class to each direct or indirect virtual base class.
+Virtual inheritance presents a challenge because offsets for virtually-inherited members do not
+appear in the fieldlist. Any class with a direct or indirect virtual base class has its members
+arranged in this order:
 
-To import classes with a parent that uses virtual inheritance, we need to
-create a "slim" version of the base that includes only its "owned" members.
+1. Members from non-virtual base classes.
+2. Members from the derived class.
+3. Members from virtual base classes.
 
-The classic example is: `C extends B`, `B virtually extends A`.
-The expected layout for C is:
+Consider the example: `C extends B`, `B virtually extends A`.
 
-- Members introduced by B
-- Members introduced by C
-- Members introduced by A
+In B, the members of B appear first, followed by the virtual members from A.
 
-We cannot reliably set offsets for A or its members without reading the vbtable
-for B. This data is not currently available in the type importer.
+In C, we cannot reference B, because the members of indirect virtual base class A must appear last.
+The order is: members from B, members from C, members from A.
+
+To import C correctly, we need to create a "slim" copy of B that contains only its non-virtually inherited members
+and any derived members.
+
+To make this work at runtime, the compiler creates a `vbtable` for each class with a direct virtual base in each
+inheritance scenario where it is used. Meaning: the `vbtable` for B alone is different from the one created for
+B as a parent of C. Each class with a direct virtual base includes a `VBasePtr*` member that points to the `vbtable`.
+
+The `vbtable` structure contains a list of offsets from the `VBasePtr*` member to each direct or indirect virtual base class.
+
+We do not currently have access to `vbtable` offsets, so we do not set the position of any direct or indirect
+virtual base class when creating Ghidra structs.
 """
 
 import pytest
@@ -81,14 +92,20 @@ def test_duplicate_base_appears_twice(type_helper: GhidraTypeTestHelper):
         (24, "m_d0", "int"),
     ]
 
-    assert components_of(component(class_d, 0)) == [
+    class_b = component(class_d, 0)
+    assert components_of(class_b) == [
         (0, "base", "A"),
         (8, "m_b0", "int"),
     ]
-    assert components_of(component(class_d, 12)) == [
+
+    class_c = component(class_d, 12)
+    assert components_of(class_c) == [
         (0, "base", "A"),
         (8, "m_c0", "int"),
     ]
+
+    # B and C point to the same A.
+    assert component(class_b, 0) == component(class_c, 0)
 
 
 def test_base_offsets_are_not_a_sum_of_sizes(type_helper: GhidraTypeTestHelper):
@@ -130,9 +147,10 @@ def test_slim_vbase_at_offset_zero(type_helper: GhidraTypeTestHelper):
         B : virtual A    size 16
         C : B            size 20
 
-    B is 16 bytes because it contains its own members (8 bytes) followed by A.
-    The field list for C places C's first member at offset 8. Therefore, the
-    full-sized B will not fit and we need to create a "slim" copy.
+    Should create B with its `VBasePtr*` member according to the vbpoff in the fieldlist.
+    B has no other base classes, so the pointer is at offset 0 in B and C.
+    When we import C, we cannot use the full-sized B because its virtually-inherited members
+    must appear last. Thus we create the "slim" copy of B without the virtual members.
     """
     sample = load_cvdump_sample("vbase-simple")
     type_helper.set_up_cvdump_types(sample.text)
@@ -178,9 +196,8 @@ def test_slim_vbase_as_first_base(type_helper: GhidraTypeTestHelper):
         C                size 12
         D : B, C         size 32
 
-    B needs a slim copy because it has a virtual base.
-    C has no virtual base, so the full-sized C fits at offset 8 in D.
-    D has no direct virtual base, so it does not get a vbase pointer.
+    Should position the two base classes of D correctly.
+    Here the class with virtual inheritance (B) is first.
     """
     sample = load_cvdump_sample("vbase-first-base")
     type_helper.set_up_cvdump_types(sample.text)
@@ -201,6 +218,7 @@ def test_slim_vbase_as_first_base(type_helper: GhidraTypeTestHelper):
     assert components_of(slim_b) == [
         (0, "vbase_offset", "VBasePtr *"),
         (4, "m_b0", "int"),
+        # A?
     ]
 
     class_c = component(class_d, 8)
@@ -212,7 +230,7 @@ def test_slim_vbase_as_first_base(type_helper: GhidraTypeTestHelper):
     ]
 
 
-def test_slim_vbase_at_nonzero_offset(type_helper: GhidraTypeTestHelper):
+def test_slim_vbase_as_second_base(type_helper: GhidraTypeTestHelper):
     """cvdump_sample/cpp/vbase_second_base.cpp
 
         A                size 8
@@ -220,10 +238,9 @@ def test_slim_vbase_at_nonzero_offset(type_helper: GhidraTypeTestHelper):
         C : virtual A    size 16
         D : B, C         size 32
 
-    C needs a slim copy because it has a virtual base. The copy is at offset 12
-    because B occupies the first 12 bytes.
-    B has no virtual base, so the full-sized B fits at offset 0 in D.
-    D has no direct virtual base, so it does not get a vbase pointer.
+
+    Should position the two base classes of D correctly.
+    Here the class with virtual inheritance (C) is second.
     """
     sample = load_cvdump_sample("vbase-second-base")
     type_helper.set_up_cvdump_types(sample.text)
@@ -263,8 +280,9 @@ def test_slim_base_ends_at_last_member(type_helper: GhidraTypeTestHelper):
         B : virtual A    size 32
         C : B            size 32
 
-    In C, there is padding between the slim copy of B and the first C member.
-    The slim copy of B does not contain this padding.
+    There is padding between the non-virtual and derived members from B
+    and the first member in C. Make sure the padding is represented as a gap in C
+    rather than expanding the slim copy of B to fit.
     """
     sample = load_cvdump_sample("vbase-alignment")
     type_helper.set_up_cvdump_types(sample.text)
@@ -299,7 +317,7 @@ def test_diamond_shares_one_virtual_base(type_helper: GhidraTypeTestHelper):
 
     Diamond inheritance pattern with virtual inheritance.
     D contains only one copy of A: B and C point to the single A
-    using their vbtables.
+    using their vbtables. Notably, `sizeof(D) < sizeof(B) + sizeof(C)`.
     """
     sample = load_cvdump_sample("diamond-virtual")
     type_helper.set_up_cvdump_types(sample.text)
@@ -349,9 +367,9 @@ def test_direct_virtual_base_at_nonzero_vbpoff(type_helper: GhidraTypeTestHelper
         B                   size 12
         C : B, virtual A    size 28
 
-    We cannot naively assume that any class with a direct virtual base has
-    vbpoff at offset zero. Here, C's non-virtual base class B is first.
-    B has no virtual base of its own, so the full-sized B fits at offset 0.
+    We need to create a `VBasePtr*` in C to use with its direct virtual base A.
+    Make sure we follow the `vbpoff` value from the fieldlist rather than assume
+    it can be created at offset 0 in C.
     """
     sample = load_cvdump_sample("vbase-after-base")
     type_helper.set_up_cvdump_types(sample.text)
@@ -382,7 +400,9 @@ def test_vbaseptr_slots_for_two_virtual_bases(type_helper: GhidraTypeTestHelper)
         B                           size 4
         C : virtual A, virtual B    size 20
 
-    The vbtable for C has two entries, one for each virtual base.
+    C has two direct virtual base classes. We only need one `VBasePtr*` member.
+    (i.e. do not create a member for each virtual base class. Obey the fieldlist.)
+    We also show the `vbtable` structure with one entry for each virtual base.
     """
     sample = load_cvdump_sample("vbase-two")
     type_helper.set_up_cvdump_types(sample.text)
@@ -415,7 +435,7 @@ def test_chained_virtual_bases(type_helper: GhidraTypeTestHelper):
         D : virtual C    size 32
 
     The vbtable for D has three entries. The order must match the vbind index
-    values for each virtual base, not the order they appear in the field list.
+    values for each virtual base, not the order they appear in the fieldlist.
     """
     sample = load_cvdump_sample("vbase-chain")
     type_helper.set_up_cvdump_types(sample.text)
@@ -483,9 +503,10 @@ def test_multiple_inheritance_with_virtual_functions(
         B           size 8
         C : A, B    size 24
 
-    A, B, and C each introduce a virtual function.
-    C's virtual function is combined in A's vtable at offset 0 in C.
-    The vtable for B's functions is at offset 12 in C.
+    A, B, and C each introduce a virtual function. Where do we create the `vftable` member?
+    According to the PDB, only the fieldlists for B and C have a VFUNCTAB leaf, so only their
+    structs get the member. The effect is that C's virtual function is "merged" into A's vtable.
+    (This may or may not be correct and we should revisit when we create a vtable struct during import.)
     """
     sample = load_cvdump_sample("multiple-inheritance-virtual-functions")
     type_helper.set_up_cvdump_types(sample.text)

@@ -238,8 +238,15 @@ class PdbTypeImporter:
 
         class_size: int = type_in_pdb["size"]
         raw_name: str = type_in_pdb["name"]
-        # Only a class with a virtual base of its own needs the slim treatment.
-        # A sibling base class without one fits at the offset given for it.
+        # Virtual inheritance requires that struct members are arranged in this order:
+        #
+        # 1. Members from non-virtual base classes.
+        # 2. Members from the derived class.
+        # 3. Members from virtual base classes.
+        #
+        # If this class has a direct virtual base class and we are creating it as the base for something else
+        # (i.e. if `as_base_class` is True) then we need to create a "slim" copy that contains only the
+        # non-virtual base classes and its own members.
         make_slim = as_base_class and "vbase" in field_list
         if make_slim:
             raw_name += "_vbase_slim"
