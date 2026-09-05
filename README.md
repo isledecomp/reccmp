@@ -87,6 +87,8 @@ We also have tooling to import the information from the decompilation into [Ghid
 
 We have established some [best practices](docs/recommendations.md) that have no impact on `reccmp`'s output, but have made a positive impact on the LEGO Island decompilation.
 
+[`cydifflib`](https://github.com/rapidfuzz/CyDifflib) is a drop-in replacement for Python's builtin [`difflib`](https://docs.python.org/3/library/difflib.html) module that offers better performance. If `cydifflib` is installed in the environment where you run `reccmp`, we will use it.
+
 ## Contributing
 
 Feel free to contribute to this project if you are interested! More information can be found at [CONTRIBUTING.md](./CONTRIBUTING.md).

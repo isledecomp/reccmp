@@ -1,6 +1,20 @@
 """Wrappers and items related to the builtin python difflib module."""
 
-from typing import Literal, Iterator
+from typing import Literal, Iterator, TYPE_CHECKING
+
+# `cydifflib` is a drop-in replacement for the builtin `difflib` that has
+# better performance. This was previously a required dependency (GH #477)
+# but it is now used only if we can import it.
+if TYPE_CHECKING:
+    # cydifflib has no type stubs, but we expect it to match
+    # the builtin difflib API exactly.
+    from difflib import SequenceMatcher
+else:
+    try:
+        from cydifflib import SequenceMatcher
+    except ImportError:
+        from difflib import SequenceMatcher
+
 
 DiffTag = Literal["delete", "equal", "insert", "replace"]
 DiffOpcode = tuple[DiffTag, int, int, int, int]

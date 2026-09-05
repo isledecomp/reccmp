@@ -18,6 +18,7 @@ from .util import (
 from .marker import (
     DecompMarker,
     MarkerCategory,
+    MarkerType,
     match_marker,
     is_marker_exact,
     ProjectAliases,
@@ -207,6 +208,10 @@ class DecompParser:
     def strings(self) -> list[ParserString]:
         return [s for s in self._symbols if isinstance(s, ParserString)]
 
+    @property
+    def lines(self) -> list[ParserLineSymbol]:
+        return [s for s in self._symbols if isinstance(s, ParserLineSymbol)]
+
     def iter_symbols(self, module: str | None = None) -> Iterator[ParserSymbol]:
         for s in self._symbols:
             if module is None or s.module == module:
@@ -246,9 +251,9 @@ class DecompParser:
         if self.fun_markers.insert(marker):
             self._syntax_warning(AlertCode.DUPLICATE_MODULE)
 
-        if marker.is_template():
+        if marker.type == MarkerType.TEMPLATE:
             self.state = ReaderState.IN_TEMPLATE
-        elif marker.is_synthetic():
+        elif marker.type == MarkerType.SYNTHETIC:
             self.state = ReaderState.IN_SYNTHETIC
         else:
             self.state = ReaderState.IN_LIBRARY
@@ -332,7 +337,7 @@ class DecompParser:
             return
 
         for marker in self.var_markers.iter():
-            if marker.is_string():
+            if marker.type == MarkerType.STRING:
                 assert string is not None
                 self._symbols.append(
                     ParserString(
@@ -407,7 +412,11 @@ class DecompParser:
         # and we have moved on to something else.
         # This is unlikely to occur with well-formed code, but
         # we can recover easily by just ending the function here.
-        if self.state == ReaderState.IN_FUNC and not marker.allowed_in_func():
+        if self.state == ReaderState.IN_FUNC and marker.type not in (
+            MarkerType.GLOBAL,
+            MarkerType.STRING,
+            MarkerType.LINE,
+        ):
             self._syntax_warning(AlertCode.MISSED_END_OF_FUNCTION)
             self._function_done(unexpected=True)
 
@@ -416,7 +425,7 @@ class DecompParser:
         # end if we detect a non-GLOBAL marker while state is IN_FUNC.
         # Maybe these cases should be syntax errors instead
 
-        if marker.is_regular_function():
+        if marker.type in (MarkerType.FUNCTION, MarkerType.STUB):
             if self.state in (
                 ReaderState.SEARCH,
                 ReaderState.WANT_SIG,
@@ -427,26 +436,26 @@ class DecompParser:
             else:
                 self._syntax_error(AlertCode.INCOMPATIBLE_MARKER)
 
-        elif marker.is_template():
+        elif marker.type == MarkerType.TEMPLATE:
             if self.state in (ReaderState.SEARCH, ReaderState.IN_TEMPLATE):
                 self._nameref_marker(marker)
             else:
                 self._syntax_error(AlertCode.INCOMPATIBLE_MARKER)
 
-        elif marker.is_synthetic():
+        elif marker.type == MarkerType.SYNTHETIC:
             if self.state in (ReaderState.SEARCH, ReaderState.IN_SYNTHETIC):
                 self._nameref_marker(marker)
             else:
                 self._syntax_error(AlertCode.INCOMPATIBLE_MARKER)
 
-        elif marker.is_library():
+        elif marker.type == MarkerType.LIBRARY:
             if self.state in (ReaderState.SEARCH, ReaderState.IN_LIBRARY):
                 self._nameref_marker(marker)
             else:
                 self._syntax_error(AlertCode.INCOMPATIBLE_MARKER)
 
         # Strings and variables are almost the same thing
-        elif marker.is_string() or marker.is_variable():
+        elif marker.type in (MarkerType.STRING, MarkerType.GLOBAL):
             if self.state in (
                 ReaderState.SEARCH,
                 ReaderState.IN_GLOBAL,
@@ -457,13 +466,13 @@ class DecompParser:
             else:
                 self._syntax_error(AlertCode.INCOMPATIBLE_MARKER)
 
-        elif marker.is_vtable():
+        elif marker.type == MarkerType.VTABLE:
             if self.state in (ReaderState.SEARCH, ReaderState.IN_VTABLE):
                 self._vtable_marker(marker)
             else:
                 self._syntax_error(AlertCode.INCOMPATIBLE_MARKER)
 
-        elif marker.is_line():
+        elif marker.type == MarkerType.LINE:
             self._line_marker(marker)
 
         else:
@@ -566,7 +575,7 @@ class DecompParser:
             variable_name = None
 
             global_markers_queued = any(
-                m.is_variable() for m in self.var_markers.iter()
+                m.type == MarkerType.GLOBAL for m in self.var_markers.iter()
             )
 
             if len(line_strip) == 0:

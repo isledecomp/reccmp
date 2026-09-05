@@ -275,3 +275,20 @@ def test_string_line_continuation(parser: DecompParser):
     assert parser.strings[0].line_number == 2
     # TODO: enable when end_line is added
     # assert parser.strings[0].end_line == 3
+
+
+def test_function_with_line_marker_inside(parser: DecompParser):
+    """A LINE marker inside a function body belongs to that function
+    and must not end function tracking or produce a warning."""
+    parser.read(dedent("""\
+        // FUNCTION: TEST 0x1234
+        void test()
+        {
+            // LINE: TEST 0x1250
+            do_the_thing();
+        }
+        """))
+    assert len(parser.alerts) == 0
+    assert parser.functions[0].line_number == 2
+    assert parser.functions[0].end_line == 6
+    assert parser.lines[0].line_number == 4
