@@ -306,8 +306,6 @@ class PdbTypeImporter:
         components.sort(key=lambda c: c.offset)
 
         if make_slim:
-            # Make a "slim" version: shrink the size to the fields that are actually present.
-            # This makes a difference when the current class uses virtual inheritance
             assert (
                 len(components) > 0
             ), f"Error: {sanitized_name} should not be empty. There must be at least one direct or indirect vbase pointer."
