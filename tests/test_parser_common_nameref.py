@@ -58,7 +58,7 @@ def test_strip_whitespace(
     assert not parser.alerts
 
 
-# TODO: Replace with NAMEREF_TYPES when xfails are resolved.
+# TODO #537: Replace with NAMEREF_TYPES when xfails are resolved.
 SCOPE_TYPES = [
     MarkerType.FUNCTION,
     xfail_param(MarkerType.GLOBAL, reason="No separate code path for nameref case."),
