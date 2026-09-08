@@ -89,12 +89,16 @@ def completion_token(
     annotation_type: AnnotationType,
     *,
     slashes: str = "//",
+    name_prefix: str = " ",
+    name_suffix: str = "",
 ) -> str:
     """Returns an example code line or comment that is
     compatible with the given marker type.
-    NAME annotations can use an alternate slash prefix."""
+    NAME annotations can use an alternate slash prefix and
+    alternate whitespace on either side of the name."""
     if annotation_type == AnnotationType.NAME:
-        return f"{slashes} {_COMMENT_COMPLETION_TEXT[marker_type]}"
+        name = _COMMENT_COMPLETION_TEXT[marker_type]
+        return f"{slashes}{name_prefix}{name}{name_suffix}"
 
     return _CODE_COMPLETION_TOKENS[marker_type]
 
