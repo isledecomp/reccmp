@@ -45,6 +45,7 @@ def is_plausible_vtable_target(binfile: Image, addr: int) -> bool:
     # Executable mapping, incremental-link stub opcode, or an x86 absolute
     # indirect jump through the import address table (FF 25).
     return data[:2] == b"\xff\x25" or data[0] in (
+        0x0F,
         0xE9,
         0x55,
         0x6A,
