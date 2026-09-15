@@ -116,12 +116,29 @@ def test_function_end_curly_in_multiline_string(parser: DecompParser):
 
 
 @pytest.mark.xfail(reason="TODO: #509")
-def test_string_completion_token_line_continuation(parser: DecompParser):
+def test_string_with_line_continuation(parser: DecompParser):
     """Should support strings broken onto multiple lines with a line continuation mark.
     The string text should not include any escaped newlines."""
     parser.read(dedent("""\
         // STRING: TEST 0x1234
         const char* g_msg = "Hello \\
+        World";
+        """))
+
+    # Captured the correct string text.
+    (string,) = parser.strings
+    assert string.name == "Hello World"
+
+    # No warnings.
+    assert not parser.alerts
+
+
+@pytest.mark.xfail(reason="TODO: #509")
+def test_string_with_line_continuation_and_escaped_quote(parser: DecompParser):
+    """Should ignore escaped double quote and not end the multi-line string early."""
+    parser.read(dedent("""\
+        // STRING: TEST 0x1234
+        const char* g_msg = "Hello \"\\
         World";
         """))
 
