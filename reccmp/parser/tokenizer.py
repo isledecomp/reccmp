@@ -51,6 +51,10 @@ L\'[^'\n\\]*(?:\\.[^'\n\\]*)*['\n]|
 )
 
 CodeToken = tuple[int, int, TokenType]
+"""Start position (inclusive), end position (exclusive), and type for this token.
+Using regular tuples is fastest on pure Python, so this type alias will serve to
+document function parameters where we expect tokens. Dataclasses with slots came
+close to matching performance, but they are not hashable/immutable."""
 
 
 def tokenize_code_file(text: str) -> list[CodeToken]:
