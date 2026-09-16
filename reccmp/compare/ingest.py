@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from reccmp.formats.exceptions import (
     InvalidStringError,
 )
-from reccmp.formats import PEImage, TextFile
+from reccmp.formats import Image, PEImage, TextFile
 from reccmp.cvdump import CvdumpTypesParser, CvdumpAnalysis
 from reccmp.parser import DecompCodebase
 from reccmp.parser.marker import ProjectAliases
@@ -148,7 +148,7 @@ def load_cvdump_lines(
 def load_markers(
     code_files: Sequence[TextFile],
     lines_db: LinesDb,
-    orig_bin: PEImage,
+    orig_bin: Image,
     target_id: str,
     db: EntityDb,
     encoding: str = "latin1",
@@ -288,7 +288,7 @@ def load_markers(
                 ImageId.ORIG,
                 string.offset,
                 name=entity_name_from_string(string.name, wide=string.is_widechar),
-                type=EntityType.STRING,
+                type=EntityType.WIDECHAR if string.is_widechar else EntityType.STRING,
                 size=string_size,
                 verified=True,
             )
