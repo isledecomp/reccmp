@@ -26,6 +26,7 @@ from .match_msvc import (
     match_lines,
     match_symbols,
     match_functions,
+    match_folded_function_aliases,
     match_vtables,
     match_static_variables,
     match_variables,
@@ -222,6 +223,13 @@ class Compare:
         truncate = self.cvdump_analysis.truncate_symbols
         match_symbols(self._db, self.report, truncate=truncate)
         match_functions(self._db, self.report, truncate=truncate)
+        match_folded_function_aliases(
+            self._db,
+            self.codebase,
+            self._lines_db,
+            self.report,
+            truncate=truncate,
+        )
         match_vtables(self._db, self.report)
         classify_exact_vtable_aliases(self._db, self.orig_bin, self.recomp_bin)
         match_static_variables(self._db, self.report)
@@ -478,6 +486,13 @@ class Compare:
                 and (
                     orig.recomp_addr == recomp.recomp_addr
                     or self._orig_addrs_equivalent(orig.orig_addr, recomp.orig_addr)
+                    or (
+                        recomp.recomp_addr is not None
+                        and self._db.alias_canonical_orig(
+                            ImageId.RECOMP, recomp.recomp_addr
+                        )
+                        == raw_orig
+                    )
                 )
             )
             if not slot_matches and raw_orig is not None:

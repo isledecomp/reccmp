@@ -7,6 +7,8 @@ from reccmp.compare.event import (
     reccmp_report_nop,
 )
 from reccmp.compare.queries import get_referencing_entity_matches
+from reccmp.parser.codebase import DecompCodebase
+from reccmp.parser.node import ParserFunction
 from reccmp.types import ImageId
 
 
@@ -101,6 +103,104 @@ def _match_name(name: str) -> str:
     them tight (``T*>``). The spacing carries no identity, so names match
     on the tight form."""
     return name.replace(" *", "*").replace(" &", "&")
+
+
+def match_folded_function_aliases(
+    db: EntityDb,
+    codebase: DecompCodebase,
+    lines_db: LinesDb,
+    report: ReccmpReportProtocol = reccmp_report_nop,
+    *,
+    truncate: bool = False,
+) -> None:
+    """Bind FOLDED annotations to the canonical pair as recomp-side aliases.
+
+    Retail ICF may keep one body at an address that several recomp symbols still
+    emit under ``/OPT:NOICF``. Each FOLDED annotation names one of those recomp
+    symbols; once the canonical (non-folded) annotation owns the orig address,
+    the extras become ``set_alias`` edges so vtable slots and operand compare
+    treat them as the shared original identity.
+    """
+
+    recomp_by_name: dict[str, list[int]] = {}
+    for ent in db.get_all():
+        if ent.recomp_addr is None:
+            continue
+        if ent.get("type") not in (EntityType.FUNCTION, None):
+            continue
+        name = ent.get("name")
+        if not isinstance(name, str) or not name:
+            continue
+        key = _match_name(name[:255] if truncate else name)
+        recomp_by_name.setdefault(key, []).append(ent.recomp_addr)
+
+    folded: list[ParserFunction] = [
+        symbol
+        for symbol in (
+            *codebase.iter_line_functions(),
+            *codebase.iter_name_functions(),
+        )
+        if symbol.is_folded
+    ]
+    for symbol in folded:
+        if db.get_one_match(symbol.offset) is None:
+            report(
+                ReccmpEvent.NO_MATCH,
+                symbol.offset,
+                msg=(
+                    f"FOLDED annotation at 0x{symbol.offset:x} has no canonical "
+                    f"owner to alias ({symbol.name})"
+                ),
+            )
+            continue
+
+        recomp_addr: int | None = None
+        if symbol.is_nameref():
+            key = _match_name(symbol.name[:255] if truncate else symbol.name)
+            candidates = [
+                addr
+                for addr in recomp_by_name.get(key, [])
+                if db.alias_canonical_orig(ImageId.RECOMP, addr) is None
+            ]
+            if len(candidates) == 1:
+                recomp_addr = candidates[0]
+            elif not candidates:
+                report(
+                    ReccmpEvent.NO_MATCH,
+                    symbol.offset,
+                    msg=f"Failed to alias FOLDED name '{symbol.name}' at 0x{symbol.offset:x}",
+                )
+                continue
+            else:
+                report(
+                    ReccmpEvent.AMBIGUOUS_MATCH,
+                    symbol.offset,
+                    msg=(
+                        f"Ambiguous FOLDED name '{symbol.name}' has "
+                        f"{len(candidates)} recomp candidates"
+                    ),
+                )
+                continue
+        else:
+            assert symbol.filename is not None
+            recomp_addr = lines_db.find_function(
+                symbol.filename,
+                symbol.line_number,
+                symbol.end_line,
+                folded=True,
+            )
+            if recomp_addr is None:
+                continue
+
+        if not db.set_alias(ImageId.RECOMP, recomp_addr, symbol.offset):
+            report(
+                ReccmpEvent.NO_MATCH,
+                symbol.offset,
+                msg=(
+                    f"Could not alias FOLDED recomp 0x{recomp_addr:x} to "
+                    f"0x{symbol.offset:x} ({symbol.name})"
+                ),
+            )
 
 
 def match_functions(

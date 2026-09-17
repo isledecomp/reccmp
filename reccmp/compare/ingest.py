@@ -185,6 +185,11 @@ def load_markers(
     # If we have two functions that share the same name, and one is
     # a lineref, we can match the nameref correctly because the lineref
     # was already removed from consideration.
+    #
+    # FOLDED annotations share a retail address with a canonical body. Do not
+    # bind them here: a second match() would be rejected, and a nameref would
+    # overwrite the canonical name. match_folded_function_aliases records them
+    # as side-local aliases after the primary pair exists.
     with db.batch() as batch:
         for fun in codebase.iter_line_functions():
             batch.set(
@@ -194,15 +199,21 @@ def load_markers(
                 stub=fun.should_skip(),
             )
 
+            if fun.is_folded:
+                continue
+
             assert fun.filename is not None
             recomp_addr = lines_db.find_function(
-                fun.filename, fun.line_number, fun.end_line, folded=fun.is_folded
+                fun.filename, fun.line_number, fun.end_line, folded=False
             )
 
             if recomp_addr is not None:
                 batch.match(fun.offset, recomp_addr)
 
         for fun in codebase.iter_name_functions():
+            if fun.is_folded:
+                continue
+
             batch.set(
                 ImageId.ORIG,
                 fun.offset,
