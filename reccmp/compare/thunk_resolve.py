@@ -46,6 +46,7 @@ def is_plausible_vtable_target(binfile: Image, addr: int) -> bool:
     # indirect jump through the import address table (FF 25).
     return data[:2] == b"\xff\x25" or data[0] in (
         0x0F,
+        0x2B,  # vtordisp: sub r32, r/m32 (e.g. sub ecx, [ecx-4])
         0xE9,
         0x55,
         0x6A,
