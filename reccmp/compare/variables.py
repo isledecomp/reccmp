@@ -237,8 +237,9 @@ class VariableComparator:
     def is_pointer_match(self, orig_addr: int, recomp_addr: int) -> bool:
         """Check whether these pointers point at the same thing"""
 
-        # Null pointers considered matching
-        if orig_addr == 0 and recomp_addr == 0:
+        # Identical absolute values match: NULL, INVALID_HANDLE_VALUE (-1), and
+        # same-base matching builds where the pointed-to VA is unchanged.
+        if orig_addr == recomp_addr:
             return True
 
         return self.db.is_match(orig_addr, recomp_addr)
