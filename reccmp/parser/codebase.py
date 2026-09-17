@@ -44,22 +44,38 @@ class DecompCodebase:
 
     def prune_reused_addrs(self) -> list[ParserSymbol]:
         """We are focused on annotations for a single module, so each address should be used only once.
-        Keep only the first occurrence of an address and discard the others.
-        Return the duplicates in a list for error reporting."""
-        used_addr = set()
+        Keep the first non-folded claim on an address as the owner. FOLDED claims on the same
+        address are retained as aliases. A later non-folded claim that collides with an earlier
+        FOLDED-only address replaces that FOLDED entry as the owner (the FOLDED marker stays).
+        Return discarded duplicates in a list for error reporting."""
+        used_addr: dict[int, ParserSymbol] = {}
         duplicates = []
-        unique = []
+        unique: list[ParserSymbol] = []
 
         for s in self._symbols:
-            # Must retain FOLDED functions/vtables because they will reuse the address.
-            # Question: should we keep *all* annotations for this address if *any* are folded?
-            if s.offset in used_addr and not (
-                isinstance(s, (ParserFunction, ParserVtable)) and s.is_folded
-            ):
-                duplicates.append(s)
-            else:
+            previous = used_addr.get(s.offset)
+            if previous is None:
                 unique.append(s)
-                used_addr.add(s.offset)
+                used_addr[s.offset] = s
+                continue
+
+            s_folded = isinstance(s, (ParserFunction, ParserVtable)) and s.is_folded
+            prev_folded = (
+                isinstance(previous, (ParserFunction, ParserVtable)) and previous.is_folded
+            )
+
+            if s_folded:
+                # Additional FOLDED alias of an existing owner (or earlier FOLDED).
+                unique.append(s)
+                continue
+
+            if prev_folded:
+                # Promote this unfolded owner over the earlier FOLDED placeholder.
+                used_addr[s.offset] = s
+                unique.append(s)
+                continue
+
+            duplicates.append(s)
 
         self._symbols = unique
         return duplicates
