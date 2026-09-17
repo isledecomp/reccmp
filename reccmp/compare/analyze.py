@@ -19,6 +19,7 @@ from reccmp.analysis import (
     find_eh_handlers,
     find_exception_registrations,
     is_likely_latin1,
+    is_likely_widechar,
 )
 from reccmp.analysis.crt_startup import (
     detect_crt_startup_arrays,
@@ -62,6 +63,47 @@ def create_crt_functions(db: EntityDb, image_id: ImageId, binfile: PEImage):
                     type=EntityType.FUNCTION,
                     name=base_name,
                 )
+
+
+def create_analysis_widechars(db: EntityDb, img_id: ImageId, binfile: PEImage):
+    """Search both binaries for UTF-16LE strings at relocation targets.
+
+    Must run before create_analysis_strings: a Latin1 scan would otherwise
+    truncate wide strings at the first embedded NUL (e.g. L\"F1\" -> \"F\").
+
+    Only accept a wide decode when it continues past the Latin1 truncation,
+    so a genuine narrow \"F\" is not re-labeled as L\"F\".
+    """
+    with db.batch() as batch:
+        last_range = range(0)
+        for addr, string in binfile.iter_widechar():
+            if addr in binfile.relocations:
+                continue
+
+            if addr in last_range:
+                continue
+
+            try:
+                narrow = binfile.read_string(addr).decode("latin1")
+            except (InvalidStringError, UnicodeDecodeError, InvalidVirtualAddressError):
+                narrow = None
+
+            # Genuine Latin1 strings re-decoded as UTF-16LE of equal length
+            # (e.g. \"F\") are not wide strings.
+            if narrow is not None and len(string) <= len(narrow):
+                continue
+
+            if is_likely_widechar(string) and not db.intersects(img_id, addr):
+                # Size includes the 2-byte UTF-16 null terminator.
+                size = 2 * len(string) + 2
+                batch.set(
+                    img_id,
+                    addr,
+                    type=EntityType.WIDECHAR,
+                    name=entity_name_from_string(string, wide=True),
+                    size=size,
+                )
+                last_range = range(addr, addr + size)
 
 
 def create_analysis_strings(

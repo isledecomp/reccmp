@@ -15,6 +15,7 @@ from typing import Iterable, Iterator, cast
 from .exceptions import (
     InvalidVirtualAddressError,
     SectionNotFoundError,
+    InvalidStringError,
 )
 from .image import Image, ImageRegion, ImageSection, ImageSectionFlags, ImageImport
 from .mz import ImageDosHeader
@@ -814,6 +815,22 @@ class PEImage(Image):
 
                     yield addr, string
 
+    def iter_widechar(self) -> Iterator[tuple[int, str]]:
+        """Search for possible UTF-16LE strings at each verified address in .data."""
+        for section in self.get_data_regions():
+            for addr in self._relocated_addrs:
+                if addr in section.range:
+                    try:
+                        raw = self.read_widechar(addr)
+                    except InvalidStringError:
+                        continue
+
+                    try:
+                        string = raw.decode("utf-16-le")
+                    except UnicodeDecodeError:
+                        continue
+
+                    yield addr, string
     def get_section_by_name(self, name: str) -> ImageSection:
         try:
             return self.section_map[name]

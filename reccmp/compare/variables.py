@@ -6,7 +6,12 @@ from typing import NamedTuple
 from struct import unpack, error as StructError
 from typing_extensions import Self
 from reccmp.formats import Image
-from reccmp.formats.exceptions import InvalidVirtualReadError
+from reccmp.analysis.string_const import is_likely_latin1, is_likely_widechar
+from reccmp.formats.exceptions import (
+    InvalidVirtualReadError,
+    InvalidVirtualAddressError,
+    InvalidStringError,
+)
 from reccmp.compare.db import EntityDb, ReccmpMatch
 from reccmp.cvdump.cvinfo import CvdumpTypeKey
 from reccmp.cvdump.types import (
@@ -242,7 +247,67 @@ class VariableComparator:
         if orig_addr == recomp_addr:
             return True
 
-        return self.db.is_match(orig_addr, recomp_addr)
+        if self.db.is_match(orig_addr, recomp_addr):
+            return True
+
+        # MSVC string pooling can leave orig pointing at another string's NUL
+        # while recomp has a distinct "". Wide strings are also easy to mis-
+        # identify as short Latin1 fragments during PE analysis; compare the
+        # decoded contents as a last resort.
+        return self.is_string_content_match(orig_addr, recomp_addr)
+
+    def _decode_string_at(self, img: Image, addr: int) -> tuple[str, bool] | None:
+        """Return (text, is_wide) for the best string decode at addr, or None."""
+        wide_text: str | None = None
+        try:
+            wide_text = img.read_widechar(addr).decode("utf-16-le")
+        except (InvalidStringError, UnicodeDecodeError, InvalidVirtualAddressError):
+            pass
+
+        narrow_text: str | None = None
+        try:
+            narrow_text = img.read_string(addr).decode("latin1")
+        except (InvalidStringError, UnicodeDecodeError, InvalidVirtualAddressError):
+            pass
+
+        if wide_text is None and narrow_text is None:
+            return None
+
+        # Prefer wide when it continues past a Latin1 truncation (embedded NUL).
+        if wide_text is not None and (
+            narrow_text is None
+            or len(wide_text) > len(narrow_text)
+            or wide_text == narrow_text
+        ):
+            return wide_text, True
+
+        assert narrow_text is not None
+        return narrow_text, False
+
+    def is_string_content_match(self, orig_addr: int, recomp_addr: int) -> bool:
+        """True when both addresses decode to the same C or wide string text."""
+        orig = self._decode_string_at(self.orig_bin, orig_addr)
+        recomp = self._decode_string_at(self.recomp_bin, recomp_addr)
+        if orig is None or recomp is None:
+            return False
+
+        orig_text, orig_wide = orig
+        recomp_text, recomp_wide = recomp
+
+        # Empty narrow and empty wide both mean "".
+        if orig_text == "" and recomp_text == "":
+            return True
+
+        if orig_wide != recomp_wide:
+            return False
+
+        if orig_text != recomp_text:
+            return False
+
+        # Reject binary blobs that merely share a decode (e.g. int payloads).
+        if orig_wide:
+            return is_likely_widechar(orig_text)
+        return is_likely_latin1(orig_text)
 
     def is_pointer_match_to_offset(self, orig_addr: int, recomp_addr: int) -> bool:
         """Check whether these pointers point at the same offset of the same matched entity."""

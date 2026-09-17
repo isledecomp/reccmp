@@ -47,6 +47,7 @@ from .analyze import (
     create_thunks,
     create_analysis_floats,
     create_analysis_strings,
+    create_analysis_widechars,
     create_analysis_vtordisps,
     create_crt_functions,
     create_seh_entities,
@@ -279,6 +280,8 @@ class Compare:
             # Detect floats first because we can identify them with more confidence
             # and this eliminates them from consideration as strings.
             create_analysis_floats(self._db, img_id, binfile)
+            # Wide before Latin1: otherwise L"F1" is misread as the short string "F".
+            create_analysis_widechars(self._db, img_id, binfile)
             create_analysis_strings(self._db, img_id, binfile, self.bin_encoding)
             complete_partial_floats(self._db, img_id, binfile)
             complete_partial_strings(self._db, img_id, binfile, self.bin_encoding)

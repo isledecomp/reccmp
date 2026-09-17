@@ -13,6 +13,7 @@ from reccmp.formats.exceptions import (
 from reccmp.compare.analyze import (
     create_analysis_floats,
     create_analysis_strings,
+    create_analysis_widechars,
     create_thunks,
     create_analysis_vtordisps,
     complete_partial_strings,
@@ -58,6 +59,36 @@ def get_ref_displacement(
         return ent.get("displacement")
 
     return None
+
+
+def test_create_analysis_widechars_prefers_over_latin1_truncation(db: EntityDb):
+    """L\"F1\" must not be registered as the short Latin1 string \"F\"."""
+    binfile = Mock(spec=[])
+    binfile.iter_widechar = Mock(return_value=[(100, "F1")])
+    binfile.iter_string = Mock(return_value=[(100, "F")])
+    binfile.relocations = set()
+    binfile.read_string = Mock(return_value=b"F")
+
+    create_analysis_widechars(db, ImageId.ORIG, binfile)
+    create_analysis_strings(db, ImageId.ORIG, binfile)
+
+    e = db.get(ImageId.ORIG, 100)
+    assert e is not None
+    assert e.get("type") == EntityType.WIDECHAR
+    assert e.get("name") == 'L"F1"'
+    assert e.any_size() == 6
+
+
+def test_create_analysis_widechars_skips_genuine_latin1(db: EntityDb):
+    """A real narrow \"Hello\" should not become a wide entity."""
+    binfile = Mock(spec=[])
+    binfile.iter_widechar = Mock(return_value=[(100, "Hello")])
+    binfile.relocations = set()
+    binfile.read_string = Mock(return_value=b"Hello")
+
+    create_analysis_widechars(db, ImageId.ORIG, binfile)
+
+    assert db.get(ImageId.ORIG, 100) is None
 
 
 def test_create_analysis_strings(db: EntityDb):

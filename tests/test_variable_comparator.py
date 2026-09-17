@@ -349,7 +349,6 @@ def test_compare_complex_with_intermediate_padding(db: EntityDb):
     assert c.result == CompareResult.DIFF
 
 
-@pytest.mark.xfail(reason="GH #305")
 def test_compare_string_effective_match(db: EntityDb, types: CvdumpTypesParser):
     """If the datatype is a string, report a match if the text matches,
     regardless of whether the pointers match."""
@@ -510,3 +509,34 @@ def test_display_signed_unsigned(
 
     assert c is not None
     assert c.compared[0].values[0] == text
+
+
+def test_compare_empty_string_pointer_pooling(db: EntityDb, types: CvdumpTypesParser):
+    """MSVC may pool empty strings as another string's NUL; treat both as matching."""
+    create_matched_variable(db, 0, data_type=CVInfoTypeEnum.T_32PVOID)
+
+    # orig: pointer to the NUL after "file error" (addr 14)
+    # recomp: pointer to a distinct "" at addr 4
+    orig = RawImage.from_memory(b"\x0e\x00\x00\x00" + b"file error\x00")
+    recomp = RawImage.from_memory(b"\x04\x00\x00\x00" + b"\x00")
+    comparator = VariableComparator(db, types, orig, recomp)
+
+    c = comparator.compare_variable(get_match(db, 0))
+
+    assert c is not None
+    assert c.result == CompareResult.MATCH
+
+
+def test_compare_widechar_pointer_content(db: EntityDb, types: CvdumpTypesParser):
+    """Wide string pointers match by decoded text when entities are unmatched."""
+    create_matched_variable(db, 0, data_type=CVInfoTypeEnum.T_32PVOID)
+
+    wide = "F1".encode("utf-16-le") + b"\x00\x00"
+    orig = RawImage.from_memory(b"\x04\x00\x00\x00" + wide)
+    recomp = RawImage.from_memory(b"\x04\x00\x00\x00" + wide)
+    comparator = VariableComparator(db, types, orig, recomp)
+
+    c = comparator.compare_variable(get_match(db, 0))
+
+    assert c is not None
+    assert c.result == CompareResult.MATCH
