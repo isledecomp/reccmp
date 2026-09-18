@@ -334,8 +334,7 @@ class PdbFunctionImporterFull(PdbFunctionImporter):
             )
             self._import_parameter_names(ghidra_function)
 
-        if self.varargs:
-            ghidra_function.setVarArgs(True)
+        ghidra_function.setVarArgs(self.varargs)
 
         # Special handling for `this adjust` and virtual inheritance
         if self.signature.this_adjust != 0:

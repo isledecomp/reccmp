@@ -106,11 +106,25 @@ def get_or_create_class_namespace(
     """
     Classes are very similar to namespaces in Ghidra. This function returns the class/namespace if it exists.
     Otherwise, the last part is created as a class, the rest are created as namespaces.
+
+    A pre-existing *plain* Namespace at the leaf is converted to a GhidraClass so
+    VariableUtilities can bind the class Structure. Parent path components stay
+    ordinary namespaces.
     """
     logger.info("Looking for namespace: '%s'", namespace_path)
     try:
         result = _get_ghidra_namespace(api, namespace_path)
         logger.debug("Found existing class/namespace %s", namespace_path)
+        if hasattr(result, "isClass") and result.isClass():
+            return result
+        symbols = api.getCurrentProgram().getSymbolTable()
+        convert = getattr(symbols, "convertNamespaceToClass", None)
+        if callable(convert):
+            converted = convert(result)
+            logger.info(
+                "Converted plain namespace %s to GhidraClass", namespace_path
+            )
+            return converted
         return result
     except ClassOrNamespaceNotFoundInGhidraError:
         logger.info("Creating class %s", namespace_path)

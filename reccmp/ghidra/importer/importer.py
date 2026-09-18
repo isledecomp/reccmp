@@ -162,6 +162,11 @@ def _do_execute_import(
         api, extraction.compare.get_vtables(), image_id=image_id
     )
     logger.info("Finished importing vftables.")
+    if type_importer.unimplemented_leaves:
+        logger.info(
+            "Unimplemented PDB leaves (census, not imported): %s",
+            dict(sorted(type_importer.unimplemented_leaves.items())),
+        )
 
 
 def _log_and_track_failure(

@@ -1,4 +1,5 @@
 import logging
+from collections import Counter
 from typing import Callable, Iterator, NamedTuple, TypeVar, cast
 
 # Disable spurious warnings in vscode / pylance
@@ -15,6 +16,7 @@ from ghidra.program.model.data import (
     DataTypeConflictHandler,
     Enum,
     EnumDataType,
+    FunctionDefinition,
     FunctionDefinitionDataType,
     ParameterDefinitionImpl,
     StructureDataType,
@@ -86,6 +88,7 @@ class PdbTypeImporter:
         self.handled_enums: dict[SanitizedEntityName, Enum] = {}
         self.handled_unions: set[SanitizedEntityName] = set()
         self.handled_procedures: dict[CvdumpTypeKey, DataType] = {}
+        self.unimplemented_leaves: Counter[str] = Counter()
 
     @property
     def types(self):
@@ -139,6 +142,7 @@ class PdbTypeImporter:
         elif type_category == "LF_UNION":
             return self._import_union(type_index, type_pdb)
         else:
+            self.unimplemented_leaves[str(type_category)] += 1
             raise TypeNotImplementedError(type_pdb)
 
     def _import_scalar_type(self, type_key: CvdumpTypeKey) -> DataType:
@@ -246,12 +250,25 @@ class PdbTypeImporter:
         definition.setReturnType(return_type)
         if params:
             definition.setArguments(params)
-        if varargs:
-            definition.setVarArgs(True)
+        if hasattr(definition, "setVarArgs"):
+            definition.setVarArgs(varargs)
         calling_convention = _CALL_TYPE_TO_GHIDRA.get(type_pdb.get("call_type") or "")
         if calling_convention:
             definition.setCallingConvention(calling_convention)
-        imported = add_data_type_or_reuse_existing(self.api, definition)
+        manager = self.api.getCurrentProgram().getDataTypeManager()
+        existing = manager.getDataType(definition.getPathName())
+        if existing is not None and isinstance(existing, FunctionDefinition):
+            existing.setReturnType(return_type)
+            existing.setArguments(params)
+            if hasattr(existing, "setVarArgs"):
+                existing.setVarArgs(varargs)
+            if calling_convention:
+                existing.setCallingConvention(calling_convention)
+            self.handled_procedures[type_index] = existing
+            return existing
+        imported = manager.addDataType(
+            definition, DataTypeConflictHandler.REPLACE_HANDLER
+        )
         self.handled_procedures[type_index] = imported
         return imported
 
