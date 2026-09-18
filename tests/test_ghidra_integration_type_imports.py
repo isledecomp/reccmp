@@ -301,34 +301,49 @@ def test_enum_with_negative_value(
     assert second_import == imported_enum
 
 
-def test_fallback_procedure_import(
+def test_procedure_import(
     type_helper: GhidraTypeTestHelper, cvdump_sample: CvdumpSample
 ):
-    """The feature is not fully implemented. This test asserts on the fallback behaviour."""
+    """LF_PROCEDURE becomes a FunctionDefinition, not void."""
+    from ghidra.program.model.data import FunctionDefinition, Pointer
 
     type_helper.set_up_cvdump_types(cvdump_sample.text)
     key = cvdump_sample.key("procedure-key")
 
-    imported_type = type_helper.type_importer.import_pdb_type_into_ghidra(key)
-    # Fallback behaviour. This assertion should be changed if proper support is implemented
-    assert imported_type == type_helper.type_importer.import_pdb_type_into_ghidra(
-        CVInfoTypeEnum.T_VOID
+    imported = assert_instance(
+        type_helper.type_importer.import_pdb_type_into_ghidra(key),
+        FunctionDefinition,
     )
+    assert imported.getReturnType().getName() == "void"
+    arguments = list(imported.getArguments())
+    assert len(arguments) == 3
+    assert isinstance(arguments[0].getDataType(), Pointer)
+    assert arguments[0].getDataType().getDataType().getName() == "char"
+    assert arguments[1].getDataType().getName() == "long"
+    assert isinstance(arguments[2].getDataType(), Pointer)
+    assert imported.hasVarArgs() is False
+    assert imported.getCallingConventionName() == "__cdecl"
 
-    # Repeating the import does not create a duplicate type in Ghidra's database.
     second_import = type_helper.type_importer.import_pdb_type_into_ghidra(key)
-    assert second_import == imported_type
+    assert second_import == imported
 
 
-@pytest.mark.xfail(reason="Union import not yet implemented")
-def test_union(type_helper: GhidraTypeTestHelper, cvdump_sample: CvdumpSample):
+def test_union(
+    type_helper: GhidraTypeTestHelper, cvdump_sample: CvdumpSample
+):
     from ghidra.program.model.data import Union
 
     type_helper.set_up_cvdump_types(cvdump_sample.text)
     key = cvdump_sample.key("union-key")
 
-    _imported_union = assert_instance(
+    imported_union = assert_instance(
         type_helper.type_importer.import_pdb_type_into_ghidra(key), Union
     )
+    assert imported_union.getLength() == 8
+    names = [component.getFieldName() for component in imported_union.getComponents()]
+    assert "LowPart" in names
+    assert "HighPart" in names
+    assert "QuadPart" in names
 
-    # More assertions are needed once we have proper support
+    second_import = type_helper.type_importer.import_pdb_type_into_ghidra(key)
+    assert second_import == imported_union

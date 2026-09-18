@@ -113,6 +113,50 @@ void MyTestFn(void)
 """)
 
 
+def test_import_variadic_function(
+    ghidra: "FlatProgramAPI",
+    function_helper: GhidraFunctionTestHelper,
+    type_helper: GhidraTypeTestHelper,
+):
+    from reccmp.ghidra.importer.function_importer import (
+        PdbFunctionImporter,
+        PdbFunction,
+    )
+
+    function_helper.overwrite_example_function(b"\xc3")
+
+    func_signature = FunctionSignature(
+        call_type="__cdecl",
+        arglist=[CVInfoTypeEnum.T_32PRCHAR, CVInfoTypeEnum.T_NOTYPE],
+        return_type=CVInfoTypeEnum.T_VOID,
+        class_type=None,
+        symbols=[
+            CppStackSymbol("fmt", CVInfoTypeEnum.T_32PRCHAR, 4),
+        ],
+        this_adjust=0,
+    )
+    pdb_function = PdbFunction(
+        ReccmpMatch(function_helper.orig_address, 1234, {"name": "MyVariadicFn"}),
+        func_signature,
+        is_stub=False,
+    )
+    importer = PdbFunctionImporter.build(
+        ghidra, pdb_function, type_helper.type_importer, []
+    )
+    importer.overwrite_ghidra_function(function_helper.ghidra_function)
+
+    assert function_helper.ghidra_function.hasVarArgs() is True
+    assert importer.matches_ghidra_function(function_helper.ghidra_function) is True
+    function_helper.assert_c_code("""
+void __cdecl MyVariadicFn(char *fmt, ...)
+
+{
+  return;
+}
+
+""")
+
+
 def test_import_without_signature(
     ghidra: "FlatProgramAPI",
     function_helper: GhidraFunctionTestHelper,

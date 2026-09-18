@@ -401,7 +401,7 @@ _CVINFO_TYPES: tuple[CvInfoType, ...] = (
     CvInfoType(key=CvdumpTypeKey(0x0653),  name="T_64PCPLX128",   fmt="Q",    size=8,   pointer=CvdumpTypeKey(0x0053),  verified=False), # 64 bit pointer to 128 bit complex
 
     # 8-bit boolean types
-    CvInfoType(key=CvdumpTypeKey(0x0030),  name="T_BOOL08",       fmt="B",    size=1,   pointer=None,                   verified=False), # 8 bit boolean
+    CvInfoType(key=CvdumpTypeKey(0x0030),  name="T_BOOL08",       fmt="B",    size=1,   pointer=None,                   verified=True ), # 8 bit boolean (C++ bool)
     CvInfoType(key=CvdumpTypeKey(0x0130),  name="T_PBOOL08",      fmt="H",    size=2,   pointer=CvdumpTypeKey(0x0030),  verified=False), # 16 bit pointer to  8 bit boolean
     CvInfoType(key=CvdumpTypeKey(0x0230),  name="T_PFBOOL08",     fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0030),  verified=False), # 16:16 far pointer to  8 bit boolean
     CvInfoType(key=CvdumpTypeKey(0x0330),  name="T_PHBOOL08",     fmt="I",    size=4,   pointer=CvdumpTypeKey(0x0030),  verified=False), # 16:16 huge pointer to  8 bit boolean

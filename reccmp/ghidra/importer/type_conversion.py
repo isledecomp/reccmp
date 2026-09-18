@@ -4,6 +4,7 @@
 # pyright: reportMissingModuleSource=false
 
 from ghidra.program.model.data import (
+    BooleanDataType,
     BuiltIn,
     LongDataType,
     VoidDataType,
@@ -41,6 +42,13 @@ _scalar_type_map: dict[CvdumpTypeKey, BuiltIn] = {
     CVInfoTypeEnum.T_WCHAR: WideCharDataType(),
     CVInfoTypeEnum.T_INT4: IntegerDataType(),
     CVInfoTypeEnum.T_UINT4: UnsignedIntegerDataType(),
+    # C++ `bool` is 1 byte. Wider PDB "bool" scalars are not C++ bool
+    # (Win32 BOOL is T_BOOL32 / T_INT4, SGP BOOLEAN is a typedef).
+    CVInfoTypeEnum.T_BOOL08: BooleanDataType(),
+    CVInfoTypeEnum.T_BOOL16: UnsignedShortDataType(),
+    CVInfoTypeEnum.T_BOOL32: UnsignedIntegerDataType(),
+    CVInfoTypeEnum.T_BOOL64: UnsignedLongLongDataType(),
+    CVInfoTypeEnum.T_BOOL32FF: IntegerDataType(),
 }
 
 

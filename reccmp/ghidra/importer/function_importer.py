@@ -139,10 +139,15 @@ class PdbFunctionImporterFull(PdbFunctionImporter):
             self.signature.return_type
         )
 
-        if CVInfoTypeEnum.T_NOTYPE in self.signature.arglist:
-            # Variadric functions have a T_NOTYPE as their last argument
+        arg_keys = list(self.signature.arglist)
+        self.varargs = False
+        if arg_keys and arg_keys[-1] == CVInfoTypeEnum.T_NOTYPE:
+            # Variadic functions have a trailing T_NOTYPE in the PDB arglist.
+            self.varargs = True
+            arg_keys = arg_keys[:-1]
+        elif CVInfoTypeEnum.T_NOTYPE in arg_keys:
             raise TypeNotImplementedError(
-                f"Function '{self.get_full_name()}' is probably variadric, which is not implemented yet."
+                f"Function '{self.get_full_name()}' has a non-trailing T_NOTYPE argument."
             )
 
         self.arguments: Sequence[ParameterImpl] = [
@@ -151,7 +156,7 @@ class PdbFunctionImporterFull(PdbFunctionImporter):
                 type_importer.import_pdb_type_into_ghidra(type_key),
                 api.getCurrentProgram(),
             )
-            for (index, type_key) in enumerate(self.signature.arglist)
+            for (index, type_key) in enumerate(arg_keys)
         ]
 
     def matches_ghidra_function(self, ghidra_function: Function) -> bool:
@@ -201,12 +206,13 @@ class PdbFunctionImporterFull(PdbFunctionImporter):
             args_match = False
 
         logger.debug(
-            "Matches: namespace=%s name=%s return_type=%s calling_convention=%s args=%s",
+            "Matches: namespace=%s name=%s return_type=%s calling_convention=%s args=%s varargs=%s",
             namespace_match,
             name_match,
             return_type_match,
             calling_convention_match,
             "ignored" if self.is_stub else args_match,
+            self.varargs == ghidra_function.hasVarArgs(),
         )
 
         return (
@@ -215,6 +221,7 @@ class PdbFunctionImporterFull(PdbFunctionImporter):
             and return_type_match
             and calling_convention_match
             and args_match
+            and self.varargs == ghidra_function.hasVarArgs()
         )
 
     def _this_type_match(self, this_parameter: Parameter) -> bool:
@@ -326,6 +333,9 @@ class PdbFunctionImporterFull(PdbFunctionImporter):
                 *self.arguments,
             )
             self._import_parameter_names(ghidra_function)
+
+        if self.varargs:
+            ghidra_function.setVarArgs(True)
 
         # Special handling for `this adjust` and virtual inheritance
         if self.signature.this_adjust != 0:
