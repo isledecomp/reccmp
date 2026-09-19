@@ -4,12 +4,17 @@ import re
 import logging
 from typing import NamedTuple
 from typing_extensions import NotRequired, TypedDict
+
+from reccmp.compare.event import ReccmpEvent, ReccmpReportProtocol, reccmp_report_nop
 from .cvinfo import (
     CvInfoType,
     CvdumpTypeKey,
     CVInfoTypeEnum,
     CvdumpTypeMap,
 )
+
+# TODO: Discuss if we want to split the file instead, and if so, what can/should be pulled out
+# pylint:disable=too-many-lines
 
 logger = logging.getLogger(__name__)
 
@@ -443,10 +448,87 @@ class CvdumpTypesParser:
             array_element_size=array_element_size,
         )
 
-    def get_by_name(self, name: str) -> TypeInfo:
-        """Find the complex type with the given name."""
-        # TODO
-        raise NotImplementedError
+    def get_by_name(
+        self,
+        name: str,
+        orig_addr: int,
+        report: ReccmpReportProtocol = reccmp_report_nop,
+    ) -> TypeInfo | None:
+        """
+        Searches the type database for `name`.
+        Also supports arrays with decimal length (e.g. `MyType[20]`);
+        such array types will be created if the base type exists.
+        `orig_addr` is only used for reporting.
+
+        Limitations:
+        - Only supports classes / structures for now (in particular, primitives are not supported)
+        """
+
+        if name.endswith("]"):
+            # array
+            regex_match = re.match(r"(?P<name>[^\[\]]+)\[(?P<length>[0-9]+)\]", name)
+            if regex_match is None:
+                report(
+                    ReccmpEvent.INVALID_USER_DATA,
+                    orig_addr,
+                    msg=f"Invalid type annotation `{name}`: ends on `]` but does not match `<type>[<decimal number>]`",
+                )
+                return None
+
+            array_type = self.get_by_name(regex_match.group("name"), orig_addr, report)
+            if array_type is None:
+                # handled by "type not found" report in the calling function
+                return None
+            element_size = array_type.size
+            assert element_size is not None
+            array_length = int(regex_match.group("length"))
+
+            new_array_type_key = CvdumpTypeKey(max(self._raw) + 1)
+            self._raw[new_array_type_key] = ("", "LF_ARRAY")
+            self._keys[new_array_type_key] = CvdumpParsedType(
+                type="LF_ARRAY",
+                name=name,
+                size=element_size * array_length,
+                is_forward_ref=False,
+                udt=new_array_type_key,
+                array_type=array_type.key,
+            )
+
+            return self.get(new_array_type_key)
+
+        return self._get_class_by_name(name, orig_addr, report)
+
+    def _get_class_by_name(
+        self,
+        name: str,
+        orig_addr: int,
+        report: ReccmpReportProtocol = reccmp_report_nop,
+    ) -> TypeInfo | None:
+        """Find the class or structure with the given name."""
+
+        expected_leaf_fragment = f"class name = {name},"
+        potential_hits = [
+            self.get(key)
+            for key, (leaf, _) in self._raw.items()
+            if expected_leaf_fragment in leaf
+        ]
+
+        # The same entry may appear multiple times (e.g. due to forward refs), so we deduplicate by key
+        # and also filter again by the name just to be sure
+        actual_hits = dict((hit.key, hit) for hit in potential_hits if hit.name == name)
+
+        match len(actual_hits):
+            case 0:
+                return None
+            case 1:
+                return next(iter(actual_hits.values()))
+            case _:
+                report(
+                    ReccmpEvent.NON_UNIQUE_SYMBOL,
+                    orig_addr,
+                    msg="Found multiple types matching '%s'. Using the first match",
+                )
+                return next(iter(actual_hits.values()))
 
     def get_scalars(self, type_key: CvdumpTypeKey) -> list[ScalarType]:
         """Reduce the given type to a list of scalars so we can

@@ -215,7 +215,14 @@ def load_markers(
                 batch.set(ImageId.ORIG, fun.offset, name=fun.name)
 
         for var in codebase.iter_variables():
-            batch.set(ImageId.ORIG, var.offset, name=var.name, type=EntityType.DATA)
+            batch.set(
+                ImageId.ORIG,
+                var.offset,
+                name=var.name,
+                type=EntityType.DATA,
+                no_recomp_symbol=var.no_recomp_symbol,
+                data_type_annotation=var.data_type_annotation,
+            )
             if var.is_static and var.parent_function is not None:
                 batch.set(
                     ImageId.ORIG,

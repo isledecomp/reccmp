@@ -64,6 +64,8 @@ class ParserFunction(ParserSymbol):
 class ParserVariable(ParserSymbol):
     is_static: bool = False
     parent_function: int | None = None
+    no_recomp_symbol: bool = False
+    data_type_annotation: str | None = None
 
 
 @dataclass

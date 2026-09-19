@@ -7,7 +7,9 @@ and type dependency tree walker."""
 
 from struct import calcsize
 from typing import Iterable
+from unittest.mock import Mock
 import pytest
+from reccmp.compare.event import ReccmpEvent, ReccmpReportProtocol
 from reccmp.cvdump.types import (
     CvdumpTypeKey as TK,
     CVInfoTypeEnum,
@@ -194,6 +196,11 @@ TEST_LINES = """
     # members = 10,  field list type 0x22d4, CONSTRUCTOR,
     Derivation list type 0x0000, VT shape type 0x20fb
     Size = 36, class name = MxVariable, UDT(0x00004041)
+
+0x2575 : Length = 30, Leaf = 0x1505 LF_STRUCTURE
+	# members = 0,  field list type 0x0000, FORWARD REF,
+	Derivation list type 0x0000, VT shape type 0x0000
+	Size = 0, class name = HWND__
 
 0x3c45 : Length = 50, Leaf = 0x1203 LF_FIELDLIST
 	list[0] = LF_ENUMERATE, public, value = 1, name = 'c_read'
@@ -444,6 +451,13 @@ def test_resolve_forward_ref(parser: CvdumpTypesParser):
     # Forward ref
     assert parser.get(TK(0x14DB)).name == "MxString"
     assert parser.get(TK(0x14DB)).size == 16
+
+
+def test_unresolvable_forward_ref(parser: CvdumpTypesParser):
+    """Based on the real example of `HWND__`, which is a forward ref but does not reference anything."""
+
+    with pytest.raises(CvdumpIntegrityError):
+        parser.get(TK(0x2575))
 
 
 def test_members(parser: CvdumpTypesParser):
@@ -1266,3 +1280,37 @@ def test_bitfields(empty_parser: CvdumpTypesParser):
     assert empty_parser.from_key(TK(0x1003))["bit_start"] == 6
     assert empty_parser.from_key(TK(0x1003))["bit_count"] == 3
     assert empty_parser.from_key(TK(0x1003))["bit_type"] == CVInfoTypeEnum.T_UINT4
+
+
+def test_getbyname_not_found(parser: CvdumpTypesParser):
+    report = Mock(spec=ReccmpReportProtocol)
+
+    assert parser.get_by_name("NonExistingEntry", 1, report) is None
+    assert parser.get_by_name("NonExistingEntry[5]", 2, report) is None
+    report.assert_not_called()
+
+
+def test_getbyname_class(parser: CvdumpTypesParser):
+    mx_variable = parser.get_by_name("MxVariable", 1)
+    assert mx_variable is not None
+    assert mx_variable.name == "MxVariable"
+    assert mx_variable.size == 36
+
+
+def test_getbyname_array_of_class(parser: CvdumpTypesParser):
+    mx_variable_array = parser.get_by_name("MxVariable[2]", 1)
+    assert mx_variable_array is not None
+    assert mx_variable_array.name == "MxVariable[2]"
+    assert mx_variable_array.array_type == TK(0x22D5)
+    assert mx_variable_array.size == 72
+
+
+def test_getbyname_invalid_array(parser: CvdumpTypesParser):
+    report = Mock(spec=ReccmpReportProtocol)
+
+    assert parser.get_by_name("MxVariable(2]", 1, report) is None
+    report.assert_called_once_with(
+        ReccmpEvent.INVALID_USER_DATA,
+        1,
+        msg="Invalid type annotation `MxVariable(2]`: ends on `]` but does not match `<type>[<decimal number>]`",
+    )

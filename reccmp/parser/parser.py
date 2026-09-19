@@ -428,6 +428,10 @@ class DecompParser:
                 extra_strings = _dict_with_lower_keys(marker.extra_strings)
                 extra_flags = _set_with_lower_keys(marker.extra_flags)
 
+                no_recomp_symbol = _pop_from_set(extra_flags, "no_recomp_symbol")
+
+                data_type_annotation = extra_strings.pop("type", None)
+
                 self._warn_if_extras_not_empty(extra_strings, extra_flags)
 
                 self._symbols.append(
@@ -440,6 +444,8 @@ class DecompParser:
                         filename=self.filename,
                         is_static=is_static,
                         parent_function=parent_function,
+                        no_recomp_symbol=no_recomp_symbol,
+                        data_type_annotation=data_type_annotation,
                     )
                 )
 
