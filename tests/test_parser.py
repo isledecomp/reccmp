@@ -563,10 +563,10 @@ def test_header_function_declaration(parser):
     assert parser.alerts[0].code == AlertCode.NO_IMPLEMENTATION
 
 
-def test_extra(parser):
+def test_unknown_extra_fields(parser):
     """Allow a fourth field in the decomp annotation. Its use will vary
-    depending on the marker type. Currently this is only used to identify
-    a vtable with virtual inheritance."""
+    depending on the marker type. If it is of an unknown type, an alert should be raised.
+    """
 
     # Intentionally using non-vtable markers here.
     # We might want to emit a parser warning for unnecessary extra info.
@@ -580,7 +580,27 @@ def test_extra(parser):
         """)
 
     # We don't use this information (yet) but this is all fine.
+    assert len(parser.alerts) == 3
+    assert all(alert.code == AlertCode.INVALID_EXTRA for alert in parser.alerts)
+
+
+def test_legacy_virtual_inheritance(parser):
+    """Indicate the base class for a vtable where the class uses
+    virtual inheritance. This legacy format causes warnings to be logged."""
+    parser.read("""\
+        // VTABLE: HELLO 0x1234
+        // VTABLE: HELLO 0x1238 Greetings
+        // VTABLE: HELLO 0x123c Howdy
+        class HiThere : public virtual Greetings {
+        };
+        """)
+
     assert len(parser.alerts) == 0
+    assert len(parser.vtables) == 3
+    assert parser.vtables[0].base_class is None
+    assert parser.vtables[1].base_class == "Greetings"
+    assert parser.vtables[2].base_class == "Howdy"
+    assert all(v.name == "HiThere" for v in parser.vtables)
 
 
 def test_virtual_inheritance(parser):
@@ -588,8 +608,8 @@ def test_virtual_inheritance(parser):
     virtual inheritance."""
     parser.read("""\
         // VTABLE: HELLO 0x1234
-        // VTABLE: HELLO 0x1238 Greetings
-        // VTABLE: HELLO 0x123c Howdy
+        // VTABLE: HELLO 0x1238 BASE_CLASS="Greetings"
+        // VTABLE: HELLO 0x123c BASE_CLASS="Howdy"
         class HiThere : public virtual Greetings {
         };
         """)
@@ -633,7 +653,8 @@ def test_function_symbol_option(parser):
     assert parser.functions[0].name_is_symbol is True
     assert parser.functions[1].name_is_symbol is True  # Lower-case is okay (for now)
     assert parser.functions[2].name_is_symbol is False  # Must be "symbol"
-    assert len(parser.alerts) == 0
+    assert len(parser.alerts) == 1
+    assert parser.alerts[0].code == AlertCode.INVALID_EXTRA
 
 
 def test_function_symbol_option_multiple(parser):

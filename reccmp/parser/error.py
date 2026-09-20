@@ -108,6 +108,11 @@ class AlertCode(Enum):
     # ERROR: An alias matches a built-in marker type string, and was dropped.
     ALIAS_REDEFINES_BUILTIN = 209
 
+    # Only a limited number of extras (flags and key-value pairs at the end of the annotation)
+    # are valid for each annotation type. This warning is emitted on unknown annotations
+    # and on annotations of the wrong type (e.g. BASE_CLASS without `=` or `SYMBOL="xyz"`).
+    INVALID_EXTRA = 210
+
     # This code or higher is a critical error
     DECOMP_CRITICAL_START = 300
 
