@@ -3,6 +3,7 @@ addresses/symbols that we want to compare between the original and recompiled bi
 """
 
 import bisect
+from dataclasses import dataclass
 import logging
 from typing import Any, Iterable, Iterator
 from reccmp.types import EntityType, ImageId
@@ -20,6 +21,7 @@ EntityTypeLookup: dict[int, str] = {
 }
 
 
+@dataclass
 class ReccmpEntity:
     """ORM object for Reccmp database entries."""
 
