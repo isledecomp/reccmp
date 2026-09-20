@@ -7,7 +7,7 @@ from struct import unpack, error as StructError
 from typing_extensions import Self
 from reccmp.formats import Image
 from reccmp.formats.exceptions import InvalidVirtualReadError
-from reccmp.compare.db import EntityDb, ReccmpMatch
+from reccmp.compare.db import EntityDb, ReccmpEntity, ReccmpMatch
 from reccmp.cvdump.cvinfo import CvdumpTypeKey
 from reccmp.cvdump.types import (
     CvdumpTypesParser,
@@ -234,6 +234,44 @@ class VariableComparator:
     orig_bin: Image
     recomp_bin: Image
 
+    def _is_synthetic_match(
+        self,
+        orig_addr: int,
+        recomp_addr: int,
+        orig_ent: ReccmpEntity,
+        recomp_ent: ReccmpEntity,
+    ):
+        """Checks if the original pointer points at an entity that has no symbol in the recomp."""
+
+        matched_orig_addr = orig_ent.addr(ImageId.ORIG)
+        matched_recomp_addr = recomp_ent.addr(ImageId.RECOMP)
+
+        assert (
+            matched_orig_addr is not None and matched_recomp_addr is not None
+        ), "Cannot happen but isn't covered by the type system"
+
+        return (
+            # Condition 1: the orig match is exact
+            matched_orig_addr == orig_addr
+            # Condition 2: There is a code annotation stating that the recomp symbol is missing
+            and orig_ent.get("no_recomp_symbol", False)
+            # Condition 3: This address in recomp is unoccupied, i.e. the previous known recomp entity does not overlap this address
+            and matched_recomp_addr + recomp_ent.any_size(ImageId.RECOMP) <= recomp_addr
+        )
+
+    def _create_synthetic_match(
+        self, orig_addr: int, recomp_addr: int
+    ) -> tuple[bool, list[ReccmpMatch]]:
+        with self.db.batch() as batch:
+            batch.set_recomp_addr(orig_addr, recomp_addr)
+
+        synthetic_match = self.db.get_one_match(orig_addr)
+        assert synthetic_match is not None
+
+        # The (orig_addr, recomp_addr) pair now matches by definition.
+        # The more interesting question if whether `synthetic_match` actually matches.
+        return True, [synthetic_match]
+
     def is_pointer_match(self, orig_addr: int, recomp_addr: int) -> bool:
         """Check whether these pointers point at the same thing"""
 
@@ -243,30 +281,46 @@ class VariableComparator:
 
         return self.db.is_match(orig_addr, recomp_addr)
 
-    def is_pointer_match_to_offset(self, orig_addr: int, recomp_addr: int) -> bool:
-        """Check whether these pointers point at the same offset of the same matched entity."""
+    def is_pointer_match_to_offset_or_synthetic(
+        self, orig_addr: int, recomp_addr: int
+    ) -> tuple[bool, list[ReccmpMatch]]:
+        """
+        Check whether these pointers point at the same offset of the same matched entity.
+
+        Returns:
+        - bool if the pointer is a match
+        - A list of synthetic matches creates in the process. These also need to be verified by the calling function.
+        """
+
         orig_ent = self.db.get(ImageId.ORIG, orig_addr, exact=False)
         recomp_ent = self.db.get(ImageId.RECOMP, recomp_addr, exact=False)
 
         if orig_ent is None or recomp_ent is None:
-            return False
+            return False, []
+
+        if self._is_synthetic_match(orig_addr, recomp_addr, orig_ent, recomp_ent):
+            # We found a pointer to an entity that does not have a symbol in recomp.
+            # We therefore create a synthetic match.
+            return self._create_synthetic_match(orig_addr, recomp_addr)
 
         # Are both entities matched?
         if not isinstance(orig_ent, ReccmpMatch) or not isinstance(
             recomp_ent, ReccmpMatch
         ):
-            return False
+            return False, []
 
         # Are they matched to each other?
         if orig_ent.orig_addr != recomp_ent.orig_addr:
-            return False
+            return False, []
 
         # Are we at the same offset?
         return (orig_addr - orig_ent.orig_addr) == (
             recomp_addr - recomp_ent.recomp_addr
-        )
+        ), []
 
-    def compare_variable(self, var: ReccmpMatch) -> ComparisonItem:
+    def compare_variable(
+        self, var: ReccmpMatch
+    ) -> tuple[ComparisonItem, list[ReccmpMatch]]:
         # pylint: disable=too-many-locals
         assert var.name is not None
         type_key = CvdumpTypeKey(var.get("data_type")) if var.get("data_type") else None
@@ -294,7 +348,7 @@ class VariableComparator:
                         var.orig_addr,
                     )
 
-            except (CvdumpKeyError, CvdumpIntegrityError):
+            except (CvdumpKeyError, CvdumpIntegrityError) as e:
                 # This may occur even when nothing is wrong, so permit a raw comparison here.
                 # For example: we do not handle bitfields and this complicates fieldlist parsing
                 # where they are used. (GH #299)
@@ -303,15 +357,22 @@ class VariableComparator:
                     type_key,
                     var.name,
                     var.orig_addr,
+                    exc_info=e,
                 )
 
-        assert data_size is not None
+        if data_size == 0:
+            return (
+                create_comparison_item(
+                    var, error="Error materializing type, got a size of zero"
+                ),
+                [],
+            )
 
         try:
             orig_block = DataBlock.read(var.orig_addr, data_size, self.orig_bin)
         except InvalidVirtualReadError as ex:
             # Reading from orig can fail if the recomp variable is too large
-            return create_comparison_item(var, error=repr(ex))
+            return create_comparison_item(var, error=repr(ex)), []
 
         # Reading from recomp should never fail, so if it does, raising an exception is correct
         recomp_block = DataBlock.read(var.recomp_addr, data_size, self.recomp_bin)
@@ -337,15 +398,25 @@ class VariableComparator:
                 orig_data = unpack(format_str, orig_block.data)
                 recomp_data = unpack(format_str, recomp_block.data)
             except StructError as e:
-                return create_comparison_item(var, error=f"Failed to unpack data: {e}")
+                return (
+                    create_comparison_item(var, error=f"Failed to unpack data: {e}"),
+                    [],
+                )
 
-        compared = []
+        compared: list[ComparedOffset] = []
+        synthetic_matches: list[ReccmpMatch] = []
         for orig_val, recomp_val, member in zip(orig_data, recomp_data, compare_items):
             if member.pointer:
                 match = self.is_pointer_match(orig_val, recomp_val)
 
                 if not match:
-                    match = self.is_pointer_match_to_offset(orig_val, recomp_val)
+                    match, local_synthetic_matches = (
+                        self.is_pointer_match_to_offset_or_synthetic(
+                            orig_val, recomp_val
+                        )
+                    )
+
+                    synthetic_matches.extend(local_synthetic_matches)
 
                 value_a = pointer_display(self.db, self.types, ImageId.ORIG, orig_val)
                 value_b = pointer_display(
@@ -378,8 +449,11 @@ class VariableComparator:
                 )
             )
 
-        return create_comparison_item(
-            var,
-            compared=compared,
-            raw_only=raw_only,
+        return (
+            create_comparison_item(
+                var,
+                compared=compared,
+                raw_only=raw_only,
+            ),
+            synthetic_matches,
         )

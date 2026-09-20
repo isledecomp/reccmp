@@ -58,7 +58,7 @@ def test_compare_scalar_match(db: EntityDb, types: CvdumpTypesParser):
     recomp = RawImage.from_memory(b"\x05")
     comparator = VariableComparator(db, types, orig, recomp)
 
-    c = comparator.compare_variable(get_match(db, 0))
+    c, _ = comparator.compare_variable(get_match(db, 0))
 
     assert c is not None
     assert c.result == CompareResult.MATCH
@@ -72,7 +72,7 @@ def test_compare_scalar_diff(db: EntityDb, types: CvdumpTypesParser):
     recomp = RawImage.from_memory(b"\x07")
     comparator = VariableComparator(db, types, orig, recomp)
 
-    c = comparator.compare_variable(get_match(db, 0))
+    c, _ = comparator.compare_variable(get_match(db, 0))
 
     assert c is not None
     assert c.result == CompareResult.DIFF
@@ -90,7 +90,7 @@ def test_compare_pointer_match(db: EntityDb, types: CvdumpTypesParser):
     recomp = RawImage.from_memory(b"\x08\x00\x00\x00")
     comparator = VariableComparator(db, types, orig, recomp)
 
-    c = comparator.compare_variable(get_match(db, 0))
+    c, _ = comparator.compare_variable(get_match(db, 0))
 
     assert c is not None
     assert c.result == CompareResult.MATCH
@@ -107,7 +107,7 @@ def test_compare_pointer_diff(db: EntityDb, types: CvdumpTypesParser):
     recomp = RawImage.from_memory(b"\x08\x00\x00\x00")
     comparator = VariableComparator(db, types, orig, recomp)
 
-    c = comparator.compare_variable(get_match(db, 0))
+    c, _ = comparator.compare_variable(get_match(db, 0))
 
     assert c is not None
     assert c.result == CompareResult.DIFF
@@ -126,7 +126,7 @@ def test_compare_null_pointer(db: EntityDb, types: CvdumpTypesParser):
     recomp = RawImage.from_memory(b"\x00\x00\x00\x00")
     comparator = VariableComparator(db, types, orig, recomp)
 
-    c = comparator.compare_variable(get_match(db, 0))
+    c, _ = comparator.compare_variable(get_match(db, 0))
 
     assert c is not None
     assert c.result == CompareResult.MATCH
@@ -141,7 +141,7 @@ def test_prefer_datatype_size(db: EntityDb, types: CvdumpTypesParser):
     recomp = RawImage.from_memory(b"\x05\x07")
     comparator = VariableComparator(db, types, orig, recomp)
 
-    c = comparator.compare_variable(get_match(db, 0))
+    c, _ = comparator.compare_variable(get_match(db, 0))
 
     assert c is not None
     # Should only compare the first byte
@@ -157,7 +157,7 @@ def test_compare_raw_match(db: EntityDb, types: CvdumpTypesParser):
     recomp = RawImage.from_memory(b"\x12\x34")
     comparator = VariableComparator(db, types, orig, recomp)
 
-    c = comparator.compare_variable(get_match(db, 0))
+    c, _ = comparator.compare_variable(get_match(db, 0))
 
     assert c is not None
     assert c.result == CompareResult.MATCH
@@ -172,7 +172,7 @@ def test_compare_raw_diff(db: EntityDb, types: CvdumpTypesParser):
     recomp = RawImage.from_memory(b"\x55\x55")
     comparator = VariableComparator(db, types, orig, recomp)
 
-    c = comparator.compare_variable(get_match(db, 0))
+    c, _ = comparator.compare_variable(get_match(db, 0))
 
     assert c is not None
     # Flag as a warning.
@@ -188,7 +188,7 @@ def test_compare_scalar_bss_match(db: EntityDb, types: CvdumpTypesParser):
     recomp = RawImage.from_memory(bss=1)
     comparator = VariableComparator(db, types, orig, recomp)
 
-    c = comparator.compare_variable(get_match(db, 0))
+    c, _ = comparator.compare_variable(get_match(db, 0))
 
     assert c is not None
     assert c.result == CompareResult.MATCH
@@ -203,7 +203,7 @@ def test_compare_raw_bss_match(db: EntityDb, types: CvdumpTypesParser):
     recomp = RawImage.from_memory(bss=10)
     comparator = VariableComparator(db, types, orig, recomp)
 
-    c = comparator.compare_variable(get_match(db, 0))
+    c, _ = comparator.compare_variable(get_match(db, 0))
 
     assert c is not None
     assert c.result == CompareResult.MATCH
@@ -217,7 +217,7 @@ def test_compare_scalar_bss_diff(db: EntityDb, types: CvdumpTypesParser):
     recomp = RawImage.from_memory(b"\x01")
     comparator = VariableComparator(db, types, orig, recomp)
 
-    c = comparator.compare_variable(get_match(db, 0))
+    c, _ = comparator.compare_variable(get_match(db, 0))
 
     assert c is not None
     assert c.result == CompareResult.DIFF
@@ -232,7 +232,7 @@ def test_compare_scalar_bss_effective_match(db: EntityDb, types: CvdumpTypesPars
     recomp = RawImage.from_memory(b"\x00")
     comparator = VariableComparator(db, types, orig, recomp)
 
-    c = comparator.compare_variable(get_match(db, 0))
+    c, _ = comparator.compare_variable(get_match(db, 0))
 
     assert c is not None
     assert c.result == CompareResult.MATCH
@@ -247,7 +247,7 @@ def test_compare_scalar_bss_true_diff(db: EntityDb, types: CvdumpTypesParser):
     recomp = RawImage.from_memory(b"\x00\x01")
     comparator = VariableComparator(db, types, orig, recomp)
 
-    c = comparator.compare_variable(get_match(db, 0))
+    c, _ = comparator.compare_variable(get_match(db, 0))
 
     assert c is not None
     assert c.result == CompareResult.DIFF
@@ -275,7 +275,7 @@ def test_compare_complex_partial_diff(db: EntityDb):
     recomp = RawImage.from_memory(b"\x01\x02\x00\x00")
     comparator = VariableComparator(db, types, orig, recomp)
 
-    c = comparator.compare_variable(get_match(db, 0))
+    c, _ = comparator.compare_variable(get_match(db, 0))
 
     assert c is not None
     assert c.result == CompareResult.DIFF
@@ -308,7 +308,7 @@ def test_compare_complex_with_trailing_padding(db: EntityDb):
     recomp = RawImage.from_memory(b"\x01\x02\x03\x04\x05\x06\x00\x00")
     comparator = VariableComparator(db, types, orig, recomp)
 
-    c = comparator.compare_variable(get_match(db, 0))
+    c, _ = comparator.compare_variable(get_match(db, 0))
 
     assert c is not None
     assert c.result == CompareResult.DIFF
@@ -343,7 +343,7 @@ def test_compare_complex_with_intermediate_padding(db: EntityDb):
     recomp = RawImage.from_memory(b"\x01\x00\x03\x00\x05\x00\x07\x00")
     comparator = VariableComparator(db, types, orig, recomp)
 
-    c = comparator.compare_variable(get_match(db, 0))
+    c, _ = comparator.compare_variable(get_match(db, 0))
 
     assert c is not None
     assert c.result == CompareResult.DIFF
@@ -359,7 +359,7 @@ def test_compare_string_effective_match(db: EntityDb, types: CvdumpTypesParser):
     recomp = RawImage.from_memory(b"\x06\x00\x00\x00\x00\x00test\x00")
     comparator = VariableComparator(db, types, orig, recomp)
 
-    c = comparator.compare_variable(get_match(db, 0))
+    c, _ = comparator.compare_variable(get_match(db, 0))
 
     assert c is not None
     assert c.result == CompareResult.MATCH
@@ -376,7 +376,7 @@ def test_compare_other_pointers_no_effective_match(
     recomp = RawImage.from_memory(b"\x06\x00\x00\x00\x00\x00\x01\x02\x03\x04")
     comparator = VariableComparator(db, types, orig, recomp)
 
-    c = comparator.compare_variable(get_match(db, 0))
+    c, _ = comparator.compare_variable(get_match(db, 0))
 
     assert c is not None
     assert c.result == CompareResult.DIFF
@@ -395,7 +395,7 @@ def test_compare_pointer_entity_offset(db: EntityDb, types: CvdumpTypesParser):
     recomp = RawImage.from_memory(b"\x0a\x00\x00\x00", bss=12)
     comparator = VariableComparator(db, types, orig, recomp)
 
-    c = comparator.compare_variable(get_match(db, 0))
+    c, _ = comparator.compare_variable(get_match(db, 0))
 
     assert c is not None
     assert c.result == CompareResult.MATCH
@@ -410,7 +410,7 @@ def test_compare_complex_raw_missing_key(db: EntityDb, types: CvdumpTypesParser)
     recomp = RawImage.from_memory(b"\x01\x02\x03\x04")
     comparator = VariableComparator(db, types, orig, recomp)
 
-    c = comparator.compare_variable(get_match(db, 0))
+    c, _ = comparator.compare_variable(get_match(db, 0))
 
     assert c is not None
     assert c.result == CompareResult.MATCH
@@ -430,7 +430,7 @@ def test_compare_complex_warn_for_missing_key_diff(
     recomp = RawImage.from_memory(b"\x01\x02\x03\x00")
     comparator = VariableComparator(db, types, orig, recomp)
 
-    c = comparator.compare_variable(get_match(db, 0))
+    c, _ = comparator.compare_variable(get_match(db, 0))
 
     assert c is not None
     assert c.result == CompareResult.WARN
@@ -454,7 +454,7 @@ def test_compare_complex_raw_empty_struct(db: EntityDb):
     recomp = RawImage.from_memory(b"\x01\x02\x03\x04")
     comparator = VariableComparator(db, types, orig, recomp)
 
-    c = comparator.compare_variable(get_match(db, 0))
+    c, _ = comparator.compare_variable(get_match(db, 0))
 
     assert c is not None
     assert c.result == CompareResult.MATCH
@@ -469,10 +469,142 @@ def test_compare_orig_read_error(db: EntityDb, types: CvdumpTypesParser):
     recomp = RawImage.from_memory(b"\x01\x02\x03\x04")
     comparator = VariableComparator(db, types, orig, recomp)
 
-    c = comparator.compare_variable(get_match(db, 0))
+    c, _ = comparator.compare_variable(get_match(db, 0))
 
     assert c is not None
     assert c.result == CompareResult.ERROR
+
+
+def test_compare_synthetic_match(db: EntityDb, types: CvdumpTypesParser):
+    """Checks the synthetic match functionality (GH #226)"""
+    create_matched_variable(db, 0, data_type=CVInfoTypeEnum.T_32PVOID)
+    with db.batch() as batch:
+        batch.set(
+            ImageId.ORIG,
+            0x08,
+            type=EntityType.DATA,
+            name="orig_only",
+            no_recomp_symbol=True,
+            data_type=CVInfoTypeEnum.T_INT4,
+        )
+
+    # Orig pointer points to "orig_only" at ORIG 0x08.
+    # Recomp pointer points to RECOMP 0x0a, where we do not find an entity, so a synthetic match is created.
+    orig = RawImage.from_memory(b"\x08\x00\x00\x00", bss=12)
+    recomp = RawImage.from_memory(b"\x0a\x00\x00\x00", bss=12)
+    comparator = VariableComparator(db, types, orig, recomp)
+
+    c, synthetic_matches = comparator.compare_variable(get_match(db, 0))
+
+    assert c is not None
+    assert c.result == CompareResult.MATCH
+
+    assert synthetic_matches == [
+        ReccmpMatch(
+            0x08,
+            0x0A,
+            {
+                "type": EntityType.DATA,
+                "name": "orig_only",
+                "no_recomp_symbol": True,
+                "data_type": CVInfoTypeEnum.T_INT4,
+            },
+        )
+    ]
+
+
+def test_compare_synthetic_match_only_when_exact(
+    db: EntityDb, types: CvdumpTypesParser
+):
+    """Checks the synthetic match functionality (GH #226). Should only match on an exact orig match."""
+    create_matched_variable(db, 0, data_type=CVInfoTypeEnum.T_32PVOID)
+    with db.batch() as batch:
+        # This should only match when the orig addr is 8, not 6
+        batch.set(
+            ImageId.ORIG,
+            6,
+            type=EntityType.DATA,
+            name="orig_only",
+            no_recomp_symbol=True,
+            data_type=CVInfoTypeEnum.T_INT4,
+        )
+
+    orig = RawImage.from_memory(b"\x08\x00\x00\x00", bss=12)
+    recomp = RawImage.from_memory(b"\x0a\x00\x00\x00", bss=12)
+    comparator = VariableComparator(db, types, orig, recomp)
+
+    c, synthetic_matches = comparator.compare_variable(get_match(db, 0))
+
+    assert c is not None
+    assert c.result == CompareResult.DIFF
+    assert not synthetic_matches
+
+
+def test_compare_synthetic_match_only_when_no_recomp_symbol_set(
+    db: EntityDb, types: CvdumpTypesParser
+):
+    """Checks the synthetic match functionality (GH #226). Should only match when `no_recomp_symbol` is set."""
+    create_matched_variable(db, 0, data_type=CVInfoTypeEnum.T_32PVOID)
+    with db.batch() as batch:
+        batch.set(
+            ImageId.ORIG,
+            8,
+            type=EntityType.DATA,
+            name="orig_only",
+            data_type=CVInfoTypeEnum.T_INT4,
+        )
+
+    orig = RawImage.from_memory(b"\x08\x00\x00\x00", bss=12)
+    recomp = RawImage.from_memory(b"\x0a\x00\x00\x00", bss=12)
+    comparator = VariableComparator(db, types, orig, recomp)
+
+    c, synthetic_matches = comparator.compare_variable(get_match(db, 0))
+
+    assert c is not None
+    assert c.result == CompareResult.DIFF
+    assert not synthetic_matches
+
+
+def test_compare_synthetic_match_only_when_no_recomp_symbol_overlap(
+    db: EntityDb, types: CvdumpTypesParser
+):
+    """Checks the synthetic match functionality (GH #226). Should only match when there is no overlapping recomp entity."""
+    create_matched_variable(db, 0, data_type=CVInfoTypeEnum.T_32PVOID)
+    with db.batch() as batch:
+        batch.set(
+            ImageId.ORIG,
+            8,
+            type=EntityType.DATA,
+            name="orig_only",
+            no_recomp_symbol=True,
+            data_type=CVInfoTypeEnum.T_INT4,
+        )
+        batch.set(ImageId.RECOMP, 8, name="overlapping_recomp", size=4)
+
+    orig = RawImage.from_memory(b"\x08\x00\x00\x00", bss=12)
+    recomp = RawImage.from_memory(b"\x0a\x00\x00\x00", bss=12)
+    comparator = VariableComparator(db, types, orig, recomp)
+
+    c, synthetic_matches = comparator.compare_variable(get_match(db, 0))
+
+    assert c is not None
+    assert c.result == CompareResult.DIFF
+    assert not synthetic_matches
+
+
+def test_compare_error_on_unsized_entity(db: EntityDb, types: CvdumpTypesParser):
+    """Checks that compared data must have a size of at least 1."""
+    create_matched_variable(db, 0, data_type=CVInfoTypeEnum.T_VOID)
+
+    orig = RawImage.from_memory(b"\x08\x00\x00\x00", bss=12)
+    recomp = RawImage.from_memory(b"\x0a\x00\x00\x00", bss=12)
+    comparator = VariableComparator(db, types, orig, recomp)
+
+    c, _ = comparator.compare_variable(get_match(db, 0))
+
+    assert c is not None
+    assert c.result == CompareResult.ERROR
+    assert c.error == "Error materializing type, got a size of zero"
 
 
 DISPLAY_VALUES = (
@@ -506,7 +638,7 @@ def test_display_signed_unsigned(
     recomp = RawImage.from_memory(bss=500)
     comparator = VariableComparator(db, types, orig, recomp)
 
-    c = comparator.compare_variable(get_match(db, 0))
+    c, _ = comparator.compare_variable(get_match(db, 0))
 
     assert c is not None
     assert c.compared[0].values[0] == text

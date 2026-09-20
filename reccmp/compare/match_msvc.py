@@ -1,3 +1,4 @@
+from reccmp.cvdump.types import CvdumpTypesParser
 from reccmp.types import EntityType
 from reccmp.compare.db import EntityDb
 from reccmp.compare.lines import LinesDb
@@ -326,7 +327,11 @@ def match_static_variables(
                 )
 
 
-def match_variables(db: EntityDb, report: ReccmpReportProtocol = reccmp_report_nop):
+def match_variables(
+    db: EntityDb,
+    types: CvdumpTypesParser,
+    report: ReccmpReportProtocol = reccmp_report_nop,
+):
     var_name_index = EntityIndex()
 
     # TODO: We allow a match if entity_type is null.
@@ -357,10 +362,31 @@ def match_variables(db: EntityDb, report: ReccmpReportProtocol = reccmp_report_n
 
             assert ent.orig_addr is not None
 
+            data_type_annotation = ent.get("data_type_annotation")
+            if data_type_annotation is not None:
+                data_type = types.get_by_name(
+                    data_type_annotation, ent.orig_addr, report
+                )
+                if data_type is None:
+                    report(
+                        ReccmpEvent.INVALID_USER_DATA,
+                        ent.orig_addr,
+                        msg=f"Failed to find annotated type '{data_type_annotation}' of variable {name} at 0x{ent.orig_addr:x}",
+                    )
+                else:
+                    batch.set(
+                        ImageId.ORIG,
+                        ent.orig_addr,
+                        data_type=data_type.key,
+                        size=data_type.size,
+                    )
+
             if name in var_name_index:
                 recomp_addr = var_name_index.pop(name)
                 batch.match(ent.orig_addr, recomp_addr)
-            else:
+
+            # Entries with `no_recomp_symbol` set are allowed to remain unmatched
+            elif not ent.get("no_recomp_symbol", False):
                 report(
                     ReccmpEvent.NO_MATCH,
                     ent.orig_addr,

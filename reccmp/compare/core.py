@@ -169,7 +169,7 @@ class Compare:
         match_functions(self._db, self.report, truncate=truncate)
         match_vtables(self._db, self.report)
         match_static_variables(self._db, self.report)
-        match_variables(self._db, self.report)
+        match_variables(self._db, self.types, self.report)
         match_lines(self._db, self._lines_db, self.report)
 
         # Detect floats first to eliminate potential overlap with string data

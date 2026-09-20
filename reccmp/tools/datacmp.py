@@ -8,6 +8,7 @@ import colorama
 import reccmp
 import reccmp.color
 from reccmp.compare import Compare
+from reccmp.compare.db import ReccmpMatch
 from reccmp.compare.variables import (
     ComparedOffset,
     CompareResult,
@@ -93,7 +94,16 @@ def do_the_comparison(target: RecCmpTarget) -> Iterator[ComparisonItem]:
         if var.name in target.report_config.ignore_variables:
             continue
 
-        yield variable_comparator.compare_variable(var)
+        yield from do_compare_variable(variable_comparator, var)
+
+
+def do_compare_variable(
+    variable_comparator: VariableComparator, var: ReccmpMatch
+) -> Iterator[ComparisonItem]:
+    comparison_item, synthetic_matches = variable_comparator.compare_variable(var)
+    yield comparison_item
+    for synthetic_match in synthetic_matches:
+        yield from do_compare_variable(variable_comparator, synthetic_match)
 
 
 def colorize_match_result(result: CompareResult) -> str:
