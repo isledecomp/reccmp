@@ -151,13 +151,23 @@ Functions located in 3rd party libraries should be annotated with `LIBRARY`. Thi
 // _MemPoolSetBlockSizeFS@8
 ```
 
-## Virtual tables
+## Virtual function tables
 
-Classes with a virtual table should be annotated using the `VTABLE` marker, which includes the module name and address of the virtual table:
+Classes with a virtual function table should be annotated using the `VTABLE` marker, which includes the module name and address of the virtual table:
 
 ```c++
 // VTABLE: LEGO1 0x100dc900
 class MxEventManager : public MxMediaManager {
+    // ...
+}
+```
+
+Classes with multiple or virtual base classes can have multiple virtual function tables, which then need to be annotated with the respective base class:
+
+```c++
+// VTABLE: LEGO1 0x100d5440 BASE_CLASS="LegoPathActor"
+// VTABLE: LEGO1 0x100d5510 BASE_CLASS="LegoAnimActor"
+class LegoAnimActor : public virtual LegoPathActor {
     // ...
 }
 ```
