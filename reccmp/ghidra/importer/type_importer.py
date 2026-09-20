@@ -21,8 +21,8 @@ from ghidra.program.model.data import (
     ComponentOffsetSettingsDefinition,
 )
 
-from reccmp.cvdump.types import (
-    CvdumpKeyError,
+from reccmp.cvdump.types import CvdumpKeyError
+from reccmp.cvdump.type_leaves import (
     CvdumpParsedType,
     FieldListItem,
     VirtualBasePointer,
