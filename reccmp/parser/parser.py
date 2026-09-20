@@ -2,8 +2,9 @@
 
 import io
 from dataclasses import dataclass
+import logging
 from pathlib import PurePath
-from typing import Iterator
+from typing import Iterable, Iterator
 from enum import Enum
 from .util import (
     get_class_name,
@@ -17,6 +18,7 @@ from .util import (
 )
 from .marker import (
     DecompMarker,
+    DecompMarkerKeyType,
     MarkerCategory,
     MarkerType,
     match_marker,
@@ -32,6 +34,8 @@ from .node import (
     ParserString,
 )
 from .error import ParserAlert, AlertCode
+
+logger = logging.getLogger(__name__)
 
 
 class ReaderState(Enum):
@@ -55,9 +59,24 @@ class ReccmpParserResult:
     path: PurePath
 
 
+def _dict_with_lower_keys(d: Iterable[tuple[str, str]]) -> dict[str, str]:
+    return dict((key.lower(), value) for key, value in d)
+
+
+def _set_with_lower_keys(s: frozenset[str]) -> set[str]:
+    return set(key.lower() for key in s)
+
+
+def _pop_from_set(s: set[str], value: str) -> bool:
+    """Behaves like dict.remove(), but returns a boolean whether the value was contained instead of raising an exception."""
+    result = value in s
+    s.discard(value)
+    return result
+
+
 class MarkerDict:
     def __init__(self) -> None:
-        self.markers: dict = {}
+        self.markers: dict[DecompMarkerKeyType, DecompMarker] = {}
 
     def insert(self, marker: DecompMarker) -> bool:
         """Return True if this insert would overwrite"""
@@ -68,9 +87,13 @@ class MarkerDict:
         return False
 
     def query(
-        self, category: MarkerCategory, module: str, extra: str | None = None
+        self,
+        category: MarkerCategory,
+        module: str,
+        extra_strings: tuple[tuple[str, str], ...] = (),
+        extra_flags: frozenset[str] = frozenset(),
     ) -> DecompMarker | None:
-        return self.markers.get((category, module, extra))
+        return self.markers.get((category, module, extra_strings, extra_flags))
 
     def iter(self) -> Iterator[DecompMarker]:
         for _, marker in self.markers.items():
@@ -224,7 +247,7 @@ class DecompParser:
         self.var_markers.empty()
         self.tbl_markers.empty()
 
-    def _syntax_warning(self, code):
+    def _syntax_warning(self, code: AlertCode):
         self.alerts.append(
             ParserAlert(
                 path=self.filename,
@@ -237,6 +260,12 @@ class DecompParser:
     def _syntax_error(self, code):
         self._syntax_warning(code)
         self._recover()
+
+    def _warn_if_extras_not_empty(
+        self, extra_strings: dict[str, str], extra_flags: set[str]
+    ):
+        if len(extra_strings) > 0 or len(extra_flags) > 0:
+            self._syntax_warning(AlertCode.INVALID_EXTRA)
 
     def _function_starts_here(self):
         self.function_start = self.line_number
@@ -267,14 +296,17 @@ class DecompParser:
             end_line -= 1
 
         for marker in self.fun_markers.iter():
-            name_is_symbol = (
-                marker.extra is not None and marker.extra.lower() == "symbol"
-            )
+            extra_strings = _dict_with_lower_keys(marker.extra_strings)
+            extra_flags = _set_with_lower_keys(marker.extra_flags)
+
+            name_is_symbol = _pop_from_set(extra_flags, "symbol")
             if name_is_symbol and not lookup_by_name:
                 self._syntax_warning(AlertCode.SYMBOL_OPTION_IGNORED)
                 name_is_symbol = False
 
-            is_folded = marker.extra is not None and marker.extra.lower() == "folded"
+            is_folded = _pop_from_set(extra_flags, "folded")
+
+            self._warn_if_extras_not_empty(extra_strings, extra_flags)
 
             self._symbols.append(
                 ParserFunction(
@@ -302,7 +334,32 @@ class DecompParser:
 
     def _vtable_done(self, class_name: str):
         for marker in self.tbl_markers.iter():
-            is_folded = marker.extra is not None and marker.extra.lower() == "folded"
+            # A VTABLE marker supports the following extras:
+            # - FOLDED
+            # - BASE_CLASS="base_class"
+            # - Legacy: non-keyed base class `// VTABLE: TARGET 0x1234 SomeBaseClass`
+            extra_strings = _dict_with_lower_keys(marker.extra_strings)
+            extra_flags = _set_with_lower_keys(marker.extra_flags)
+
+            is_folded = _pop_from_set(extra_flags, "folded")
+
+            if len(extra_flags) == 1 and len(extra_strings) == 0:
+                # Legacy base class annotation.
+                # Need to use the original extra_flags because we don't want lower case here.
+                base_class: str | None = next(iter(marker.extra_flags))
+                extra_flags.pop()
+                logger.warning(
+                    'Legacy VTABLE base class annotation used above %s:%i. Change to `// VTABLE: %s 0x%x BASE_CLASS="%s"`.',
+                    self.filename.name,
+                    self.line_number,
+                    marker.module,
+                    marker.offset,
+                    base_class,
+                )
+            else:
+                base_class = extra_strings.pop("base_class", None)
+
+            self._warn_if_extras_not_empty(extra_strings, extra_flags)
 
             self._symbols.append(
                 ParserVtable(
@@ -312,7 +369,7 @@ class DecompParser:
                     offset=marker.offset,
                     name=self.curly.get_prefix(class_name),
                     filename=self.filename,
-                    base_class=None if is_folded else marker.extra,
+                    base_class=base_class,
                     is_folded=is_folded,
                 )
             )
@@ -367,6 +424,11 @@ class DecompParser:
                         continue
 
                     parent_function = fun_marker.offset
+
+                extra_strings = _dict_with_lower_keys(marker.extra_strings)
+                extra_flags = _set_with_lower_keys(marker.extra_flags)
+
+                self._warn_if_extras_not_empty(extra_strings, extra_flags)
 
                 self._symbols.append(
                     ParserVariable(

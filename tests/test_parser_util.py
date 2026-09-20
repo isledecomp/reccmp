@@ -68,11 +68,19 @@ marker_samples = [
     # Extra field
     (True, True, "// VTABLE: HELLO 0x1234 Extra"),
     # Extra with spaces
-    (True, True, "// VTABLE: HELLO 0x1234 Whatever<SubClass *>"),
+    (True, True, '// VTABLE: HELLO 0x1234 SUB_CLASS="Whatever<SubClass *>"'),
     # Extra, no space (if the first non-hex character is not in [a-f])
     (True, False, "// VTABLE: HELLO 0x1234Hello"),
     # Extra, many spaces
     (True, False, "// VTABLE: HELLO 0x1234    Hello"),
+    # Extra, single character
+    (True, True, "// VTABLE: HELLO 0x1234 A"),
+    # Extra, whitespace at the end
+    (True, False, "// VTABLE: HELLO 0x1234 A "),
+    # Extra, too many whitespaces in the middle
+    (True, False, '// VTABLE: HELLO 0x1234 A  B="def"'),
+    # Extra, tabs instead of whitespace
+    (True, False, '// VTABLE: HELLO 0x1234\tA\tB="def"'),
 ]
 
 
@@ -85,6 +93,14 @@ def test_marker_match(line: str, match: bool, _):
 @pytest.mark.parametrize("_, exact, line", marker_samples)
 def test_marker_exact(line: str, exact: bool, _):
     assert is_marker_exact(line) is exact
+
+
+def test_decomp_marker_key_is_hashable():
+    """Required to be able to use `marker.key` as a key in a set or dict."""
+    marker = DecompMarker(
+        MarkerType.FUNCTION, "mymod", 123, (("KEY", "VALUE"),), frozenset(["ATTR"])
+    )
+    assert isinstance(hash(marker.key), int)
 
 
 def test_marker_dict_simple():
@@ -196,21 +212,12 @@ def test_get_string_contents(line: str, expected: str):
     assert string.is_widechar is False
 
 
-def test_marker_extra_spaces():
-    """The extra field can contain spaces"""
-    marker = match_marker("// VTABLE: TEST 0x1234 S p a c e s")
-    assert marker is not None
-    assert marker.extra == "S p a c e s"
-
-    # Trailing spaces removed
-    marker = match_marker("// VTABLE: TEST 0x8888 spaces    ")
-    assert marker is not None
-    assert marker.extra == "spaces"
-
-    # Trailing newline removed if present
+def test_marker_trailing_newline():
+    """Trailing newline removed if present"""
     marker = match_marker("// VTABLE: TEST 0x5555 newline\n")
     assert marker is not None
-    assert marker.extra == "newline"
+    assert marker.extra_flags == frozenset(["newline"])
+    assert marker.extra_strings == ()
 
 
 def test_marker_trailing_spaces():
@@ -220,7 +227,61 @@ def test_marker_trailing_spaces():
     marker = match_marker("// VTABLE: TEST 0x1234     ")
     assert marker is not None
     assert marker.offset == 0x1234
-    assert marker.extra is None
+    assert marker.extra_flags == frozenset()
+    assert marker.extra_strings == ()
+
+
+extras_match_cases = [
+    (
+        # unescaped: `SYMBOL A="bc\"d" B="\\\"" C="" BOOL DEF=" \n"`
+        'SYMBOL A="bc\\"d" B="\\\\\\"" C="" BOOL DEF=" \\n"',
+        (
+            (
+                ("A", 'bc"d'),
+                ("B", '\\"'),
+                ("C", ""),
+                ("DEF", " \n"),
+            ),
+            frozenset(["SYMBOL", "BOOL"]),
+        ),
+    ),
+    (
+        ' SPACES   EVERYWHERE="abc "  ',
+        (
+            (("EVERYWHERE", "abc "),),
+            frozenset(["SPACES"]),
+        ),
+    ),
+    (
+        # unescaped: `A="\"`
+        'A="\\"',
+        None,
+    ),
+    (
+        # unescaped: `B="\\""`
+        'B="\\\\""',
+        None,
+    ),
+    (
+        # unescaped: `B="\\"\`
+        'B="\\\\"\\',
+        None,
+    ),
+    ('INVALID_JSON="\\a"', None),
+    ('C=""a="b"', None),
+]
+
+
+@pytest.mark.parametrize("extras, expected", extras_match_cases)
+def test_marker_key_value(
+    extras: str, expected: list[tuple[tuple[str, str], frozenset[str]]] | None
+):
+    marker = match_marker(f"// VTABLE: TEST 0x1234 {extras}")
+    if expected is None:
+        assert marker is None
+    else:
+        assert marker is not None
+        assert (marker.extra_strings, marker.extra_flags) == expected
 
 
 def test_marker_aliases():

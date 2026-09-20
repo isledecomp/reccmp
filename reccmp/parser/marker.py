@@ -1,6 +1,11 @@
+import json
+from json import JSONDecodeError
+import logging
 import re
 from typing import NamedTuple
 from enum import Enum
+
+logger = logging.getLogger(__name__)
 
 TargetAliases = dict[str, str]
 ProjectAliases = dict[str, TargetAliases]
@@ -33,14 +38,26 @@ class MarkerType(Enum):
     LINE = 9
 
 
-markerRegex = re.compile(
-    r"\s*//\s*(?P<type>\w+):\s*(?P<module>\w+)\s+(?P<offset>0x[a-f0-9]+) *(?P<extra>\S.+\S)?",
+MARKER_REGEX = re.compile(
+    r"\s*//\s*(?P<type>\w+):\s*(?P<module>\w+)\s+(?P<offset>0x[a-f0-9]+) *(?P<extra>.+)?",
     flags=re.I,
 )
 
 
-markerExactRegex = re.compile(
-    r"\s*// (?P<type>[A-Z]+): (?P<module>[A-Z0-9]+) (?P<offset>0x[a-f0-9]+)(?: (?P<extra>\S.+\S))?\n?$"
+SINGLE_MARKER_EXTRA_REGEX_STR = r'(?P<key>\w+)(?:=(?P<value>"(?:[^\\"]|\\[\w"\\])*"))?'
+SINGLE_MARKER_EXTRA_REGEX = re.compile(SINGLE_MARKER_EXTRA_REGEX_STR)
+"""Matches `SYMBOL` or `KEY="VALUE"` where VALUE can be any valid JSON string."""
+
+FULL_MARKER_EXTRA_REGEX = re.compile(
+    rf"^\s*({SINGLE_MARKER_EXTRA_REGEX_STR}(?:\s+|$))*$"
+)
+"""Matches the full `extras` part of a marker, e.g. `SYMBOL SOME_KEY="some_value" OTHER_MARKER`."""
+
+FULL_MARKER_EXTRA_REGEX_EXACT_STR = rf"({SINGLE_MARKER_EXTRA_REGEX_STR}(?: (?=\S)|$))*$"
+"""Strict version of `FULL_EXTRA_PART_REGEX`. Only allows single spaces between extras and no space at the end."""
+
+MARKER_EXACT_REGEX = re.compile(
+    rf"\s*// (?P<type>[A-Z]+): (?P<module>[A-Z0-9]+) (?P<offset>0x[a-f0-9]+)(?: (?P<extra>{FULL_MARKER_EXTRA_REGEX_EXACT_STR}))?\n?$"
 )
 
 
@@ -58,16 +75,29 @@ MARKER_CATEGORY_MAP = {
 }
 
 
+DecompMarkerKeyType = tuple[
+    MarkerCategory, str, tuple[tuple[str, str], ...], frozenset[str]
+]
+"""Key type for MarkerDict. Must be hashable."""
+
+
 class DecompMarker(NamedTuple):
     type: MarkerType
     module: str
     offset: int
-    extra: str | None = None
+    # Python 3.15's `frozendict` would also be a nice option here.
+    extra_strings: tuple[tuple[str, str], ...] = ()
+    extra_flags: frozenset[str] = frozenset()
 
     @property
-    def key(self) -> tuple[MarkerCategory, str, str | None]:
+    def key(self) -> DecompMarkerKeyType:
         """For use with the MarkerDict. To detect/avoid marker collision."""
-        return (MARKER_CATEGORY_MAP[self.type], self.module, self.extra)
+        return (
+            MARKER_CATEGORY_MAP[self.type],
+            self.module,
+            self.extra_strings,
+            self.extra_flags,
+        )
 
 
 def normalize_target_aliases(aliases: TargetAliases) -> TargetAliases:
@@ -119,12 +149,38 @@ def match_marker(
     if aliases is None:
         aliases = {}
 
-    match = markerRegex.match(line)
+    match = MARKER_REGEX.match(line)
     if match is None:
         return None
 
-    marker_type, target_name, offset_str, extra = match.groups()
+    marker_type, target_name, offset_str, raw_extra = match.groups()
     marker_type = resolve_alias(marker_type, target_name, aliases)
+
+    extra_strings: list[tuple[str, str]] = []
+    extra_flags: set[str] = set()
+    if raw_extra is not None:
+        if not FULL_MARKER_EXTRA_REGEX.match(raw_extra):
+            logging.warning("Invalid extra (last part) of annotation '%s'", raw_extra)
+            return None
+
+        for match in SINGLE_MARKER_EXTRA_REGEX.finditer(raw_extra):
+            raw_value = match.group("value")
+            if raw_value is None:
+                extra_flags.add(match.group("key"))
+            else:
+                try:
+                    value = json.loads(raw_value)
+                    assert isinstance(
+                        value, str
+                    ), "This assertion should never fail since the regex checks the presence of double quotes"
+                    extra_strings.append((match.group("key"), value))
+                except JSONDecodeError as e:
+                    logging.warning(
+                        "Invalid JSON in extra (last part) of annotation '%s'",
+                        raw_extra,
+                        exc_info=e,
+                    )
+                    return None
 
     try:
         enum_type = MarkerType[marker_type.upper()]
@@ -138,9 +194,10 @@ def match_marker(
         # we will emit a syntax error.
         module=target_name.upper(),
         offset=int(offset_str, 16),
-        extra=extra,
+        extra_strings=tuple(extra_strings),
+        extra_flags=frozenset(extra_flags),
     )
 
 
 def is_marker_exact(line: str) -> bool:
-    return markerExactRegex.match(line) is not None
+    return MARKER_EXACT_REGEX.match(line) is not None
