@@ -357,6 +357,7 @@ class PEImageSectionHeader:
 @dataclasses.dataclass
 class CodeViewHeaderNB10:
     """The CV_INFO_PDB20 structure"""
+
     cv_signature: bytes  # "NB10" (or NBxx?)
     offset: int  # always 0 for NB20
     signature: int  # seconds since 1970-01-01
@@ -387,6 +388,7 @@ class CodeViewHeaderNB10:
 @dataclasses.dataclass
 class CodeViewHeaderRSDS:
     """The CV_INFO_PDB70 structure"""
+
     cv_signature: bytes  # "RSDS"
     uuid: UUID  # GUID
     age: int  # age
