@@ -4,7 +4,7 @@ By convention, the `vftable` pointer appears at offset 0 of a class with virtual
 
 To represent inheritance, we create the base class struct (or use one created earlier in the run)
 and set its position to the offset given in the PDB fieldlist. The other option is to copy members
-from the base classes with new offsets, but we don't do it this way.
+from the base classes with new offsets, but we don't do it this way. See #551 for the reasons and future plans.
 
 Virtual inheritance presents a challenge because offsets for virtually-inherited members do not
 appear in the fieldlist. Any class with a direct or indirect virtual base class has its members
