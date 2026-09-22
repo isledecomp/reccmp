@@ -14,9 +14,11 @@ from reccmp.cvdump.types import (
     CvdumpTypesParser,
     CvdumpKeyError,
     CvdumpIntegrityError,
+    ScalarType,
+)
+from reccmp.cvdump.type_leaves import (
     EnumItem,
     FieldListItem,
-    ScalarType,
     VirtualBaseClass,
     VirtualBasePointer,
 )
