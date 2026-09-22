@@ -1,5 +1,6 @@
 import re
 import io
+import os
 from os import name as os_name
 from enum import Enum
 from functools import cache
@@ -115,7 +116,13 @@ class Cvdump:
     def run(self) -> CvdumpParser:
         parser = CvdumpParser()
         call = self.cmd_line()
-        with subprocess.Popen(call, stdout=subprocess.PIPE) as proc:
+        env = None
+        if os_name != "nt":
+            # cvdump is a console tool: wine's GUI/explorer diagnostics are noise
+            # on stderr. Respect an explicit WINEDEBUG if the caller set one.
+            env = dict(os.environ)
+            env.setdefault("WINEDEBUG", "-all")
+        with subprocess.Popen(call, stdout=subprocess.PIPE, env=env) as proc:
             assert proc.stdout is not None
             wrap = io.TextIOWrapper(proc.stdout, encoding="utf-8", errors="ignore")
             for name, section in iter_cvdump_sections(wrap):
