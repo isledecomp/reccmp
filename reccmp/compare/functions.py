@@ -549,6 +549,25 @@ class FunctionComparator:
             return self.raw_pair_alias_equivalent(
                 island_target, recomp_addr, size, _depth=_depth + 1, _seen=seen
             )
+        # Symmetric recomp-side forwarder: an incremental link records the
+        # PDB symbol on the `jmp rel32` thunk, so the entity's own body is the
+        # island. Follow it to the real body and take that entity's size —
+        # keeping the thunk's size would truncate the landing body mid-insn.
+        if _is_bare_jmp_island(recomp_raw):
+            island_target = (
+                recomp_addr + 5 + int.from_bytes(recomp_raw[1:5], "little", signed=True)
+            )
+            target = self.db.get(ImageId.RECOMP, island_target)
+            target_size = (
+                target.size(ImageId.RECOMP) if target is not None else None
+            )
+            return self.raw_pair_alias_equivalent(
+                orig_addr,
+                island_target,
+                target_size if target_size and target_size > 0 else size,
+                _depth=_depth + 1,
+                _seen=seen,
+            )
         orig_asm = self.orig_sanitize.parse_asm(orig_raw, orig_addr)
         recomp_asm = self.recomp_sanitize.parse_asm(recomp_raw, recomp_addr)
         if not orig_asm or len(orig_asm) != len(recomp_asm):

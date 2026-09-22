@@ -363,7 +363,17 @@ class Compare:
         """
         if recomp is None or recomp.recomp_addr is None:
             return False
-        if recomp.get("type") not in (EntityType.FUNCTION, None):
+        # VTORDISP/THUNK slot entities are bare adjustor/jump stubs: their
+        # transfer target is a code address, so body equivalence still proves
+        # the slot. IMPORT_THUNK slots are excluded on purpose - the thunk body
+        # is just `jmp dword ptr [iat]` and sanitization would erase the only
+        # byte that distinguishes one import from another.
+        if recomp.get("type") not in (
+            EntityType.FUNCTION,
+            EntityType.VTORDISP,
+            EntityType.THUNK,
+            None,
+        ):
             return False
         size = recomp.size(ImageId.RECOMP)
         if size is None or size <= 0:
