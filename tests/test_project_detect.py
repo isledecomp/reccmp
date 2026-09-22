@@ -267,3 +267,13 @@ def test_verify_target_names_original_only(caplog):
         build_required_keys={"APP"},
     )
     assert any("APP" in r.message for r in caplog.records)
+    caplog.clear()
+
+    # No build config at all: nothing to compare, no build warnings.
+    verify_target_names(
+        project_keys={"APP", "BIN"},
+        user_keys={"APP", "BIN"},
+        build_keys=None,
+        build_required_keys={"APP"},
+    )
+    assert not caplog.records

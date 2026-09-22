@@ -29,14 +29,16 @@ logger = logging.getLogger(__file__)
 def verify_target_names(
     project_keys: set[str],
     user_keys: set[str],
-    build_keys: set[str],
+    build_keys: set[str] | None,
     build_required_keys: set[str] | None = None,
 ):
     """Warn if the user or build files have different targets than the canonical list in the project file.
 
     Every project target should appear in the user config, but the generated
     build config only contains source-backed targets. Original-only targets
-    (no source-root) are corpus metadata and are not expected there."""
+    (no source-root) are corpus metadata and are not expected there. When no
+    build config exists at all (build_keys is None) there is nothing to
+    compare."""
     user_missing_keys = project_keys - user_keys
     user_extra_keys = user_keys - project_keys
 
@@ -53,6 +55,9 @@ def verify_target_names(
             RECCMP_USER_CONFIG,
             ",".join(user_extra_keys),
         )
+
+    if build_keys is None:
+        return
 
     if build_required_keys is None:
         build_required_keys = project_keys
@@ -381,7 +386,7 @@ class RecCmpProject:
         verify_target_names(
             project_keys=set(project_data.targets) if project_data else set(),
             user_keys=set(user_data.targets) if user_data else set(),
-            build_keys=set(build_data.targets) if build_data else set(),
+            build_keys=set(build_data.targets) if build_data else None,
             build_required_keys=(
                 {
                     target_id
