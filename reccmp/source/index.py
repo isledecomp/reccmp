@@ -532,7 +532,18 @@ def _join_markers(
         )
         candidates = by_location.get((relative, method_symbol.line_number), [])
         marker_declaration: SourceDeclaration | None = None
-        if method_symbol.type in {MarkerType.FUNCTION, MarkerType.STUB}:
+        # Name-reference markers (TEMPLATE/SYNTHETIC/LIBRARY, and FUNCTION with a
+        # name comment e.g. `FUNCTION: X 0x... SYMBOL` + `// ??0foo@@QAE@XZ`)
+        # point at their name line, not a definition, so they cannot bind by
+        # location.
+        if (
+            method_symbol.type
+            in {
+                MarkerType.FUNCTION,
+                MarkerType.STUB,
+            }
+            and not method_symbol.is_nameref()
+        ):
             if len(candidates) != 1:
                 raise SourceIndexError(
                     f"{relative}:{method_symbol.line_number}: {method_symbol.type.name} "
