@@ -3,9 +3,18 @@
 2. Provides an interface to read from the DLL or EXE using a virtual address.
 These are some basic smoke tests."""
 
+import struct
+from types import SimpleNamespace
+from typing import cast
+
 import pytest
 from reccmp.formats.image import ImageImport, ImageSectionFlags
 from reccmp.formats import PEImage
+from reccmp.formats.pe import (
+    PEDataDirectoryItemRegion,
+    PEDataDirectoryItemType,
+    PEImageOptionalHeader,
+)
 from reccmp.formats.exceptions import (
     SectionNotFoundError,
     InvalidVirtualAddressError,
@@ -163,6 +172,53 @@ def test_exports(binfile: PEImage):
     assert len(binfile.exports) == 130
     assert (0x1003BFB0, b"??0LegoBackgroundColor@@QAE@PBD0@Z") in binfile.exports
     assert (0x10091EE0, b"_DllMain@12") in binfile.exports
+
+
+def test_exports_ordinal_table_and_holes():
+    """Export names pair with EAT slots through the ordinal table, and EAT
+    holes (zero RVA) are not exports.
+
+    A name index is not an EAT index: names and ordinals have NumberOfNames
+    entries while the EAT has NumberOfFunctions entries. A zero EAT RVA
+    (e.g. a .def export whose symbol was not emitted) must not resolve to
+    the image base."""
+    image_base = 0x10000000
+    data = {
+        # ExportDirectoryTable: ordinal_base=1, 3 EAT entries, 3 names.
+        0x10001000: struct.pack(
+            "<2L2H7L", 0, 0, 0, 0, 0x8000, 1, 3, 3, 0x2000, 0x3000, 0x4000
+        ),
+        # EAT: slot 1 is a hole.
+        0x10002000: struct.pack("<3L", 0x5000, 0, 0x6000),
+        # Name pointer table.
+        0x10003000: struct.pack("<3L", 0x7000, 0x7010, 0x7020),
+        # Ordinal table: name order deliberately differs from EAT order.
+        0x10004000: struct.pack("<3H", 2, 1, 0),
+        0x10007000: b"b_func\x00",
+        0x10007010: b"hole\x00",
+        0x10007020: b"a_func\x00",
+    }
+
+    img = PEImage.__new__(PEImage)
+    img.optional_header = cast(
+        PEImageOptionalHeader, SimpleNamespace(image_base=image_base)
+    )
+    setattr(
+        img,
+        "get_data_directory_region",
+        lambda item_type: (
+            PEDataDirectoryItemRegion(0x10001000, 0x100)
+            if item_type == PEDataDirectoryItemType.EXPORT_TABLE
+            else None
+        ),
+    )
+    setattr(img, "read", lambda addr, size: data[addr][:size])
+    setattr(img, "read_string", lambda addr: data[addr].split(b"\x00")[0])
+
+    assert img.exports == [
+        (0x10006000, b"b_func"),
+        (0x10005000, b"a_func"),
+    ]
 
 
 def test_section_not_found_error(binfile: PEImage):

@@ -223,7 +223,12 @@ class Compare:
         # Match using PDB and annotation data
         truncate = self.cvdump_analysis.truncate_symbols
         match_symbols(self._db, self.report, truncate=truncate)
-        match_functions(self._db, self.report, truncate=truncate)
+        match_functions(
+            self._db,
+            self.report,
+            truncate=truncate,
+            equivalence_groups=self.equivalence_groups,
+        )
         match_folded_function_aliases(
             self._db,
             self.codebase,

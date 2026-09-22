@@ -218,6 +218,38 @@ def test_match_functions_ambiguous(db, report):
     assert db.count() == 4
 
 
+def test_match_functions_equivalence_group(db, report):
+    """Equivalent originals share one identity: the canonical member takes the
+    match and the other member becomes an original-side alias."""
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 100, name="hello", type=EntityType.FUNCTION)
+        batch.set(ImageId.ORIG, 101, name="hello", type=EntityType.FUNCTION)
+        batch.set(ImageId.RECOMP, 500, name="hello", type=EntityType.FUNCTION)
+
+    match_functions(db, report, equivalence_groups={101: 100})
+
+    report.assert_not_called()
+    assert db.is_match(100, 500)
+    assert db.alias_canonical_orig(ImageId.ORIG, 101) == 100
+    # An alias is not a real match: the entities do not combine.
+    assert db.get(ImageId.ORIG, 101).recomp_addr is None
+    assert db.count() == 2
+
+
+def test_match_functions_equivalence_group_partial(db, report):
+    """Grouping does not rescue a name that still has distinct identities."""
+    with db.batch() as batch:
+        for addr in (100, 101, 102):
+            batch.set(ImageId.ORIG, addr, name="hello", type=EntityType.FUNCTION)
+        batch.set(ImageId.RECOMP, 500, name="hello", type=EntityType.FUNCTION)
+
+    match_functions(db, report, equivalence_groups={101: 100})
+
+    report.assert_any_call(ReccmpEvent.AMBIGUOUS_MATCH, 102, msg=ANY)
+    assert db.get(ImageId.RECOMP, 500).orig_addr is None
+    assert db.count() == 4
+
+
 def test_match_functions_ignore_already_matched(db, report):
     """If the name is non-unique but there is only one option available to match
     (i.e. if previous entities were matched by line number)

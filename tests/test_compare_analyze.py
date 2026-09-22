@@ -11,6 +11,7 @@ from reccmp.formats.exceptions import (
     InvalidStringError,
 )
 from reccmp.compare.analyze import (
+    match_entry,
     create_analysis_floats,
     create_analysis_strings,
     create_analysis_widechars,
@@ -714,3 +715,38 @@ def test_match_inferred_vtables_requires_exact_slot_identities(db: EntityDb):
 
     assert db.is_match(0x3000, 0x4000)
     assert not db.is_match(0x3100, 0x4100)
+
+
+#### match_entry ####
+
+
+def test_match_entry(db: EntityDb):
+    """The entry points of both binaries should match."""
+    orig_bin = Mock()
+    orig_bin.optional_header.address_of_entry_point = 0x1000
+    orig_bin.entry = 0x401000
+    recomp_bin = Mock()
+    recomp_bin.optional_header.address_of_entry_point = 0x2000
+    recomp_bin.entry = 0x602000
+
+    match_entry(db, orig_bin, recomp_bin)
+
+    assert db.is_match(0x401000, 0x602000)
+    entity = db.get(ImageId.RECOMP, 0x602000)
+    assert entity is not None
+    assert entity.get("type") == EntityType.FUNCTION
+
+
+def test_match_entry_no_entry_point(db: EntityDb):
+    """AddressOfEntryPoint == 0 means "no entry point" (common for DLLs).
+    The image base must not be staged as a function."""
+    orig_bin = Mock()
+    orig_bin.optional_header.address_of_entry_point = 0x1000
+    orig_bin.entry = 0x401000
+    recomp_bin = Mock()
+    recomp_bin.optional_header.address_of_entry_point = 0
+    recomp_bin.entry = 0x600000  # image base
+
+    match_entry(db, orig_bin, recomp_bin)
+
+    assert db.count() == 0

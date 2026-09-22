@@ -13,6 +13,7 @@ from reccmp.project.config import (
 )
 from reccmp.project.detect import (
     detect_project,
+    verify_target_names,
     DetectWhat,
 )
 from reccmp.formats import PEImage
@@ -234,3 +235,35 @@ def test_project_recompiled_detection_using_alternate_filename(tmp_path_factory)
     build_config = BuildFile.from_file(build_config_path)
     assert build_config.targets["LEGO1"].path == build_file
     assert build_config.targets["LEGO1"].pdb == pdb_file
+
+
+def test_verify_target_names_original_only(caplog):
+    """Original-only targets (no source-root) are not expected in the
+    generated build config, but are still required in the user config."""
+    verify_target_names(
+        project_keys={"APP", "BIN"},
+        user_keys={"APP", "BIN"},
+        build_keys={"APP"},
+        build_required_keys={"APP"},
+    )
+    assert not caplog.records
+
+    # A missing user-config target is still reported.
+    caplog.clear()
+    verify_target_names(
+        project_keys={"APP", "BIN"},
+        user_keys={"APP"},
+        build_keys={"APP"},
+        build_required_keys={"APP"},
+    )
+    assert any("BIN" in r.message for r in caplog.records)
+    caplog.clear()
+
+    # A missing source-backed target is still reported.
+    verify_target_names(
+        project_keys={"APP", "BIN"},
+        user_keys={"APP", "BIN"},
+        build_keys=set(),
+        build_required_keys={"APP"},
+    )
+    assert any("APP" in r.message for r in caplog.records)

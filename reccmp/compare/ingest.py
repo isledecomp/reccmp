@@ -132,16 +132,19 @@ def load_cvdump_lines(
         ]
         lines_db.add_lines(filename, lines)
 
-    # The seen_addrs set has more than functions, but the intersection of
-    # these addrs and the code lines should be just the functions.
-    seen_addrs = set(
+    # Only PDB nodes known to be functions count as function starts. Data
+    # symbols that happen to sit on a covered line (e.g. a COMDAT-folded
+    # header variable) would otherwise register as candidate starts and make
+    # an unambiguous line lookup look like out-of-sync debug data.
+    function_starts = set(
         # TODO: Ideally this conversion and filtering would happen inside CvdumpAnalysis.
         recomp_bin.get_abs_addr(node.section, node.offset)
         for node in cvdump_analysis.nodes
-        if recomp_bin.is_valid_section(node.section)
+        if node.node_type == EntityType.FUNCTION
+        and recomp_bin.is_valid_section(node.section)
     )
 
-    lines_db.mark_function_starts(tuple(seen_addrs))
+    lines_db.mark_function_starts(tuple(function_starts))
 
 
 # pylint: disable=too-many-positional-arguments, too-many-arguments

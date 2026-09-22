@@ -2,7 +2,8 @@ from textwrap import dedent
 from reccmp.formats import PEImage
 from reccmp.cvdump import CvdumpAnalysis, CvdumpParser
 from reccmp.compare.db import EntityDb
-from reccmp.compare.ingest import load_cvdump
+from reccmp.compare.ingest import load_cvdump, load_cvdump_lines
+from reccmp.compare.lines import LinesDb
 from reccmp.types import EntityType, ImageId
 
 # These functions use our sample PE image to "cheat" and not have to mock as much.
@@ -817,3 +818,31 @@ def test_lproc32_gproc32_collision(binfile: PEImage):
     assert entity.get("type") == EntityType.FUNCTION
     # Should not overwrite with size 0 after reading the S_LPROC32 node.
     assert entity.size(ImageId.RECOMP) == 0x6E
+
+
+def test_load_cvdump_lines_marks_only_function_starts(binfile: PEImage):
+    """Only procedure records may register as candidate function starts.
+    A data symbol that happens to share a source line with a function
+    would otherwise make the line lookup ambiguous."""
+    parser = CvdumpParser()
+    parser.read_section(
+        "SYMBOLS",
+        dedent("""\
+        (0000B0) S_GPROC32: [0001:00000000], Cb: 0000006E, Type:             0x1071, Score::Score
+                 Parent: 00000000, End: 000000E4, Next: 00000000
+                 Debug start: 0000001C, Debug end: 00000050
+
+        (0000E4) S_END
+        """),
+    )
+    parser.read_section(
+        "GLOBALS",
+        "S_LDATA32: [0002:00000000], Type:             0x5D8C, Pi",
+    )
+
+    cvdump_analysis = CvdumpAnalysis(parser)
+    lines_db = LinesDb()
+    load_cvdump_lines(cvdump_analysis, lines_db, binfile)
+
+    # pylint: disable-next=protected-access
+    assert lines_db._function_starts == {0x10001000}

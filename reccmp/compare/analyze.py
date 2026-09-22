@@ -40,6 +40,14 @@ def import_sections(db: EntityDb, image_id: ImageId, binfile: Image):
 
 def match_entry(db: EntityDb, orig_bin: PEImage, recomp_bin: PEImage):
     # The _entry symbol is referenced in the PE header so we get this match for free.
+    # AddressOfEntryPoint == 0 means "no entry point" (common for DLLs); the
+    # image base itself is not a function.
+    if (
+        orig_bin.optional_header.address_of_entry_point == 0
+        or recomp_bin.optional_header.address_of_entry_point == 0
+    ):
+        return
+
     with db.batch() as batch:
         batch.set(ImageId.RECOMP, recomp_bin.entry, type=EntityType.FUNCTION)
         batch.match(orig_bin.entry, recomp_bin.entry)
