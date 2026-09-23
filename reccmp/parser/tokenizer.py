@@ -15,6 +15,7 @@ import bisect
 import re
 import string
 import enum
+from itertools import pairwise
 from sys import maxsize as MAX_INT
 
 
@@ -524,3 +525,189 @@ def resolve_scopes(
             break
 
     return (dict(out_ranges), remain)
+
+
+r_ppc_const = re.compile(r"#\s*(?:el)?if\s+([01])\s*(?://.*)?$", flags=re.M)
+"""Match preprocessor directives `#if` or `#elif` with expressions `0` or `1`.
+A trailing line comment is allowed.
+"""
+
+
+class BranchResult(enum.Enum):
+    """The result of evaluating the expression in the preprocessor directive, if possible."""
+
+    CONST_FALSE = enum.auto()
+    """Branch is always disabled."""
+    CONST_TRUE = enum.auto()
+    """Branch is enabled if it is first in the block after 0-N disabled branches."""
+    EXPRESSION = enum.auto()
+    """Branch may be enabled or disabled. We did not evaluate the expression so we are not certain."""
+    ENDIF = enum.auto()
+    """Sentinel that ends the block."""
+
+
+PreprocessorBlock = list[tuple[int, BranchResult]]
+"""Index (to `tokens` list) and partially-evaluated result of each directive in the preprocessor sequence."""
+
+
+def evaluate_preprocessor_block(
+    block: PreprocessorBlock,
+) -> tuple[list[tuple[int, int]], int | None]:
+    """Test each branch from the preprocessor block and return the list of token indices to drop
+    and (optionally) the index of the `#elif` token to promote to `#if` when this is required.
+    """
+
+    # Record token indices for the boundaries of this preprocessor block.
+    # We need these for creating the list of index ranges to cut.
+    if_idx, endif = block[0][0], block[-1][0]
+
+    # Find the first branch that is not definitively disabled.
+    for first, (start, result) in enumerate(block):
+        if result is BranchResult.EXPRESSION or result is BranchResult.CONST_TRUE:
+            break
+    else:
+        # All branches are disabled. Remove all tokens in the block.
+        return [(if_idx, endif + 1)], None
+
+    # Did we encounter a branch that is always enabled (i.e. `#if 1`, `#elif 1`, `#else`)
+    # after reading 0-N disabled branches?
+    if result is BranchResult.CONST_TRUE:
+        # This branch is definitively enabled. Remove tokens from all other branches
+        # and remove the preprocessor tokens that wrap this branch.
+        return [(if_idx, start + 1), (block[first + 1][0], endif + 1)], None
+
+    # If we are here, we may be able to remove some (but not all) branches.
+    cuts: list[tuple[int, int]] = []
+    for (start, result), (stop, _) in pairwise(block):
+        if result is BranchResult.CONST_FALSE:
+            # Remove branches that are definitively disabled.
+            cuts.append((start, stop))
+        elif result is BranchResult.CONST_TRUE:
+            # If this branch is definitively enabled, any branches that follow
+            # are definitively _disabled_, so remove their tokens.
+            if stop != endif:
+                # Stop short of deleting the `#endif` token.
+                cuts.append((stop, endif))
+
+            break
+
+    # If the first remaining preprocessor token is not the first overall
+    # (i.e. it is an `#elif`) we must promote it to `#if` to create a proper
+    # preprocessor token sequence after the cuts.
+    return cuts, (block[first][0] if first > 0 else None)
+
+
+def find_preprocessor_blocks(
+    tokens: list[CodeToken], text: str
+) -> list[PreprocessorBlock]:
+    """Collect sequences of preprocessor tokens into blocks.
+    Nested blocks are returned as they are found."""
+    stack: list[PreprocessorBlock] = []
+    blocks: list[PreprocessorBlock] = []
+
+    # Retain the index from `tokens` because we need it to modify the starting list.
+    for i, token in enumerate(tokens):
+        if token[2] not in PPC_TOKENS:
+            continue
+
+        start, stop, token_type = token
+
+        if token_type == TokenType.PPC_END:
+            if stack:
+                stack[-1].append((i, BranchResult.ENDIF))
+                blocks.append(stack.pop())
+            continue
+
+        if token_type == TokenType.PPC_ELSE:
+            # `#else` is logically the same as `#elif 1`.
+            # This branch is enabled if no previous branch is enabled.
+            result = BranchResult.CONST_TRUE
+        else:
+            # If we decide to support other constant expressions
+            # then we need to change the regex.
+            match = r_ppc_const.fullmatch(text, start, stop)
+            if match is None:
+                result = BranchResult.EXPRESSION
+            elif match.group(1) == "0":
+                result = BranchResult.CONST_FALSE
+            else:
+                result = BranchResult.CONST_TRUE
+
+        if token_type == TokenType.PPC_IF:
+            stack.append([(i, result)])
+        elif stack:
+            stack[-1].append((i, result))
+
+    return blocks
+
+
+def apply_token_cuts(
+    tokens: list[CodeToken], cuts: list[tuple[int, int]]
+) -> list[CodeToken]:
+    output: list[CodeToken] = []
+    prev = 0
+    for start, stop in sorted(cuts):
+        # Copy ranges of tokens outside each cut.
+        output.extend(tokens[prev:start])
+        # Handle overlapping cuts from nested blocks.
+        prev = max(prev, stop)
+
+    output.extend(tokens[prev:])
+    return output
+
+
+def promote_elifs(tokens: list[CodeToken], indices: list[int]) -> list[CodeToken]:
+    if not indices:
+        return tokens
+
+    output = list(tokens)
+    for i in indices:
+        start, stop, _ = output[i]
+        output[i] = (start, stop, TokenType.PPC_IF)
+
+    return output
+
+
+def resolve_preprocessor(tokens: list[CodeToken], text: str) -> list[CodeToken]:
+    """Return a filtered list of tokens after evaluating preprocessor directives that use constants.
+    These are the only expressions we can evaluate with 100% certainty without building the AST.
+    A preprocessor "block" is the sequence of conditional "branches" that ends with an `#endif` token.
+
+    If all branches in a block are disabled, remove all tokens from the block.
+
+    If one branch in the block can be definitively enabled, remove all tokens from disabled branches
+    and all the preprocessor tokens in the block. Keep only the internal tokens from the enabled branch.
+
+    If we can eliminate some branches in a block, but not all of them, make sure that our changes result
+    in a valid preprocessor block for downstream processing. Specifically: if an `#elif` branch is now the
+    first remaining branch in a block, "promote" its token from TokenType.PPC_ELIF to TokenType.PPC_IF.
+    """
+
+    # To improve performance, take no action if there are no preprocessor directives using constants.
+    if r_ppc_const.search(text) is None:
+        return tokens
+
+    # Create a list of all preprocessor sequences.
+    blocks = find_preprocessor_blocks(tokens, text)
+
+    # A list of [start : stop] ranges to remove from `tokens`.
+    cuts: list[tuple[int, int]] = []
+
+    # If any block contains an `#elif` that will become the first surviving branch
+    # after applying `cuts`, the token type must be "promoted" to `#if` so downstream
+    # processing receives a valid preprocessor sequence.
+    promote_indices: list[int] = []
+
+    for block in blocks:
+        block_cuts, promote_index = evaluate_preprocessor_block(block)
+        cuts.extend(block_cuts)
+        if promote_index is not None:
+            promote_indices.append(promote_index)
+
+    # Avoid a list copy if we can.
+    if not cuts and not promote_indices:
+        return tokens
+
+    # Apply `promote_indices` first, using the indices from the full `tokens` list.
+    promoted = promote_elifs(tokens, promote_indices)
+    return apply_token_cuts(promoted, cuts)
