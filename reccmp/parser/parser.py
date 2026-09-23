@@ -99,8 +99,8 @@ class DecompParser:
 
         self.last_line: str = ""
 
-        self.namespaces: list[tuple[int, int, str]] = []
-        """Ranges and names of namespaces in the current file, given as: (start, end, name)"""
+        self.namespaces: list[tuple[int, int, str, str]] = []
+        """Ranges and names of namespaces in the current file, given as: (start, end, keyword, name)"""
 
         self.line_pos: int = 0
         """File offset of the current line we are reading."""
@@ -155,7 +155,7 @@ class DecompParser:
         """Qualify the provided name with the combined scope names for our current file position."""
         namespaces = [
             name
-            for start, stop, name in self.namespaces
+            for start, stop, _, name in self.namespaces
             if start < self.line_pos < stop
         ]
         if not namespaces:
