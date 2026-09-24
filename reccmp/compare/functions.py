@@ -107,6 +107,14 @@ class FunctionComparator:
             return None
         return f"{path_line_pair[0].name}:{path_line_pair[1]}"
 
+    def set_sanitize_option(self, value: bool) -> None:
+        self.orig_sanitize.options.do_sanitize = value
+        self.recomp_sanitize.options.do_sanitize = value
+
+    def set_placeholder_option(self, value: bool) -> None:
+        self.orig_sanitize.options.use_placeholders = value
+        self.recomp_sanitize.options.use_placeholders = value
+
     def compare_function(self, match: ReccmpMatch) -> EntityCompareResult:
         # Detect when the recomp function size would cause us to read
         # enough bytes from the original function that we cross into

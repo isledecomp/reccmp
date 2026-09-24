@@ -7,6 +7,7 @@ so that virtual addresses are replaced by symbol name or a generic
 placeholder string."""
 
 import re
+from dataclasses import dataclass
 from functools import cache
 from typing_extensions import Buffer
 from .const import JUMP_MNEMONICS, SINGLE_OPERAND_INSTS
@@ -33,7 +34,21 @@ def from_hex(string: str) -> int | None:
     return None
 
 
+@dataclass
+class AsmRenderOptions:
+    do_sanitize: bool = True
+    number_placeholders: bool = True
+    use_placeholders: bool = True
+
+
 class ParseAsm:
+    addr_test: AddrTestProtocol | None
+    name_lookup: NameReplacementProtocol | None
+    is_32bit: bool
+    replacements: dict[int, str]
+    indirect_replacements: dict[int, str]
+    options: AsmRenderOptions
+
     def __init__(
         self,
         addr_test: AddrTestProtocol | None = None,
@@ -46,7 +61,7 @@ class ParseAsm:
 
         self.replacements: dict[int, str] = {}
         self.indirect_replacements: dict[int, str] = {}
-        self.number_placeholders = True
+        self.options = AsmRenderOptions()
 
     def reset(self):
         self.replacements = {}
@@ -73,7 +88,7 @@ class ParseAsm:
         already replaced. This is so the number will be consistent across the diff
         if we can replace some symbols with actual names in recomp but not orig."""
         number = len(self.replacements) + len(self.indirect_replacements) + 1
-        return f"<OFFSET{number}>" if self.number_placeholders else "<OFFSET>"
+        return f"<OFFSET{number}>" if self.options.number_placeholders else "<OFFSET>"
 
     def replace(self, addr: int, exact: bool = False) -> str:
         """Provide a replacement name for the given address."""
@@ -83,6 +98,11 @@ class ParseAsm:
         if (name := self.lookup(addr, exact=exact)) is not None:
             self.replacements[addr] = name
             return name
+
+        if not self.options.use_placeholders:
+            # Ideally, you would get back the original string
+            # but we have already converted it to an int.
+            return hex(addr)
 
         placeholder = self._next_placeholder()
         self.replacements[addr] = placeholder
@@ -95,6 +115,11 @@ class ParseAsm:
         if (name := self.lookup(addr, exact=True, indirect=True)) is not None:
             self.indirect_replacements[addr] = name
             return name
+
+        if not self.options.use_placeholders:
+            # Ideally, you would get back the original string
+            # but we have already converted it to an int.
+            return hex(addr)
 
         placeholder = self._next_placeholder()
         self.indirect_replacements[addr] = placeholder
@@ -193,6 +218,17 @@ class ParseAsm:
 
         return (inst_mnemonic, op_str)
 
+    def fix_jump(self, inst: DisasmLiteTuple) -> tuple[str, str]:
+        """Subset of sanitize: fix jump offsets, replace nothing."""
+        inst_address, inst_size, inst_mnemonic, inst_op_str = inst
+
+        if (op_str_address := from_hex(inst_op_str)) is not None:
+            # Show the jump offset rather than the absolute address
+            jump_displacement = op_str_address - (inst_address + inst_size)
+            return (inst_mnemonic, hex(jump_displacement))
+
+        return (inst_mnemonic, inst_op_str)
+
     def parse_asm(self, data: Buffer, start_addr: int) -> AsmExcerpt:
         self.reset()
         asm: AsmExcerpt = []
@@ -212,12 +248,20 @@ class ParseAsm:
                     # where the hex value could not be an address.
                     # The exception is jumps which are as small as 2 bytes
                     # but are still useful to sanitize.
-                    if "0x" in inst_op_str and (
-                        inst_mnemonic in JUMP_MNEMONICS
-                        or inst_size > 4
-                        or not self.is_32bit
+                    if (
+                        self.options.do_sanitize
+                        and "0x" in inst_op_str
+                        and (
+                            inst_mnemonic in JUMP_MNEMONICS
+                            or inst_size > 4
+                            or not self.is_32bit
+                        )
                     ):
                         result = self.sanitize(inst)
+                    elif not self.options.do_sanitize and (
+                        inst_mnemonic in JUMP_MNEMONICS
+                    ):
+                        result = self.fix_jump(inst)
                     else:
                         result = (inst_mnemonic, inst_op_str)
 

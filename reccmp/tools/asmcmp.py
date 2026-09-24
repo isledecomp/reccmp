@@ -51,7 +51,11 @@ def gen_json(json_file: str, json_str: str):
         f.write(json_str)
 
 
-def print_match_verbose(match: ReccmpComparedEntity, show_both_addrs: bool = False):
+def print_match_verbose(
+    match: ReccmpComparedEntity,
+    show_both_addrs: bool = False,
+    opt_udiff: bool = True,
+):
     percenttext = percent_string(match.effective_accuracy, match.is_effective_match)
 
     if show_both_addrs and match.recomp_addr is not None:
@@ -61,7 +65,7 @@ def print_match_verbose(match: ReccmpComparedEntity, show_both_addrs: bool = Fal
     else:
         addrs = format_address(match.orig_addr)
 
-    grouped_diff = match.type != EntityType.VTABLE
+    grouped_diff = opt_udiff and (match.type != EntityType.VTABLE)
     assert match.rdiff is not None
     udiff = raw_diff_to_udiff(match.rdiff, grouped=grouped_diff)
 
@@ -113,68 +117,92 @@ def parse_args() -> argparse.Namespace:
         "--version", action="version", version=f"%(prog)s {reccmp.VERSION}"
     )
     argparse_add_project_target_args(parser)
-    parser.add_argument(
+
+    input_group = parser.add_argument_group(title="Inputs")
+    output_group = parser.add_argument_group(title="Output options")
+    term_group = parser.add_argument_group(title="Terminal display options")
+    asm_group = parser.add_argument_group(title="Asm rendering options")
+
+    input_group.add_argument(
         "--total",
         "-T",
         metavar="<count>",
         help="Total number of expected functions (improves total accuracy statistic)",
     )
-    parser.add_argument(
+    input_group.add_argument(
         "--verbose",
         "-v",
         metavar="<offset>",
         type=virtual_address,
         help="Print assembly diff for specific function (original file's offset)",
     )
-    parser.add_argument(
+    output_group.add_argument(
         "--json",
         metavar="<file>",
         help="Generate JSON file with match summary",
     )
-    parser.add_argument(
+    output_group.add_argument(
         "--json-diet",
         action="store_true",
         help="Exclude diff from JSON report.",
     )
-    parser.add_argument(
+    input_group.add_argument(
         "--diff",
         metavar="<file>",
         help="Diff against summary in JSON file",
     )
-    parser.add_argument(
+    output_group.add_argument(
         "--dump",
         action="store_true",
         help="Write decompiled assembly to debug files.",
     )
-    parser.add_argument(
+    output_group.add_argument(
         "--html",
         "-H",
         metavar="<file>",
         help="Generate searchable HTML summary of status and diffs",
     )
-    parser.add_argument(
+    term_group.add_argument(
         "--no-color", "-n", action="store_true", help="Do not color the output"
     )
-    parser.add_argument(
+    output_group.add_argument(
         "--svg", "-S", metavar="<file>", help="Generate SVG graphic of progress"
     )
-    parser.add_argument(
+    output_group.add_argument(
         "--svg-icon", metavar="icon", type=Path, help="Icon to use in SVG (PNG)"
     )
-    parser.add_argument(
+    term_group.add_argument(
         "--print-rec-addr",
         action="store_true",
         help="Print addresses of recompiled functions too",
     )
-    parser.add_argument(
+    term_group.add_argument(
         "--silent",
         action="store_true",
         help="Don't display text summary of matches",
     )
-    parser.add_argument(
+    output_group.add_argument(
         "--nolib",
         action="store_true",
         help="Exclude LIBRARY annotations from the analysis",
+    )
+    asm_group.add_argument(
+        "--placeholder",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Replace undiscovered addresses with `<OFFSET>` (default: True)",
+    )
+    asm_group.add_argument(
+        "--sanitize",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Replace addresses with name or placeholder (default: True)",
+    )
+    term_group.add_argument(
+        "--udiff",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="In `--verbose` mode, display unified diff (default: True)",
     )
     argparse_add_logging_args(parser)
 
@@ -235,6 +263,8 @@ def main() -> int:
     logging.basicConfig(level=args.loglevel, format="[%(levelname)s] %(message)s")
 
     compare = Compare.from_target(target)
+    compare.set_sanitize_option(args.sanitize)
+    compare.set_placeholder_option(args.placeholder)
 
     print()
 
@@ -246,7 +276,9 @@ def main() -> int:
             logger.error("Failed to find a match at address 0x%x", args.verbose)
             return 1
 
-        print_match_verbose(match, show_both_addrs=args.print_rec_addr)
+        print_match_verbose(
+            match, show_both_addrs=args.print_rec_addr, opt_udiff=args.udiff
+        )
         return 0
 
     ### Compare everything.
