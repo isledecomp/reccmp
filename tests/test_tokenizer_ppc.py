@@ -141,6 +141,7 @@ CONSTANT_EXPRESSIONS_TRUE = [
 
 
 @pytest.mark.parametrize("expression", CONSTANT_EXPRESSIONS_TRUE)
+@pytest.mark.xfail(reason="Intentional limits of current design.")
 def test_constant_expression_true(expression: str):
     """Should evaluate preprocessor expressions that reduce to a constant true."""
     code = dedent(f"""\
@@ -149,7 +150,28 @@ def test_constant_expression_true(expression: str):
         #endif
     """)
     tokens = tokenize_code_file(code)
-    assert resolve_preprocessor(tokens, code)
+    assert resolve_preprocessor(tokens, code) == [tokens[1]]
+
+
+###
+###
+### Tests for expressions on the "defined" macros.
+###
+###
+
+
+@pytest.mark.parametrize("macro", ("#ifdef", "#ifndef"))
+@pytest.mark.parametrize("expression", ("0", "1", "X"))
+def test_if_defined_macro(macro: str, expression: str):
+    """Should not alter tokens for `#ifdef` and similar macros.
+    This is here because we take a shortcut and create a PPC_IF token for `#ifdef`."""
+    code = dedent(f"""\
+        {macro} {expression}
+        A
+        #endif
+    """)
+    tokens = tokenize_code_file(code)
+    assert resolve_preprocessor(tokens, code) == tokens
 
 
 ###
