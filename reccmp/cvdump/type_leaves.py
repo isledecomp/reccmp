@@ -148,6 +148,12 @@ LF_POINTER_RE = re.compile(
     r"\s+(?P<type>.+\S) \(\w+\), Size: \d+\n\s+Element type : (?P<element_type>[^\n,]+)(?:, Containing class = (?P<containing_class>[^,]+),)?[\n,]"
 )
 
+# LF_POINTER type, with the attributes in the order cvdump prints them
+LF_POINTER_TYPE_RE = re.compile(
+    r"(?:volatile )?(?:const )?(?:__unaligned )?(?:__restrict )?"
+    r"(?:Pointer|L-value Reference|Pointer to member|Pointer to member function|R-value Reference)"
+)
+
 LF_PROCEDURE_RE = re.compile(
     (
         r"\s+Return type = (?P<return_type>[^,]+), Call type = (?P<call_type>[^\n]+)\n"
@@ -337,16 +343,7 @@ def read_pointer(leaf: str, leaf_type: str) -> CvdumpParsedType:
 
     # We don't use the pointer type, but we still want to check for exhaustiveness
     # in case we missed some relevant data
-    assert match.group("type") in (
-        "R-value Reference",
-        "Pointer",
-        "const Pointer",
-        "L-value Reference",
-        "volatile Pointer",
-        "volatile const Pointer",
-        "Pointer to member",
-        "Pointer to member function",
-    )
+    assert LF_POINTER_TYPE_RE.fullmatch(match.group("type")) is not None
 
     obj: CvdumpParsedType = {
         "type": leaf_type,
