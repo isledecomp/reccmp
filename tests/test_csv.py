@@ -9,6 +9,7 @@ from reccmp.compare.csv import (
     CsvNoDelimiterError,
     CsvInvalidEntityTypeError,
     CsvInvalidNumberError,
+    CsvFileRequiresFunctionError,
     ReccmpCsvParserError,
 )
 
@@ -65,6 +66,21 @@ def test_ignore_columns():
     """)))
 
     assert values == [(0x1000, {"symbol": "hello"})]
+
+
+def test_file_column_requires_function():
+    values = list(
+        csv_parse("address,type,name,file\n1000,function,helper,src/helper.c")
+    )
+    assert values == [
+        (
+            0x1000,
+            {"type": EntityType.FUNCTION, "name": "helper", "file": "src/helper.c"},
+        )
+    ]
+
+    with pytest.raises(CsvFileRequiresFunctionError):
+        list(csv_parse("address,type,name,file\n1000,global,helper,src/helper.c"))
 
 
 def test_address_not_hex():

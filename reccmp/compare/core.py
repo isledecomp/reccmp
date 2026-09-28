@@ -24,6 +24,7 @@ from reccmp.compare.event import (
 from .match_msvc import (
     match_lines,
     match_symbols,
+    match_functions_by_file,
     match_functions,
     match_vtables,
     match_static_variables,
@@ -166,6 +167,9 @@ class Compare:
         # Match using PDB and annotation data
         truncate = self.cvdump_analysis.truncate_symbols
         match_symbols(self._db, self.report, truncate=truncate)
+        match_functions_by_file(
+            self._db, self._lines_db, self.report, truncate=truncate
+        )
         match_functions(self._db, self.report, truncate=truncate)
         match_vtables(self._db, self.report)
         match_static_variables(self._db, self.report)

@@ -50,6 +50,14 @@ The address value is always interpreted as a hexadecimal number, even if only di
 
 The `"name"` field is the name for the entity, as you would expect. `"size"` is the number of bytes used by the entity in virtual memory. This is always interpreted as a decimal number.
 
+Use `"file"` to restrict function matching to a source filename or path suffix. For example, two files may define functions with the same name:
+
+```csv
+address,type,name,file
+0x5dded0,function,emit_bits,jchuff.c
+0x5f0b00,function,emit_bits,jcphuff.c
+```
+
 `"type"` expects one of these values:
 
 - `function, template, synthetic, library, stub` for function entities

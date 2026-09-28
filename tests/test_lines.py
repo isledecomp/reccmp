@@ -74,10 +74,13 @@ def test_lines_add_local_files_after(local_path: PureWindowsPath | PurePosixPath
     lines.mark_function_starts((0x1234,))
 
     # Add source dirs here, after the call to add_line
+    assert lines.function_starts_for_path("test.cpp") == set()
     lines.add_local_paths([local_path])
 
     # Now we get the function
     assert lines.find_function(local_path, 2) == 0x1234
+    assert lines.function_starts_for_path("test.cpp") == {0x1234}
+    assert lines.function_starts_for_path("CODE/test.cpp") == {0x1234}
 
 
 @pytest.mark.parametrize("local_path", LOCAL_PATHS)

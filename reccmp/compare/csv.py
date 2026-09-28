@@ -58,12 +58,17 @@ class CsvInvalidNumberError(ReccmpCsvParserError):
     """The string value is not a valid hex or decimal number."""
 
 
+class CsvFileRequiresFunctionError(ReccmpCsvParserError):
+    """The file column can only be used with a function type."""
+
+
 CsvValueOptions = int | str | bool | EntityType
 
 
 class CsvValuesType(TypedDict):
     type: NotRequired[EntityType]
     name: NotRequired[str]
+    file: NotRequired[str]
     size: NotRequired[int]
     symbol: NotRequired[str]
 
@@ -143,6 +148,9 @@ def _convert_attrs(values: Iterable[tuple[str, str]]) -> CsvValuesType:
         if key == "name":
             output["name"] = value
 
+        if key == "file":
+            output["file"] = value.strip()
+
         if key == "size":
             output["size"] = decimal_or_hex(value)
 
@@ -171,7 +179,11 @@ def _csv_convert(addr_key: str, row: dict[str, str]) -> tuple[int, CsvValuesType
     except ValueError as ex:
         raise CsvInvalidAddressError(addr_value) from ex
 
-    return (addr, _convert_attrs(row.items()))
+    attrs = _convert_attrs(row.items())
+    if "file" in attrs and attrs.get("type") != EntityType.FUNCTION:
+        raise CsvFileRequiresFunctionError(row["file"])
+
+    return (addr, attrs)
 
 
 class ReccmpCsvReader:

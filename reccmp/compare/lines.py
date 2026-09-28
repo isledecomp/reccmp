@@ -1,5 +1,4 @@
-"""Database used to match (filename, line_number) pairs
-between FUNCTION markers and PDB analysis."""
+"""Database used to match source locations and PDB function addresses."""
 
 import logging
 from functools import cache
@@ -58,6 +57,25 @@ class LinesDb:
 
     def mark_function_starts(self, addrs: Iterable[int]):
         self._function_starts.update(addrs)
+
+    def function_starts_for_path(self, path_suffix: str) -> set[int]:
+        """Return PDB symbol addresses with line records in the given path suffix.
+
+        A suffix may be a basename or several path components. All matching PDB
+        files are considered so an ambiguous basename cannot choose one silently.
+        """
+        suffix = tuple(part.lower() for part in PureWindowsPath(path_suffix).parts)
+        if not suffix:
+            return set()
+
+        matches: set[int] = set()
+        for path, lines in self._path_to_lines_and_addresses.items():
+            parts = tuple(part.lower() for part in PureWindowsPath(path).parts)
+            if parts[-len(suffix) :] == suffix:
+                matches.update(
+                    addr for _, addr in lines if addr in self._function_starts
+                )
+        return matches
 
     def _match_foreign_path_to_local(
         self, foreign_path: PureWindowsPath, lines: Iterable[tuple[int, int]]

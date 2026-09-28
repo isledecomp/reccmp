@@ -63,6 +63,9 @@ def match_symbols(
     with db.batch() as batch:
         for ent in db.unmatched(ImageId.ORIG):
             assert ent.orig_addr is not None
+            # File-qualified functions are handled by match_functions_by_file.
+            if ent.get("file") and ent.get("type") == EntityType.FUNCTION:
+                continue
             symbol = ent.get("symbol")
 
             if not symbol:
@@ -90,6 +93,62 @@ def match_symbols(
                     ReccmpEvent.NO_MATCH,
                     ent.orig_addr,
                     msg=f"Failed to match at 0x{ent.orig_addr:x} with symbol '{symbol}'",
+                )
+
+
+def match_functions_by_file(
+    db: EntityDb,
+    lines: LinesDb,
+    report: ReccmpReportProtocol = reccmp_report_nop,
+    *,
+    truncate: bool = False,
+):
+    """Match CSV functions by symbol, then name, within a PDB source path."""
+    indexes = {"symbol": EntityIndex(), "name": EntityIndex()}
+    for ent in db.unmatched(ImageId.RECOMP):
+        if ent.get("type") != EntityType.FUNCTION:
+            continue
+        assert ent.recomp_addr is not None
+        for key, index in indexes.items():
+            value = ent.get(key)
+            if value:
+                index.add(value[:255] if truncate else value, ent.recomp_addr)
+
+    matched_addresses: set[int] = set()
+    with db.batch() as batch:
+        for ent in db.unmatched(ImageId.ORIG):
+            file = ent.get("file")
+            if not file or ent.get("type") != EntityType.FUNCTION:
+                continue
+            assert ent.orig_addr is not None
+
+            file_addresses = lines.function_starts_for_path(file) - matched_addresses
+            for key, index in indexes.items():
+                value = ent.get(key)
+                if not value:
+                    continue
+
+                lookup_value = value[:255] if truncate else value
+                candidates = file_addresses.intersection(index.get(lookup_value))
+                if not candidates:
+                    continue
+
+                if len(candidates) > 1:
+                    report(
+                        ReccmpEvent.AMBIGUOUS_MATCH,
+                        ent.orig_addr,
+                        msg=f"Found multiple functions with {key} '{value}' in file '{file}'",
+                    )
+                else:
+                    recomp_addr = candidates.pop()
+                    batch.match(ent.orig_addr, recomp_addr)
+                    matched_addresses.add(recomp_addr)
+                break
+            else:
+                report(
+                    ReccmpEvent.NO_MATCH,
+                    ent.orig_addr,
+                    msg=f"Failed to match function at 0x{ent.orig_addr:x} in file '{file}'",
                 )
 
 
@@ -136,6 +195,10 @@ def match_functions(
         for ent in db.unmatched(ImageId.ORIG):
             name = ent.get("name")
             if ent.get("type") != EntityType.FUNCTION:
+                continue
+
+            # An explicit CSV file must never fall back to a name-only match.
+            if ent.get("file"):
                 continue
 
             if not name:
