@@ -148,7 +148,6 @@ LF_POINTER_RE = re.compile(
     r"\s+(?P<type>.+\S) \(\w+\), Size: \d+\n\s+Element type : (?P<element_type>[^\n,]+)(?:, Containing class = (?P<containing_class>[^,]+),)?[\n,]"
 )
 
-# LF_POINTER type, with the attributes in the order cvdump prints them
 LF_POINTER_TYPE_RE = re.compile(
     r"(?:volatile )?(?:const )?(?:__unaligned )?(?:__restrict )?"
     r"(?:Pointer|L-value Reference|Pointer to member|Pointer to member function|R-value Reference)"
