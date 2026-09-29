@@ -79,6 +79,11 @@ def get_function_sample_size(db: EntityDb, image_id: ImageId, addr: int) -> int:
         if size is not None:
             return size
 
+        max_size = ent.max_size(image_id)
+        if max_size:
+            return max_size
+
+        # Compute the max size on demand if we cannot use any precomputed value.
         max_size = db.get_max_size(image_id, addr)
         if max_size:
             return max_size
