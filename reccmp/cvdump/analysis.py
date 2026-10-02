@@ -9,7 +9,6 @@ from .parser import CvdumpParser, LineValue, NodeKey
 from .symbols import SymbolsEntry
 from .types import (
     CvdumpKeyError,
-    CvdumpIntegrityError,
     CvdumpTypesParser,
     TypeInfo,
 )
@@ -212,7 +211,7 @@ class CvdumpAnalysis:
                     node_dict[key].confirmed_size = g_info.size
                     node_dict[key].data_type = g_info
 
-            except (CvdumpKeyError, CvdumpIntegrityError):
+            except CvdumpKeyError:
                 # We can still create the variable entity without type information.
                 pass
 
@@ -246,7 +245,7 @@ class CvdumpAnalysis:
                         v_info = parser.types.get(v.type)
                         node_dict[key].confirmed_size = v_info.size
                         node_dict[key].data_type = v_info
-                    except (CvdumpKeyError, CvdumpIntegrityError):
+                    except CvdumpKeyError:
                         # No big deal if we don't have complete type information.
                         pass
 

@@ -5,7 +5,7 @@ import re
 import logging
 from typing import NamedTuple
 from typing_extensions import NotRequired, TypedDict
-from .cvinfo import CvdumpTypeKey, CVInfoTypeEnum
+from .cvinfo import CvdumpTypeKey
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +69,7 @@ class CvdumpParsedType(TypedDict):
     modification: NotRequired[str]
 
     # LF_FIELDLIST
+    has_vftable: NotRequired[bool]
     super: NotRequired[dict[CvdumpTypeKey, int]]
     vbase: NotRequired[VirtualBasePointer]
     members: NotRequired[list[FieldListItem]]
@@ -210,12 +211,8 @@ def read_fieldlist(leaf: str, leaf_type: str) -> CvdumpParsedType:
     obj: CvdumpParsedType = {"type": leaf_type}
     members: list[FieldListItem] = []
 
-    # If this class has a vtable, create a mock member at offset 0
     if VTABLE_RE.search(leaf) is not None:
-        # For our purposes, any pointer type will do
-        members.append(
-            FieldListItem(offset=0, type=CVInfoTypeEnum.T_32PVOID, name="vftable")
-        )
+        obj["has_vftable"] = True
 
     # Superclass is set here in the fieldlist rather than in LF_CLASS
     for match in SUPERCLASS_RE.finditer(leaf):
