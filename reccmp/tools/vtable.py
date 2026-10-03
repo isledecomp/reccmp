@@ -15,7 +15,7 @@ from reccmp.project.detect import (
     argparse_parse_project_target,
     RecCmpProjectException,
 )
-from reccmp.compare.diff import CombinedDiffOutput, raw_diff_to_udiff
+from reccmp.compare.diff import raw_diff_to_udiff
 from reccmp.compare.report import format_address
 
 logger = logging.getLogger(__name__)
@@ -32,9 +32,7 @@ def parse_args() -> argparse.Namespace:
         "--version", action="version", version=f"%(prog)s {reccmp.VERSION}"
     )
     argparse_add_project_target_args(parser)
-    parser.add_argument(
-        "--verbose", "-v", action="store_true", help="Show more detailed information"
-    )
+    parser.add_argument("--verbose", "-v", help="DEPRECATED: No longer does anything.")
     parser.add_argument(
         "--no-color", "-n", action="store_true", help="Do not color the output"
     )
@@ -45,10 +43,6 @@ def parse_args() -> argparse.Namespace:
     argparse_parse_logging(args)
 
     return args
-
-
-def show_vtable_diff(udiff: CombinedDiffOutput, _: bool = False, plain: bool = False):
-    print_combined_diff(udiff, plain)
 
 
 def print_summary(vtable_count: int, problem_count: int):
@@ -87,7 +81,7 @@ def main():
                 tbl_match.name,
                 f": orig {format_address(tbl_match.orig_addr)}, recomp {format_address(tbl_match.recomp_addr)}",
             )
-            show_vtable_diff(udiff, args.verbose)
+            print_combined_diff(udiff)
             print()
 
     print_summary(vtable_count, problem_count)
