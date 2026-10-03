@@ -15,6 +15,7 @@ from .util import (
     ParserCodeString,
 )
 from .marker import (
+    COULD_BE_MARKER,
     DecompMarker,
     MarkerCategory,
     MarkerType,
@@ -579,6 +580,19 @@ class DecompParser:
                 self._vtable_done(class_name=vtable_class)
 
     def read(self, raw_text: str):
+        # Reading a file means tokenizing all of it, resolving its scopes and
+        # then walking every line, which is wasted on a file that cannot
+        # contain a marker at all. In a decomp project most files are in that
+        # position, so look for the shape of a marker first and stop if there
+        # is none: every symbol and every alert we could produce comes from a
+        # line that matches markerRegex, and COULD_BE_MARKER matches a superset
+        # of what that pattern can.
+        if COULD_BE_MARKER.search(raw_text) is None:
+            # The caller resets this between files, but do not leave a previous
+            # file's scopes in place for a caller that does not.
+            self.namespaces = []
+            return
+
         # The tokenizer expects that newlines are a single char: `\n`.
         # Make sure that's what we have.
         text = io.StringIO(raw_text, newline=None).read()

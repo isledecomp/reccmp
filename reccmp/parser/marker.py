@@ -39,6 +39,15 @@ markerRegex = re.compile(
 )
 
 
+# A necessary condition for markerRegex to match, cheap enough to run over a
+# whole file at once: it asks for the same `//`, word, `:`, word and `0x` in
+# the same order, but settles for a single hex digit and is not anchored to the
+# start of a line. Anything markerRegex can match, this matches too, so a file
+# where this does not appear cannot hold a marker and does not need parsing.
+# Keep the two in step.
+COULD_BE_MARKER = re.compile(r"//\s*\w+:\s*\w+\s+0x[0-9a-f]", flags=re.I)
+
+
 markerExactRegex = re.compile(
     r"\s*// (?P<type>[A-Z]+): (?P<module>[A-Z0-9]+) (?P<offset>0x[a-f0-9]+)(?: (?P<extra>\S.+\S))?\n?$"
 )
