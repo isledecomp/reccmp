@@ -176,6 +176,18 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Exclude LIBRARY annotations from the analysis",
     )
+    parser.add_argument(
+        "--cache",
+        action="store_true",
+        help="Reuse the saved output of cvdump.exe for an unchanged PDB, and "
+        "save it if there is nothing to reuse",
+    )
+    parser.add_argument(
+        "--invalidate-cache",
+        action="store_true",
+        help="Run cvdump.exe even if a saved dump exists, and replace it "
+        "(implies --cache)",
+    )
     argparse_add_logging_args(parser)
 
     args = parser.parse_args()
@@ -234,7 +246,9 @@ def main() -> int:
 
     logging.basicConfig(level=args.loglevel, format="[%(levelname)s] %(message)s")
 
-    compare = Compare.from_target(target)
+    compare = Compare.from_target(
+        target, cache=args.cache, invalidate_cache=args.invalidate_cache
+    )
 
     print()
 

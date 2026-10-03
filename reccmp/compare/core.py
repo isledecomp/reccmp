@@ -216,13 +216,23 @@ class Compare:
         match_strings(self._db, self.report)
 
     @classmethod
-    def from_target(cls, target: RecCmpTarget) -> Self:
+    def from_target(
+        cls,
+        target: RecCmpTarget,
+        *,
+        cache: bool = False,
+        invalidate_cache: bool = False,
+    ) -> Self:
         origfile = detect_image(filepath=target.original_path)
         recompfile = detect_image(filepath=target.recompiled_path)
 
         logger.info("Parsing %s ...", target.recompiled_pdb)
         cvdump = (
-            Cvdump(str(target.recompiled_pdb))
+            Cvdump(
+                str(target.recompiled_pdb),
+                cache=cache or invalidate_cache,
+                invalidate_cache=invalidate_cache,
+            )
             .lines()
             .globals()
             .publics()
