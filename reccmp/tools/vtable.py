@@ -32,7 +32,6 @@ def parse_args() -> argparse.Namespace:
         "--version", action="version", version=f"%(prog)s {reccmp.VERSION}"
     )
     argparse_add_project_target_args(parser)
-    parser.add_argument("--verbose", "-v", help="DEPRECATED: No longer does anything.")
     parser.add_argument(
         "--no-color", "-n", action="store_true", help="Do not color the output"
     )
