@@ -19,6 +19,8 @@ ptr_replace_regex = re.compile(r"(?<=\[)(0x[0-9a-f]+)(?=\])")
 
 displace_replace_regex = re.compile(r"(?<= )(0x[0-9a-f]+)(?=\])")
 
+lcall_replace_regex = re.compile(r"((?:0x)?[0-9a-f]{1,4}, (?:0x)?[0-9a-f]{1,4})")
+
 # For matching an immediate value operand
 immediate_replace_regex = re.compile(r"(?<=, )(0x[0-9a-f]+)")
 
@@ -100,6 +102,11 @@ class ParseAsm:
         self.indirect_replacements[addr] = placeholder
         return placeholder
 
+    def lcall_replace(self, match: re.Match) -> str:
+        seg_str, _, ofs_str = match.group(1).partition(", ")
+        value = (int(seg_str, 16) << 16) + int(ofs_str, 16)
+        return self.replace(value, exact=True)
+
     def hex_replace_always(self, match: re.Match) -> str:
         """If a pointer value was matched, always insert a placeholder"""
         value = int(match.group(1), 16)
@@ -135,6 +142,7 @@ class ParseAsm:
         return self.indirect_replace(value)
 
     def sanitize(self, inst: DisasmLiteTuple) -> tuple[str, str]:
+        # pylint: disable=too-many-return-statements
         # For jumps or calls, if the entire op_str is a hex number, the value
         # is a relative offset.
         # Otherwise (i.e. it looks like `dword ptr [address]`) it is an
@@ -143,6 +151,12 @@ class ParseAsm:
         # automatically resolved relative offsets to an absolute address.
         # We will have to undo this for some of the jumps or they will not match.
         inst_address, inst_size, inst_mnemonic, inst_op_str = inst
+
+        if inst_mnemonic == "lcall" and "," in inst_op_str:
+            return (
+                inst_mnemonic,
+                lcall_replace_regex.sub(self.lcall_replace, inst_op_str),
+            )
 
         if (
             inst_mnemonic in SINGLE_OPERAND_INSTS
