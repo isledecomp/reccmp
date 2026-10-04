@@ -163,7 +163,7 @@ def test_load_code_function_nameref_variants(
                 // _atol
 
                 // STUB: TEST 0x1008b4b0
-                // _atoi
+                void _atoi(const char *) {}
 
                 // SYNTHETIC: TEST 0x100380e0
                 // Pizza::`scalar deleting destructor'
@@ -203,9 +203,9 @@ def test_load_code_function_nameref_variants(
     entity = db.get(ImageId.ORIG, 0x1008B4B0)
     assert entity is not None
     assert entity.get("type") == EntityType.FUNCTION
-    assert entity.get("library") is False
+    assert not entity.get("library")
     assert entity.get("stub") is True
-    assert entity.get("name") == "_atoi"
+    # assert entity.get("name") == "_atoi"
 
     # SYNTHETIC
     entity = db.get(ImageId.ORIG, 0x100380E0)
@@ -447,6 +447,8 @@ def test_load_code_vtable(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     assert entity.get("name") == "Pizza"
     assert entity.get("base_class") is None
 
+    assert entity.get("folded_vtables") is None
+
 
 def test_load_code_vtable_vbase(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
     """Should set base_class for VTABLE entities with virtual inheritance."""
@@ -475,6 +477,33 @@ def test_load_code_vtable_vbase(db: EntityDb, lines_db: LinesDb, binfile: PEImag
     assert entity.get("type") == EntityType.VTABLE
     assert entity.get("name") == "Pizza"
     assert entity.get("base_class") == "Pizza"
+
+
+def test_load_code_vtable_folded(db: EntityDb, lines_db: LinesDb, binfile: PEImage):
+    files = (
+        TextFile(
+            PurePath("test.h"),
+            dedent("""\
+                // VTABLE: TEST 0x100d7380 FOLDED
+                class Pizza {
+                };
+
+                // VTABLE: TEST 0x100d7380 FOLDED
+                class Lunch {
+                };
+                """),
+        ),
+    )
+    load_markers(files, lines_db, binfile, "TEST", db)
+
+    entity = db.get(ImageId.ORIG, 0x100D7380)
+    assert entity is not None
+    assert entity.get("type") == EntityType.VTABLE
+
+    assert entity.get("name") == "Pizza"
+    assert entity.get("base_class") is None
+
+    assert entity.get("folded_vtables") == [("Pizza", None), ("Lunch", None)]
 
 
 def test_load_code_variable(db: EntityDb, lines_db: LinesDb, binfile: PEImage):

@@ -14,7 +14,6 @@ from reccmp.compare.report import (
     serialize_reccmp_report,
     report_function_alignment,
     report_function_accuracy,
-    report_progress_stats,
 )
 from reccmp.types import EntityType, ImageId
 from reccmp.cvdump import CvdumpAnalysis
@@ -488,8 +487,6 @@ def test_report_function_alignment():
 
 
 def test_report_function_accuracy():
-    """report_function_accuracy and report_progress_stats are similar, so test both here to save space."""
-
     def test_entity(
         addr: int,
         entity_type: EntityType | None,
@@ -516,7 +513,6 @@ def test_report_function_accuracy():
     # Baseline
     report.entities = {}
     assert report_function_accuracy(report) == (0, 0, 0)
-    assert report_progress_stats(report) == (0, 0)
 
     # All matching
     report.entities = dict(
@@ -526,7 +522,6 @@ def test_report_function_accuracy():
         ]
     )
     assert report_function_accuracy(report) == (2, 2.0, 2.0)
-    assert report_progress_stats(report) == (2, 2.0)
 
     # Some diffs
     report.entities = dict(
@@ -536,7 +531,6 @@ def test_report_function_accuracy():
         ]
     )
     assert report_function_accuracy(report) == (2, 1.5, 1.5)
-    assert report_progress_stats(report) == (2, 1.5)
 
     # Effective match
     report.entities = dict(
@@ -546,7 +540,6 @@ def test_report_function_accuracy():
         ]
     )
     assert report_function_accuracy(report) == (2, 1.5, 2.0)
-    assert report_progress_stats(report) == (2, 2.0)
 
     # Stubs ignored
     report.entities = dict(
@@ -556,7 +549,6 @@ def test_report_function_accuracy():
         ]
     )
     assert report_function_accuracy(report) == (1, 0.8, 0.8)
-    assert report_progress_stats(report) == (1, 0.8)
 
     # Vtables ignored
     report.entities = dict(
@@ -565,9 +557,8 @@ def test_report_function_accuracy():
         ]
     )
     assert report_function_accuracy(report) == (0, 0, 0)
-    assert report_progress_stats(report) == (0, 0)
 
-    # Progress stats assumes type=None is a function.
+    # Assumes type=None is a function.
     # This is to preserve compatibility with files that existed before #392.
     report.entities = dict(
         [
@@ -575,5 +566,115 @@ def test_report_function_accuracy():
             test_entity(1, None, 0.5),
         ]
     )
-    assert report_function_accuracy(report) == (1, 1.0, 1.0)
-    assert report_progress_stats(report) == (2, 1.5)
+    assert report_function_accuracy(report) == (2, 1.5, 1.5)
+
+
+def test_compare_vtable_recomp_longer():
+    """An extra virtual function on the recomp side should appear in the
+    diff when the orig vtable size is known."""
+    base_addr = 0x400000
+    function_bytes = b"\xc3\x00\x00\x00"  # `ret` padded to 4 bytes
+    functions = function_bytes + function_bytes
+
+    func0_ptr = base_addr.to_bytes(4, "little")
+    func1_ptr = (base_addr + 4).to_bytes(4, "little")
+
+    # Orig has one virtual function; recomp has a second one.
+    orig_mem = functions + func0_ptr
+    recomp_mem = functions + func0_ptr + func1_ptr
+
+    orig_bin = RawImage.from_memory(orig_mem, base_addr=base_addr)
+    recomp_bin = RawImage.from_memory(recomp_mem, base_addr=base_addr)
+
+    pdb = Mock(spec=CvdumpAnalysis)
+    compare = Compare(orig_bin, recomp_bin, pdb, "HELLO")
+
+    with get_db(compare).batch() as batch:
+        batch.set(
+            ImageId.RECOMP, base_addr, type=EntityType.FUNCTION, name="func0", size=1
+        )
+        batch.set(
+            ImageId.RECOMP,
+            base_addr + 4,
+            type=EntityType.FUNCTION,
+            name="func1",
+            size=1,
+        )
+        batch.set(
+            ImageId.ORIG, base_addr + 8, type=EntityType.VTABLE, name="hello", size=4
+        )
+        batch.set(
+            ImageId.RECOMP, base_addr + 8, type=EntityType.VTABLE, name="hello", size=8
+        )
+        batch.match(base_addr, base_addr)
+        batch.match(base_addr + 4, base_addr + 4)
+        batch.match(base_addr + 8, base_addr + 8)
+
+    report = to_report(compare)
+    e = report.entities[base_addr + 8]
+    assert e is not None
+
+    # The extra entry shows up in the diff and makes the match fail.
+    assert e.accuracy != 1.0
+
+    udiff = get_udiff(e)
+    assert udiff is not None
+    rendered = repr(udiff)
+    assert "vtable0x04" in rendered
+    assert "func1" in rendered
+
+
+def test_compare_vtable_recomp_trailing_padding():
+    """Alignment padding after the recomp vtable should not show up in the
+    diff as an extra virtual function."""
+    base_addr = 0x400000
+    function_bytes = b"\xc3\x00\x00\x00"  # `ret` padded to 4 bytes
+    padding = b"\x00\x00\x00\x00"
+
+    func0_ptr = base_addr.to_bytes(4, "little")
+
+    # Both tables hold one virtual function followed by an alignment slot.
+    orig_mem = function_bytes + func0_ptr + padding
+    recomp_mem = function_bytes + func0_ptr + padding
+
+    orig_bin = RawImage.from_memory(orig_mem, base_addr=base_addr)
+    recomp_bin = RawImage.from_memory(recomp_mem, base_addr=base_addr)
+
+    pdb = Mock(spec=CvdumpAnalysis)
+    compare = Compare(orig_bin, recomp_bin, pdb, "HELLO")
+
+    with get_db(compare).batch() as batch:
+        batch.set(
+            ImageId.RECOMP, base_addr, type=EntityType.FUNCTION, name="func0", size=1
+        )
+        batch.set(
+            ImageId.ORIG, base_addr + 4, type=EntityType.VTABLE, name="hello", size=4
+        )
+        # The recomp size includes the alignment padding after the table.
+        batch.set(
+            ImageId.RECOMP, base_addr + 4, type=EntityType.VTABLE, name="hello", size=8
+        )
+        batch.match(base_addr, base_addr)
+        batch.match(base_addr + 4, base_addr + 4)
+
+    report = to_report(compare)
+    e = report.entities[base_addr + 4]
+    assert e is not None
+
+    # The padding is ignored, so the two tables match.
+    assert e.accuracy == 1.0
+
+    udiff = get_udiff(e)
+    assert udiff is not None
+    assert udiff == [
+        (
+            "@@ -vtable0x00,1 +vtable0x00,1 @@",
+            [
+                {
+                    "both": [
+                        ("vtable0x00", "(0x400000 / 0x400000)  :  func0", "vtable0x00")
+                    ]
+                }
+            ],
+        )
+    ]

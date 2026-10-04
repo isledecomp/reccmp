@@ -1,16 +1,10 @@
 import enum
-import re
 import struct
-from dataclasses import dataclass
-from typing import Callable, Iterator
-from typing_extensions import Buffer
-from reccmp.compare.asm.const import JUMP_MNEMONICS
-from reccmp.compare.asm.instgen import (
-    InstructGen,
-    SectionType,
-)
-from reccmp.formats import Image, PEImage
-from reccmp.types import EntityType, ImageId
+from dataclasses import dataclass, field
+from typing import Iterator
+from reccmp.analysis.xref import FunctionXrefMap, Xref, get_function_xrefs
+from reccmp.formats import Image
+from reccmp.types import ImageId
 from reccmp.compare.db import EntityDb
 
 
@@ -45,115 +39,24 @@ def get_crt_function_name(type_: CrtStartupArrayType) -> str:
     return _CRT_FUNCTION_NAMES[type_]
 
 
-UsedAddress = tuple[int, bool]
-
-
 @dataclass
 class CrtStartupArray:
     """Result from analyzing functions in a CRT startup array.
-    The functions within are called before main() is executed.
+    The functions within are called either before startup or during shutdown.
     For example: addresses of C++ initializer functions are between
     the labels ___xc_a and ___xc_z."""
 
-    functions: dict[int, tuple[UsedAddress, ...]]
-    """Maps function address -> (sorted) list of matched entities used in
-    the function, normalized to orig address space. These fingerprints are
-    used to match initializer functions in orig and recomp."""
+    entries: list[int] = field(default_factory=list)
+    """The addresses in the array."""
 
-    thunks: dict[int, int]
-    """Maps thunked initializer function to the thunk address.
-    The thunk is what actually appeared in the ___xc_a/z list."""
+    function_set: dict[int, tuple[int, ...]] = field(default_factory=dict)
+    """Maps the array entry address to the addresses of related functions."""
 
-
-ADDR_REGEX = re.compile(r"0x[0-9a-f]{6,8}")
+    xrefs: FunctionXrefMap = field(default_factory=dict)
+    """Maps the array entry to a list of xrefs: addresses used in the function set."""
 
 
-class UsedAddressCollector:
-    seen_addrs: list[UsedAddress]
-    """List of addrs that would be replaced by a name or placeholder."""
-
-    is_entity: Callable[[int], bool]
-    """Test whether the address is a known entity in the database."""
-
-    def __init__(self, is_entity: Callable[[int], bool]) -> None:
-        self.is_entity = is_entity
-        self.seen_addrs = []
-
-    def _append_addrs(self, text: str, is_write: bool):
-        for hex_str in ADDR_REGEX.findall(text):
-            addr = int(hex_str, 16)
-            if self.is_entity(addr):
-                self.seen_addrs.append((addr, is_write))
-
-    def analyze(self, data: Buffer, start_addr: int):
-        ig = InstructGen(bytes(data), start_addr, True)
-
-        for section in ig.sections:
-            if section.type == SectionType.CODE:
-                for inst in section.contents:
-                    inst_mnemonic, inst_op_str = inst[2:]
-                    if inst_mnemonic == "ret":
-                        break
-
-                    if inst_mnemonic in JUMP_MNEMONICS:
-                        continue
-
-                    if inst_mnemonic in ("mov", "fstp"):
-                        dst_operand, _, src_operand = inst_op_str.partition(", ")
-                        self._append_addrs(dst_operand, True)
-                        self._append_addrs(src_operand, False)
-                    else:
-                        self._append_addrs(inst_op_str, False)
-
-
-def get_function_sample_size(db: EntityDb, image_id: ImageId, addr: int) -> int:
-    """How many bytes should we read to sample the addresses used in the function?
-    Use exact size if we have it, or any size estimate available."""
-    ent = db.get(image_id, addr)
-    if ent is not None:
-        size = ent.size(image_id)
-        if size is not None:
-            return size
-
-        max_size = db.get_max_size(image_id, addr)
-        if max_size:
-            return max_size
-
-    # Arbitrary value with the intent of overshooting the function's actual size
-    # and then correcting during disassembly.
-    return 1000
-
-
-def get_function_fingerprint(
-    db: EntityDb, image_id: ImageId, binfile: PEImage, addr: int
-) -> tuple[UsedAddress, ...]:
-    """Create lists of addresses written to and read from by this function.
-    Filter the addresses that point to a matched variable entity.
-    These two lists of identifying characteristics about the function
-    are the "fingerprint" we can use for matching."""
-    size = get_function_sample_size(db, image_id, addr)
-    raw = binfile.read(addr, size)
-
-    def entity_exists(test_addr: int) -> bool:
-        return db.get(image_id, test_addr, exact=True) is not None
-
-    collector = UsedAddressCollector(entity_exists)
-    collector.analyze(raw, addr)
-
-    normalized_addrs = []
-    for sample_addr, is_write in collector.seen_addrs:
-        ent = db.get(image_id, sample_addr)
-        # Only matched entities are candidates for the fingerprint
-        # because we have an address in both address spaces.
-        if ent and ent.matched and ent.get("type") == EntityType.DATA:
-            normalized_addr = ent.addr(ImageId.ORIG)
-            assert isinstance(normalized_addr, int)
-            normalized_addrs.append((normalized_addr, is_write))
-
-    return tuple(normalized_addrs)
-
-
-def read_crt_array(binfile: PEImage, span: range) -> Iterator[int]:
+def read_crt_array(binfile: Image, span: range) -> Iterator[int]:
     """Read 4-byte (dword) pointers from the specified range.
     Excludes the first element, a zero."""
     try:
@@ -181,122 +84,133 @@ def find_crt_startup_labels(db: EntityDb, image_id: ImageId) -> dict[str, int]:
     return found
 
 
-INITIALIZER_THUNK_MAX_JUMP_OFFSET = 16
-"""Some MSVC dynamic initializers are thunked. By observation, the thunked function is
-usually at the next 16-byte-aligned address. Tweak this value if necessary."""
+JMP_THUNKS = {b"\xe9\x00\x00\x00\x00", b"\xe9\x0b\x00\x00\x00"}
+"""Observed thunk patterns for C++ init: jump to a single function, located
+either directly after the thunk or at the next 16-byte boundary."""
+
+CALL_JMP_THUNKS = {b"\xe8\x05\x00\x00\x00\xe9", b"\xe8\x0b\x00\x00\x00\xe9"}
+"""Observed thunk patterns for C++ init: call the first function, then jump to
+the second. The position of the second function depends on the size of the first,
+so its displacement is not part of the pattern."""
 
 
-def unwrap_jump(binfile: Image, addr: int) -> tuple[bool, int]:
-    """If there is a 5-byte JMP or CALL instruction at the given address,
-    follow it by calculating the destination address.
-    Returns either (True, jmp_destination) or (False, starting_addr)."""
-    jmp = binfile.read(addr, 5)
-    # Check for CALL (0xE8) or JMP (0xE9) opcodes.
-    if jmp[0] in (0xE8, 0xE9):
-        (offset,) = struct.unpack("<i", jmp[1:])
-        # Add 5 because the offset is based on the address of
-        # the *next* instruction after the JMP.
-        destination = addr + 5 + offset
-        # Follow the jump only if it is small.
-        if abs(destination - addr) <= INITIALIZER_THUNK_MAX_JUMP_OFFSET:
-            return (True, destination)
+def read_function_set(binfile: Image, addr: int) -> tuple[int, ...]:
+    """For the given address of a function in a CRT startup array, return the list of
+    connected functions that follow specific patterns. For example, in the C++ initializer
+    array, we have observed two thunk patterns that point to:
+    1. JMP only:    Initializer function
+    2. CALL + JMP:  Initializer function, atexit destructor setter function"""
+    data = binfile.read(addr, 10)
+    first_disp, second_disp = struct.unpack("<xixi", data)
 
-    return (False, addr)
+    if data[:5] in JMP_THUNKS:
+        return (addr + 5 + first_disp,)
 
+    # In the CALL + JMP pattern, we cannot predict the JMP operand value because
+    # the displacement depends on the size of the function in the CALL instruction.
+    # However, the trend is that the three functions are in sequence, so allow
+    # a forward jump only.
+    if data[:6] in CALL_JMP_THUNKS and second_disp >= 0:
+        return (addr + 5 + first_disp, addr + 10 + second_disp)
 
-def analyze_crt_startup_functions(
-    db: EntityDb, image_id: ImageId, binfile: PEImage, span: range
-) -> CrtStartupArray:
-    """Read the functions for a single CRT startup array and find the identifying "fingerprint"
-    of which variables are referenced."""
-    funcs = tuple(read_crt_array(binfile, span))
-
-    fingerprints = {}
-    thunks = {}
-
-    for xc_addr in funcs:
-        # n.b. The first value in the array is zero. It was excluded by read_crt_array.
-        was_thunk, real_addr = unwrap_jump(binfile, xc_addr)
-        fp = get_function_fingerprint(db, image_id, binfile, real_addr)
-        fingerprints[real_addr] = fp
-        if was_thunk:
-            thunks[real_addr] = xc_addr
-
-    return CrtStartupArray(fingerprints, thunks)
+    return ()
 
 
-def detect_crt_startup_arrays(
-    db: EntityDb, image_id: ImageId, binfile: PEImage
-) -> Iterator[tuple[CrtStartupArrayType, CrtStartupArray | None]]:
-    """For the CRT startup arrays in the given binary, if the start and end labels are known,
-    analyze the functions in each array."""
+def read_crt_functions(binfile: Image, span: range) -> CrtStartupArray:
+    """Create the CRT array structure using the given range of addresses.
+    For each function in the array that matches a known thunk pattern,
+    "unwrap" the indirection and add the related functions to the list."""
+    array = CrtStartupArray()
+    # n.b. The first value in the array is zero. It was excluded by read_crt_array.
+    for addr in read_crt_array(binfile, span):
+        array.entries.append(addr)
+        function_set = read_function_set(binfile, addr)
+        if function_set:
+            array.function_set[addr] = function_set
+
+    return array
+
+
+def collect_crt_xrefs(
+    db: EntityDb, image_id: ImageId, binfile: Image, array: CrtStartupArray
+):
+    """Update the CRT array structure with the xrefs of each function."""
+    xrefs: dict[int, tuple[Xref, ...]] = {}
+    for entry in array.entries:
+        # If the entry in the array is a thunk for a function set, sample the functions
+        # from the set instead.
+        sampled_funcs = array.function_set.get(entry, (entry,))
+
+        # Xrefs are pooled together for all functions in the set.
+        entry_xrefs = tuple(
+            xref
+            for addr in sampled_funcs
+            for xref in get_function_xrefs(db, image_id, binfile, addr)
+        )
+
+        if entry_xrefs:
+            xrefs[entry] = entry_xrefs
+
+    array.xrefs = xrefs
+
+
+def iter_crt_array_ranges(
+    db: EntityDb, image_id: ImageId
+) -> Iterator[tuple[CrtStartupArrayType, range]]:
+    """For each CRT array whose start and end labels are known, return the array type and address range."""
     labels = find_crt_startup_labels(db, image_id)
     for array_type, (label_start, label_end) in _CRT_STARTUP_ARRAY_BOUNDARIES.items():
         if label_start in labels and label_end in labels:
             array_range = range(labels[label_start], labels[label_end])
-            yield (
-                array_type,
-                analyze_crt_startup_functions(db, image_id, binfile, array_range),
-            )
-        else:
-            yield (array_type, None)
+            yield (array_type, array_range)
 
 
-def create_crt_matches(
-    orig_array: CrtStartupArray, recomp_array: CrtStartupArray
+def detect_crt_startup_arrays(
+    db: EntityDb, image_id: ImageId, binfile: Image
+) -> dict[CrtStartupArrayType, CrtStartupArray]:
+    """Return a map of CRT startup array types to each list of functions."""
+    return {
+        array_type: read_crt_functions(binfile, array_range)
+        for array_type, array_range in iter_crt_array_ranges(db, image_id)
+    }
+
+
+def match_function_sets(
+    orig_array: CrtStartupArray,
+    recomp_array: CrtStartupArray,
+    pairs: list[tuple[int, int]],
 ) -> list[tuple[int, int]]:
-    """Match CRT startup functions from one array to other based on which addresses they use."""
+    """Return a list of matches between functions in the two CRT startup arrays.
+    The input list `pairs` contains the array entry addresses matched by xref.
+    Expand the list so that members of the function sets are matched."""
+    matches: list[tuple[int, int]] = []
+    for orig_entry, recomp_entry in pairs:
+        assert orig_entry in orig_array.entries
+        assert recomp_entry in recomp_array.entries
 
-    combined_map: dict[UsedAddress, set[tuple[ImageId, int]]] = {}
-    eliminated: set[tuple[ImageId, int]] = set()
-    matches = []
+        # Check whether the arrays have a function set for this entry.
+        orig_set = orig_array.function_set.get(orig_entry, ())
+        recomp_set = recomp_array.function_set.get(recomp_entry, ())
 
-    # Each array contains the list of startup functions with attached list of sampled addresses.
-    # Sampled addresses are already normalized to the original binary address space.
-    # Use this as our key to connect startup functions in both orig and recomp based on which
-    # addresses are used, and how (reads or writes).
-    for image_id, array in ((ImageId.ORIG, orig_array), (ImageId.RECOMP, recomp_array)):
-        for func_addr, addr_samples in array.functions.items():
-            for sample in addr_samples:
-                combined_map.setdefault(sample, set()).add((image_id, func_addr))
+        if orig_set and recomp_set:
+            # Both arrays used a thunk for this entry.
+            # If one side used the JMP pattern and the other used CALL + JMP,
+            # match the first function in the set only.
+            matches.extend(zip(orig_set, recomp_set))
+            matches.append((orig_entry, recomp_entry))
 
-    while True:
-        matched_this_pass = False
+        # If one of the arrays has a thunk pattern but the other does not, we assume
+        # (following the C++ init pattern) that the non-thunk function is the initializer.
+        # Therefore: match the thunked initializer (first function) to the non-thunk in
+        # the other array. The thunk on only one side is not matched.
+        elif orig_set:
+            matches.append((orig_set[0], recomp_entry))
 
-        # Remove startup functions matched on a previous pass.
-        for value in combined_map.values():
-            value -= eliminated
+        elif recomp_set:
+            matches.append((orig_entry, recomp_set[0]))
 
-        # Sampled address are separated by whether the function reads or writes to them.
-        # Read is not a superset for write, meaning: if the function only writes
-        # to the address, the function address will only be in the `is_write=True` bucket.
-        # With that separation, match any addresses where the bucket has
-        # exactly one sample from orig and exactly one sample from recomp.
-        for _, func_addrs in combined_map.items():
-            if len(func_addrs) == 2:
-                [(img_x, addr_x), (img_y, addr_y)] = func_addrs
-                if img_x != img_y:
-                    # These are sets, so order is not guaranteed.
-                    # Figure out which address is orig and which is recomp.
-                    orig_addr = addr_x if img_x == ImageId.ORIG else addr_y
-                    recomp_addr = addr_y if img_y == ImageId.RECOMP else addr_x
-                    matches.append((orig_addr, recomp_addr))
-                    eliminated.update(func_addrs)
-                    matched_this_pass = True
-                    # Break because we need to remove the addresses we just matched
-                    # to prevent a double match.
-                    break
+        else:
+            # Neither side used a thunk pattern, just match the entries directly.
+            matches.append((orig_entry, recomp_entry))
 
-        if not matched_this_pass:
-            break
-
-    # Add any pairs of thunks that point to an already matched function.
-    thunks = []
-    for orig_addr, recomp_addr in matches:
-        if orig_addr in orig_array.thunks and recomp_addr in recomp_array.thunks:
-            thunks.append(
-                (orig_array.thunks[orig_addr], recomp_array.thunks[recomp_addr])
-            )
-
-    matches.extend(thunks)
     return matches

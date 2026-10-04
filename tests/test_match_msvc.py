@@ -410,6 +410,57 @@ def test_match_vtables_incompatible_base_class(db):
     assert db.get(ImageId.ORIG, 100).recomp_addr is None
 
 
+def test_match_vtables_folded(db):
+    """Match a folded vtable by trying each candidate name"""
+    with db.batch() as batch:
+        batch.set(
+            ImageId.ORIG,
+            100,
+            name="Pizza",
+            type=EntityType.VTABLE,
+            folded_vtables=[("Pizza", None), ("Lunch", None)],
+        )
+        batch.set(ImageId.RECOMP, 200, name="Lunch::`vftable'", type=EntityType.VTABLE)
+
+    match_vtables(db)
+
+    assert db.get(ImageId.ORIG, 100).recomp_addr == 200
+
+
+def test_match_vtables_folded_first_candidate(db):
+    """The first folded candidate can match too, not just the last"""
+    with db.batch() as batch:
+        batch.set(
+            ImageId.ORIG,
+            100,
+            name="Pizza",
+            type=EntityType.VTABLE,
+            folded_vtables=[("Pizza", None), ("Lunch", None)],
+        )
+        batch.set(ImageId.RECOMP, 200, name="Pizza::`vftable'", type=EntityType.VTABLE)
+
+    match_vtables(db)
+
+    assert db.get(ImageId.ORIG, 100).recomp_addr == 200
+
+
+def test_match_vtables_folded_no_match(db, report):
+    """Report a single failure if none of the folded candidates match."""
+    with db.batch() as batch:
+        batch.set(
+            ImageId.ORIG,
+            100,
+            name="Pizza",
+            type=EntityType.VTABLE,
+            folded_vtables=[("Pizza", None), ("Lunch", None)],
+        )
+
+    match_vtables(db, report)
+
+    report.assert_called_once_with(ReccmpEvent.NO_MATCH, 100, msg=ANY)
+    assert db.get(ImageId.ORIG, 100).recomp_addr is None
+
+
 #### match_static_variables ####
 
 

@@ -143,7 +143,7 @@ def write_html_report(
         htmlfile.write(output_data)
 
 
-def print_combined_diff(udiff, plain: bool = False, show_both: bool = False):
+def print_combined_diff(udiff, *, show_both: bool = False):
     if udiff is None:
         return
 
@@ -152,15 +152,10 @@ def print_combined_diff(udiff, plain: bool = False, show_both: bool = False):
     padding_size = 0
 
     for slug, subgroups in udiff:
-        if plain:
-            print("---")
-            print("+++")
-            print(slug)
-        else:
-            print(f"{reccmp.color.Fore.RED}---")
-            print(f"{reccmp.color.Fore.GREEN}+++")
-            print(f"{reccmp.color.Fore.BLUE}{slug}")
-            print(reccmp.color.Style.RESET_ALL, end="")
+        print(f"{reccmp.color.Fore.RED}---")
+        print(f"{reccmp.color.Fore.GREEN}+++")
+        print(f"{reccmp.color.Fore.BLUE}{slug}")
+        print(reccmp.color.Style.RESET_ALL, end="")
 
         for subgroup in subgroups:
             equal = subgroup.get("both") is not None
@@ -179,12 +174,9 @@ def print_combined_diff(udiff, plain: bool = False, show_both: bool = False):
                         f"{orig_addr} / {'':{padding_size}}" if show_both else orig_addr
                     )
 
-                    if plain:
-                        print(f"{addr_prefix} : -{line}")
-                    else:
-                        print(
-                            f"{addr_prefix} : {reccmp.color.Fore.RED}-{line}{reccmp.color.Style.RESET_ALL}"
-                        )
+                    print(
+                        f"{addr_prefix} : {reccmp.color.Fore.RED}-{line}{reccmp.color.Style.RESET_ALL}"
+                    )
 
                 for recomp_addr, line in subgroup["recomp"]:
                     padding_size = max(padding_size, len(recomp_addr))
@@ -194,12 +186,9 @@ def print_combined_diff(udiff, plain: bool = False, show_both: bool = False):
                         else " " * padding_size
                     )
 
-                    if plain:
-                        print(f"{addr_prefix} : +{line}")
-                    else:
-                        print(
-                            f"{addr_prefix} : {reccmp.color.Fore.GREEN}+{line}{reccmp.color.Style.RESET_ALL}"
-                        )
+                    print(
+                        f"{addr_prefix} : {reccmp.color.Fore.GREEN}+{line}{reccmp.color.Style.RESET_ALL}"
+                    )
 
         # Newline between each diff subgroup.
         print()
@@ -422,17 +411,22 @@ def diff_json(
 
         print()
 
-    # Convert to dict, using orig_addr as key
-    saved_invert = saved_data.entities
-    new_invert = new_data.entities
-
-    all_addrs = set(saved_invert.keys()).union(new_invert.keys())
+    # The report can now hold unmatched entities.
+    # Keep the old behavior for now: only matched entities are displayed in the diff.
+    # In the future, we could add a "discovered" bucket for newly identified entities.
+    all_addrs: set[int] = set()
+    all_addrs.update(
+        addr for addr, ent in saved_data.entities.items() if ent.is_matched()
+    )
+    all_addrs.update(
+        addr for addr, ent in new_data.entities.items() if ent.is_matched()
+    )
 
     # Put all the information in one place so we can decide how each item changed.
     combined = {
         addr: (
-            saved_invert.get(addr),
-            new_invert.get(addr),
+            saved_data.entities.get(addr),
+            new_data.entities.get(addr),
         )
         for addr in sorted(all_addrs)
     }

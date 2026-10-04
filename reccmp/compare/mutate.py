@@ -5,9 +5,10 @@ These functions create or update entities using the current information in the d
 import logging
 from reccmp.analysis.crt_startup import (
     detect_crt_startup_arrays,
-    create_crt_matches,
-    get_crt_function_name,
+    collect_crt_xrefs,
+    match_function_sets,
 )
+from reccmp.analysis.xref import create_xref_matches
 from reccmp.cvdump.demangler import (
     get_function_arg_string,
 )
@@ -91,46 +92,26 @@ def unique_names_for_overloaded_functions(db: EntityDb):
 
 
 def match_crt_startup(db: EntityDb, orig_bin: PEImage, recomp_bin: PEImage):
-    crt_orig = tuple(detect_crt_startup_arrays(db, ImageId.ORIG, orig_bin))
-    crt_recomp = tuple(detect_crt_startup_arrays(db, ImageId.RECOMP, recomp_bin))
+    """Match CRT function entities established in create_crt_functions().
+    For best performance, call after set_max_size() has provided a limit for
+    CRT function size. Otherwise, the xref collector will read more
+    bytes than necessary for each function."""
+    crt_orig = detect_crt_startup_arrays(db, ImageId.ORIG, orig_bin)
+    crt_recomp = detect_crt_startup_arrays(db, ImageId.RECOMP, recomp_bin)
 
     matches = []
 
-    for (orig_type, orig_array), (recomp_type, recomp_array) in zip(
-        crt_orig, crt_recomp
-    ):
-        # Safety
-        assert orig_type == recomp_type
-        if orig_array and recomp_array:
-            matches.extend(create_crt_matches(orig_array, recomp_array))
+    for array_type, orig_array in crt_orig.items():
+        recomp_array = crt_recomp.get(array_type)
+        if recomp_array is None:
+            continue
+
+        if orig_array.entries and recomp_array.entries:
+            collect_crt_xrefs(db, ImageId.ORIG, orig_bin, orig_array)
+            collect_crt_xrefs(db, ImageId.RECOMP, recomp_bin, recomp_array)
+            pairs = create_xref_matches(orig_array.xrefs, recomp_array.xrefs)
+            matches.extend(match_function_sets(orig_array, recomp_array, pairs))
 
     with db.batch() as batch:
-        for image_id, crt_arrays in (
-            (ImageId.ORIG, crt_orig),
-            (ImageId.RECOMP, crt_recomp),
-        ):
-            for array_type, array in crt_arrays:
-                if array is None:
-                    continue
-
-                name = get_crt_function_name(array_type)
-
-                for addr in array.functions.keys():
-                    batch.set(
-                        image_id,
-                        addr,
-                        type=EntityType.FUNCTION,
-                        name=name,
-                    )
-
-                    if addr in array.thunks:
-                        thunk_addr = array.thunks[addr]
-                        batch.set(
-                            image_id,
-                            thunk_addr,
-                            type=EntityType.FUNCTION,
-                            name=name,
-                        )
-
         for orig_addr, recomp_addr in matches:
             batch.match(orig_addr, recomp_addr)

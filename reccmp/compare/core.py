@@ -1,6 +1,7 @@
 import logging
 import difflib
 import struct
+from itertools import zip_longest
 from typing import Callable, Iterator
 from typing_extensions import Self
 from reccmp.project.detect import RecCmpTarget
@@ -42,6 +43,7 @@ from .analyze import (
     create_analysis_floats,
     create_analysis_strings,
     create_analysis_vtordisps,
+    create_crt_functions,
     create_seh_entities,
     complete_partial_floats,
     complete_partial_strings,
@@ -209,14 +211,13 @@ class Compare:
         load_data_sources(self._db, self.data_sources)
 
         # Match using PDB and annotation data
-        match_symbols(self._db, self.report, truncate=True)
-        match_functions(self._db, self.report, truncate=True)
+        truncate = self.cvdump_analysis.truncate_symbols
+        match_symbols(self._db, self.report, truncate=truncate)
+        match_functions(self._db, self.report, truncate=truncate)
         match_vtables(self._db, self.report)
         match_static_variables(self._db, self.report)
         match_variables(self._db, self.report)
         match_lines(self._db, self._lines_db, self.report)
-
-        match_crt_startup(self._db, self.orig_bin, self.recomp_bin)
 
         # Detect floats first to eliminate potential overlap with string data
         for img_id, binfile in (
@@ -228,6 +229,7 @@ class Compare:
             create_seh_entities(self._db, img_id, binfile)
             create_thunks(self._db, img_id, binfile)
             create_analysis_vtordisps(self._db, img_id, binfile)
+            create_crt_functions(self._db, img_id, binfile)
             import_sections(self._db, img_id, binfile)
 
         match_imports(self._db)
@@ -236,7 +238,8 @@ class Compare:
         for img_id in (ImageId.ORIG, ImageId.RECOMP):
             set_max_size(self._db, img_id)
 
-        check_vtables(self._db, self.orig_bin)
+        match_crt_startup(self._db, self.orig_bin, self.recomp_bin)
+        check_vtables(self._db)
         match_ref(self._db, self.report)
         unique_names_for_overloaded_functions(self._db)
         name_thunks(self._db)
@@ -308,24 +311,47 @@ class Compare:
         return compare
 
     def _compare_vtable(self, match: ReccmpMatch) -> EntityCompareResult:
-        vtable_size = match.any_size()
+        recomp_size = match.any_size(ImageId.RECOMP)
 
         # The vtable size should always be a multiple of 4 because that
         # is the pointer size. If it is not (for whatever reason)
         # it would cause iter_unpack to blow up so let's just fix it.
-        if vtable_size % 4 != 0:
+        if recomp_size % 4 != 0:
             logger.warning(
-                "Vtable for class %s has irregular size %d", match.name, vtable_size
+                "Vtable for class %s has irregular size %d", match.name, recomp_size
             )
-            vtable_size = 4 * (vtable_size // 4)
+            recomp_size = 4 * (recomp_size // 4)
 
-        orig_table = self.orig_bin.read(match.orig_addr, vtable_size)
-        recomp_table = self.recomp_bin.read(match.recomp_addr, vtable_size)
+        # The PDB doesn't record a size for the vtable itself, so the recomp
+        # size is an estimate: it's either the gap between this symbol and the
+        # next, or the size listed in cvdump's SECTION CONTRIBUTIONS output.
+        # Either estimate can include alignment padding after the table, and
+        # reading the orig table with the padded size would run past the
+        # actual end of the table. Just use the orig size if known.
+        orig_size = match.size(ImageId.ORIG)
+        if orig_size is None:
+            orig_size = recomp_size
+        elif orig_size % 4 != 0:
+            logger.warning(
+                "Vtable for class %s has irregular orig size %d", match.name, orig_size
+            )
+            orig_size = 4 * (orig_size // 4)
 
-        raw_addrs = zip(
-            [t for (t,) in struct.iter_unpack("<L", orig_table)],
-            [t for (t,) in struct.iter_unpack("<L", recomp_table)],
-        )
+        orig_table = self.orig_bin.read(match.orig_addr, orig_size)
+        recomp_table = self.recomp_bin.read(match.recomp_addr, recomp_size)
+
+        orig_addrs = [t for (t,) in struct.iter_unpack("<L", orig_table)]
+        recomp_addrs = [t for (t,) in struct.iter_unpack("<L", recomp_table)]
+
+        # Trailing null entries on the recomp side are alignment padding, not
+        # virtual functions missing from orig, so drop them. Non-null entries
+        # past the end of the orig table are kept: these are virtual functions
+        # that only exist in recomp, and zip_longest will show them with
+        # "(no match)" on the orig side.
+        while len(recomp_addrs) > len(orig_addrs) and recomp_addrs[-1] == 0:
+            recomp_addrs.pop()
+
+        raw_addrs = zip_longest(orig_addrs, recomp_addrs)
 
         def match_text(m: ReccmpEntity | None, raw_addr: int | None = None) -> str:
             """Format the function reference at this vtable index as text.
@@ -356,8 +382,14 @@ class Compare:
 
         # Now compare each pointer from the two vtables.
         for i, (raw_orig, raw_recomp) in enumerate(raw_addrs):
-            orig = self._db.get(ImageId.ORIG, raw_orig)
-            recomp = self._db.get(ImageId.RECOMP, raw_recomp)
+            orig = (
+                self._db.get(ImageId.ORIG, raw_orig) if raw_orig is not None else None
+            )
+            recomp = (
+                self._db.get(ImageId.RECOMP, raw_recomp)
+                if raw_recomp is not None
+                else None
+            )
 
             if (
                 orig is not None
@@ -386,6 +418,37 @@ class Compare:
                 recomp_inst=recomp_text,
             ),
             match_ratio=ratio,
+        )
+
+    def _compare_non_match(self, ent: ReccmpEntity) -> ReccmpComparedEntity | None:
+        assert ent.orig_addr is not None
+
+        if ent.get("skip", False):
+            return None
+
+        assert ent.entity_type is not None
+
+        if ent.entity_type in (EntityType.FUNCTION, EntityType.VTORDISP):
+            output_type = EntityType.FUNCTION
+
+        elif ent.entity_type == EntityType.VTABLE:
+            output_type = EntityType.VTABLE
+
+        else:
+            return None
+
+        name = ent.best_name()
+        if name is None:
+            name = f"Unknown {output_type.name}"
+
+        return ReccmpComparedEntity(
+            orig_addr=ent.orig_addr,
+            name=name,
+            accuracy=0.0,
+            type=output_type,
+            recomp_addr=None,
+            is_stub=True,
+            is_library=ent.get("library", False),
         )
 
     def _compare_match(self, match: ReccmpMatch) -> ReccmpComparedEntity | None:
@@ -425,18 +488,11 @@ class Compare:
             recomp_addr=match.recomp_addr,
             is_effective_match=result.is_effective_match,
             is_stub=match.get("stub", False),
+            is_library=match.get("library", False),
             rdiff=result.diff,
         )
 
     ## Public API
-
-    def count_unmatched_functions(self) -> int:
-        """Count known but unmatched functions in orig."""
-        return sum(
-            1
-            for ent in self._db.unmatched(ImageId.ORIG)
-            if ent.get("type") == EntityType.FUNCTION
-        )
 
     def get_all(self) -> Iterator[ReccmpEntity]:
         return self._db.get_all()
@@ -460,7 +516,7 @@ class Compare:
     def compare_all(
         self, filter_fn: Callable[[ReccmpEntity], bool] | None = None
     ) -> Iterator[ReccmpComparedEntity]:
-        for ent in self._db.get_matches():
+        for ent in self._db.all(ImageId.ORIG):
             if ent.entity_type not in (
                 EntityType.FUNCTION,
                 EntityType.VTORDISP,
@@ -468,16 +524,18 @@ class Compare:
             ):
                 continue
 
+            # Should filter matched and unmatched entities
+            # so our counts are accurate.
             if filter_fn and not filter_fn(ent):
                 continue
 
-            match = self._compare_match(ent)
-            if match:
-                yield match
+            if ent.recomp_addr is not None:
+                # mypy coercion.
+                assert isinstance(ent, ReccmpMatch)
+                diff = self._compare_match(ent)
+            else:
+                diff = self._compare_non_match(ent)
 
-    def compare_functions(self) -> Iterator[ReccmpComparedEntity]:
-        for match in self.get_functions():
-            diff = self._compare_match(match)
             if diff is not None:
                 yield diff
 
