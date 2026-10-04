@@ -394,7 +394,8 @@ def find_collapsible_ppc_branches(remain: list[CodeToken]) -> set[int]:
 
         elif token == TokenType.PPC_END:
             # `not interrupted`: branches are all at the same PPC level
-            # `len(legs) > 1`: there is more than one option
+            # `len(legs) > 1`: there is more than one option, OR
+            # `not signature`: the block has no brackets
             # signature match: every branch has the same bracket sequence
             # (same count AND same open/close direction). Folding one branch in
             # for another is only valid if they are structurally identical.
@@ -402,7 +403,7 @@ def find_collapsible_ppc_branches(remain: list[CodeToken]) -> set[int]:
             signature = [token for _, token in legs[0]]
             if (
                 not interrupted
-                and len(legs) > 1
+                and (len(legs) > 1 or not signature)
                 and all([t for _, t in leg] == signature for leg in legs)
             ):
                 # Retain only the curly brackets from the first branch.
@@ -425,46 +426,60 @@ def all_curly_paired(tokens: list[CodeToken]) -> bool:
     return True
 
 
-def check_naive_folding(ranges: list[tuple[int, int]], tokens: list[CodeToken]) -> bool:
-    """Check the new bracket pairs from pair_brackets(enable_ppc=False)
-    and determine whether any of them are:
-    1. Impossible: the brackets are in the same PPC block, divided by #else,
-    so both of them could not be active at the same time.
-    2. Conditional: one bracket is in inside a PPC block with an #else,
-    the other is outside. Later processing will permit the case where ALL
-    options in a PPC block have the same sequence of brackets, but they are
-    rejected here.
+def check_naive_pairing(
+    bracket_pairs: list[tuple[int, int]], tokens: list[CodeToken]
+) -> bool:
+    """Check the new bracket pairs from `pair_brackets(enable_ppc=False)`
+    against every sequence of preprocessor tokens (blocks).
 
-    If any pairing has a problem, reject them all.
+    Allow these patterns:
 
-    We allow the case where one bracket is inside a PPC block WITHOUT
-    an #else, and the other is outside the block. (`extern "C"` example)
+        1. Brackets are completely outside the block
+            { } #if #endif
 
-    We also need to allow for PPC blocks with an #else where the #if and #endif
-    are also part of the bracket sequence.
-    (i.e. don't check only for an #else token)."""
-    # Start by collecting each the boundaries of each PPC block and its legs.
-    stack: list[tuple[int, list[int]]] = []
-    blocks: list[list[int]] = []  # (if_pos, separators, endif_pos)
+        2. Brackets are confined to one branch of the block
+            #if {} #endif, #if { } #else #endif
+
+        3. Brackets enclose the entire block
+            { #if #else #endif }
+
+        4. One bracket is inside a block, but it has only one branch
+            { #if } #endif
+
+    If any of these patterns are found, reject all pairings:
+
+        5. Brackets are in different branches of the same block
+            #if { #else } #endif
+
+        6. One bracket is inside a block with multiple branches
+            { #if } #else #endif
+    """
+    # Start by collecting the position of each preprocessor token in a block.
+    stack: list[list[int]] = []
+    blocks: list[list[int]] = []
     for start, _, token in tokens:
         if token == TokenType.PPC_IF:
-            stack.append((start, []))
+            stack.append([start])
         elif token in (TokenType.PPC_ELSE, TokenType.PPC_ELIF):
             if stack:
-                stack[-1][1].append(start)
+                stack[-1].append(start)
         elif token == TokenType.PPC_END:
             if stack:
-                if_pos, separators = stack.pop()
-                if separators:
-                    blocks.append([if_pos, *separators, start])
+                stack[-1].append(start)
+                block = stack.pop()
+                # We only need to check blocks with multiple branches.
+                # It is assumed that naive pairings will include pattern 4.
+                if len(block) > 2:
+                    blocks.append(block)
 
-    # Test each pairing against every PPC block with an #else/#elif.
-    for open_pos, close_pos in ranges:
-        # `boundaries` has the position of each #if/#else/.../#endif
-        # component of the PPC block.
-        for boundaries in blocks:
-            # Check whether the entire PPC block is between the brackets.
-            if not all(open_pos < b < close_pos for b in boundaries):
+    # Test each pairing against every PPC block with multiple branches.
+    for open_pos, close_pos in bracket_pairs:
+        for block in blocks:
+            # The brackets must enclose every preprocessor token in the
+            # block (pattern 3) or none of them (patterns 1 and 2).
+            # Otherwise: (patterns 5 and 6) reject all pairings.
+            enclosed = sum(open_pos < pos < close_pos for pos in block)
+            if 0 < enclosed < len(block):
                 return False
 
     return True
@@ -506,7 +521,7 @@ def resolve_scopes(
         # 1. Doing this allows us to pair all remaining brackets.
         # 2. No pairing joins two regions separated by #else/#elif.
         # `new_remain` has had its PPC tokens removed, so use `remain`.
-        if not new_remain and check_naive_folding(new_ranges, remain):
+        if not new_remain and check_naive_pairing(new_ranges, remain):
             out_ranges.extend(new_ranges)
             remain = new_remain
             break
