@@ -640,8 +640,8 @@ def test_skip_global_without_matching_public(binfile: PEImage):
     parser.read_section(
         "GLOBALS",
         dedent("""\
-        S_GDATA32: [0004:0002F6BC], Type:             0x10D5, g_infomainScript
-        S_GDATA32: [0004:0000C718], Type:             0x10D5, g_infomainScript
+        S_GDATA32: [0004:0002F6BC], Type:             0x0403, g_infomainScript
+        S_GDATA32: [0004:0000C718], Type:             0x0403, g_infomainScript
         """),
     )
 
@@ -649,7 +649,171 @@ def test_skip_global_without_matching_public(binfile: PEImage):
     load_cvdump(cvdump_analysis, db, binfile)
 
     # Should skip the entry at 0004:0000C718
-    assert db.get(ImageId.RECOMP, 0x101DF718) is None
+    assert db.get(ImageId.RECOMP, 0x10117718) is None
 
     # Should create an entry at 0004:0002F6BC
-    assert db.get(ImageId.RECOMP, 0x1013A6BC) is not None
+    entity = db.get(ImageId.RECOMP, 0x1013A6BC)
+    assert entity is not None
+    assert entity.get("data_type") == 0x0403
+
+
+def test_variable_type_of_zero_size(binfile: PEImage):
+    """If the variable's type has size zero, use it in the entity. (GH #210)"""
+    db = EntityDb()
+    parser = CvdumpParser()
+    parser.read_section(
+        "PUBLICS",
+        "S_PUB32: [0003:0000C8F0], Flags: 00000000, test",
+    )
+    parser.read_section(
+        "GLOBALS",
+        dedent("""\
+        S_GDATA32: [0003:0000C8F0], Type:             0x10BF, test
+        """),
+    )
+
+    parser.read_section(
+        "TYPES",
+        dedent("""\
+        0x10bf : Length = 14, Leaf = 0x1503 LF_ARRAY
+            Element type = T_RCHAR(0070)
+            Index type = T_SHORT(0011)
+            length = 0
+            Name =
+        """),
+    )
+
+    cvdump_analysis = CvdumpAnalysis(parser)
+    load_cvdump(cvdump_analysis, db, binfile)
+
+    entity = db.get(ImageId.RECOMP, 0x100FC8F0)
+    assert entity is not None
+    assert entity.get("type") == EntityType.DATA
+    assert entity.get("name") == "test"
+    assert entity.size(ImageId.RECOMP) == 0
+    assert entity.get("data_type") == 0x10BF
+
+
+def test_prefer_type_with_nonzero_size(binfile: PEImage):
+    """Prefer the data type with nonzero size if there are multiple GLOBALS references. (GH #210)"""
+    db = EntityDb()
+    parser = CvdumpParser()
+    parser.read_section(
+        "PUBLICS",
+        "S_PUB32: [0003:0000C8F0], Flags: 00000000, test",
+    )
+    # Type with nonzero size read first. Should not overwrite.
+    parser.read_section(
+        "GLOBALS",
+        dedent("""\
+        S_GDATA32: [0003:0000C8F0], Type:             0x10C7, test
+        S_GDATA32: [0003:0000C8F0], Type:             0x10BF, test
+        """),
+    )
+
+    parser.read_section(
+        "TYPES",
+        dedent("""\
+        0x10bf : Length = 14, Leaf = 0x1503 LF_ARRAY
+            Element type = T_RCHAR(0070)
+            Index type = T_SHORT(0011)
+            length = 0
+            Name =
+
+        0x10c7 : Length = 14, Leaf = 0x1503 LF_ARRAY
+            Element type = T_RCHAR(0070)
+            Index type = T_SHORT(0011)
+            length = 640
+            Name =
+        """),
+    )
+
+    cvdump_analysis = CvdumpAnalysis(parser)
+    load_cvdump(cvdump_analysis, db, binfile)
+
+    entity = db.get(ImageId.RECOMP, 0x100FC8F0)
+    assert entity is not None
+    assert entity.get("type") == EntityType.DATA
+    assert entity.get("name") == "test"
+    assert entity.size(ImageId.RECOMP) == 640
+
+
+def test_variable_types_of_equal_size(binfile: PEImage):
+    """If a variable has multiple entries in GLOBALS for different types, and the types
+    have equal size, use the last entry. (GH #210)"""
+    db = EntityDb()
+    parser = CvdumpParser()
+    parser.read_section(
+        "PUBLICS",
+        "S_PUB32: [0003:0000C8F0], Flags: 00000000, test",
+    )
+    # Type with nonzero size read first. Should not overwrite.
+    parser.read_section(
+        "GLOBALS",
+        dedent("""\
+        S_GDATA32: [0003:0000C8F0], Type:             0x1000, test
+        S_GDATA32: [0003:0000C8F0], Type:             0x1001, test2
+        """),
+    )
+
+    parser.read_section(
+        "TYPES",
+        dedent("""\
+        0x1000 : Length = 14, Leaf = 0x1503 LF_ARRAY
+            Element type = T_RCHAR(0070)
+            Index type = T_SHORT(0011)
+            length = 4
+            Name =
+
+        0x1001 : Length = 14, Leaf = 0x1503 LF_ARRAY
+            Element type = T_RCHAR(0070)
+            Index type = T_SHORT(0011)
+            length = 4
+            Name =
+        """),
+    )
+
+    cvdump_analysis = CvdumpAnalysis(parser)
+    load_cvdump(cvdump_analysis, db, binfile)
+
+    entity = db.get(ImageId.RECOMP, 0x100FC8F0)
+    assert entity is not None
+    # We do not expect the names to differ in real data, but this
+    # demonstrates our approach of using the "best" entry from GLOBALS.
+    assert entity.get("name") == "test2"
+    assert entity.get("data_type") == 0x1001
+    assert entity.size(ImageId.RECOMP) == 4
+
+
+def test_lproc32_gproc32_collision(binfile: PEImage):
+    """Should not overwrite an S_GPROC32 entry with one at the same section:offset
+    that is an S_LPROC32. In real data, this has been observed to occur with _setjmp,
+    _longjmp, and _unwind_handler in MSVC 7.0. Possibly related to SEH. (GH #204)"""
+    db = EntityDb()
+    parser = CvdumpParser()
+    parser.read_section(
+        "SYMBOLS",
+        dedent("""\
+        (0000B0) S_GPROC32: [0001:00000000], Cb: 0000006E, Type:             0x1071, Score::Score
+                 Parent: 00000000, End: 000000E4, Next: 00000000
+                 Debug start: 0000001C, Debug end: 00000050
+
+        (0000E4) S_END
+
+        (000110) S_LPROC32: [0001:00000000], Cb: 00000000, Type:             0x104F, Score::Score
+                 Parent: 00000000, End: 00000140, Next: 00000000
+                 Debug start: 00000000, Debug end: 00000000
+
+        (000140) S_END
+        """),
+    )
+
+    cvdump_analysis = CvdumpAnalysis(parser)
+    load_cvdump(cvdump_analysis, db, binfile)
+
+    entity = db.get(ImageId.RECOMP, 0x10001000)
+    assert entity is not None
+    assert entity.get("name") == "Score::Score"
+    assert entity.get("type") == EntityType.FUNCTION
+    # Should not overwrite with size 0 after reading the S_LPROC32 node.
+    assert entity.size(ImageId.RECOMP) == 0x6E

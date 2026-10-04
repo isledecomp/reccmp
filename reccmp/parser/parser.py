@@ -2,6 +2,7 @@
 
 import io
 from dataclasses import dataclass
+from itertools import pairwise
 from pathlib import PurePath
 from typing import Iterator
 from enum import Enum
@@ -12,12 +13,11 @@ from .util import (
     remove_trailing_comment,
     get_string_contents,
     ParserCodeString,
-    sanitize_code_line,
-    scopeDetectRegex,
 )
 from .marker import (
     DecompMarker,
     MarkerCategory,
+    MarkerType,
     match_marker,
     is_marker_exact,
     ProjectAliases,
@@ -31,6 +31,12 @@ from .node import (
     ParserString,
 )
 from .error import ParserAlert, AlertCode
+from .tokenizer import (
+    get_newlines_from_text,
+    get_namespaces_from_scopes,
+    resolve_scopes,
+    tokenize_code_file,
+)
 
 
 class ReaderState(Enum):
@@ -79,57 +85,6 @@ class MarkerDict:
         self.markers = {}
 
 
-class CurlyManager:
-    """Overly simplified scope manager"""
-
-    def __init__(self):
-        self._stack = []
-
-    def reset(self):
-        self._stack = []
-
-    def _pop(self):
-        """Pop stack safely"""
-        try:
-            self._stack.pop()
-        except IndexError:
-            pass
-
-    def get_prefix(self, name: str | None = None) -> str:
-        """Return the prefix for where we are."""
-
-        scopes = [t for t in self._stack if t != "{"]
-        if len(scopes) == 0:
-            return name if name is not None else ""
-
-        if name is not None and name not in scopes:
-            scopes.append(name)
-
-        return "::".join(scopes)
-
-    def read_line(self, raw_line: str):
-        """Read a line of code and update the stack."""
-        line = sanitize_code_line(raw_line)
-        if (match := scopeDetectRegex.match(line)) is not None:
-            if not line.endswith(";"):
-                self._stack.append(match.group("name"))
-
-        change = line.count("{") - line.count("}")
-        if change > 0:
-            for _ in range(change):
-                self._stack.append("{")
-        elif change < 0:
-            for _ in range(-change):
-                self._pop()
-
-            if len(self._stack) == 0:
-                return
-
-            last = self._stack[-1]
-            if last != "{":
-                self._pop()
-
-
 class DecompParser:
     # pylint: disable=too-many-instance-attributes
     # Could combine output lists into a single list to get under the limit,
@@ -144,7 +99,11 @@ class DecompParser:
 
         self.last_line: str = ""
 
-        self.curly = CurlyManager()
+        self.namespaces: list[tuple[int, int, str, str]] = []
+        """Ranges and names of namespaces in the current file, given as: (start, end, keyword, name)"""
+
+        self.line_pos: int = 0
+        """File offset of the current line we are reading."""
 
         # To allow for multiple markers where code is shared across different
         # modules, save lists of compatible markers that appear in sequence
@@ -179,6 +138,9 @@ class DecompParser:
 
         self.last_line = ""
 
+        self.namespaces = []
+        self.line_pos = 0
+
         self.fun_markers.empty()
         self.var_markers.empty()
         self.tbl_markers.empty()
@@ -189,7 +151,20 @@ class DecompParser:
 
         self.filename = filename
 
-        self.curly.reset()
+    def _qualify(self, name: str | None) -> str:
+        """Qualify the provided name with the combined scope names for our current file position."""
+        namespaces = [
+            name
+            for start, stop, _, name in self.namespaces
+            if start < self.line_pos < stop
+        ]
+        if not namespaces:
+            return name or ""
+
+        if name is not None and name not in namespaces:
+            namespaces.append(name)
+
+        return "::".join(namespaces)
 
     @property
     def functions(self) -> list[ParserFunction]:
@@ -206,6 +181,10 @@ class DecompParser:
     @property
     def strings(self) -> list[ParserString]:
         return [s for s in self._symbols if isinstance(s, ParserString)]
+
+    @property
+    def lines(self) -> list[ParserLineSymbol]:
+        return [s for s in self._symbols if isinstance(s, ParserLineSymbol)]
 
     def iter_symbols(self, module: str | None = None) -> Iterator[ParserSymbol]:
         for s in self._symbols:
@@ -246,9 +225,9 @@ class DecompParser:
         if self.fun_markers.insert(marker):
             self._syntax_warning(AlertCode.DUPLICATE_MODULE)
 
-        if marker.is_template():
+        if marker.type == MarkerType.TEMPLATE:
             self.state = ReaderState.IN_TEMPLATE
-        elif marker.is_synthetic():
+        elif marker.type == MarkerType.SYNTHETIC:
             self.state = ReaderState.IN_SYNTHETIC
         else:
             self.state = ReaderState.IN_LIBRARY
@@ -305,7 +284,7 @@ class DecompParser:
                     line_number=self.line_number,
                     module=marker.module,
                     offset=marker.offset,
-                    name=self.curly.get_prefix(class_name),
+                    name=self._qualify(class_name),
                     filename=self.filename,
                     base_class=None if is_folded else marker.extra,
                     is_folded=is_folded,
@@ -332,7 +311,7 @@ class DecompParser:
             return
 
         for marker in self.var_markers.iter():
-            if marker.is_string():
+            if marker.type == MarkerType.STRING:
                 assert string is not None
                 self._symbols.append(
                     ParserString(
@@ -369,7 +348,7 @@ class DecompParser:
                         line_number=self.line_number,
                         module=marker.module,
                         offset=marker.offset,
-                        name=self.curly.get_prefix(variable_name),
+                        name=self._qualify(variable_name),
                         filename=self.filename,
                         is_static=is_static,
                         parent_function=parent_function,
@@ -407,7 +386,11 @@ class DecompParser:
         # and we have moved on to something else.
         # This is unlikely to occur with well-formed code, but
         # we can recover easily by just ending the function here.
-        if self.state == ReaderState.IN_FUNC and not marker.allowed_in_func():
+        if self.state == ReaderState.IN_FUNC and marker.type not in (
+            MarkerType.GLOBAL,
+            MarkerType.STRING,
+            MarkerType.LINE,
+        ):
             self._syntax_warning(AlertCode.MISSED_END_OF_FUNCTION)
             self._function_done(unexpected=True)
 
@@ -416,7 +399,7 @@ class DecompParser:
         # end if we detect a non-GLOBAL marker while state is IN_FUNC.
         # Maybe these cases should be syntax errors instead
 
-        if marker.is_regular_function():
+        if marker.type in (MarkerType.FUNCTION, MarkerType.STUB):
             if self.state in (
                 ReaderState.SEARCH,
                 ReaderState.WANT_SIG,
@@ -427,26 +410,26 @@ class DecompParser:
             else:
                 self._syntax_error(AlertCode.INCOMPATIBLE_MARKER)
 
-        elif marker.is_template():
+        elif marker.type == MarkerType.TEMPLATE:
             if self.state in (ReaderState.SEARCH, ReaderState.IN_TEMPLATE):
                 self._nameref_marker(marker)
             else:
                 self._syntax_error(AlertCode.INCOMPATIBLE_MARKER)
 
-        elif marker.is_synthetic():
+        elif marker.type == MarkerType.SYNTHETIC:
             if self.state in (ReaderState.SEARCH, ReaderState.IN_SYNTHETIC):
                 self._nameref_marker(marker)
             else:
                 self._syntax_error(AlertCode.INCOMPATIBLE_MARKER)
 
-        elif marker.is_library():
+        elif marker.type == MarkerType.LIBRARY:
             if self.state in (ReaderState.SEARCH, ReaderState.IN_LIBRARY):
                 self._nameref_marker(marker)
             else:
                 self._syntax_error(AlertCode.INCOMPATIBLE_MARKER)
 
         # Strings and variables are almost the same thing
-        elif marker.is_string() or marker.is_variable():
+        elif marker.type in (MarkerType.STRING, MarkerType.GLOBAL):
             if self.state in (
                 ReaderState.SEARCH,
                 ReaderState.IN_GLOBAL,
@@ -457,13 +440,13 @@ class DecompParser:
             else:
                 self._syntax_error(AlertCode.INCOMPATIBLE_MARKER)
 
-        elif marker.is_vtable():
+        elif marker.type == MarkerType.VTABLE:
             if self.state in (ReaderState.SEARCH, ReaderState.IN_VTABLE):
                 self._vtable_marker(marker)
             else:
                 self._syntax_error(AlertCode.INCOMPATIBLE_MARKER)
 
-        elif marker.is_line():
+        elif marker.type == MarkerType.LINE:
             self._line_marker(marker)
 
         else:
@@ -484,8 +467,6 @@ class DecompParser:
                 self._syntax_warning(AlertCode.NOT_STRICT_FORMAT)
             self._handle_marker(marker)
             return
-
-        self.curly.read_line(line)
 
         line_strip = line.strip()
         if self.state in (
@@ -566,7 +547,7 @@ class DecompParser:
             variable_name = None
 
             global_markers_queued = any(
-                m.is_variable() for m in self.var_markers.iter()
+                m.type == MarkerType.GLOBAL for m in self.var_markers.iter()
             )
 
             if len(line_strip) == 0:
@@ -597,9 +578,25 @@ class DecompParser:
             if vtable_class is not None:
                 self._vtable_done(class_name=vtable_class)
 
-    def read(self, text: str):
-        for line in io.StringIO(text, newline=None):
-            self.read_line(line)
+    def read(self, raw_text: str):
+        # The tokenizer expects that newlines are a single char: `\n`.
+        # Make sure that's what we have.
+        text = io.StringIO(raw_text, newline=None).read()
+
+        # Find the boundaries of all scopes now so we do not need to keep the stack
+        # up to date while reading.
+        tokens = tokenize_code_file(text)
+        scopes, _ = resolve_scopes(tokens)
+        self.namespaces = get_namespaces_from_scopes(text, tokens, scopes)
+
+        line_starts = [pos + 1 for pos in get_newlines_from_text(text)]
+        for start, stop in pairwise([*line_starts, len(text)]):
+            # Make sure we read the last line if it has tokens.
+            if start == stop:
+                break
+
+            self.line_pos = start
+            self.read_line(text[start:stop])
 
     def finish(self):
         if self.state != ReaderState.SEARCH:

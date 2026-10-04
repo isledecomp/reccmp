@@ -1,6 +1,7 @@
 import logging
 import difflib
 import struct
+from itertools import zip_longest
 from typing import Callable, Iterator
 from typing_extensions import Self
 from reccmp.project.detect import RecCmpTarget
@@ -10,6 +11,7 @@ from reccmp.dir import source_code_search
 from reccmp.compare.functions import FunctionComparator
 from reccmp.formats import (
     Image,
+    NEImage,
     PEImage,
     TextFile,
     detect_image,
@@ -132,23 +134,10 @@ class Compare:
             self.recomp_bin,
             self.report,
             self.types,
+            is_32bit=not isinstance(self.orig_bin, NEImage),
         )
 
-    def run(self):
-        if not isinstance(self.orig_bin, PEImage) or not isinstance(
-            self.recomp_bin, PEImage
-        ):
-            return
-
-        # Each task creates new entities or overwrites existing data.
-        # The tasks are ordered roughly according to the principle
-        # of highest-to-lowest confidence of data validity.
-        load_cvdump_types(self.cvdump_analysis, self.types)
-        load_cvdump(self.cvdump_analysis, self._db, self.recomp_bin)
-        load_cvdump_lines(self.cvdump_analysis, self._lines_db, self.recomp_bin)
-
-        match_entry(self._db, self.orig_bin, self.recomp_bin)
-
+    def run_ne(self):
         load_markers(
             self.code_files,
             self._lines_db,
@@ -177,6 +166,66 @@ class Compare:
         ):
             create_imports(self._db, img_id, binfile)
             create_import_thunks(self._db, img_id, binfile)
+            import_sections(self._db, img_id, binfile)
+
+        match_imports(self._db)
+
+        for img_id in (ImageId.ORIG, ImageId.RECOMP):
+            set_max_size(self._db, img_id)
+
+        match_ref(self._db, self.report)
+        unique_names_for_overloaded_functions(self._db)
+
+        match_strings(self._db, self.report)
+
+    def run(self):
+        if isinstance(self.orig_bin, NEImage):
+            self.run_ne()
+            return
+
+        if not isinstance(self.orig_bin, PEImage) or not isinstance(
+            self.recomp_bin, PEImage
+        ):
+            return
+
+        # Each task creates new entities or overwrites existing data.
+        # The tasks are ordered roughly according to the principle
+        # of highest-to-lowest confidence of data validity.
+        load_cvdump_types(self.cvdump_analysis, self.types)
+        load_cvdump(self.cvdump_analysis, self._db, self.recomp_bin)
+        load_cvdump_lines(self.cvdump_analysis, self._lines_db, self.recomp_bin)
+
+        match_entry(self._db, self.orig_bin, self.recomp_bin)
+
+        load_markers(
+            self.code_files,
+            self._lines_db,
+            self.orig_bin,
+            self.target_id,
+            self._db,
+            self.bin_encoding,
+            self.project_aliases,
+            self.report,
+        )
+
+        load_data_sources(self._db, self.data_sources)
+
+        # Match using PDB and annotation data
+        truncate = self.cvdump_analysis.truncate_symbols
+        match_symbols(self._db, self.report, truncate=truncate)
+        match_functions(self._db, self.report, truncate=truncate)
+        match_vtables(self._db, self.report)
+        match_static_variables(self._db, self.report)
+        match_variables(self._db, self.report)
+        match_lines(self._db, self._lines_db, self.report)
+
+        # Detect floats first to eliminate potential overlap with string data
+        for img_id, binfile in (
+            (ImageId.ORIG, self.orig_bin),
+            (ImageId.RECOMP, self.recomp_bin),
+        ):
+            create_imports(self._db, img_id, binfile)
+            create_import_thunks(self._db, img_id, binfile)
             create_seh_entities(self._db, img_id, binfile)
             create_thunks(self._db, img_id, binfile)
             create_analysis_vtordisps(self._db, img_id, binfile)
@@ -190,7 +239,7 @@ class Compare:
             set_max_size(self._db, img_id)
 
         match_crt_startup(self._db, self.orig_bin, self.recomp_bin)
-        check_vtables(self._db, self.orig_bin)
+        check_vtables(self._db)
         match_ref(self._db, self.report)
         unique_names_for_overloaded_functions(self._db)
         name_thunks(self._db)
@@ -262,24 +311,47 @@ class Compare:
         return compare
 
     def _compare_vtable(self, match: ReccmpMatch) -> EntityCompareResult:
-        vtable_size = match.any_size()
+        recomp_size = match.any_size(ImageId.RECOMP)
 
         # The vtable size should always be a multiple of 4 because that
         # is the pointer size. If it is not (for whatever reason)
         # it would cause iter_unpack to blow up so let's just fix it.
-        if vtable_size % 4 != 0:
+        if recomp_size % 4 != 0:
             logger.warning(
-                "Vtable for class %s has irregular size %d", match.name, vtable_size
+                "Vtable for class %s has irregular size %d", match.name, recomp_size
             )
-            vtable_size = 4 * (vtable_size // 4)
+            recomp_size = 4 * (recomp_size // 4)
 
-        orig_table = self.orig_bin.read(match.orig_addr, vtable_size)
-        recomp_table = self.recomp_bin.read(match.recomp_addr, vtable_size)
+        # The PDB doesn't record a size for the vtable itself, so the recomp
+        # size is an estimate: it's either the gap between this symbol and the
+        # next, or the size listed in cvdump's SECTION CONTRIBUTIONS output.
+        # Either estimate can include alignment padding after the table, and
+        # reading the orig table with the padded size would run past the
+        # actual end of the table. Just use the orig size if known.
+        orig_size = match.size(ImageId.ORIG)
+        if orig_size is None:
+            orig_size = recomp_size
+        elif orig_size % 4 != 0:
+            logger.warning(
+                "Vtable for class %s has irregular orig size %d", match.name, orig_size
+            )
+            orig_size = 4 * (orig_size // 4)
 
-        raw_addrs = zip(
-            [t for (t,) in struct.iter_unpack("<L", orig_table)],
-            [t for (t,) in struct.iter_unpack("<L", recomp_table)],
-        )
+        orig_table = self.orig_bin.read(match.orig_addr, orig_size)
+        recomp_table = self.recomp_bin.read(match.recomp_addr, recomp_size)
+
+        orig_addrs = [t for (t,) in struct.iter_unpack("<L", orig_table)]
+        recomp_addrs = [t for (t,) in struct.iter_unpack("<L", recomp_table)]
+
+        # Trailing null entries on the recomp side are alignment padding, not
+        # virtual functions missing from orig, so drop them. Non-null entries
+        # past the end of the orig table are kept: these are virtual functions
+        # that only exist in recomp, and zip_longest will show them with
+        # "(no match)" on the orig side.
+        while len(recomp_addrs) > len(orig_addrs) and recomp_addrs[-1] == 0:
+            recomp_addrs.pop()
+
+        raw_addrs = zip_longest(orig_addrs, recomp_addrs)
 
         def match_text(m: ReccmpEntity | None, raw_addr: int | None = None) -> str:
             """Format the function reference at this vtable index as text.
@@ -310,8 +382,14 @@ class Compare:
 
         # Now compare each pointer from the two vtables.
         for i, (raw_orig, raw_recomp) in enumerate(raw_addrs):
-            orig = self._db.get(ImageId.ORIG, raw_orig)
-            recomp = self._db.get(ImageId.RECOMP, raw_recomp)
+            orig = (
+                self._db.get(ImageId.ORIG, raw_orig) if raw_orig is not None else None
+            )
+            recomp = (
+                self._db.get(ImageId.RECOMP, raw_recomp)
+                if raw_recomp is not None
+                else None
+            )
 
             if (
                 orig is not None

@@ -5,26 +5,14 @@ from typing import NamedTuple
 
 # The goal here is to just read whatever is on the next line, so some
 # flexibility in the formatting seems OK
-templateCommentRegex = re.compile(r"\s*//\s+(.*)")
+templateCommentRegex = re.compile(r"\s*//\s*(.*)")
 
 # To remove any comment (//) or block comment (/*) and its leading spaces
 # from the end of a code line
 trailingCommentRegex = re.compile(r"(\s*(?://|/\*).*)$")
 
-# Get char contents, ignore escape characters
-singleQuoteRegex = re.compile(r"('(?:[^\'\\]|\\.)')")
-
-# Match contents of block comment on one line
-blockCommentRegex = re.compile(r"(/\*.*?\*/)")
-
-# Match contents of single comment on one line
-regularCommentRegex = re.compile(r"(//.*)")
-
 # Get string contents, ignore escape characters that might interfere
 doubleQuoteRegex = re.compile(r'(L)?("(?:[^"\\]|\\.)*")')
-
-# Detect a line that would cause us to enter a new scope
-scopeDetectRegex = re.compile(r"(?:class|struct|namespace) (?P<name>\w+).*(?:{)?")
 
 
 def get_synthetic_name(line: str) -> str | None:
@@ -33,23 +21,9 @@ def get_synthetic_name(line: str) -> str | None:
     template_match = templateCommentRegex.match(line)
 
     if template_match is not None:
-        return template_match.group(1)
+        return template_match.group(1).strip()
 
     return None
-
-
-def sanitize_code_line(line: str) -> str:
-    """Helper for scope manager. Removes sections from a code line
-    that would cause us to incorrectly detect curly brackets.
-    This is a very naive implementation and fails entirely on multi-line
-    strings or comments."""
-
-    line = singleQuoteRegex.sub("''", line)
-    line = doubleQuoteRegex.sub('""', line)
-    line = blockCommentRegex.sub("", line)
-    line = regularCommentRegex.sub("", line)
-
-    return line.strip()
 
 
 def remove_trailing_comment(line: str) -> str:
