@@ -237,8 +237,8 @@ def find_declaration_chains(
     return chains
 
 
-r_lastScopeKeyword = re.compile(r".*\b(?:struct|namespace|class)\s", flags=re.DOTALL)
-"""More precise match for a keyword that begins a scope: it must not be asubstring in larger identifier."""
+r_lastScopeKeyword = re.compile(r".*\b(struct|namespace|class)\s", flags=re.DOTALL)
+"""More precise match for a keyword that begins a scope: it must not be a substring in a larger identifier."""
 
 
 r_scopeName = re.compile(r"(?P<name>\w+)\s*(?::(?!:).*)?$", flags=re.DOTALL)
@@ -248,10 +248,11 @@ or the last before a single ':' character demarcates the base class list."""
 
 def find_declaration_name(
     text: str, tokens: list[CodeToken], start: int, end: int
-) -> str | None:
+) -> tuple[str, str] | None:
     """Find the name for the named scope that begins somewhere between the CODE token at index `start`
     and then CURLY_OPEN token at index `end`. If there are multiple keywords that could be the start
     of the scope, choose the one closest to the end.
+    Returns (keyword, name) where keyword is "struct", "namespace", or "class".
     """
     if start + 1 == end:
         # If the scope declaration is entirely within one CODE token, save a split.
@@ -276,7 +277,7 @@ def find_declaration_name(
 
     # Find the scope name between
     if match := r_scopeName.search(code, keyword.end(), code_stop):
-        return match.group(1)
+        return (keyword.group(1), match.group(1))
 
     return None
 
@@ -285,13 +286,14 @@ def get_namespaces_from_scopes(
     text: str,
     tokens: list[CodeToken],
     scopes: dict[int, int],
-) -> list[tuple[int, int, str]]:
+) -> list[tuple[int, int, str, str]]:
     """Using the known scope enclosures, find which ones are the start of a
-    struct, class, or namespace. Return the name and range of positions where each
-    named scope is active."""
+    struct, class, or namespace. Return the range of positions where each
+    named scope is active, the keyword used, and its name: (start, end, keyword, name)
+    """
     declarations = find_declaration_chains(text, tokens)
 
-    names: list[tuple[int, int, str]] = []
+    names: list[tuple[int, int, str, str]] = []
     for index, end in declarations:
         # Does this chain of tokens end on a CURLY_OPEN token that is the start of a bracket pair?
         # If not, skip. We did not detect a scope starting here, and so there could not be a name for it.
@@ -299,8 +301,9 @@ def get_namespaces_from_scopes(
         if scope_start not in scopes:
             continue
 
-        if (name := find_declaration_name(text, tokens, index, end)) is not None:
-            names.append((scope_start, scopes[scope_start], name))
+        if (found := find_declaration_name(text, tokens, index, end)) is not None:
+            keyword, name = found
+            names.append((scope_start, scopes[scope_start], keyword, name))
 
     return names
 

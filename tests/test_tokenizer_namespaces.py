@@ -25,7 +25,7 @@ def test_namespace_prefix(prefix: str):
     tokens = tokenize_code_file(code)
     scopes, _ = resolve_scopes(tokens)
     assert get_namespaces_from_scopes(code, tokens, scopes) == [
-        (start_pos, end_pos, "Test")
+        (start_pos, end_pos, prefix, "Test")
     ]
 
 
@@ -38,7 +38,9 @@ def test_class_with_base():
     """)
     tokens = tokenize_code_file(code)
     scopes, _ = resolve_scopes(tokens)
-    assert get_namespaces_from_scopes(code, tokens, scopes) == [(26, 40, "Test")]
+    assert get_namespaces_from_scopes(code, tokens, scopes) == [
+        (26, 40, "class", "Test")
+    ]
 
 
 def test_forward_reference():
@@ -65,8 +67,8 @@ def test_nested_scopes():
     tokens = tokenize_code_file(code)
     scopes, _ = resolve_scopes(tokens)
     assert get_namespaces_from_scopes(code, tokens, scopes) == [
-        (15, 47, "Test"),
-        (30, 44, "Inner"),
+        (15, 47, "namespace", "Test"),
+        (30, 44, "struct", "Inner"),
     ]
 
 
@@ -83,8 +85,8 @@ def test_access_specifier_before_declaration():
     tokens = tokenize_code_file(code)
     scopes, _ = resolve_scopes(tokens)
     assert get_namespaces_from_scopes(code, tokens, scopes) == [
-        (11, 51, "Test"),
-        (34, 48, "Inner"),
+        (11, 51, "class", "Test"),
+        (34, 48, "struct", "Inner"),
     ]
 
 
@@ -133,7 +135,9 @@ def test_no_space_before_curly():
     """)
     tokens = tokenize_code_file(code)
     scopes, _ = resolve_scopes(tokens)
-    assert get_namespaces_from_scopes(code, tokens, scopes) == [(14, 28, "Test")]
+    assert get_namespaces_from_scopes(code, tokens, scopes) == [
+        (14, 28, "namespace", "Test")
+    ]
 
 
 def test_keyword_in_comment():
@@ -159,7 +163,9 @@ def test_declaration_after_comment_keyword():
     """)
     tokens = tokenize_code_file(code)
     scopes, _ = resolve_scopes(tokens)
-    assert get_namespaces_from_scopes(code, tokens, scopes) == [(32, 46, "Test")]
+    assert get_namespaces_from_scopes(code, tokens, scopes) == [
+        (32, 46, "class", "Test")
+    ]
 
 
 def test_base_class_declaration_splayed():
@@ -177,7 +183,9 @@ def test_base_class_declaration_splayed():
     """)
     tokens = tokenize_code_file(code)
     scopes, _ = resolve_scopes(tokens)
-    assert get_namespaces_from_scopes(code, tokens, scopes) == [(26, 40, "Test")]
+    assert get_namespaces_from_scopes(code, tokens, scopes) == [
+        (26, 40, "class", "Test")
+    ]
 
 
 def test_comment_inside_declaration():
@@ -190,7 +198,9 @@ def test_comment_inside_declaration():
     """)
     tokens = tokenize_code_file(code)
     scopes, _ = resolve_scopes(tokens)
-    assert get_namespaces_from_scopes(code, tokens, scopes) == [(32, 46, "Test")]
+    assert get_namespaces_from_scopes(code, tokens, scopes) == [
+        (32, 46, "class", "Test")
+    ]
 
 
 def test_comment_before_base_class():
@@ -203,7 +213,9 @@ def test_comment_before_base_class():
     """)
     tokens = tokenize_code_file(code)
     scopes, _ = resolve_scopes(tokens)
-    assert get_namespaces_from_scopes(code, tokens, scopes) == [(40, 54, "Test")]
+    assert get_namespaces_from_scopes(code, tokens, scopes) == [
+        (40, 54, "class", "Test")
+    ]
 
 
 def test_interrupted_declaration():
@@ -215,7 +227,9 @@ def test_interrupted_declaration():
     """)
     tokens = tokenize_code_file(code)
     scopes, _ = resolve_scopes(tokens)
-    assert get_namespaces_from_scopes(code, tokens, scopes) == [(24, 38, "Test")]
+    assert get_namespaces_from_scopes(code, tokens, scopes) == [
+        (24, 38, "class", "Test")
+    ]
 
 
 def test_template_class():
@@ -228,7 +242,9 @@ def test_template_class():
     """)
     tokens = tokenize_code_file(code)
     scopes, _ = resolve_scopes(tokens)
-    assert get_namespaces_from_scopes(code, tokens, scopes) == [(30, 44, "Test")]
+    assert get_namespaces_from_scopes(code, tokens, scopes) == [
+        (30, 44, "class", "Test")
+    ]
 
 
 def test_template_class_comment_before_declaration():
@@ -243,7 +259,9 @@ def test_template_class_comment_before_declaration():
     """)
     tokens = tokenize_code_file(code)
     scopes, _ = resolve_scopes(tokens)
-    assert get_namespaces_from_scopes(code, tokens, scopes) == [(41, 55, "Test")]
+    assert get_namespaces_from_scopes(code, tokens, scopes) == [
+        (41, 55, "class", "Test")
+    ]
 
 
 def test_keyword_inside_word():
@@ -279,4 +297,6 @@ def test_class_name_after_declspec():
     """)
     tokens = tokenize_code_file(code)
     scopes, _ = resolve_scopes(tokens)
-    assert get_namespaces_from_scopes(code, tokens, scopes) == [(33, 47, "Test")]
+    assert get_namespaces_from_scopes(code, tokens, scopes) == [
+        (33, 47, "class", "Test")
+    ]
