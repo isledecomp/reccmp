@@ -90,7 +90,7 @@ file, then diffing against it, then looking at one function -- repeat that work
 every time.
 
 `--cache` keeps the dump and reuses it while the PDB is unchanged. On one
-OpenSHC build (a 12 MB PDB, 25 MB of dump text) a run goes from 5.3 s to 2.8 s.
+repo build (a 12 MB PDB, 25 MB of dump text) a run goes from 5.3 s to 2.8 s.
 
 The cache is **off by default**, deliberately: an entry that is wrongly
 considered valid would have reccmp report a comparison against a binary that no
