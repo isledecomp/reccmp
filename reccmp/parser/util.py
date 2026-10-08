@@ -1,6 +1,5 @@
 # C++ Parser utility functions and data structures
 import re
-from ast import literal_eval
 from typing import NamedTuple
 
 # The goal here is to just read whatever is on the next line, so some
@@ -12,7 +11,22 @@ templateCommentRegex = re.compile(r"\s*//\s*(.*)")
 trailingCommentRegex = re.compile(r"(\s*(?://|/\*).*)$")
 
 # Get string contents, ignore escape characters that might interfere
-doubleQuoteRegex = re.compile(r'(L)?("(?:[^"\\]|\\.)*")')
+doubleQuoteRegex = re.compile(r'(L)?"((?:[^"\\]|\\.)*)"')
+
+# C string escape sequences that we can unescape.
+stringEscapeRegex = re.compile(
+    r"\\(?:(?P<octal>[0-7]{1,3})|x(?P<hex>[0-9a-fA-F]+)|(?P<char>.))", flags=re.S
+)
+
+escape_sequences = {
+    "a": "\a",
+    "b": "\b",
+    "f": "\f",
+    "n": "\n",
+    "r": "\r",
+    "t": "\t",
+    "v": "\v",
+}
 
 
 def get_synthetic_name(line: str) -> str | None:
@@ -109,20 +123,38 @@ class ParserCodeString(NamedTuple):
     is_widechar: bool
 
 
+def unescape_replace(match: re.Match) -> str:
+    octal, hex_, char = match.groups()
+
+    if octal is not None:
+        return chr(int(octal, 8))
+
+    if hex_ is not None:
+        try:
+            value = int(hex_, 16)
+            if value > 0xFFFF:
+                # Value exceeds wchar_t
+                return match.group(0)
+
+            return chr(value)
+        except ValueError:
+            return match.group(0)
+
+    # Replace known sequences with the escaped character.
+    # In all other cases, drop the slash.
+    return escape_sequences.get(char, char)
+
+
 def get_string_contents(line: str) -> ParserCodeString | None:
-    """Return the first C string seen on this line.
-    We have to unescape the string, and a simple way to do that is to use
-    python's ast.literal_eval. I'm sure there are many pitfalls to doing
-    it this way, but hopefully the regex will ensure reasonably sane input."""
+    """Return the string contents from the given token after resolving escape sequences.
+    Widechar strings are indicated by the 'L' prefix in the token. We take some shortcuts
+    for convenience: hex sequences are evaluated as widechar even for ASCII strings.
+    The intent is to represent the string text well enough for our purposes.
+    The user is expected to provide valid input that the compiler will accept."""
+    if (match := doubleQuoteRegex.search(line)) is None:
+        return None
 
-    try:
-        if (match := doubleQuoteRegex.search(line)) is not None:
-            is_widechar = match.group(1) is not None
-            text = literal_eval(match.group(2))
-            return ParserCodeString(text=text, is_widechar=is_widechar)
-    # pylint: disable=broad-exception-caught
-    # No way to predict what kind of exception could occur.
-    except Exception:
-        pass
-
-    return None
+    return ParserCodeString(
+        text=stringEscapeRegex.sub(unescape_replace, match.group(2)),
+        is_widechar=match.group(1) is not None,
+    )
