@@ -178,22 +178,62 @@ def test_get_variable_name(line: str, name: str):
     assert get_variable_name(line) == name
 
 
-string_match_cases = [
-    ('return "hello world";', "hello world"),
-    ('"hello\\\\"', "hello\\"),
-    ('"hello \\"world\\""', 'hello "world"'),
-    ('"hello\\nworld"', "hello\nworld"),
+# TODO: Drop after #509. The string will be in its own token.
+string_match_cases_vestigial = [
+    pytest.param('return "hello world";', "hello world", id="Return string"),
     # Only match first string if there are multiple options
-    ('Method("hello", "world");', "hello"),
+    pytest.param('Method("hello", "world");', "hello", id="Multiple string tokens"),
 ]
 
 
-@pytest.mark.parametrize("line, expected", string_match_cases)
+string_match_cases = [
+    pytest.param('""', "", id="Empty string"),
+    pytest.param('"hello\\\\"', "hello\\", id="Escaped slash"),
+    pytest.param(r'"\\n"', "\\n", id="Not a newline"),
+    pytest.param('"hello \\"world\\""', 'hello "world"', id="Escaped double quote"),
+    pytest.param('"hello\\nworld"', "hello\nworld", id="Escaped newline"),
+    pytest.param('"\\N{BULLET}"', "N{BULLET}", id="Named universal character escape"),
+    pytest.param('"\\a\\b\\f\\n\\r\\t\\v"', "\a\b\f\n\r\t\v", id="Escape sequences"),
+    pytest.param('"\\\'\\"\\\\"', "'\"\\", id="Escaped chars"),
+    pytest.param('"hello\\?"', "hello?", id="Escaped trigraph"),
+    pytest.param('"\\e"', "e", id="Escaped escape char"),
+    pytest.param('"\\8"', "8", id="(Invalid) Escaped digit"),
+    pytest.param('"\\08"', "\0" + "8", id="NUL (one digit octal)"),
+    pytest.param('"\\008"', "\0" + "8", id="NUL (two digit octal)"),
+    pytest.param('"\\1"', "\x01", id="One digit octal"),
+    pytest.param('"\\01"', "\x01", id="Two digit octal"),
+    pytest.param('"\\007"', "\x07", id="Octal"),
+    pytest.param('"\\\\007"', "\\007", id="Not an octal"),
+    pytest.param('"\\1234"', "S4", id="Octal with extra digit"),
+    pytest.param('"\\377"', "\xff", id="Octal 255"),
+    pytest.param('"\\777"', "ǿ", id="Widechar octal"),
+    pytest.param('"\\x41"', "A", id="Hex"),
+    pytest.param('"\\x00041"', "A", id="Hex with leading zeroes"),
+    # Python chr() accepts values up to 0x10FFFF.
+    pytest.param('"\\x12345"', "\\x12345", id="Too big for wchar_t"),
+    pytest.param('"\\x12345678"', "\\x12345678", id="Too big for Python"),
+    # Our targeted compilers don't support these:
+    pytest.param('"\\u0041"', "u0041", id="16-bit Unicode code point"),
+    pytest.param('"\\U00000041"', "U00000041", id="32-bit Unicode code point"),
+]
+
+
+@pytest.mark.parametrize(
+    "line, expected", [*string_match_cases_vestigial, *string_match_cases]
+)
 def test_get_string_contents(line: str, expected: str):
     string = get_string_contents(line)
     assert string is not None
     assert string.text == expected
     assert string.is_widechar is False
+
+
+@pytest.mark.parametrize("line, expected", string_match_cases)
+def test_get_string_contents_widechar(line: str, expected: str):
+    string = get_string_contents("L" + line)
+    assert string is not None
+    assert string.text == expected
+    assert string.is_widechar is True
 
 
 def test_marker_extra_spaces():
