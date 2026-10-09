@@ -90,6 +90,9 @@ DISPLACE_INSTRUCTIONS = (
     (0x1000, 7, "mov", "esi, dword ptr [eax*4 + 0x1234]"),
     # Jump table
     (0x1000, 7, "jmp", "dword ptr [eax*4 + 0x1234]"),
+    # Call through a table of function pointers
+    (0x1000, 7, "call", "dword ptr [edx*4 + 0x1234]"),
+    (0x1000, 6, "call", "dword ptr [ecx + 0x1234]"),
 )
 
 
@@ -113,6 +116,19 @@ def test_displacement_with_addr_verify(inst: DisasmLiteTuple):
     addr_test.assert_called_with(0x1234)
     assert "0x1234]" not in op_str
     assert "<OFFSET1>]" in op_str
+
+
+@pytest.mark.parametrize("inst", DISPLACE_INSTRUCTIONS)
+def test_displacement_with_name(inst: DisasmLiteTuple):
+    """Same as above, but using name lookup and substitution."""
+    addr_test = Mock(spec=AddrTestProtocol, return_value=True)
+    name_lookup = Mock(spec=NameReplacementProtocol, return_value="Hello")
+    p = ParseAsm(addr_test=addr_test, name_lookup=name_lookup)
+    _, op_str = p.sanitize(inst)
+
+    name_lookup.assert_called_with(0x1234, exact=False, indirect=False)
+    assert "0x1234]" not in op_str
+    assert "Hello]" in op_str
 
 
 IMMEDIATE_VALUE_INSTRUCTIONS = (
