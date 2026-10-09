@@ -386,11 +386,9 @@ def test_equal_bracket_sequence_without_global_balance_2():
     assert remain == [(25, 26, TokenType.CURLY_CLOSE)]
 
 
-@pytest.mark.xfail(reason="Returns nothing for this invalid input.")
 def test_option_to_salvage_valid_pairing():
     """Should return partial bracket pairing for invalid input.
     In this case, it is the pair split by `#ifdef X`.
-    If we isolate the invalid input, we can remove the `#ifdef Y` block and create a second pair.
     """
     code = dedent("""\
         {
@@ -407,3 +405,69 @@ def test_option_to_salvage_valid_pairing():
     """)
     scopes, _ = resolve_scopes(tokenize_code_file(code))
     assert scopes == {0: 18}
+
+
+def test_ignore_unrelated_else_block():
+    """Should properly check bracket positions against preprocessor blocks.
+    Caused by a bug in `check_naive_pairing()`."""
+    code = dedent("""\
+        {
+        #ifdef X
+        #endif
+        }
+        #ifdef Y
+        #ifdef Z
+        #endif
+        #else
+        #endif
+    """)
+    scopes, _ = resolve_scopes(tokenize_code_file(code))
+    assert scopes == {0: 18}
+
+
+def test_include_guard_naive_pairing():
+    """Should allow brackets to pair in this pattern (include guard) where all other tokens
+    are enclosed by a preprocessor expression."""
+    code = dedent("""\
+        #ifdef Y
+        {
+        #ifdef Z
+        }
+        #endif
+        #endif
+    """)
+    scopes, _ = resolve_scopes(tokenize_code_file(code))
+    assert scopes == {9: 20}
+
+
+def test_brackets_both_enabled_or_disabled():
+    """Should allow a bracket pairing if the brackets are both enabled or
+    both disabled depending on the result of the preprocessor expressions."""
+    code = dedent("""\
+        #ifdef A
+        {
+        #ifdef B
+        #endif
+        }
+        #else
+        #endif
+    """)
+    scopes, _ = resolve_scopes(tokenize_code_file(code))
+    assert scopes == {9: 27}
+
+
+def test_brackets_partially_enabled():
+    """Should allow a bracket pairing even though the closing bracket depends on `Z`. In a naive pairing,
+    we only require that brackets are in the same branch of a multi-branch preprocessor block.
+    """
+    code = dedent("""\
+        #ifdef Y
+        {
+        #ifdef Z
+        }
+        #endif
+        #else
+        #endif
+    """)
+    scopes, _ = resolve_scopes(tokenize_code_file(code))
+    assert scopes == {9: 20}
