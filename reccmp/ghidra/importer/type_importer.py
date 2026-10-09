@@ -21,13 +21,9 @@ from ghidra.program.model.data import (
     ComponentOffsetSettingsDefinition,
 )
 
-from reccmp.cvdump.types import CvdumpKeyError
-from reccmp.cvdump.type_leaves import (
-    CvdumpParsedType,
-    FieldListItem,
-    VirtualBasePointer,
-)
-from reccmp.cvdump.cvinfo import CVInfoTypeEnum, CvdumpTypeKey, CvdumpTypeMap
+from reccmp.cvdump.types import ClassInfo, CvdumpKeyError, TypeInfo, TypeKind
+from reccmp.compare.type_layout import disjoint_members
+from reccmp.cvdump.cvinfo import CVInfoTypeEnum, CvdumpTypeKey
 
 from .entity_names import NamespacePath, SanitizedEntityName, sanitize_name
 from .exceptions import (
@@ -93,92 +89,76 @@ class PdbTypeImporter:
             that fits inside C.
             This value should always be `False` when the referenced type is not a class.
         """
-        if type_index.is_scalar():
-            return self._import_scalar_type(type_index)
-
         try:
-            type_pdb = self.extraction.compare.types.from_key(type_index)
+            type_pdb = self.types.get(type_index)
         except CvdumpKeyError as e:
             raise TypeNotFoundError(
                 f"Failed to find referenced type '{type_index:#x}'"
             ) from e
 
-        type_category = type_pdb["type"]
+        type_category = type_pdb.kind
 
-        # follow forward reference (class, struct, union)
-        if type_pdb.get("is_forward_ref", False):
-            return self._import_forward_ref_type(type_index, type_pdb, as_base_class)
+        if (
+            type_category in (TypeKind.STRUCT, TypeKind.UNION, TypeKind.ENUM)
+            and type_pdb.size is None
+        ):
+            # A null size tells us that `type_index` is a forward reference with a broken link.
+            return self._import_forward_ref_without_target(type_pdb)
 
-        if type_category in ["LF_CLASS", "LF_STRUCTURE"]:
+        if type_category == TypeKind.STRUCT:
             return self._import_class_or_struct(type_pdb, as_base_class)
 
         assert (
             not as_base_class
         ), f"Tried to import {type_index} ({type_category}) as base class"
 
-        if type_category == "LF_POINTER":
+        if type_category == TypeKind.SCALAR:
+            return self._import_scalar_type(type_pdb.key)
+        elif type_category == TypeKind.POINTER:
             return get_or_add_pointer_type(
                 self.api,
-                self.import_pdb_type_into_ghidra(type_pdb["element_type"]),
+                self.import_pdb_type_into_ghidra(self.types.element_type(type_pdb.key)),
             )
-        elif type_category == "LF_ARRAY":
+        elif type_category == TypeKind.ARRAY:
             return self._import_array(type_pdb)
-        elif type_category == "LF_ENUM":
+        elif type_category == TypeKind.ENUM:
             return self._import_enum(type_pdb)
-        elif type_category == "LF_PROCEDURE":
+        elif type_category == TypeKind.FUNCTION:
             logger.warning(
                 "Not implemented: Function-valued type will be replaced by void: %s",
                 type_pdb,
             )
             return self._import_scalar_type(CVInfoTypeEnum.T_VOID)
-        elif type_category == "LF_UNION":
+        elif type_category == TypeKind.UNION:
             return self._import_union(type_pdb)
         else:
             raise TypeNotImplementedError(type_pdb)
 
     def _import_scalar_type(self, type_key: CvdumpTypeKey) -> DataType:
-        cvtype = CvdumpTypeMap[type_key]
-
-        if cvtype.pointer is None:
-            # Scalars need to be added to the database explicitly since there can be multiple
-            # non-identical instances of the same scalar. See the failing unit tests if you remove the wrapper.
-            return add_data_type_or_reuse_existing(
-                self.api, get_scalar_ghidra_type(type_key)
-            )
-
-        points_to = get_scalar_ghidra_type(cvtype.pointer)
-        return get_or_add_pointer_type(self.api, points_to)
-
-    def _import_forward_ref_type(
-        self,
-        type_index: CvdumpTypeKey,
-        type_pdb: CvdumpParsedType,
-        as_base_class: bool = False,
-    ) -> DataType:
-        referenced_type = type_pdb.get("udt") or type_pdb.get("modifies")
-        if referenced_type is None:
-            try:
-                # Example: HWND__, needs to be created manually
-                raw_name: str = type_pdb["name"]
-                type_name_and_namespace = sanitize_name(raw_name)
-                return get_ghidra_type(self.api, type_name_and_namespace)
-            except TypeNotFoundInGhidraError as e:
-                raise TypeNotImplementedError(
-                    f"{type_index}: forward ref without target, needs to be created manually: {type_pdb}"
-                ) from e
-        logger.debug(
-            "Following forward reference from %s to %s",
-            type_index,
-            referenced_type,
-        )
-        return self.import_pdb_type_into_ghidra(
-            referenced_type, as_base_class=as_base_class
+        # Scalars need to be added to the database explicitly since there can be multiple
+        # non-identical instances of the same scalar. See the failing unit tests if you remove the wrapper.
+        return add_data_type_or_reuse_existing(
+            self.api, get_scalar_ghidra_type(type_key)
         )
 
-    def _import_array(self, type_pdb: CvdumpParsedType) -> DataType:
-        inner_type = self.import_pdb_type_into_ghidra(type_pdb["array_type"])
+    def _import_forward_ref_without_target(self, type_pdb: TypeInfo) -> DataType:
+        try:
+            # Example: HWND__, needs to be created manually
+            assert type_pdb.name is not None
+            type_name_and_namespace = sanitize_name(type_pdb.name)
+            return get_ghidra_type(self.api, type_name_and_namespace)
+        except TypeNotFoundInGhidraError as e:
+            raise TypeNotImplementedError(
+                f"{type_pdb.key}: forward ref without target, needs to be created manually: {type_pdb}"
+            ) from e
 
-        array_total_bytes: int = type_pdb["size"]
+    def _import_array(self, type_pdb: TypeInfo) -> DataType:
+        inner_type = self.import_pdb_type_into_ghidra(
+            self.types.element_type(type_pdb.key)
+        )
+
+        array_total_bytes = type_pdb.size
+        assert array_total_bytes is not None
         data_type_size = inner_type.getLength()
         array_length, modulus = divmod(array_total_bytes, data_type_size)
         assert (
@@ -187,9 +167,10 @@ class PdbTypeImporter:
 
         return ArrayDataType(inner_type, array_length, 0)
 
-    def _import_union(self, type_pdb: CvdumpParsedType) -> DataType:
-        raw_name: str = type_pdb["name"]
-        expected_size: int = type_pdb["size"]
+    def _import_union(self, type_pdb: TypeInfo) -> DataType:
+        raw_name = type_pdb.name
+        assert raw_name is not None
+        expected_size = type_pdb.size
         type_name_with_namespace = sanitize_name(raw_name)
 
         try:
@@ -205,16 +186,13 @@ class PdbTypeImporter:
                 f"Writing union types is not supported. Please add by hand: {type_pdb}"
             ) from e
 
-    def _import_enum(self, type_pdb: CvdumpParsedType) -> DataType:
-        underlying_type = self.import_pdb_type_into_ghidra(type_pdb["underlying_type"])
-        try:
-            field_list = self.extraction.compare.types.from_key(
-                type_pdb["field_list_type"]
-            )
-        except CvdumpKeyError:
-            assert False, f"Failed to find field list for enum {type_pdb}"
+    def _import_enum(self, type_pdb: TypeInfo) -> DataType:
+        underlying_type = self.import_pdb_type_into_ghidra(
+            self.types.underlying_type(type_pdb.key)
+        )
 
-        type_name: str = type_pdb["name"]
+        type_name = type_pdb.name
+        assert type_name is not None
 
         result = self._get_or_create_enum_data_type(
             type_name, underlying_type.getLength()
@@ -223,21 +201,21 @@ class PdbTypeImporter:
         for existing_variant in result.getNames():
             result.remove(existing_variant)
 
-        for variant in field_list.get("variants", []):
+        for variant in self.types.enum_variants(type_pdb.key):
             result.add(variant.name, variant.value)
 
         return result
 
     def _import_class_or_struct(
         self,
-        type_in_pdb: CvdumpParsedType,
+        type_in_pdb: TypeInfo,
         as_base_class: bool = False,
     ) -> DataType:
-        field_list_type = type_in_pdb["field_list_type"]
-        field_list = self.types.from_key(field_list_type)
-
-        class_size: int = type_in_pdb["size"]
-        raw_name: str = type_in_pdb["name"]
+        class_size = type_in_pdb.size
+        raw_name = type_in_pdb.name
+        assert class_size is not None
+        assert raw_name is not None
+        class_info = self.types.class_info(type_in_pdb.key)
         # Virtual inheritance requires that struct members are arranged in this order:
         #
         # 1. Members from non-virtual base classes.
@@ -247,7 +225,7 @@ class PdbTypeImporter:
         # If this class has a direct virtual base class and we are creating it as the base for something else
         # (i.e. if `as_base_class` is True) then we need to create a "slim" copy that contains only the
         # non-virtual base classes and its own members.
-        make_slim = as_base_class and "vbase" in field_list
+        make_slim = as_base_class and len(class_info.virtual_bases) > 0
         if make_slim:
             raw_name += "_vbase_slim"
         sanitized_name = sanitize_name(raw_name)
@@ -303,12 +281,14 @@ class PdbTypeImporter:
         logger.debug("Class information: %s", type_in_pdb)
 
         components: list[GhidraFieldListItem] = []
-        components.extend(self._get_components_from_base_classes(field_list))
+        components.extend(self._get_components_from_base_classes(type_in_pdb.key))
         # can be missing when no new fields are declared
-        components.extend(self._get_components_from_members(field_list))
+        components.extend(
+            self._get_components_from_members(type_in_pdb.key, class_info)
+        )
         components.extend(
             self._get_components_from_vbase(
-                field_list, sanitized_name, new_ghidra_struct
+                class_info, sanitized_name, new_ghidra_struct
             )
         )
 
@@ -333,11 +313,9 @@ class PdbTypeImporter:
         return new_ghidra_struct
 
     def _get_components_from_base_classes(
-        self, field_list: CvdumpParsedType
+        self, type_key: CvdumpTypeKey
     ) -> Iterator[GhidraFieldListItem]:
-        non_virtual_base_classes: dict[CvdumpTypeKey, int] = field_list.get("super", {})
-
-        for super_type, offset in non_virtual_base_classes.items():
+        for super_type, offset in self.types.base_classes(type_key).items():
             ghidra_type = self.import_pdb_type_into_ghidra(
                 super_type, as_base_class=True
             )
@@ -349,10 +327,17 @@ class PdbTypeImporter:
             )
 
     def _get_components_from_members(
-        self, field_list: CvdumpParsedType
+        self, type_key: CvdumpTypeKey, class_info: ClassInfo
     ) -> Iterator[GhidraFieldListItem]:
-        members: list[FieldListItem] = field_list.get("members") or []
-        for member in members:
+        if class_info.has_vftable:
+            # TODO: Assumes 32-bit pointer. (GH #573)
+            yield GhidraFieldListItem(
+                type=self.import_pdb_type_into_ghidra(CVInfoTypeEnum.T_32PVOID),
+                offset=0,
+                name="vftable",
+            )
+
+        for member in disjoint_members(self.types, type_key):
             yield GhidraFieldListItem(
                 type=self.import_pdb_type_into_ghidra(member.type),
                 offset=member.offset,
@@ -361,20 +346,20 @@ class PdbTypeImporter:
 
     def _get_components_from_vbase(
         self,
-        field_list: CvdumpParsedType,
+        class_info: ClassInfo,
         sanitized_name: SanitizedEntityName,
         current_type: StructureInternal,
     ) -> Iterator[GhidraFieldListItem]:
-        vbasepointer: VirtualBasePointer | None = field_list.get("vbase", None)
-
-        if vbasepointer is not None and any(x.direct for x in vbasepointer.bases):
+        if class_info.vbptr_offset is not None and any(
+            x.direct for x in class_info.virtual_bases
+        ):
             vbaseptr_type = get_or_add_pointer_type(
                 self.api,
-                self._import_vbaseptr(current_type, sanitized_name, vbasepointer),
+                self._import_vbaseptr(current_type, sanitized_name, class_info),
             )
             yield GhidraFieldListItem(
                 type=vbaseptr_type,
-                offset=vbasepointer.vboffset,
+                offset=class_info.vbptr_offset,
                 name="vbase_offset",
             )
 
@@ -382,7 +367,7 @@ class PdbTypeImporter:
         self,
         current_type: StructureInternal,
         sanitized_name: SanitizedEntityName,
-        vbasepointer: VirtualBasePointer,
+        class_info: ClassInfo,
     ) -> StructureInternal:
         pointer_size = 4  # hard-code to 4 because of 32 bit
 
@@ -393,7 +378,7 @@ class PdbTypeImporter:
                 name="o_self",
             )
         ]
-        for vbase in vbasepointer.bases:
+        for vbase in class_info.virtual_bases:
             vbase_ghidra_type = self.import_pdb_type_into_ghidra(vbase.type)
 
             type_name = vbase_ghidra_type.getName()

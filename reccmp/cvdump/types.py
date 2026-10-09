@@ -1,16 +1,18 @@
-import bisect
 import re
 import logging
+from dataclasses import dataclass
+from enum import Enum, auto
 from typing import NamedTuple
 from .cvinfo import (
     CvInfoType,
     CvdumpTypeKey,
-    CVInfoTypeEnum,
     CvdumpTypeMap,
 )
 from .type_leaves import (
     CvdumpParsedType,
+    EnumItem,
     FieldListItem,
+    VirtualBaseClass,
     read_arglist,
     read_array,
     read_bitfield,
@@ -27,16 +29,12 @@ from .type_leaves import (
 logger = logging.getLogger(__name__)
 
 
-class CvdumpTypeError(Exception):
-    pass
+class CvdumpValueError(ValueError):
+    """The type key is incorrect for this operation."""
 
 
 class CvdumpKeyError(KeyError):
-    pass
-
-
-class CvdumpIntegrityError(Exception):
-    pass
+    """The type key does not exist in the database."""
 
 
 def get_primitive(key: CvdumpTypeKey) -> CvInfoType:
@@ -49,96 +47,57 @@ def get_primitive(key: CvdumpTypeKey) -> CvInfoType:
         raise CvdumpKeyError(key) from ex
 
 
-def get_best_member_item(
-    members: list[FieldListItem], offset: int
-) -> FieldListItem | None:
-    """Find the member that equals or is closest to our offset.
-    Unions and bitfields may have multiple candidates with the same offset.
-    In that case, use the first one."""
-    if not members:
-        return None
-
-    i = bisect.bisect_left(members, offset, key=lambda mem: mem.offset)
-    j = bisect.bisect_right(members, offset, key=lambda mem: mem.offset)
-
-    # If the indices are equal, our offset is between two field list items.
-    # Use one index earlier because it contains the offset.
-    if i == j:
-        i = max(0, i - 1)
-
-    for mem in members[i:j]:
-        return mem
-
-    return None
+class TypeKind(Enum):
+    SCALAR = auto()
+    POINTER = auto()
+    ARRAY = auto()
+    STRUCT = auto()
+    UNION = auto()
+    ENUM = auto()
+    BITFIELD = auto()
+    FUNCTION = auto()
 
 
-class ScalarType(NamedTuple):
-    offset: int
-    name: str | None
-    type: CvInfoType
-
-    @property
-    def size(self) -> int:
-        return self.type.size
-
-    @property
-    def format_char(self) -> str:
-        return self.type.fmt
-
-    @property
-    def is_pointer(self) -> bool:
-        return self.type.pointer is not None
+LEAF_KINDS: dict[str, TypeKind] = {
+    "LF_POINTER": TypeKind.POINTER,
+    "LF_ARRAY": TypeKind.ARRAY,
+    "LF_CLASS": TypeKind.STRUCT,
+    "LF_STRUCTURE": TypeKind.STRUCT,
+    "LF_UNION": TypeKind.UNION,
+    "LF_ENUM": TypeKind.ENUM,
+    "LF_BITFIELD": TypeKind.BITFIELD,
+    "LF_PROCEDURE": TypeKind.FUNCTION,
+    "LF_MFUNCTION": TypeKind.FUNCTION,
+}
 
 
 class TypeInfo(NamedTuple):
     key: CvdumpTypeKey
     """The unique identifier from the PDB."""
+    kind: TypeKind
+    """The category for this data type."""
     size: int | None
     """Total size of this type in bytes."""
-    name: str | None = None
+    name: str | None
     """Optional name for this complex type."""
-    members: list[FieldListItem] | None = None
-    """Struct only: List of members in this struct or class."""
-    array_type: CvdumpTypeKey | None = None
-    """Array only: Underlying type of each array element."""
-    array_length: int | None = None
-    """Array only: Count of elements in the array."""
-    array_element_size: int | None = None
-    """Array only: Size in bytes of each array element."""
-
-    def is_struct(self) -> bool:
-        return self.members is not None
-
-    def is_array(self) -> bool:
-        return self.array_type is not None
-
-    def is_scalar(self) -> bool:
-        # TODO: distinction between a class with zero members and no vtable?
-        return self.members is None and self.array_type is None
 
 
-def member_list_to_struct_string(members: list[ScalarType]) -> str:
-    """Create a string for use with struct.unpack"""
+@dataclass
+class FunctionInfo:
+    call_type: str
+    return_type: CvdumpTypeKey
+    args: list[CvdumpTypeKey]
+    class_type: CvdumpTypeKey | None
+    this_adjust: int
 
-    format_string = "".join(m.format_char for m in members)
-    if len(format_string) > 0:
-        return "<" + format_string
 
-    return ""
-
-
-def join_member_names(parent: str, child: str | None) -> str:
-    """Helper method to combine parent/child member names.
-    Child member name is None if the child is a scalar type."""
-
-    if child is None:
-        return parent
-
-    # If the child is an array index, join without the dot
-    if child.startswith("["):
-        return f"{parent}{child}"
-
-    return f"{parent}.{child}"
+@dataclass
+class ClassInfo:
+    has_vftable: bool
+    vbptr_offset: int | None
+    """vbpoff from the field list, or None if the class has no virtual bases."""
+    virtual_bases: list[VirtualBaseClass]
+    """Direct and indirect virtual base classes, sorted by vbind index."""
 
 
 class CvdumpTypesParser:
@@ -176,270 +135,182 @@ class CvdumpTypesParser:
 
         return self._parse_raw(type_key)
 
-    def _get_field_list(self, type_obj: CvdumpParsedType) -> list[FieldListItem]:
-        """Return the field list for the given LF_CLASS/LF_STRUCTURE reference"""
-
-        if type_obj.get("type") == "LF_FIELDLIST":
-            field_obj = type_obj
-        else:
-            field_list_type = type_obj["field_list_type"]
-            field_obj = self.from_key(field_list_type)
-
-        members: list[FieldListItem] = []
-
-        if "super" in field_obj:
-            for super_id in field_obj["super"].keys():
-                # May need to resolve forward ref.
-                superclass = self.get(super_id)
-                if superclass.members is not None:
-                    members += superclass.members
-
-        raw_members = field_obj.get("members", [])
-        members += raw_members
-
-        return sorted(members, key=lambda m: m.offset)
-
-    def get(self, type_key: CvdumpTypeKey) -> TypeInfo:
-        """Convert our dictionary values read from the cvdump output
-        into a consistent format for the given type."""
-
-        # Scalar type. Handled here because it makes the recursive steps
-        # much simpler.
-        if type_key.is_scalar():
-            cvinfo = get_primitive(type_key)
-            # We have seen some of the primitive types so far, but not all.
-            # The information in cvinfo.h is probably fine for most cases
-            # but warn users if we are dealing with an unseen type.
-            # (If you see this message in your project, we want to hear about it!)
-            if not cvinfo.verified and cvinfo.key not in self.alerted_types:
-                self.alerted_types.add(cvinfo.key)
-                logger.info(
-                    "Unverified primitive type 0x%04x '%s'",
-                    cvinfo.key,
-                    cvinfo.name,
-                )
-
-            return TypeInfo(
-                key=type_key,
-                size=cvinfo.size,
+    def _primitive(self, type_key: CvdumpTypeKey) -> CvInfoType:
+        cvinfo = get_primitive(type_key)
+        # We have seen some of the primitive types so far, but not all.
+        # The information in cvinfo.h is probably fine for most cases
+        # but warn users if we are dealing with an unseen type.
+        # (If you see this message in your project, we want to hear about it!)
+        if not cvinfo.verified and cvinfo.key not in self.alerted_types:
+            self.alerted_types.add(cvinfo.key)
+            logger.info(
+                "Unverified primitive type 0x%04x '%s'",
+                cvinfo.key,
+                cvinfo.name,
             )
 
-        # Go to our dictionary to find it.
-        obj = self.from_key(type_key)
-        obj_type = obj.get("type")
+        return cvinfo
 
-        if obj_type == "LF_POINTER":
-            return self.get(CVInfoTypeEnum.T_32PVOID)
+    def _resolved_leaf(self, type_key: CvdumpTypeKey) -> CvdumpParsedType:
+        leaf = self.from_key(type_key)
+        if leaf.get("is_forward_ref", False):
+            raise CvdumpKeyError(f"Type {type_key} is a forward ref. Call get() first.")
 
-        if obj.get("is_forward_ref", False):
-            # Get the forward reference to follow.
-            # If this is LF_CLASS/LF_STRUCTURE, it is the UDT value.
+        return leaf
+
+    def _expect_leaf(
+        self, type_key: CvdumpTypeKey, *leaf_types: str
+    ) -> CvdumpParsedType:
+        """Make sure that the given type key is backed by a specific leaf type."""
+        if type_key.is_scalar():
+            raise CvdumpValueError(f"{type_key} is scalar, expected {str(leaf_types)}")
+
+        leaf = self._resolved_leaf(type_key)
+        if leaf["type"] not in leaf_types:
+            raise CvdumpValueError(
+                f"{type_key} is {leaf['type']}, expected {str(leaf_types)}"
+            )
+
+        return leaf
+
+    def _field_list(self, type_key: CvdumpTypeKey) -> CvdumpParsedType:
+        leaf = self._expect_leaf(
+            type_key, "LF_CLASS", "LF_STRUCTURE", "LF_UNION", "LF_ENUM"
+        )
+        return self.from_key(leaf["field_list_type"])
+
+    # pylint:disable=too-many-return-statements
+    def get(self, type_key: CvdumpTypeKey) -> TypeInfo:
+        """Returns vital information (name, size, kind) for the type key.
+        All processing should start here. Forward references are resolved if possible.
+        The returned `key` value should be used in place of the input argument.
+        If we cannot resolve the forward reference, return a `TypeInfo` with null size.
+        """
+        leaf: CvdumpParsedType | None = None
+
+        # Follow any number of forward reference indirection hops.
+        # TODO: Fix shortcut: LF_MODIFIER is considered a forward reference. (GH #574)
+        # No consumer uses the `const` or `volatile` modifier options.
+        while not type_key.is_scalar():
+            leaf = self.from_key(type_key)
+            if not leaf.get("is_forward_ref", False):
+                break
+
+            # For LF_CLASS/LF_STRUCTURE/LF_UNION/LF_ENUM, follow the UDT value.
             # For LF_MODIFIER, it is the type being modified.
-            forward_ref = obj.get("udt", None) or obj.get("modifies", None)
+            forward_ref = leaf.get("udt") or leaf.get("modifies")
             if forward_ref is None:
-                raise CvdumpIntegrityError(f"Null forward ref for type {type_key}")
+                # Example: HWND__
+                kind = LEAF_KINDS.get(leaf["type"])
+                if kind is None:
+                    raise CvdumpKeyError(f"Null forward ref for type {type_key}")
 
-            return self.get(forward_ref)
+                return TypeInfo(type_key, kind, None, leaf.get("name"))
 
-        # These type references are just a wrapper around a scalar
-        if obj_type == "LF_ENUM":
-            underlying_type = obj.get("underlying_type")
-            if underlying_type is None:
-                raise CvdumpKeyError(f"Missing 'underlying_type' in {obj}")
+            type_key = forward_ref
 
-            return self.get(underlying_type)
+        if type_key.is_scalar():
+            cvinfo = self._primitive(type_key)
+            if cvinfo.pointer is not None:
+                return TypeInfo(type_key, TypeKind.POINTER, cvinfo.size, None)
 
-        members = None
-        array_type = None
-        array_length = None
-        array_element_size = None
+            return TypeInfo(type_key, TypeKind.SCALAR, cvinfo.size, None)
 
-        # Else it is not a forward reference, so build out the object here.
-        if obj_type == "LF_ARRAY":
-            array_type = obj.get("array_type")
-            if array_type is None:
-                raise CvdumpIntegrityError("No array element type")
+        assert leaf is not None
+        kind = LEAF_KINDS.get(leaf["type"])
+        match kind:
+            case TypeKind.POINTER:
+                # TODO: Assumes 32-bit pointers. (GH #573)
+                return TypeInfo(type_key, kind, 4, None)
 
-            array_element_size = self.get(array_type).size
-            assert (
-                array_element_size is not None
-            ), "Encountered an array whose type has no size"
+            case TypeKind.ARRAY:
+                return TypeInfo(type_key, kind, leaf["size"], None)
 
-            assert "size" in obj, "Cannot reconstruct array without total size"
-            array_length = obj["size"] // array_element_size
+            case TypeKind.STRUCT | TypeKind.UNION:
+                return TypeInfo(type_key, kind, leaf["size"], leaf.get("name"))
 
-        elif obj_type in ("LF_CLASS", "LF_STRUCTURE", "LF_UNION", "LF_FIELDLIST"):
-            members = self._get_field_list(obj)
-        elif obj_type in ("LF_BITFIELD",):
-            res = self.get(obj["bit_type"])
-            return res
+            case TypeKind.ENUM:
+                size = self.get(leaf["underlying_type"]).size
+                return TypeInfo(type_key, kind, size, leaf.get("name"))
 
-        return TypeInfo(
-            key=type_key,
-            size=obj.get("size"),
-            name=obj.get("name"),
-            members=members,
-            array_type=array_type,
-            array_length=array_length,
-            array_element_size=array_element_size,
+            case TypeKind.BITFIELD:
+                size = self.get(leaf["bit_type"]).size
+                return TypeInfo(type_key, kind, size, None)
+
+            case TypeKind.FUNCTION:
+                return TypeInfo(type_key, kind, None, None)
+
+        raise CvdumpValueError(f"{type_key} is {leaf['type']}, cannot resolve")
+
+    def element_type(self, type_key: CvdumpTypeKey) -> CvdumpTypeKey:
+        """Return the type being referenced by the pointer or array."""
+        if type_key.is_scalar():
+            pointee_type = self._primitive(type_key).pointer
+            if pointee_type is None:
+                raise CvdumpValueError(f"{type_key} is not a pointer")
+
+            return pointee_type
+
+        leaf = self._expect_leaf(type_key, "LF_POINTER", "LF_ARRAY")
+        if leaf["type"] == "LF_ARRAY":
+            return leaf["array_type"]
+
+        return leaf["element_type"]
+
+    def underlying_type(self, type_key: CvdumpTypeKey) -> CvdumpTypeKey:
+        """Returns the type footprint of the given enum or bitfield."""
+        leaf = self._expect_leaf(type_key, "LF_ENUM", "LF_BITFIELD")
+        if leaf["type"] == "LF_BITFIELD":
+            return leaf["bit_type"]
+
+        return leaf["underlying_type"]
+
+    def members(self, type_key: CvdumpTypeKey) -> list[FieldListItem]:
+        """Returns members of a struct or union. Order is not guaranteed. Callers should sort.
+        Call `base_classes()` to access members from direct base classes."""
+        self._expect_leaf(type_key, "LF_CLASS", "LF_STRUCTURE", "LF_UNION")
+
+        return list(self._field_list(type_key).get("members", []))
+
+    def base_classes(self, type_key: CvdumpTypeKey) -> dict[CvdumpTypeKey, int]:
+        """Returns the type and offset of direct base classes for the given class."""
+        self._expect_leaf(type_key, "LF_CLASS", "LF_STRUCTURE")
+
+        return dict(self._field_list(type_key).get("super", {}))
+
+    def class_info(self, type_key: CvdumpTypeKey) -> ClassInfo:
+        """Returns class-specific information for the given class."""
+        self._expect_leaf(type_key, "LF_CLASS", "LF_STRUCTURE")
+
+        field_list = self._field_list(type_key)
+        vbase = field_list.get("vbase")
+        return ClassInfo(
+            has_vftable=field_list.get("has_vftable", False),
+            vbptr_offset=vbase.vboffset if vbase is not None else None,
+            virtual_bases=list(vbase.bases) if vbase is not None else [],
         )
 
-    def get_by_name(self, name: str) -> TypeInfo:
-        """Find the complex type with the given name."""
-        # TODO
-        raise NotImplementedError
+    def enum_variants(self, type_key: CvdumpTypeKey) -> list[EnumItem]:
+        """Returns all variants for the given enum type."""
+        self._expect_leaf(type_key, "LF_ENUM")
 
-    def get_scalars(self, type_key: CvdumpTypeKey) -> list[ScalarType]:
-        """Reduce the given type to a list of scalars so we can
-        compare each component value."""
+        return list(self._field_list(type_key).get("variants", []))
 
-        obj = self.get(type_key)
-        if obj.is_scalar():
-            # Use obj.key here for alias types like LF_POINTER
-            cvinfo = get_primitive(obj.key)
-            return [
-                ScalarType(
-                    offset=0,
-                    type=cvinfo,
-                    name=None,
-                )
-            ]
+    def function(self, type_key: CvdumpTypeKey) -> FunctionInfo:
+        """Returns function-specific information for this function type."""
+        leaf = self._expect_leaf(type_key, "LF_PROCEDURE", "LF_MFUNCTION")
 
-        if obj.is_array():
-            assert obj.array_type is not None
-            assert obj.array_length is not None
-            assert obj.array_element_size is not None
+        arg_list = self.from_key(leaf["arg_list_type"])
+        args = arg_list.get("args", [])
+        assert arg_list["argcount"] == len(args)
 
-            array_element_members = self.get_scalars(obj.array_type)
-
-            return [
-                ScalarType(
-                    offset=i * obj.array_element_size + cm.offset,
-                    type=cm.type,
-                    name=join_member_names(f"[{i}]", cm.name),
-                )
-                for i in range(obj.array_length)
-                for cm in array_element_members
-            ]
-
-        # mypy?
-        assert obj.members is not None
-
-        # Dedupe repeated offsets if this is a union type
-        unique_offsets = {m.offset: m for m in obj.members}
-        unique_members = [m for _, m in unique_offsets.items()]
-
-        return [
-            ScalarType(
-                offset=m.offset + cm.offset,
-                type=cm.type,
-                name=join_member_names(m.name, cm.name),
-            )
-            for m in unique_members
-            for cm in self.get_scalars(m.type)
-        ]
-
-    def get_scalars_gapless(self, type_key: CvdumpTypeKey) -> list[ScalarType]:
-        """Reduce the given type to a list of scalars so we can
-        compare each component value."""
-
-        obj = self.get(type_key)
-        total_size = obj.size
-        assert (
-            total_size is not None
-        ), "Called get_scalar_gapless() on a type without size"
-
-        scalars = self.get_scalars(type_key)
-
-        # Deduplicate overlapping scalars that come from union members.
-        # get_scalars() dedupes union members at the outermost level only:
-        # if a union has branches whose inner members span different
-        # byte offsets (e.g. DEVMODE's union of POINTL vs four shorts),
-        # the flattened scalars from one branch can overlap with the
-        # other branch. Sort by offset, then pick the largest-size scalar
-        # at each offset and skip any subsequent scalar that falls within
-        # the range we've already claimed.
-        scalars = sorted(scalars, key=lambda s: (s.offset, -s.size))
-        deduped: list[ScalarType] = []
-        next_offset = 0
-        for scalar in scalars:
-            if scalar.offset >= next_offset:
-                deduped.append(scalar)
-                next_offset = scalar.offset + scalar.size
-        scalars = deduped
-
-        output: list[ScalarType] = []
-        last_extent = total_size
-
-        # Walk the scalar list in reverse; we assume a gap could not
-        # come at the start of the struct.
-        for scalar in scalars[::-1]:
-            this_extent = scalar.offset + scalar.size
-            size_diff = last_extent - this_extent
-            # We need to add the gap fillers in reverse here
-            for i in range(size_diff - 1, -1, -1):
-                # Push to front
-                output.insert(
-                    0,
-                    ScalarType(
-                        offset=this_extent + i,
-                        name="(padding)",
-                        type=get_primitive(CVInfoTypeEnum.T_UCHAR),
-                    ),
-                )
-
-            output.insert(0, scalar)
-            last_extent = scalar.offset
-
-        return output
-
-    def get_name_for_offset(self, type_key: CvdumpTypeKey, offset: int) -> str:
-        """Limited to arrays for now. Enable to close GH #462."""
-        if type_key in self._raw:
-            type_dict = self.from_key(type_key)
-            if type_dict.get("type") != "LF_ARRAY":
-                return f"+{offset}" if offset > 0 else ""
-
-        names = []
-
-        # 2 levels max depth (for now)
-        for _ in range(2):
-            try:
-                obj = self.get(type_key)
-            except CvdumpKeyError:
-                break
-
-            if obj.is_scalar():
-                break
-
-            if obj.is_array():
-                assert obj.array_type is not None
-                assert obj.array_element_size is not None
-
-                array_idx = offset // obj.array_element_size
-                type_key = obj.array_type
-                offset -= array_idx * obj.array_element_size
-                names.append(f"[{array_idx}]")
-
-            else:
-                assert isinstance(obj.members, list)
-                mem = get_best_member_item(obj.members, offset)
-                if mem is None:
-                    # Negative offset?
-                    break
-
-                type_key = mem.type
-                offset -= mem.offset
-                names.append(f".{mem.name}")
-
-        if offset > 0:
-            names.append(f"+{offset}")
-
-        return "".join(names)
-
-    def get_format_string(self, type_key: CvdumpTypeKey) -> str:
-        members = self.get_scalars_gapless(type_key)
-        return member_list_to_struct_string(members)
+        return FunctionInfo(
+            call_type=leaf["call_type"],
+            return_type=leaf["return_type"],
+            args=args,
+            class_type=leaf.get("class_type"),
+            this_adjust=leaf.get("this_adjust", 0),
+        )
 
     def _parse_raw(self, leaf_id: CvdumpTypeKey) -> CvdumpParsedType:
         try:

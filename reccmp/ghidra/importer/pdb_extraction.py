@@ -5,7 +5,7 @@ from reccmp.formats.exceptions import InvalidVirtualAddressError
 from reccmp.cvdump.symbols import SymbolsEntry
 from reccmp.compare import Compare
 from reccmp.compare.db import ReccmpMatch
-from reccmp.cvdump.types import CvdumpKeyError
+from reccmp.cvdump.types import CvdumpKeyError, CvdumpValueError
 from reccmp.cvdump.cvinfo import CvdumpTypeKey, CVInfoTypeEnum
 
 logger = logging.getLogger(__file__)
@@ -72,19 +72,12 @@ class PdbFunctionExtractor:
         # get corresponding function type
 
         try:
-            function_type = self.compare.types.from_key(function_type_key)
-        except CvdumpKeyError:
+            function_info = self.compare.types.function(function_type_key)
+        except (CvdumpKeyError, CvdumpValueError):
             logger.error(
                 "Could not find function type %s for function %s", fn.func_type, fn.name
             )
             return None
-
-        class_type = function_type.get("class_type")
-
-        assert "arg_list_type" in function_type
-        arg_list_type = self.compare.types.from_key(function_type["arg_list_type"])
-        arg_list_pdb_types = arg_list_type.get("args", [])
-        assert arg_list_type["argcount"] == len(arg_list_pdb_types)
 
         symbols: list[CppStackOrRegisterSymbol] = []
 
@@ -111,16 +104,13 @@ class PdbFunctionExtractor:
                     )
                 )
 
-        call_type = self._call_type_map[function_type["call_type"]]
-        this_adjust = function_type.get("this_adjust", 0)
-
         return FunctionSignature(
-            call_type=call_type,
-            arglist=arg_list_pdb_types,
-            return_type=function_type["return_type"],
-            class_type=class_type,
+            call_type=self._call_type_map[function_info.call_type],
+            arglist=function_info.args,
+            return_type=function_info.return_type,
+            class_type=function_info.class_type,
             symbols=symbols,
-            this_adjust=this_adjust,
+            this_adjust=function_info.this_adjust,
         )
 
     def get_function_list(self) -> list[PdbFunction]:
