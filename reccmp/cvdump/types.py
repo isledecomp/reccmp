@@ -189,7 +189,7 @@ class CvdumpTypesParser:
         leaf: CvdumpParsedType | None = None
 
         # Follow any number of forward reference indirection hops.
-        # TODO: Fix shortcut: LF_MODIFIER is considered a forward reference.
+        # TODO: Fix shortcut: LF_MODIFIER is considered a forward reference. (GH #574)
         # No consumer uses the `const` or `volatile` modifier options.
         while not type_key.is_scalar():
             leaf = self.from_key(type_key)
@@ -220,7 +220,7 @@ class CvdumpTypesParser:
         kind = LEAF_KINDS.get(leaf["type"])
         match kind:
             case TypeKind.POINTER:
-                # TODO: Assumes 32-bit pointers.
+                # TODO: Assumes 32-bit pointers. (GH #573)
                 return TypeInfo(type_key, kind, 4, None)
 
             case TypeKind.ARRAY:

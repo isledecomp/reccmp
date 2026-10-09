@@ -65,7 +65,7 @@ def composite_layout(
         for base, base_offset in types.base_classes(key).items()
     ]
     if types.class_info(key).has_vftable:
-        # TODO: Assumes 32-bit pointers.
+        # TODO: Assumes 32-bit pointers. (GH #573)
         items.append(
             FieldListItem(offset=0, type=CVInfoTypeEnum.T_32PVOID, name="vftable")
         )
@@ -85,7 +85,7 @@ def get_scalars(
             yield FieldListItem(offset, name, t.key)
 
         case TypeKind.POINTER:
-            # TODO: Assumes 32-bit pointers.
+            # TODO: Assumes 32-bit pointers. (GH #573)
             pointer = t.key if t.key.is_scalar() else CVInfoTypeEnum.T_32PVOID
             yield FieldListItem(offset, name, pointer)
 

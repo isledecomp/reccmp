@@ -330,7 +330,7 @@ class PdbTypeImporter:
         self, type_key: CvdumpTypeKey, class_info: ClassInfo
     ) -> Iterator[GhidraFieldListItem]:
         if class_info.has_vftable:
-            # TODO: Assumes 32-bit pointer.
+            # TODO: Assumes 32-bit pointer. (GH #573)
             yield GhidraFieldListItem(
                 type=self.import_pdb_type_into_ghidra(CVInfoTypeEnum.T_32PVOID),
                 offset=0,
