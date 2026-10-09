@@ -76,9 +76,10 @@ def gen_svg(
     raw_accuracy: float,
 ):
     """Render the progress SVG badge from the bundled template."""
-    icon_data = None
     if icon:
         icon_data = get_base64_icon(icon)
+    else:
+        icon_data = get_base64_icon(get_asset_file("../assets/icon.png"))
 
     total_statistic = raw_accuracy / total_funcs
     full_percentbar_width = 127.18422
