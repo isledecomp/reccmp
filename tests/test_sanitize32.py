@@ -90,6 +90,9 @@ DISPLACE_INSTRUCTIONS = (
     (0x1000, 7, "mov", "esi, dword ptr [eax*4 + 0x1234]"),
     # Jump table
     (0x1000, 7, "jmp", "dword ptr [eax*4 + 0x1234]"),
+    # Call through a table of function pointers
+    (0x1000, 7, "call", "dword ptr [edx*4 + 0x1234]"),
+    (0x1000, 6, "call", "dword ptr [ecx + 0x1234]"),
 )
 
 
@@ -113,6 +116,19 @@ def test_displacement_with_addr_verify(inst: DisasmLiteTuple):
     addr_test.assert_called_with(0x1234)
     assert "0x1234]" not in op_str
     assert "<OFFSET1>]" in op_str
+
+
+@pytest.mark.parametrize("inst", DISPLACE_INSTRUCTIONS)
+def test_displacement_with_name(inst: DisasmLiteTuple):
+    """Same as above, but using name lookup and substitution."""
+    addr_test = Mock(spec=AddrTestProtocol, return_value=True)
+    name_lookup = Mock(spec=NameReplacementProtocol, return_value="Hello")
+    p = ParseAsm(addr_test=addr_test, name_lookup=name_lookup)
+    _, op_str = p.sanitize(inst)
+
+    name_lookup.assert_called_with(0x1234, exact=False, indirect=False)
+    assert "0x1234]" not in op_str
+    assert "Hello]" in op_str
 
 
 IMMEDIATE_VALUE_INSTRUCTIONS = (
@@ -480,4 +496,86 @@ def test_16bit_mode():
     assert p.parse_asm(code, 0x1000) == [
         (0x1000, "call <OFFSET1>"),
         (0x1003, "shl bx, 1"),
+    ]
+
+
+def test_16bit_calls():
+    """Should sanitize near and far calls."""
+    code = (
+        # call 0x20
+        b"\xe8\x1d\x00"
+        # lcall 0x1000, 0x10
+        b"\x9a\x10\x00\x00\x10"
+    )
+
+    start = 0x10000000
+    p = ParseAsm(is_32bit=False)
+    # Placeholders used for both.
+    assert p.parse_asm(code, start) == [
+        (start, "call <OFFSET1>"),
+        (start + 3, "lcall <OFFSET2>"),
+    ]
+
+    # Demonstrate address replacement.
+    def name_lookup(addr: int, *_, **__) -> str | None:
+        return {0x10000010: "Test", 0x10000020: "Hello"}.get(addr)
+
+    p = ParseAsm(name_lookup=name_lookup, is_32bit=False)
+    # Near call uses code seg to get full address.
+    # It also adds the instruction size to the raw value, similar to jumps.
+    # Capstone makes these adjustments automatically.
+    assert p.parse_asm(code, start) == [
+        (start, "call Hello"),
+        (start + 3, "lcall Test"),
+    ]
+
+
+def test_16bit_jump_table():
+    """Build the address of the jump table displacement by masking out
+    the current code seg and combining it with the offset."""
+    code = (
+        # jmp word ptr cs:[bx + 0x1010]
+        b"\x2e\xff\xa7\x10\x10" +
+        # nop padding to 16 bytes
+        (b"\x90" * 11) +
+        # jump table
+        b"\x20\x10"
+        b"\x30\x10"
+    )
+
+    start = 0x10001000
+    p = ParseAsm(is_32bit=False)
+    asm = p.parse_asm(code, start)
+
+    assert asm[0] == (start, "jmp word ptr cs:[bx + 0x1010]")
+    # Sanitized offsets are relative to the function start.
+    assert asm[-3:] == [
+        (None, "Jump table:"),
+        (start + 0x10, "start + 0x20"),
+        (start + 0x12, "start + 0x30"),
+    ]
+
+
+def test_32bit_jump_table():
+    """32-bit jump tables use absolute 32-bit addresses."""
+    code = (
+        # jmp dword ptr [eax*4 + 0x10000010]
+        b"\xff\x24\x85\x10\x00\x00\x10" +
+        # nop padding to 16 bytes
+        (b"\x90" * 9) +
+        # jump table
+        b"\x20\x00\x00\x10"
+        b"\x30\x00\x00\x10"
+    )
+
+    start = 0x10000000
+    p = ParseAsm(is_32bit=True)
+    asm = p.parse_asm(code, start)
+
+    assert asm[0] == (start, "jmp dword ptr [eax*4 + 0x10000010]")
+    # Sanitized offsets are relative to the function start.
+    assert asm[-3:] == [
+        (None, "Jump table:"),
+        (start + 0x10, "start + 0x20"),
+        (start + 0x14, "start + 0x30"),
     ]

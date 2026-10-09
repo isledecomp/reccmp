@@ -143,7 +143,7 @@ def write_html_report(
         htmlfile.write(output_data)
 
 
-def print_combined_diff(udiff, plain: bool = False, show_both: bool = False):
+def print_combined_diff(udiff, *, show_both: bool = False):
     if udiff is None:
         return
 
@@ -152,15 +152,10 @@ def print_combined_diff(udiff, plain: bool = False, show_both: bool = False):
     padding_size = 0
 
     for slug, subgroups in udiff:
-        if plain:
-            print("---")
-            print("+++")
-            print(slug)
-        else:
-            print(f"{reccmp.color.Fore.RED}---")
-            print(f"{reccmp.color.Fore.GREEN}+++")
-            print(f"{reccmp.color.Fore.BLUE}{slug}")
-            print(reccmp.color.Style.RESET_ALL, end="")
+        print(f"{reccmp.color.Fore.RED}---")
+        print(f"{reccmp.color.Fore.GREEN}+++")
+        print(f"{reccmp.color.Fore.BLUE}{slug}")
+        print(reccmp.color.Style.RESET_ALL, end="")
 
         for subgroup in subgroups:
             equal = subgroup.get("both") is not None
@@ -179,12 +174,9 @@ def print_combined_diff(udiff, plain: bool = False, show_both: bool = False):
                         f"{orig_addr} / {'':{padding_size}}" if show_both else orig_addr
                     )
 
-                    if plain:
-                        print(f"{addr_prefix} : -{line}")
-                    else:
-                        print(
-                            f"{addr_prefix} : {reccmp.color.Fore.RED}-{line}{reccmp.color.Style.RESET_ALL}"
-                        )
+                    print(
+                        f"{addr_prefix} : {reccmp.color.Fore.RED}-{line}{reccmp.color.Style.RESET_ALL}"
+                    )
 
                 for recomp_addr, line in subgroup["recomp"]:
                     padding_size = max(padding_size, len(recomp_addr))
@@ -194,12 +186,9 @@ def print_combined_diff(udiff, plain: bool = False, show_both: bool = False):
                         else " " * padding_size
                     )
 
-                    if plain:
-                        print(f"{addr_prefix} : +{line}")
-                    else:
-                        print(
-                            f"{addr_prefix} : {reccmp.color.Fore.GREEN}+{line}{reccmp.color.Style.RESET_ALL}"
-                        )
+                    print(
+                        f"{addr_prefix} : {reccmp.color.Fore.GREEN}+{line}{reccmp.color.Style.RESET_ALL}"
+                    )
 
         # Newline between each diff subgroup.
         print()

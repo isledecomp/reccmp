@@ -70,14 +70,14 @@ def print_match_verbose(match: ReccmpComparedEntity, show_both_addrs: bool = Fal
         if match.accuracy == 1.0:
             print(f"{addrs}: {match.name} 100% match.\n\n{ok_text}\n\n")
         else:
-            print_combined_diff(udiff, show_both_addrs)
+            print_combined_diff(udiff, show_both=show_both_addrs)
 
             print(
                 f"\n{addrs}: {match.name} 100% effective match (differs, but only in ways that don't affect behavior).\n\n{ok_text}\n\n"
             )
 
     else:
-        print_combined_diff(udiff, show_both_addrs)
+        print_combined_diff(udiff, show_both=show_both_addrs)
 
         print(
             f"\n{match.name} is only {percenttext} similar to the original, diff above"
