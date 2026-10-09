@@ -352,6 +352,9 @@ class NEImage(Image):
             section_relocations=section_relocations,
         )
 
+    def is_relocated_addr(self, _: int) -> bool:
+        return False
+
     def get_module_name(self, index: int) -> str:
         modules_raw = self.view[
             self.mz_header.e_lfanew

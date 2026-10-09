@@ -32,6 +32,7 @@ from .node import (
 )
 from .error import ParserAlert, AlertCode
 from .tokenizer import (
+    resolve_preprocessor,
     get_newlines_from_text,
     get_namespaces_from_scopes,
     resolve_scopes,
@@ -99,8 +100,8 @@ class DecompParser:
 
         self.last_line: str = ""
 
-        self.namespaces: list[tuple[int, int, str]] = []
-        """Ranges and names of namespaces in the current file, given as: (start, end, name)"""
+        self.namespaces: list[tuple[int, int, str, str]] = []
+        """Ranges and names of namespaces in the current file, given as: (start, end, keyword, name)"""
 
         self.line_pos: int = 0
         """File offset of the current line we are reading."""
@@ -155,7 +156,7 @@ class DecompParser:
         """Qualify the provided name with the combined scope names for our current file position."""
         namespaces = [
             name
-            for start, stop, name in self.namespaces
+            for start, stop, _, name in self.namespaces
             if start < self.line_pos < stop
         ]
         if not namespaces:
@@ -585,7 +586,8 @@ class DecompParser:
 
         # Find the boundaries of all scopes now so we do not need to keep the stack
         # up to date while reading.
-        tokens = tokenize_code_file(text)
+        raw_tokens = tokenize_code_file(text)
+        tokens = resolve_preprocessor(raw_tokens, text)
         scopes, _ = resolve_scopes(tokens)
         self.namespaces = get_namespaces_from_scopes(text, tokens, scopes)
 

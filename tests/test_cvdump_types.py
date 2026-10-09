@@ -1157,6 +1157,98 @@ def test_pointer_without_containing_class(
     }
 
 
+MSVC710_CV_QUALIFIED_POINTER_TO_MEMBER = """
+0x1007 : Length = 18, Leaf = 0x1002 LF_POINTER
+	const Pointer to member (NEAR32), Size: 0
+	Element type : T_INT4(0074), Containing class = 0x1002,
+	Type of pointer to member = Not specified
+
+0x1008 : Length = 18, Leaf = 0x1002 LF_POINTER
+	volatile Pointer to member (NEAR32), Size: 0
+	Element type : T_INT4(0074), Containing class = 0x1002,
+	Type of pointer to member = Not specified
+
+0x1009 : Length = 18, Leaf = 0x1002 LF_POINTER
+	volatile const Pointer to member (NEAR32), Size: 0
+	Element type : T_INT4(0074), Containing class = 0x1002,
+	Type of pointer to member = Not specified
+
+0x100a : Length = 18, Leaf = 0x1002 LF_POINTER
+	const Pointer to member function (NEAR32), Size: 0
+	Element type : 0x1004, Containing class = 0x1002,
+	Type of pointer to member = Not specified
+
+0x100b : Length = 18, Leaf = 0x1002 LF_POINTER
+	volatile Pointer to member function (NEAR32), Size: 0
+	Element type : 0x1004, Containing class = 0x1002,
+	Type of pointer to member = Not specified
+
+0x100c : Length = 18, Leaf = 0x1002 LF_POINTER
+	volatile const Pointer to member function (NEAR32), Size: 0
+	Element type : 0x1004, Containing class = 0x1002,
+	Type of pointer to member = Not specified
+"""
+
+
+def test_cv_qualified_pointer_to_member(empty_parser: CvdumpTypesParser):
+    """Pointers to members can be const and/or volatile, e.g. `int S::* const`.
+    ATL 7.1's `CVarTypeInfo<T>::pmField` is one; MFC 7.1 programs have it."""
+    empty_parser.read_all(MSVC710_CV_QUALIFIED_POINTER_TO_MEMBER)
+
+    assert empty_parser.from_key(TK(0x1007)) == {
+        "element_type": CVInfoTypeEnum.T_INT4,
+        "type": "LF_POINTER",
+        "containing_class": 0x1002,
+        "pointer_type": "const Pointer to member",
+    }
+    assert empty_parser.from_key(TK(0x100C)) == {
+        "element_type": 0x1004,
+        "type": "LF_POINTER",
+        "containing_class": 0x1002,
+        "pointer_type": "volatile const Pointer to member function",
+    }
+
+    for key, pointer_type in (
+        (0x1008, "volatile Pointer to member"),
+        (0x1009, "volatile const Pointer to member"),
+        (0x100A, "const Pointer to member function"),
+        (0x100B, "volatile Pointer to member function"),
+    ):
+        assert empty_parser.from_key(TK(key))["pointer_type"] == pointer_type
+
+
+MSVC1451_RESTRICT_POINTER = """
+0x1002 : Length = 10, Leaf = 0x1002 LF_POINTER
+	__restrict L-value Reference (NEAR32), Size: 4
+	Element type : T_INT4(0074)
+
+0x1003 : Length = 10, Leaf = 0x1002 LF_POINTER
+	__restrict Pointer (NEAR32), Size: 4
+	Element type : T_INT4(0074)
+
+0x1004 : Length = 10, Leaf = 0x1002 LF_POINTER
+	volatile const __restrict Pointer (NEAR32), Size: 4
+	Element type : T_INT4(0074)
+"""
+
+
+def test_pointer_restrict(empty_parser: CvdumpTypesParser):
+    """cvdump prints `__restrict` after `volatile` and `const`."""
+    empty_parser.read_all(MSVC1451_RESTRICT_POINTER)
+
+    assert empty_parser.from_key(TK(0x1004)) == {
+        "element_type": CVInfoTypeEnum.T_INT4,
+        "type": "LF_POINTER",
+        "pointer_type": "volatile const __restrict Pointer",
+    }
+
+    assert (
+        empty_parser.from_key(TK(0x1002))["pointer_type"]
+        == "__restrict L-value Reference"
+    )
+    assert empty_parser.from_key(TK(0x1003))["pointer_type"] == "__restrict Pointer"
+
+
 ENUM_WITH_WHITESPACE_AND_COMMA = """
 0x4dc2 : Length = 58, Leaf = 0x1507 LF_ENUM
 	# members = 1,  type = T_INT4(0074) field list type 0x2588
