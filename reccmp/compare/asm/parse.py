@@ -192,11 +192,11 @@ class ParseAsm:
         else:
             op_str = ptr_replace_regex.sub(self.hex_replace_always, inst_op_str)
 
-            # We only want relocated addresses for pointer displacement.
-            # i.e. ptr [register + something]
-            # Otherwise we would use a placeholder for every stack variable,
-            # vtable call, or this->member access.
-            op_str = displace_replace_regex.sub(self.hex_replace_relocated, op_str)
+        # We only want relocated addresses for pointer displacement.
+        # i.e. ptr [register + something]
+        # Otherwise we would use a placeholder for every stack variable,
+        # vtable call, or this->member access.
+        op_str = displace_replace_regex.sub(self.hex_replace_relocated, op_str)
 
         # In the event of pointer comparison, only replace the immediate value
         # if it is a known address.
