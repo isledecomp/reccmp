@@ -14,7 +14,7 @@ from reccmp.cvdump.types import (
     CvdumpKeyError,
     FieldListItem,
 )
-from reccmp.types import ImageId
+from reccmp.types import EntityType, ImageId
 from .type_layout import (
     get_format_string,
     get_name_for_offset,
@@ -290,6 +290,25 @@ class VariableComparator:
 
         return self.db.is_match(orig_addr, recomp_addr)
 
+    def is_pointer_match_to_same_string(self, orig_addr: int, recomp_addr: int) -> bool:
+        """Check whether these pointers point at strings with the same text.
+        If a binary has several copies of a string, only one of them can be
+        matched with the string in the other binary."""
+        orig_ent = self.db.get(ImageId.ORIG, orig_addr)
+        recomp_ent = self.db.get(ImageId.RECOMP, recomp_addr)
+
+        if orig_ent is None or recomp_ent is None:
+            return False
+
+        string_types = (EntityType.STRING, EntityType.WIDECHAR)
+        if (
+            orig_ent.get("type") not in string_types
+            or recomp_ent.get("type") not in string_types
+        ):
+            return False
+
+        return orig_ent.name is not None and orig_ent.name == recomp_ent.name
+
     def is_pointer_match_to_offset(self, orig_addr: int, recomp_addr: int) -> bool:
         """Check whether these pointers point at the same offset of the same matched entity."""
         orig_ent = self.db.get(ImageId.ORIG, orig_addr, exact=False)
@@ -349,6 +368,9 @@ class VariableComparator:
 
                 if not match:
                     match = self.is_pointer_match_to_offset(orig_val, recomp_val)
+
+                if not match:
+                    match = self.is_pointer_match_to_same_string(orig_val, recomp_val)
 
                 value_a = pointer_display(self.db, self.types, ImageId.ORIG, orig_val)
                 value_b = pointer_display(
