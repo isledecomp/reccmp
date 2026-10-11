@@ -72,7 +72,7 @@ class PdbFunctionExtractor:
         # get corresponding function type
 
         try:
-            function_info = self.compare.types.function(function_type_key)
+            function_info = self.compare.types.function_info(function_type_key)
         except (CvdumpKeyError, CvdumpValueError):
             logger.error(
                 "Could not find function type %s for function %s", fn.func_type, fn.name

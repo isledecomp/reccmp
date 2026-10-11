@@ -296,7 +296,7 @@ class CvdumpTypesParser:
 
         return list(self._field_list(type_key).get("variants", []))
 
-    def function(self, type_key: CvdumpTypeKey) -> FunctionInfo:
+    def function_info(self, type_key: CvdumpTypeKey) -> FunctionInfo:
         """Returns function-specific information for this function type."""
         leaf = self._expect_leaf(type_key, "LF_PROCEDURE", "LF_MFUNCTION")
 

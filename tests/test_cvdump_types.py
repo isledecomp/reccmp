@@ -727,7 +727,7 @@ def test_accessor_rejects_forward_ref(parser: CvdumpTypesParser):
 
 
 def test_function(parser: CvdumpTypesParser):
-    assert parser.function(TK(0x1019)) == FunctionInfo(
+    assert parser.function_info(TK(0x1019)) == FunctionInfo(
         call_type="C Near",
         return_type=CVInfoTypeEnum.T_LONG,
         args=[TK(0x100D), TK(0x1016), TK(0x1017)],
@@ -736,7 +736,7 @@ def test_function(parser: CvdumpTypesParser):
     )
     assert parser.get(TK(0x1019)).kind == TypeKind.FUNCTION
     with pytest.raises(CvdumpValueError):
-        parser.function(TK(0x4060))
+        parser.function_info(TK(0x4060))
 
 
 def test_lf_pointer_type(parser: CvdumpTypesParser):
