@@ -11,7 +11,7 @@ from reccmp.cvdump.types import (
 )
 
 
-def join_member_names(parent: str, child: str) -> str:
+def _join_member_names(parent: str, child: str) -> str:
     """Helper method to combine parent/child member names."""
 
     # If one of the strings is empty, return the one we have.
@@ -49,7 +49,7 @@ def disjoint_members(
     return kept
 
 
-def composite_layout(
+def _composite_layout(
     types: CvdumpTypesParser, key: CvdumpTypeKey
 ) -> list[FieldListItem]:
     """Returns members of a struct with members from direct base classes inserted.
@@ -102,16 +102,16 @@ def get_scalars(
                     types,
                     element.key,
                     offset + i * element.size,
-                    join_member_names(name, f"[{i}]"),
+                    _join_member_names(name, f"[{i}]"),
                 )
 
         case TypeKind.STRUCT | TypeKind.UNION:
             if t.size is None:
                 raise CvdumpKeyError(f"Forward ref {t.key} has no target")
 
-            for m in composite_layout(types, t.key):
+            for m in _composite_layout(types, t.key):
                 yield from get_scalars(
-                    types, m.type, offset + m.offset, join_member_names(name, m.name)
+                    types, m.type, offset + m.offset, _join_member_names(name, m.name)
                 )
 
 
@@ -162,7 +162,7 @@ def _item_at_offset(
 ) -> FieldListItem | None:
     """The base class or member at or closest before the given offset."""
     best = None
-    for item in composite_layout(types, key):
+    for item in _composite_layout(types, key):
         if item.offset > offset:
             break
         best = item
