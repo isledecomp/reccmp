@@ -65,7 +65,7 @@ class_decl_regex = re.compile(
 )
 
 
-def template_replace(match: re.Match) -> str:
+def _template_replace(match: re.Match) -> str:
     type_name, asterisks = match.groups()
     if asterisks is None:
         return f"<{type_name}>"
@@ -80,7 +80,7 @@ def fix_template_type(class_name: str) -> str:
     if "<" not in class_name:
         return class_name
 
-    return template_regex.sub(template_replace, class_name)
+    return template_regex.sub(_template_replace, class_name)
 
 
 def get_class_name(line: str) -> str | None:
@@ -123,7 +123,7 @@ class ParserCodeString(NamedTuple):
     is_widechar: bool
 
 
-def unescape_replace(match: re.Match) -> str:
+def _unescape_replace(match: re.Match) -> str:
     octal, hex_, char = match.groups()
 
     if octal is not None:
@@ -155,6 +155,6 @@ def get_string_contents(line: str) -> ParserCodeString | None:
         return None
 
     return ParserCodeString(
-        text=stringEscapeRegex.sub(unescape_replace, match.group(2)),
+        text=stringEscapeRegex.sub(_unescape_replace, match.group(2)),
         is_widechar=match.group(1) is not None,
     )
