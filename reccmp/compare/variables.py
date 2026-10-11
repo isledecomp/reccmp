@@ -341,7 +341,9 @@ class VariableComparator:
                 return create_comparison_item(var, error=f"Failed to unpack data: {e}")
 
         compared = []
-        for orig_val, recomp_val, member in zip(orig_data, recomp_data, layout.members):
+        for orig_val, recomp_val, member in zip(
+            orig_data, recomp_data, layout.members, strict=True
+        ):
             if CvdumpTypeMap[member.type].pointer is not None:
                 match = self.is_pointer_match(orig_val, recomp_val)
 
