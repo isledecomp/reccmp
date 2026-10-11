@@ -12,6 +12,7 @@ from .type_leaves import (
     CvdumpParsedType,
     EnumItem,
     FieldListItem,
+    TypeLeafString,
     VirtualBaseClass,
     read_arglist,
     read_array,
@@ -59,15 +60,15 @@ class TypeKind(Enum):
 
 
 LEAF_KINDS: dict[str, TypeKind] = {
-    "LF_POINTER": TypeKind.POINTER,
-    "LF_ARRAY": TypeKind.ARRAY,
-    "LF_CLASS": TypeKind.STRUCT,
-    "LF_STRUCTURE": TypeKind.STRUCT,
-    "LF_UNION": TypeKind.UNION,
-    "LF_ENUM": TypeKind.ENUM,
-    "LF_BITFIELD": TypeKind.BITFIELD,
-    "LF_PROCEDURE": TypeKind.FUNCTION,
-    "LF_MFUNCTION": TypeKind.FUNCTION,
+    TypeLeafString.POINTER: TypeKind.POINTER,
+    TypeLeafString.ARRAY: TypeKind.ARRAY,
+    TypeLeafString.CLASS: TypeKind.STRUCT,
+    TypeLeafString.STRUCTURE: TypeKind.STRUCT,
+    TypeLeafString.UNION: TypeKind.UNION,
+    TypeLeafString.ENUM: TypeKind.ENUM,
+    TypeLeafString.BITFIELD: TypeKind.BITFIELD,
+    TypeLeafString.PROCEDURE: TypeKind.FUNCTION,
+    TypeLeafString.MFUNCTION: TypeKind.FUNCTION,
 }
 
 
@@ -106,21 +107,6 @@ class CvdumpTypesParser:
 
     # Marks the start of a new type
     INDEX_RE = re.compile(r"(?P<key>0x\w+) : .* (?P<type>LF_\w+)")
-
-    MODES_OF_INTEREST = {
-        "LF_ARRAY",
-        "LF_BITFIELD",
-        "LF_CLASS",
-        "LF_ENUM",
-        "LF_FIELDLIST",
-        "LF_MODIFIER",
-        "LF_POINTER",
-        "LF_STRUCTURE",
-        "LF_ARGLIST",
-        "LF_MFUNCTION",
-        "LF_PROCEDURE",
-        "LF_UNION",
-    }
 
     def __init__(self) -> None:
         self._keys: dict[CvdumpTypeKey, CvdumpParsedType] = {}
@@ -175,7 +161,11 @@ class CvdumpTypesParser:
 
     def _field_list(self, type_key: CvdumpTypeKey) -> CvdumpParsedType:
         leaf = self._expect_leaf(
-            type_key, "LF_CLASS", "LF_STRUCTURE", "LF_UNION", "LF_ENUM"
+            type_key,
+            TypeLeafString.CLASS,
+            TypeLeafString.STRUCTURE,
+            TypeLeafString.UNION,
+            TypeLeafString.ENUM,
         )
         return self.from_key(leaf["field_list_type"])
 
@@ -251,16 +241,16 @@ class CvdumpTypesParser:
 
             return pointee_type
 
-        leaf = self._expect_leaf(type_key, "LF_POINTER", "LF_ARRAY")
-        if leaf["type"] == "LF_ARRAY":
+        leaf = self._expect_leaf(type_key, TypeLeafString.POINTER, TypeLeafString.ARRAY)
+        if leaf["type"] == TypeLeafString.ARRAY:
             return leaf["array_type"]
 
         return leaf["element_type"]
 
     def underlying_type(self, type_key: CvdumpTypeKey) -> CvdumpTypeKey:
         """Returns the type footprint of the given enum or bitfield."""
-        leaf = self._expect_leaf(type_key, "LF_ENUM", "LF_BITFIELD")
-        if leaf["type"] == "LF_BITFIELD":
+        leaf = self._expect_leaf(type_key, TypeLeafString.ENUM, TypeLeafString.BITFIELD)
+        if leaf["type"] == TypeLeafString.BITFIELD:
             return leaf["bit_type"]
 
         return leaf["underlying_type"]
@@ -268,19 +258,24 @@ class CvdumpTypesParser:
     def members(self, type_key: CvdumpTypeKey) -> list[FieldListItem]:
         """Returns members of a struct or union. Order is not guaranteed. Callers should sort.
         Call `base_classes()` to access members from direct base classes."""
-        self._expect_leaf(type_key, "LF_CLASS", "LF_STRUCTURE", "LF_UNION")
+        self._expect_leaf(
+            type_key,
+            TypeLeafString.CLASS,
+            TypeLeafString.STRUCTURE,
+            TypeLeafString.UNION,
+        )
 
         return list(self._field_list(type_key).get("members", []))
 
     def base_classes(self, type_key: CvdumpTypeKey) -> dict[CvdumpTypeKey, int]:
         """Returns the type and offset of direct base classes for the given class."""
-        self._expect_leaf(type_key, "LF_CLASS", "LF_STRUCTURE")
+        self._expect_leaf(type_key, TypeLeafString.CLASS, TypeLeafString.STRUCTURE)
 
         return dict(self._field_list(type_key).get("super", {}))
 
     def class_info(self, type_key: CvdumpTypeKey) -> ClassInfo:
         """Returns class-specific information for the given class."""
-        self._expect_leaf(type_key, "LF_CLASS", "LF_STRUCTURE")
+        self._expect_leaf(type_key, TypeLeafString.CLASS, TypeLeafString.STRUCTURE)
 
         field_list = self._field_list(type_key)
         vbase = field_list.get("vbase")
@@ -292,13 +287,15 @@ class CvdumpTypesParser:
 
     def enum_variants(self, type_key: CvdumpTypeKey) -> list[EnumItem]:
         """Returns all variants for the given enum type."""
-        self._expect_leaf(type_key, "LF_ENUM")
+        self._expect_leaf(type_key, TypeLeafString.ENUM)
 
         return list(self._field_list(type_key).get("variants", []))
 
     def function_info(self, type_key: CvdumpTypeKey) -> FunctionInfo:
         """Returns function-specific information for this function type."""
-        leaf = self._expect_leaf(type_key, "LF_PROCEDURE", "LF_MFUNCTION")
+        leaf = self._expect_leaf(
+            type_key, TypeLeafString.PROCEDURE, TypeLeafString.MFUNCTION
+        )
 
         arg_list = self.from_key(leaf["arg_list_type"])
         args = arg_list.get("args", [])
@@ -320,37 +317,37 @@ class CvdumpTypesParser:
 
         try:
             match leaf_type:
-                case "LF_MODIFIER":
+                case TypeLeafString.MODIFIER:
                     self._keys[leaf_id] = read_modifier(leaf, leaf_type)
 
-                case "LF_ARRAY":
+                case TypeLeafString.ARRAY:
                     self._keys[leaf_id] = read_array(leaf, leaf_type)
 
-                case "LF_FIELDLIST":
+                case TypeLeafString.FIELDLIST:
                     self._keys[leaf_id] = read_fieldlist(leaf, leaf_type)
 
-                case "LF_ARGLIST":
+                case TypeLeafString.ARGLIST:
                     self._keys[leaf_id] = read_arglist(leaf, leaf_type)
 
-                case "LF_MFUNCTION":
+                case TypeLeafString.MFUNCTION:
                     self._keys[leaf_id] = read_mfunction(leaf, leaf_type)
 
-                case "LF_PROCEDURE":
+                case TypeLeafString.PROCEDURE:
                     self._keys[leaf_id] = read_procedure(leaf, leaf_type)
 
-                case "LF_CLASS" | "LF_STRUCTURE":
+                case TypeLeafString.CLASS | TypeLeafString.STRUCTURE:
                     self._keys[leaf_id] = read_class_or_struct(leaf, leaf_type)
 
-                case "LF_POINTER":
+                case TypeLeafString.POINTER:
                     self._keys[leaf_id] = read_pointer(leaf, leaf_type)
 
-                case "LF_ENUM":
+                case TypeLeafString.ENUM:
                     self._keys[leaf_id] = read_enum(leaf, leaf_type)
 
-                case "LF_UNION":
+                case TypeLeafString.UNION:
                     self._keys[leaf_id] = read_union(leaf, leaf_type)
 
-                case "LF_BITFIELD":
+                case TypeLeafString.BITFIELD:
                     self._keys[leaf_id] = read_bitfield(leaf, leaf_type)
 
                 case _:
@@ -369,6 +366,6 @@ class CvdumpTypesParser:
                 continue
 
             leaf_id_str, leaf_type = match.groups()
-            if leaf_type in self.MODES_OF_INTEREST:
+            if leaf_type in TypeLeafString:
                 leaf_id = CvdumpTypeKey.from_str(leaf_id_str)
                 self._raw[leaf_id] = (leaf, leaf_type)

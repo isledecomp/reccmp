@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 import re
 import logging
+from enum import Enum
 from typing import NamedTuple
 from typing_extensions import NotRequired, TypedDict
 from .cvinfo import CvdumpTypeKey
@@ -98,6 +99,21 @@ class CvdumpParsedType(TypedDict):
     bit_start: NotRequired[int]
     bit_count: NotRequired[int]
     bit_type: NotRequired[CvdumpTypeKey]
+
+
+class TypeLeafString(str, Enum):
+    ARGLIST = "LF_ARGLIST"
+    ARRAY = "LF_ARRAY"
+    BITFIELD = "LF_BITFIELD"
+    CLASS = "LF_CLASS"
+    ENUM = "LF_ENUM"
+    FIELDLIST = "LF_FIELDLIST"
+    MFUNCTION = "LF_MFUNCTION"
+    MODIFIER = "LF_MODIFIER"
+    POINTER = "LF_POINTER"
+    PROCEDURE = "LF_PROCEDURE"
+    STRUCTURE = "LF_STRUCTURE"
+    UNION = "LF_UNION"
 
 
 # LF_FIELDLIST class/struct member
