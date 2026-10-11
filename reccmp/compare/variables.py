@@ -229,7 +229,7 @@ def pointer_display(
 class VariableLayout(NamedTuple):
     size: int
     members: list[FieldListItem]
-    raw: bool
+    is_raw: bool
 
 
 def get_variable_layout(types: CvdumpTypesParser, var: ReccmpMatch) -> VariableLayout:
@@ -327,7 +327,7 @@ class VariableComparator:
         # Reading from recomp should never fail, so if it does, raising an exception is correct
         recomp_block = DataBlock.read(var.recomp_addr, layout.size, self.recomp_bin)
 
-        if layout.raw:
+        if layout.is_raw:
             # Splits `bytes` to `tuple[int]`.
             orig_data = tuple(orig_block.data)
             recomp_data = tuple(recomp_block.data)
@@ -382,5 +382,5 @@ class VariableComparator:
         return create_comparison_item(
             var,
             compared=compared,
-            raw_only=layout.raw,
+            raw_only=layout.is_raw,
         )
