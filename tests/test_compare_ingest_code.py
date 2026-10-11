@@ -2,10 +2,11 @@
 
 from pathlib import PurePath, PureWindowsPath
 from textwrap import dedent
-from unittest.mock import Mock
+from unittest.mock import ANY, Mock
 import pytest
 from reccmp.types import EntityType, ImageId
 from reccmp.formats import PEImage, TextFile
+from reccmp.compare.event import ReccmpEvent
 from reccmp.compare.ingest import load_markers
 from reccmp.compare.db import EntityDb
 from reccmp.compare.lines import LinesDb
@@ -386,6 +387,68 @@ def test_read_gb2312_string(db: EntityDb, lines_db: LinesDb):
     assert entity.get("type") == EntityType.STRING
     assert entity.size(ImageId.ORIG) == len(string_bytes)
     assert entity.name == f'"{string_text}"'.encode("unicode_escape").decode()
+
+
+def test_load_code_string_other_filenames(db: EntityDb, lines_db: LinesDb):
+    """The string entity knows the file of its annotation and the files
+    of the annotations that are dropped because they reuse its address.
+    These duplicates are expected and not reported."""
+    orig_bin = Mock(spec=[])
+    orig_bin.read = lambda _, size: b"Pizza\x00"[:size]
+    orig_bin.imagebase = 0
+    orig_bin.is_valid_vaddr = Mock(return_value=True)
+
+    code = dedent("""\
+        // STRING: TEST 0x1000
+        const char* test = "Pizza";
+        """)
+    files = (
+        TextFile(PurePath("first.cpp"), code + code),
+        TextFile(PurePath("second.cpp"), code + code),
+        TextFile(PurePath("third.cpp"), code),
+    )
+
+    report = Mock()
+    load_markers(files, lines_db, orig_bin, "TEST", db, report=report)
+
+    entity = db.get(ImageId.ORIG, 0x1000)
+    assert entity is not None
+    assert entity.get("filename") == "first.cpp"
+    assert entity.get("other_filenames") == ["second.cpp", "third.cpp"]
+    report.assert_not_called()
+
+
+def test_load_code_string_duplicate_with_other_text(db: EntityDb, lines_db: LinesDb):
+    """A second annotation at the address with other text is a user error."""
+    orig_bin = Mock(spec=[])
+    orig_bin.read = lambda _, size: b"Pizza\x00"[:size]
+    orig_bin.imagebase = 0
+    orig_bin.is_valid_vaddr = Mock(return_value=True)
+
+    files = (
+        TextFile(
+            PurePath("first.cpp"),
+            dedent("""\
+                // STRING: TEST 0x1000
+                const char* test = "Pizza";
+                """),
+        ),
+        TextFile(
+            PurePath("second.cpp"),
+            dedent("""\
+                // STRING: TEST 0x1000
+                const char* test = "Pasta";
+                """),
+        ),
+    )
+
+    report = Mock()
+    load_markers(files, lines_db, orig_bin, "TEST", db, report=report)
+
+    entity = db.get(ImageId.ORIG, 0x1000)
+    assert entity is not None
+    assert entity.get("other_filenames") == []
+    report.assert_called_once_with(ReccmpEvent.INVALID_USER_DATA, 0x1000, msg=ANY)
 
 
 def test_load_code_string_with_trailing_nulls(db: EntityDb, lines_db: LinesDb):

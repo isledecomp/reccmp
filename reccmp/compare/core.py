@@ -30,11 +30,13 @@ from .match_msvc import (
     match_static_variables,
     match_variables,
     match_strings,
+    match_unpooled_strings,
     match_ref,
     match_imports,
 )
 from .db import EntityDb, ReccmpEntity, ReccmpMatch
 from .lines import LinesDb
+from .objects import ObjectDataRegions
 from .report import ReccmpComparedEntity, ReccmpStatusReport
 from .analyze import (
     create_imports,
@@ -248,14 +250,30 @@ class Compare:
         # This happens last because establishing all other entities first
         # will reduce false positives. For each address presumed to be a
         # float or string, skip if there is an existing entity at the address.
-        for img_id, binfile in (
+        images = (
             (ImageId.ORIG, self.orig_bin),
             (ImageId.RECOMP, self.recomp_bin),
-        ):
-            # Some float consts may appear to be strings.
-            # Detect floats first because we can identify them with more confidence
-            # and this eliminates them from consideration as strings.
+        )
+
+        # Some float consts may appear to be strings.
+        # Detect floats first because we can identify them with more confidence
+        # and this eliminates them from consideration as strings.
+        for img_id, binfile in images:
             create_analysis_floats(self._db, img_id, binfile)
+
+        # This comes after the floats, which a string literal can follow in
+        # the object data, and before the search for strings in the binary,
+        # which would create entities that match by text across all object files.
+        match_unpooled_strings(
+            self._db,
+            self.orig_bin,
+            self.recomp_bin,
+            ObjectDataRegions(
+                self.cvdump_analysis, self._lines_db, self.recomp_bin
+            ).get,
+        )
+
+        for img_id, binfile in images:
             create_analysis_strings(self._db, img_id, binfile, self.bin_encoding)
             complete_partial_floats(self._db, img_id, binfile)
             complete_partial_strings(self._db, img_id, binfile, self.bin_encoding)
@@ -275,6 +293,7 @@ class Compare:
             .publics()
             .symbols()
             .section_contributions()
+            .modules()
             .types()
             .run()
         )

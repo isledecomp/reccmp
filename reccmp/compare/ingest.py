@@ -12,7 +12,7 @@ from reccmp.formats import Image, PEImage, TextFile
 from reccmp.cvdump import CvdumpTypesParser, CvdumpAnalysis
 from reccmp.parser import DecompCodebase
 from reccmp.parser.marker import ProjectAliases
-from reccmp.parser.node import ParserVtable
+from reccmp.parser.node import ParserString, ParserVtable
 from reccmp.types import EntityType, ImageId
 from reccmp.compare.event import (
     ReccmpEvent,
@@ -144,6 +144,40 @@ def load_cvdump_lines(
     lines_db.mark_function_starts(tuple(seen_addrs))
 
 
+def _report_duplicate_annotations(
+    codebase: DecompCodebase, report: ReccmpReportProtocol
+) -> dict[int, list[str]]:
+    """Reports the annotations dropped for reusing an address, except for a
+    string annotated again in another file: a string can be used in several
+    files, and each can have its own copy in the recomp. Returns these other
+    files by address."""
+    duplicate_annotations = codebase.prune_reused_addrs()
+    string_other_filenames: dict[int, list[str]] = {}
+    kept_strings = {s.offset: s for s in codebase.iter_strings()}
+
+    for sym in duplicate_annotations:
+        kept = kept_strings.get(sym.offset)
+        if (
+            isinstance(sym, ParserString)
+            and kept is not None
+            and (kept.name, kept.is_widechar) == (sym.name, sym.is_widechar)
+        ):
+            filename = str(sym.filename)
+            filenames = string_other_filenames.setdefault(sym.offset, [])
+            if filename != str(kept.filename) and filename not in filenames:
+                filenames.append(filename)
+
+            continue
+
+        report(
+            ReccmpEvent.INVALID_USER_DATA,
+            sym.offset,
+            msg=f"Dropped duplicate address 0x{sym.offset:x} on {sym.type.name} annotation in file: {sym.filename}",
+        )
+
+    return string_other_filenames
+
+
 # pylint: disable=too-many-positional-arguments, too-many-arguments
 def load_markers(
     code_files: Sequence[TextFile],
@@ -170,14 +204,7 @@ def load_markers(
         )
 
     # Make sure each address is used only once
-    duplicate_annotations = codebase.prune_reused_addrs()
-
-    for sym in duplicate_annotations:
-        report(
-            ReccmpEvent.INVALID_USER_DATA,
-            sym.offset,
-            msg=f"Dropped duplicate address 0x{sym.offset:x} on {sym.type.name} annotation in file: {sym.filename}",
-        )
+    string_other_filenames = _report_duplicate_annotations(codebase, report)
 
     # Match lineref functions first because this is a guaranteed match.
     # If we have two functions that share the same name, and one is
@@ -289,6 +316,8 @@ def load_markers(
                 string.offset,
                 name=entity_name_from_string(string.name, wide=string.is_widechar),
                 type=EntityType.WIDECHAR if string.is_widechar else EntityType.STRING,
+                filename=str(string.filename),
+                other_filenames=string_other_filenames.get(string.offset, []),
                 size=string_size,
                 verified=True,
             )
