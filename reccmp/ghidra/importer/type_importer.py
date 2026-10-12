@@ -96,40 +96,38 @@ class PdbTypeImporter:
                 f"Failed to find referenced type '{type_index:#x}'"
             ) from e
 
-        type_category = type_pdb.kind
-
         if (
-            type_category in (TypeKind.STRUCT, TypeKind.UNION, TypeKind.ENUM)
+            type_pdb.kind in (TypeKind.STRUCT, TypeKind.UNION, TypeKind.ENUM)
             and type_pdb.size is None
         ):
             # A null size tells us that `type_index` is a forward reference with a broken link.
             return self._import_forward_ref_without_target(type_pdb)
 
-        if type_category == TypeKind.STRUCT:
+        if type_pdb.kind == TypeKind.STRUCT:
             return self._import_class_or_struct(type_pdb, as_base_class)
 
         assert (
             not as_base_class
-        ), f"Tried to import {type_index} ({type_category}) as base class"
+        ), f"Tried to import {type_index} ({type_pdb.kind}) as base class"
 
-        if type_category == TypeKind.SCALAR:
+        if type_pdb.kind == TypeKind.SCALAR:
             return self._import_scalar_type(type_pdb.key)
-        elif type_category == TypeKind.POINTER:
+        elif type_pdb.kind == TypeKind.POINTER:
             return get_or_add_pointer_type(
                 self.api,
                 self.import_pdb_type_into_ghidra(self.types.element_type(type_pdb.key)),
             )
-        elif type_category == TypeKind.ARRAY:
+        elif type_pdb.kind == TypeKind.ARRAY:
             return self._import_array(type_pdb)
-        elif type_category == TypeKind.ENUM:
+        elif type_pdb.kind == TypeKind.ENUM:
             return self._import_enum(type_pdb)
-        elif type_category == TypeKind.FUNCTION:
+        elif type_pdb.kind == TypeKind.FUNCTION:
             logger.warning(
                 "Not implemented: Function-valued type will be replaced by void: %s",
                 type_pdb,
             )
             return self._import_scalar_type(CVInfoTypeEnum.T_VOID)
-        elif type_category == TypeKind.UNION:
+        elif type_pdb.kind == TypeKind.UNION:
             return self._import_union(type_pdb)
         else:
             raise TypeNotImplementedError(type_pdb)
