@@ -3,9 +3,10 @@
 from dataclasses import dataclass
 import re
 import logging
+from enum import Enum
 from typing import NamedTuple
 from typing_extensions import NotRequired, TypedDict
-from .cvinfo import CvdumpTypeKey, CVInfoTypeEnum
+from .cvinfo import CvdumpTypeKey
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,7 @@ class CvdumpParsedType(TypedDict):
     modification: NotRequired[str]
 
     # LF_FIELDLIST
+    has_vftable: NotRequired[bool]
     super: NotRequired[dict[CvdumpTypeKey, int]]
     vbase: NotRequired[VirtualBasePointer]
     members: NotRequired[list[FieldListItem]]
@@ -97,6 +99,21 @@ class CvdumpParsedType(TypedDict):
     bit_start: NotRequired[int]
     bit_count: NotRequired[int]
     bit_type: NotRequired[CvdumpTypeKey]
+
+
+class TypeLeafString(str, Enum):
+    ARGLIST = "LF_ARGLIST"
+    ARRAY = "LF_ARRAY"
+    BITFIELD = "LF_BITFIELD"
+    CLASS = "LF_CLASS"
+    ENUM = "LF_ENUM"
+    FIELDLIST = "LF_FIELDLIST"
+    MFUNCTION = "LF_MFUNCTION"
+    MODIFIER = "LF_MODIFIER"
+    POINTER = "LF_POINTER"
+    PROCEDURE = "LF_PROCEDURE"
+    STRUCTURE = "LF_STRUCTURE"
+    UNION = "LF_UNION"
 
 
 # LF_FIELDLIST class/struct member
@@ -215,12 +232,8 @@ def read_fieldlist(leaf: str, leaf_type: str) -> CvdumpParsedType:
     obj: CvdumpParsedType = {"type": leaf_type}
     members: list[FieldListItem] = []
 
-    # If this class has a vtable, create a mock member at offset 0
     if VTABLE_RE.search(leaf) is not None:
-        # For our purposes, any pointer type will do
-        members.append(
-            FieldListItem(offset=0, type=CVInfoTypeEnum.T_32PVOID, name="vftable")
-        )
+        obj["has_vftable"] = True
 
     # Superclass is set here in the fieldlist rather than in LF_CLASS
     for match in SUPERCLASS_RE.finditer(leaf):

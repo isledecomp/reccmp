@@ -4,8 +4,9 @@ from functools import partial
 import pytest
 from reccmp.types import EntityType, ImageId
 from reccmp.compare.db import EntityDb
-from reccmp.cvdump.types import CvdumpTypesParser, FieldListItem, CVInfoTypeEnum
-from reccmp.cvdump.cvinfo import CvdumpTypeKey as TK
+from reccmp.compare.type_layout import get_name_for_offset
+from reccmp.cvdump.types import CvdumpTypesParser, FieldListItem
+from reccmp.cvdump.cvinfo import CVInfoTypeEnum, CvdumpTypeKey as TK
 
 # pylint:disable=protected-access
 # TODO: Remove after we no longer access `types_db._keys` directly. See #485.
@@ -34,7 +35,7 @@ def name_for_address(
     suffix = ""
     type_key = entity.get("data_type")
     if isinstance(type_key, int):
-        suffix = types_db.get_name_for_offset(TK(type_key), offset)
+        suffix = get_name_for_offset(types_db, TK(type_key), offset)
 
     name = entity.name
     if name:

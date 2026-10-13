@@ -6,8 +6,6 @@
 
 from typing import TYPE_CHECKING
 
-import pytest
-
 from reccmp.cvdump.analysis import CvdumpNode
 from reccmp.cvdump.cvinfo import CVInfoTypeEnum, CvdumpTypeKey
 from reccmp.compare.db import ReccmpMatch
@@ -372,7 +370,6 @@ char * LegoCharacterManager::GetActorName(int p_index)
 """)
 
 
-@pytest.mark.xfail(reason="See GH #384")
 def test_global_pointer_access(
     ghidra: "FlatProgramAPI",
     function_helper: GhidraFunctionTestHelper,

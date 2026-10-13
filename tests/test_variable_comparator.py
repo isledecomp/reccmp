@@ -4,11 +4,10 @@ from reccmp.cvdump.cvinfo import CVInfoTypeEnum, CvdumpTypeKey
 from reccmp.cvdump.types import (
     CvdumpTypesParser,
     FieldListItem,
-    TypeInfo,
 )
 from reccmp.compare.db import EntityDb, ReccmpMatch
 from reccmp.types import EntityType, ImageId
-from .mock_types_db import MockTypesDb
+from .mock_types_db import MockStruct, MockTypesDb
 from .raw_image import RawImage
 
 
@@ -258,7 +257,7 @@ def test_compare_complex_partial_diff(db: EntityDb):
     The variable will only match if all members match."""
     key = CvdumpTypeKey(0x1000)
     type_info = [
-        TypeInfo(
+        MockStruct(
             key=key,
             size=4,
             members=[
@@ -289,7 +288,7 @@ def test_compare_complex_with_trailing_padding(db: EntityDb):
     """
     key = CvdumpTypeKey(0x1000)
     type_info = [
-        TypeInfo(
+        MockStruct(
             key=key,
             size=8,
             members=[
@@ -319,7 +318,7 @@ def test_compare_complex_with_intermediate_padding(db: EntityDb):
     In this (contrived) example, each array entry has padding."""
     key = CvdumpTypeKey(0x1000)
     type_info = [
-        TypeInfo(
+        MockStruct(
             key=key,
             size=8,
             members=[
@@ -440,7 +439,7 @@ def test_compare_complex_raw_empty_struct(db: EntityDb):
     """Compare raw data (using struct size) for structs or classes with no members."""
     key = CvdumpTypeKey(0x1000)
     type_info = [
-        TypeInfo(
+        MockStruct(
             key=key,
             size=4,
             members=[],
