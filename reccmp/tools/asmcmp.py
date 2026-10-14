@@ -117,6 +117,7 @@ def parse_args() -> argparse.Namespace:
         "--total",
         "-T",
         metavar="<count>",
+        type=int,
         help="Total number of expected functions (improves total accuracy statistic)",
     )
     parser.add_argument(
