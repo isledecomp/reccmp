@@ -288,7 +288,7 @@ def load_markers(
                 ImageId.ORIG,
                 string.offset,
                 name=entity_name_from_string(string.name, wide=string.is_widechar),
-                type=EntityType.STRING,
+                type=EntityType.WIDECHAR if string.is_widechar else EntityType.STRING,
                 size=string_size,
                 verified=True,
             )
