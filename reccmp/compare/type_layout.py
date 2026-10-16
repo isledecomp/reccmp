@@ -105,7 +105,7 @@ def get_scalars(
                     _join_member_names(name, f"[{i}]"),
                 )
 
-        case TypeKind.STRUCT | TypeKind.UNION:
+        case TypeKind.STRUCT | TypeKind.CLASS | TypeKind.UNION:
             if t.size is None:
                 raise CvdumpKeyError(f"Forward ref {t.key} has no target")
 
@@ -200,7 +200,7 @@ def get_name_for_offset(
             names.append(f"[{array_idx}]")
             depth += 1
 
-        elif t.kind in (TypeKind.STRUCT, TypeKind.UNION):
+        elif t.kind in (TypeKind.STRUCT, TypeKind.CLASS, TypeKind.UNION):
             item = _item_at_offset(types, t.key, offset)
             if item is None:
                 # Negative offset?

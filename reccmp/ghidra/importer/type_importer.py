@@ -97,13 +97,14 @@ class PdbTypeImporter:
             ) from e
 
         if (
-            type_pdb.kind in (TypeKind.STRUCT, TypeKind.UNION, TypeKind.ENUM)
+            type_pdb.kind
+            in (TypeKind.STRUCT, TypeKind.CLASS, TypeKind.UNION, TypeKind.ENUM)
             and type_pdb.size is None
         ):
             # A null size tells us that `type_index` is a forward reference with a broken link.
             return self._import_forward_ref_without_target(type_pdb)
 
-        if type_pdb.kind == TypeKind.STRUCT:
+        if type_pdb.kind in (TypeKind.STRUCT, TypeKind.CLASS):
             return self._import_class_or_struct(type_pdb, as_base_class)
 
         assert (
