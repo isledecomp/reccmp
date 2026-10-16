@@ -118,6 +118,8 @@ def write_html_report(
         "components/pageNumberOf.js",
         "components/pageSelect.js",
         "components/prevPageButton.js",
+        "components/progressPercent.js",
+        "components/reportFilename.js",
         "components/resultCount.js",
         "components/showRecomp.js",
         "components/searchbar.js",
