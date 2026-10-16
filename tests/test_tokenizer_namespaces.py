@@ -5,6 +5,7 @@ import pytest
 from reccmp.parser.tokenizer import (
     tokenize_code_file,
     get_namespaces_from_scopes,
+    resolve_preprocessor,
     resolve_scopes,
 )
 
@@ -300,3 +301,17 @@ def test_class_name_after_declspec():
     assert get_namespaces_from_scopes(code, tokens, scopes) == [
         (33, 47, "class", "Test")
     ]
+
+
+def test_declaration_removed_by_preprocessor():
+    """Should not declare a namespace for a class removed by the preprocessor."""
+    code = dedent("""\
+        #if 0
+        class Test {
+        int m_test;
+        };
+        #endif
+    """)
+    tokens = resolve_preprocessor(tokenize_code_file(code), code)
+    scopes, _ = resolve_scopes(tokens)
+    assert not get_namespaces_from_scopes(code, tokens, scopes)
