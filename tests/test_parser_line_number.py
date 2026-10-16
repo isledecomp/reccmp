@@ -52,7 +52,6 @@ def test_function_indent_allman_declaration_indented(parser: DecompParser):
     assert parser.functions[0].end_line == 4
 
 
-@pytest.mark.xfail(reason="Function range detection depends on whitespace.")
 def test_function_indent_allman_first_bracket_indented(parser: DecompParser):
     """First bracket indented. Second is not indented."""
     parser.read(dedent("""\
@@ -66,7 +65,6 @@ def test_function_indent_allman_first_bracket_indented(parser: DecompParser):
     assert parser.functions[0].end_line == 4
 
 
-@pytest.mark.xfail(reason="Function range detection depends on whitespace.")
 def test_function_indent_allman_second_bracket_indented(parser: DecompParser):
     """First bracket not indented. Second is indented."""
     parser.read(dedent("""\
@@ -104,7 +102,6 @@ def test_function_indent_knr_declaration_indented(parser: DecompParser):
     assert parser.functions[0].end_line == 3
 
 
-@pytest.mark.xfail(reason="Function range detection depends on whitespace.")
 def test_function_indent_knr_second_bracket_indented(parser: DecompParser):
     """Declaration and first bracket not indented. Second bracket indented."""
     parser.read(dedent("""\
@@ -117,7 +114,6 @@ def test_function_indent_knr_second_bracket_indented(parser: DecompParser):
     assert parser.functions[0].end_line == 3
 
 
-@pytest.mark.xfail(reason="Function range detection depends on whitespace.")
 def test_function_indent_lisp(parser: DecompParser):
     """Brackets are on different lines but on the same line as code.
     Same syntax as AFXWIN1.INL"""
@@ -132,7 +128,6 @@ def test_function_indent_lisp(parser: DecompParser):
     assert parser.functions[0].end_line == 4
 
 
-@pytest.mark.xfail(reason="Ends function too soon")
 def test_function_indent_no_indents(parser: DecompParser):
     """Function contains additional brackets and none are indented."""
     parser.read(dedent("""\
@@ -170,6 +165,23 @@ def test_function_indent_preprocessor_with_brackets(parser: DecompParser):
     assert parser.functions[0].end_line == 10
 
 
+def test_function_signature_split(parser: DecompParser):
+    """Signature is split across lines by default arguments and a comment.
+    The function starts on the first line of the signature."""
+    parser.read(dedent("""\
+        // FUNCTION: TEST 0x1234
+        void test(
+            int a = 1, // comment
+            int b = 2
+        )
+        {
+        }
+        """))
+    assert len(parser.alerts) == 0
+    assert parser.functions[0].line_number == 2
+    assert parser.functions[0].end_line == 7
+
+
 def test_function_with_other_markers(parser: DecompParser):
     """Should report the correct line numbers for the function and its component variables and strings."""
     parser.read(dedent("""\
@@ -202,7 +214,6 @@ def test_function_with_other_markers(parser: DecompParser):
     assert parser.strings[1].line_number == 12
 
 
-@pytest.mark.xfail(reason="Function range detection depends on whitespace.")
 def test_function_indent_multiple_functions(parser: DecompParser):
     """Brackets with different tab stobs should not raise MISSED_END_OF_FUNCTION when we read a second function."""
     parser.read(dedent("""\

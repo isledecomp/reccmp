@@ -31,7 +31,6 @@ def fixture_parser() -> DecompParser:
     return DecompParser()
 
 
-@pytest.mark.xfail(reason="TODO: #509")
 @pytest.mark.parametrize("marker_type, annotation_type", VALID_ANNOTATIONS)
 def test_marker_inside_block_comment(
     parser: DecompParser, marker_type: MarkerType, annotation_type: AnnotationType
@@ -51,7 +50,63 @@ def test_marker_inside_block_comment(
     assert not parser.alerts
 
 
-@pytest.mark.xfail(reason="TODO: #509")
+@pytest.mark.parametrize("marker_type, annotation_type", VALID_ANNOTATIONS)
+def test_marker_inside_string(
+    parser: DecompParser, marker_type: MarkerType, annotation_type: AnnotationType
+):
+    """Should ignore the marker inside the string literal."""
+    parser.read(dedent(f"""\
+        const char* x = "// {marker_type.name}: TEST 0x1234";
+        {completion_token(marker_type, annotation_type)}
+        """))
+
+    # Captured nothing.
+    assert not list(parser.iter_symbols())
+
+    # No warnings.
+    assert not parser.alerts
+
+
+@pytest.mark.parametrize("marker_type, annotation_type", VALID_ANNOTATIONS)
+def test_marker_inside_preprocessor_if_zero(
+    parser: DecompParser, marker_type: MarkerType, annotation_type: AnnotationType
+):
+    """Should ignore the marker inside the excluded preprocessor block."""
+    parser.read(dedent(f"""\
+        #if 0
+        // {marker_type.name}: TEST 0x1234
+        {completion_token(marker_type, annotation_type)}
+        #endif
+        """))
+
+    # Captured nothing.
+    assert not list(parser.iter_symbols())
+
+    # No warnings.
+    assert not parser.alerts
+
+
+@pytest.mark.parametrize("marker_type, annotation_type", VALID_ANNOTATIONS)
+def test_marker_inside_preprocessor_else(
+    parser: DecompParser, marker_type: MarkerType, annotation_type: AnnotationType
+):
+    """Should ignore the marker inside the excluded #else block."""
+    parser.read(dedent(f"""\
+        #if 1
+        int x = 1;
+        #else
+        // {marker_type.name}: TEST 0x1234
+        {completion_token(marker_type, annotation_type)}
+        #endif
+        """))
+
+    # Captured nothing.
+    assert not list(parser.iter_symbols())
+
+    # No warnings.
+    assert not parser.alerts
+
+
 @pytest.mark.parametrize("marker_type, annotation_type", VALID_ANNOTATIONS)
 def test_marker_with_code_before_the_comment(
     parser: DecompParser, marker_type: MarkerType, annotation_type: AnnotationType
@@ -70,7 +125,6 @@ def test_marker_with_code_before_the_comment(
     # May want to warn here using a new AlertCode.
 
 
-@pytest.mark.xfail(reason="TODO: #509")
 def test_function_end_curly_in_block_comment(parser: DecompParser):
     """Should ignore commented curly brackets when detecting the end of a function."""
     parser.read(dedent("""\
@@ -92,7 +146,6 @@ def test_function_end_curly_in_block_comment(parser: DecompParser):
     assert not parser.alerts
 
 
-@pytest.mark.xfail(reason="TODO: #509")
 def test_function_end_curly_in_multiline_string(parser: DecompParser):
     """Should ignore curly brackets inside of strings.
     (This and other examples exploit the fact that curly-bracket matching
@@ -150,7 +203,6 @@ def test_string_with_line_continuation_and_escaped_quote(parser: DecompParser):
     assert not parser.alerts
 
 
-@pytest.mark.xfail(reason="TODO: #509")
 def test_variable_on_multiple_lines(parser: DecompParser):
     parser.read(dedent("""\
         // GLOBAL: TEST 0x1234
@@ -176,7 +228,6 @@ SPLAYED_TYPES = [
 ]
 
 
-@pytest.mark.xfail(reason="TODO: #509")
 @pytest.mark.parametrize("marker_type", SPLAYED_TYPES)
 def test_splayed_line_completion_tokens(parser: DecompParser, marker_type: MarkerType):
     """Should match even when each component of the code completion token is on its own line."""
