@@ -7,6 +7,8 @@ import NextPageButton from './components/nextPageButton';
 import PageNumberOf from './components/pageNumberOf';
 import PageSelect from './components/pageSelect';
 import PrevPageButton from './components/prevPageButton';
+import ProgressPercent from './components/progressPercent';
+import ReportFilename from './components/reportFilename';
 import ResultCount from './components/resultCount';
 import SearchBar from './components/searchbar';
 import SearchOptions from './components/searchOptions';
@@ -19,6 +21,8 @@ window.onload = () => {
   document.title = `reccmp: ${global_reccmp_metadata.file}`;
 
   window.customElements.define('reccmp-provider', ReccmpProvider);
+  window.customElements.define('report-filename', ReportFilename);
+  window.customElements.define('progress-percent', ProgressPercent);
   window.customElements.define('click-to-copy', ClickToCopy); // used by listing-table
   window.customElements.define('listing-table', ListingTable);
   window.customElements.define('diff-display', DiffDisplay);
