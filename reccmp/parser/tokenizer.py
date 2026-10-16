@@ -190,6 +190,10 @@ def find_code_keywords(text: str, tokens: list[CodeToken]) -> list[int]:
         # Which token contains this position?
         index = get_token_index(tokens, pos)
 
+        # Skip if no token contains this position (e.g. removed by the preprocessor).
+        if index < 0 or pos >= tokens[index][1]:
+            continue
+
         # CODE tokens only. Reject matches that are inside a comment or string token.
         if tokens[index][2] == TokenType.CODE:
             code_keywords.add(index)
