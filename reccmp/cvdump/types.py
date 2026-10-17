@@ -53,6 +53,7 @@ class TypeKind(Enum):
     POINTER = auto()
     ARRAY = auto()
     STRUCT = auto()
+    CLASS = auto()
     UNION = auto()
     ENUM = auto()
     BITFIELD = auto()
@@ -62,7 +63,7 @@ class TypeKind(Enum):
 LEAF_KINDS: dict[str, TypeKind] = {
     TypeLeafString.POINTER: TypeKind.POINTER,
     TypeLeafString.ARRAY: TypeKind.ARRAY,
-    TypeLeafString.CLASS: TypeKind.STRUCT,
+    TypeLeafString.CLASS: TypeKind.CLASS,
     TypeLeafString.STRUCTURE: TypeKind.STRUCT,
     TypeLeafString.UNION: TypeKind.UNION,
     TypeLeafString.ENUM: TypeKind.ENUM,
@@ -218,7 +219,7 @@ class CvdumpTypesParser:
             case TypeKind.ARRAY:
                 return TypeInfo(type_key, kind, leaf["size"], None)
 
-            case TypeKind.STRUCT | TypeKind.UNION:
+            case TypeKind.STRUCT | TypeKind.CLASS | TypeKind.UNION:
                 return TypeInfo(type_key, kind, leaf["size"], leaf.get("name"))
 
             case TypeKind.ENUM:
