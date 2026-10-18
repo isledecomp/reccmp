@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 from reccmp.cvdump.cvinfo import CVInfoTypeEnum, CvdumpTypeKey, CvdumpTypeMap
-from reccmp.ghidra.importer.exceptions import TypeNotFoundError, TypeNotImplementedError
+from reccmp.ghidra.importer.exceptions import TypeNotFoundError
 from .cvdump_sample import CvdumpSample, load_cvdump_sample
 from .ghidra_integration_test_setup import GhidraTypeTestHelper
 from .helpers import assert_instance
@@ -115,50 +115,27 @@ def test_ghidra_forward_ref_to_pdb_type(
     assert second_import == imported_structure
 
 
-def test_forward_ref_to_missing_type(
-    type_helper: GhidraTypeTestHelper, cvdump_sample: CvdumpSample
-):
-    """Importing a cvdump leaf with a forward reference that is unresolved in the text.
-    We have seen this with `HWND__` in real data, so we use that in the example.
-    In this case, `HWND__` does not already exist, so it is impossible to complete the import.
-    """
-    type_helper.set_up_cvdump_types(cvdump_sample.text)
-    key = cvdump_sample.key("hwnd-key")
-
-    with pytest.raises(
-        TypeNotImplementedError,
-        match="forward ref without target, needs to be created manually:",
-    ):
-        type_helper.type_importer.import_pdb_type_into_ghidra(key)
-
-
-def test_forward_ref_to_pre_existing_type(
-    ghidra: "FlatProgramAPI",
+def test_forward_ref_without_target(
     type_helper: GhidraTypeTestHelper,
     cvdump_sample: CvdumpSample,
 ):
     """Importing a cvdump leaf with a forward reference that is unresolved in the text.
     We have seen this with `HWND__` in real data, so we use that in the example.
-    In this case, we create `HWND__` manually so the forward reference can be completed.
+    We decided to import `HWND__` as a typedef to `void` (#538).
     """
-    data_type_manager = ghidra.getCurrentProgram().getDataTypeManager()
     from ghidra.program.model.data import (
-        TypedefDataType,
+        TypeDef,
         VoidDataType,
-        DataTypeConflictHandler,
-    )
-
-    # Make sure `HWND__` exists in Ghidra before importing the cvdump type.
-    hwnd = data_type_manager.addDataType(
-        TypedefDataType("HWND__", VoidDataType()), DataTypeConflictHandler.KEEP_HANDLER
     )
 
     type_helper.set_up_cvdump_types(cvdump_sample.text)
     key = cvdump_sample.key("hwnd-key")
 
     # The type imported by the forward reference should match the type we created manually.
-    imported_hwnd = type_helper.type_importer.import_pdb_type_into_ghidra(key)
-    assert imported_hwnd == hwnd
+    hwnd = type_helper.type_importer.import_pdb_type_into_ghidra(key)
+    assert isinstance(hwnd, TypeDef)
+    assert hwnd.name == "HWND__"
+    assert isinstance(hwnd.getDataType(), VoidDataType)
 
 
 def test_ghidra_pointer_to_class(
