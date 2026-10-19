@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('');
+  await page.goto('singleFunction.html');
 });
 
 test('Reset filter options after reload (Issue #99)', async ({ page }) => {
