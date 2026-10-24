@@ -16,6 +16,18 @@ updates:
         patterns: ["*"]
         update-types: ["minor", "patch"]
 
+  - package-ecosystem: "npm"
+    directory: "/webui"
+    schedule:
+      # Check for updates to GitHub Actions every week
+      interval: "weekly"
+    cooldown:
+      default-days: 5 # some protection against supply chain attacks
+    groups:
+      non-major:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
