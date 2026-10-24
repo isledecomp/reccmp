@@ -79,4 +79,4 @@ const global_reccmp_progress = getProgressCounters();
 
 // reccmp-pack-end
 
-export { global_reccmp_data, global_reccmp_metadata, global_reccmp_progress, getDataByAddr };
+export { getDataByAddr, global_reccmp_data, global_reccmp_metadata, global_reccmp_progress };
