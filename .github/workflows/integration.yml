@@ -49,20 +49,24 @@ jobs:
         path: isle
 
   integration:
-    name: ${{ matrix.target }}
-    runs-on: ubuntu-latest
+    name: ${{ matrix.platform.name }} ${{ matrix.target }}
+    runs-on: ${{ matrix.platform.os }}
     needs: prepare
     strategy:
       fail-fast: false
       matrix:
+        platform:
+          - { name: 'Windows', os: 'windows-latest' }
+          - { name: 'Linux',   os: 'ubuntu-latest' }
         target: [LEGO1, ISLE, CONFIG]
+
     steps:
 
     - uses: actions/checkout@v7
 
     - uses: actions/setup-python@v7
       with:
-        python-version: '3.14'
+        python-version: '3.15'
 
     - name: Install reccmp
       shell: bash
@@ -70,6 +74,7 @@ jobs:
         pip install .
 
     - name: Install wine
+      if: runner.os == 'Linux'
       shell: bash
       run: |
         sudo dpkg --add-architecture i386
