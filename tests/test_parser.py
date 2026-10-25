@@ -304,9 +304,7 @@ def test_unexpected_eof(parser):
 
 
 def test_global_nomatch(parser):
-    """We do our best to grab the variable name, even without the g_ prefix
-    but this (by design) will not match everything."""
-
+    """Should distinguish patterns that are clearly not variable declarations."""
     parser.read("""\
         // GLOBAL: TEST 0x1234
         FunctionCall();
