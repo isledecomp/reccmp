@@ -14,8 +14,6 @@ class AnnotationType(enum.Enum):
 
 
 # fmt: off
-# Every marker type that can be completed by a code token.
-# Invalid patterns are commented.
 LINE_ANNOTATIONS = (
     (MarkerType.FUNCTION,  AnnotationType.LINE),
     (MarkerType.STUB,      AnnotationType.LINE),
@@ -26,11 +24,11 @@ LINE_ANNOTATIONS = (
     # (MarkerType.TEMPLATE,  AnnotationType.LINE),
     # (MarkerType.LIBRARY,   AnnotationType.LINE),
 )
+"""Every marker type that can be completed by a code token.
+Invalid patterns are commented."""
 # fmt: on
 
 # fmt: off
-# Every marker type that can be completed by a comment token.
-# Invalid patterns are commented.
 NAME_ANNOTATIONS = (
     (MarkerType.FUNCTION,  AnnotationType.NAME),
     (MarkerType.STUB,      AnnotationType.NAME),
@@ -41,27 +39,28 @@ NAME_ANNOTATIONS = (
     (MarkerType.TEMPLATE,  AnnotationType.NAME),
     (MarkerType.LIBRARY,   AnnotationType.NAME),
 )
+"""Every marker type that can be completed by a comment token.
+Invalid patterns are commented."""
 # fmt: on
 
 FREE_ANNOTATIONS = ((MarkerType.LINE, AnnotationType.FREE),)
 
-# All accepted marker type and completion token patterns.
 VALID_ANNOTATIONS = (
     *LINE_ANNOTATIONS,
     *NAME_ANNOTATIONS,
     *FREE_ANNOTATIONS,
 )
+"""All accepted marker type and completion token patterns."""
 
-# Annotation types that require a completion token.
 PARTIAL_ANNOTATIONS = (
     *LINE_ANNOTATIONS,
     *NAME_ANNOTATIONS,
 )
+"""Annotation types that require a completion token."""
 
-# Function marker types that can be completed by a function implementation.
 LINE_FUNCTION_TYPES = (MarkerType.FUNCTION, MarkerType.STUB)
+"""Function marker types that can be completed by a function implementation."""
 
-# Function marker types that can be completed by a name comment.
 NAMEREF_FUNCTION_TYPES = (
     MarkerType.FUNCTION,
     MarkerType.STUB,
@@ -69,21 +68,22 @@ NAMEREF_FUNCTION_TYPES = (
     MarkerType.TEMPLATE,
     MarkerType.LIBRARY,
 )
+"""Function marker types that can be completed by a name comment."""
 
-# Function marker types that can only be completed by a name comment.
 NAME_ONLY_FUNCTION_TYPES = tuple(
     marker_type
     for marker_type in NAMEREF_FUNCTION_TYPES
     if marker_type not in LINE_FUNCTION_TYPES
 )
+"""Function marker types that can only be completed by a name comment."""
 
-# fmt: off
-# Every function marker type and completion token pattern.
-FUNCTION_ANNOTATIONS = tuple([
-    *[(marker_type, AnnotationType.LINE) for marker_type in LINE_FUNCTION_TYPES],
-    *[(marker_type, AnnotationType.NAME) for marker_type in NAMEREF_FUNCTION_TYPES],
-])
-# fmt: on
+FUNCTION_ANNOTATIONS = tuple(
+    [
+        *[(marker_type, AnnotationType.LINE) for marker_type in LINE_FUNCTION_TYPES],
+        *[(marker_type, AnnotationType.NAME) for marker_type in NAMEREF_FUNCTION_TYPES],
+    ]
+)
+"""Every function marker type and completion token pattern."""
 
 
 _FUNCTION_TOKEN = "void function_one() {}"
