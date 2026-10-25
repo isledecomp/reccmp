@@ -466,7 +466,8 @@ class DecompParser:
                 variable_name = get_variable_name(excerpt)
                 if variable_name:
                     if excerpt.startswith("return"):
-                        failure_code = AlertCode.GLOBAL_NOT_VARIABLE  # TODO
+                        # TODO: New alert code? (GH #598)
+                        failure_code = AlertCode.GLOBAL_NOT_VARIABLE
                         break
 
                     self._finish_variable(markers, variable_name, start)
