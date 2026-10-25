@@ -244,37 +244,26 @@ class InstructGen:
 
             elif sect_type == SectionType.ADDR_TAB:
                 pointer_size = 4 if self.is_32bit else 2
-                # Clamp to pointer size to allow for imprecise section cut.
-                read_size = (
-                    (self.section_end - self.cur_addr) // pointer_size
-                ) * pointer_size
-                # 32-bit addresses of each destination in the jump table.
-                table_offsets = range(
-                    self.section_start, self.section_start + read_size, pointer_size
-                )
-                # 16 or 32-bit destinations in the table.
-                code_offsets = self.blob[
-                    self.cur_addr - self.start : self.cur_addr - self.start + read_size
-                ]
-                addrs: list[int]
+                code_seg_mask = 0 if self.is_32bit else self.start & 0xFFFF0000
+                jump_table: list[tuple[int, int]] = []
 
-                if self.is_32bit:
-                    addrs = [addr for addr, in struct.iter_unpack("<L", code_offsets)]
-                else:
-                    code_seg_mask = self.start & 0xFFFF0000
-                    addrs = [
-                        code_seg_mask + addr
-                        for addr, in struct.iter_unpack("<H", code_offsets)
-                    ]
+                # We are not guaranteed to have a confirmed addr for the CODE section
+                # that follows the jump table. The address may be _in_ the jump table.
+                # To make sure we don't miss it, read the jump table one pointer at a time.
+                table_addr = self.cur_addr
+                while table_addr + pointer_size <= self.section_end:
+                    offset = table_addr - self.start
+                    if self.is_32bit:
+                        (addr,) = struct.unpack_from("<L", self.blob, offset)
+                    else:
+                        (addr,) = struct.unpack_from("<H", self.blob, offset)
 
-                for addr in addrs:
+                    addr += code_seg_mask
                     # Todo: the fact that these are jump table destinations
                     # should factor into the label name.
                     self._insert_confirmed_addr(addr, SectionType.CODE)
-
-                jump_table = list(zip(table_offsets, addrs))
-                # for (t0,t1) in jump_table:
-                #     print(f"{t0:x} : --> {t1:x}")
+                    jump_table.append((table_addr, addr))
+                    table_addr += pointer_size
 
                 self._finish_tab_section(SectionType.ADDR_TAB, jump_table)
                 self.cur_addr = self.section_end

@@ -17,6 +17,7 @@ from ghidra.program.model.data import (
     EnumDataType,
     StructureDataType,
     StructureInternal,
+    TypeDef,
     TypedefDataType,
     ComponentOffsetSettingsDefinition,
 )
@@ -97,13 +98,14 @@ class PdbTypeImporter:
             ) from e
 
         if (
-            type_pdb.kind in (TypeKind.STRUCT, TypeKind.UNION, TypeKind.ENUM)
+            type_pdb.kind
+            in (TypeKind.STRUCT, TypeKind.CLASS, TypeKind.UNION, TypeKind.ENUM)
             and type_pdb.size is None
         ):
             # A null size tells us that `type_index` is a forward reference with a broken link.
             return self._import_forward_ref_without_target(type_pdb)
 
-        if type_pdb.kind == TypeKind.STRUCT:
+        if type_pdb.kind in (TypeKind.STRUCT, TypeKind.CLASS):
             return self._import_class_or_struct(type_pdb, as_base_class)
 
         assert (
@@ -140,15 +142,18 @@ class PdbTypeImporter:
         )
 
     def _import_forward_ref_without_target(self, type_pdb: TypeInfo) -> DataType:
-        try:
-            # Example: HWND__, needs to be created manually
-            assert type_pdb.name is not None
-            type_name_and_namespace = sanitize_name(type_pdb.name)
-            return get_ghidra_type(self.api, type_name_and_namespace)
-        except TypeNotFoundInGhidraError as e:
-            raise TypeNotImplementedError(
-                f"{type_pdb.key}: forward ref without target, needs to be created manually: {type_pdb}"
-            ) from e
+        logger.warning(
+            "Replacing forward ref without target by typedef to void: %s", type_pdb
+        )
+        assert type_pdb.name is not None
+        return self._get_or_create_data_type(
+            sanitize_name(type_pdb.name),
+            "typedef",
+            TypeDef,
+            lambda categoryPath, name: TypedefDataType(
+                categoryPath, name, self._import_scalar_type(CVInfoTypeEnum.T_VOID)
+            ),
+        )
 
     def _import_array(self, type_pdb: TypeInfo) -> DataType:
         inner_type = self.import_pdb_type_into_ghidra(

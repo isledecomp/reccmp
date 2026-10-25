@@ -240,7 +240,7 @@ class ReccmpState {
     // 1: Search by address or name.
     // 2: Search disassembly.
     // 3: Search disassembly, diff instructions only.
-    const filterType = parseInt(value);
+    const filterType = parseInt(value, 10);
     if (filterType >= 1 && filterType <= 3) {
       this.state.filterType = filterType;
     }
@@ -292,7 +292,7 @@ class ReccmpState {
 
   /** @param {string} value */
   setPageSize(value) {
-    this.state.pageSize = parseInt(value);
+    this.state.pageSize = parseInt(value, 10);
     this.updateResults();
   }
 
