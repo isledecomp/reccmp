@@ -135,7 +135,7 @@ def test_function_comment_before_curly(parser: DecompParser, marker_type: Marker
     assert not sorted_alerts(parser)
 
 
-@pytest.mark.xfail(reason="TODO")
+@pytest.mark.xfail(reason="TODO: #509")
 @pytest.mark.parametrize("keyword", ["if", "else if", "switch", "for", "while"])
 @pytest.mark.parametrize("marker_type", LINE_FUNCTION_TYPES)
 def test_not_a_function(

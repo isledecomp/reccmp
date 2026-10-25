@@ -86,7 +86,7 @@ def test_comment_class(parser: DecompParser, keyword: str):
     assert not parser.alerts
 
 
-@pytest.mark.xfail(reason="TODO")
+@pytest.mark.xfail(reason="TODO: #509")
 def test_comment_without_keyword(parser: DecompParser):
     """Should read the name from a comment without a class or struct prefix."""
     parser.read(dedent("""\
