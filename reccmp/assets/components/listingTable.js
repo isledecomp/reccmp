@@ -227,4 +227,4 @@ class ListingTable extends window.HTMLElement {
 }
 
 // reccmp-pack-end
-export { ListingTable, getMatchPercentText };
+export { getMatchPercentText, ListingTable };
