@@ -25,8 +25,6 @@ escape_sequences = {
 
 def unwrap_line_comment(text: str) -> str:
     """Remove frontslash prefix from line comment string and return the text."""
-    # return text.lstrip("/").strip()
-
     match = lineCommentRegex.match(text)
 
     # Should be guaranteed by the tokenizer

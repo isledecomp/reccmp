@@ -154,17 +154,6 @@ def resolve_alias(marker_type: str, target_name: str, aliases: ProjectAliases) -
     return aliases[target_name.upper()].get(marker_type.upper(), marker_type)
 
 
-def legacy_match_marker(
-    text: str, aliases: ProjectAliases | None = None
-) -> DecompMarker | None:
-    """Test fixture"""
-    match = markerRegex.search(text)
-    if match:
-        return match_marker(match.start(), match.end(), match.groups(), aliases)
-
-    return None
-
-
 def match_marker(
     pos: int,
     endpos: int,

@@ -544,14 +544,14 @@ class DecompParser:
             self._alert(failure_code, marker.pos)
 
     def _get_marker_sets(
-        self, tokens: list[CodeToken], likely_markers: dict[int, tuple[str, ...]]
+        self, tokens: list[CodeToken], possible_markers: dict[int, tuple[str, ...]]
     ) -> list[tuple[list[DecompMarker], list[CodeToken]]]:
         markers: list[DecompMarker] = []
         candidates: list[CodeToken] = []
         output = []
 
         for x in tokens:
-            if x[0] in likely_markers:
+            if x[0] in possible_markers:
                 # If we have begun reading candidates, this is the end of this group.
                 if candidates:
                     output.append((markers, candidates))
@@ -559,7 +559,7 @@ class DecompParser:
                     candidates = []
 
                 markers.append(
-                    match_marker(x[0], x[1], likely_markers[x[0]], self.aliases)
+                    match_marker(x[0], x[1], possible_markers[x[0]], self.aliases)
                 )
             elif markers:
                 # Only add if we have read any markers.
@@ -599,8 +599,8 @@ class DecompParser:
         text = io.StringIO(raw_text, newline=None).read()
 
         # Performance: skip the expensive token operations if there are no markers in the file.
-        likely_markers = {m.start(): m.groups() for m in markerRegex.finditer(text)}
-        if not likely_markers:
+        possible_markers = {m.start(): m.groups() for m in markerRegex.finditer(text)}
+        if not possible_markers:
             return
 
         # Find the boundaries of all scopes now so we do not need to keep the stack
@@ -615,7 +615,7 @@ class DecompParser:
         self.namespaces = get_namespaces_from_scopes(text, tokens, self.enclosures)
 
         # Split the tokens into regions of marker tokens and "candidate" completion tokens.
-        for marker_set, candidates in self._get_marker_sets(tokens, likely_markers):
+        for marker_set, candidates in self._get_marker_sets(tokens, possible_markers):
             self._check_marker_format(text, marker_set)
 
             # Report blank lines between markers in the set and the first candidate completion token.

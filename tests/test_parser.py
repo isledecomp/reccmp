@@ -69,8 +69,8 @@ def test_variable(parser):
 
 
 def test_synthetic_first_over_code(parser):
-    """Should reject code functions using marker types that have
-    traditionally been nameref only (e.g. SYNTHETIC)"""
+    """Should reject code functions using marker types that may only
+    be used as namerefs (e.g. SYNTHETIC) (GH #599)"""
     parser.read("""\
         // SYNTHETIC: HEY 0x555
         // FUNCTION: HOWDY 0x1234

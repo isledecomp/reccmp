@@ -1,7 +1,10 @@
 import pytest
 from reccmp.parser.marker import (
+    DecompMarker,
     MarkerType,
-    legacy_match_marker as match_marker,
+    ProjectAliases,
+    markerRegex,
+    match_marker as _match_marker,
     is_marker_exact,
     normalize_project_aliases,
 )
@@ -10,6 +13,19 @@ from reccmp.parser.util import (
     get_variable_name,
     get_string_contents,
 )
+
+
+def match_marker(
+    text: str, aliases: ProjectAliases | None = None
+) -> DecompMarker | None:
+    """Bridge to the new shape for `match_marker` in `marker.py`.
+    It was intended to limit the size of the diff in this file."""
+    match = markerRegex.search(text)
+    if match:
+        return _match_marker(match.start(), match.end(), match.groups(), aliases)
+
+    return None
+
 
 marker_samples = [
     # (can_parse: bool, exact_match: bool, line: str)
