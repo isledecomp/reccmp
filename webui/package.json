@@ -6,10 +6,11 @@
   "scripts": {
     "e2e": "playwright test",
     "e2e-ui": "playwright test --ui",
-    "lint": "biome check e2e ./testdata.json ../reccmp/assets/*.js ../reccmp/assets/components/*.js"
+    "lint": "biome check e2e ./testdata.json ../reccmp/assets/*.js ../reccmp/assets/components/*.js",
+    "lint:fix": "biome check --write e2e ./testdata.json ../reccmp/assets/*.js ../reccmp/assets/components/*.js"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.0.6",
+    "@biomejs/biome": "2.5.15",
     "@playwright/test": "^1.64.1",
     "@types/node": "24.0.8",
     "typescript": "7.0.2"

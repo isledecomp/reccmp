@@ -61,7 +61,7 @@ class PageSelect extends window.HTMLElement {
     const select = /** @type {HTMLSelectElement} */ (this.querySelector('select'));
     select.addEventListener('change', (evt) => {
       const target = /** @type {HTMLSelectElement} */ (evt.target);
-      this.dispatchEvent(new ReccmpSetPageEvent(parseInt(target.value)));
+      this.dispatchEvent(new ReccmpSetPageEvent(parseInt(target.value, 10)));
     });
 
     this.dispatchEvent(new ReccmpRegisterEvent(this.update.bind(this)));

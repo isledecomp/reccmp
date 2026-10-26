@@ -1,36 +1,30 @@
 import pytest
-from reccmp.parser.parser import MarkerDict
 from reccmp.parser.marker import (
     DecompMarker,
     MarkerType,
-    match_marker,
+    ProjectAliases,
+    markerRegex,
+    match_marker as _match_marker,
     is_marker_exact,
     normalize_project_aliases,
 )
 from reccmp.parser.util import (
-    is_blank_or_comment,
     get_class_name,
     get_variable_name,
     get_string_contents,
 )
 
-blank_or_comment_param = [
-    (True, ""),
-    (True, "\t"),
-    (True, "    "),
-    (False, "\tint abc=123;"),
-    (True, "// OFFSET: LEGO1 0xdeadbeef"),
-    (True, "   /* Block comment beginning"),
-    (True, "Block comment ending */   "),
-    # TODO: does clang-format have anything to say about these cases?
-    (False, "x++; // Comment follows"),
-    (False, "x++; /* Block comment begins"),
-]
 
+def match_marker(
+    text: str, aliases: ProjectAliases | None = None
+) -> DecompMarker | None:
+    """Bridge to the new shape for `match_marker` in `marker.py`.
+    It was intended to limit the size of the diff in this file."""
+    match = markerRegex.search(text)
+    if match:
+        return _match_marker(match.start(), match.end(), match.groups(), aliases)
 
-@pytest.mark.parametrize("expected, line", blank_or_comment_param)
-def test_is_blank_or_comment(line: str, expected: bool):
-    assert is_blank_or_comment(line) is expected
+    return None
 
 
 marker_samples = [
@@ -85,31 +79,6 @@ def test_marker_match(line: str, match: bool, _):
 @pytest.mark.parametrize("_, exact, line", marker_samples)
 def test_marker_exact(line: str, exact: bool, _):
     assert is_marker_exact(line) is exact
-
-
-def test_marker_dict_simple():
-    d = MarkerDict()
-    d.insert(DecompMarker(MarkerType.FUNCTION, "TEST", 0x1234))
-    markers = list(d.iter())
-    assert len(markers) == 1
-
-
-def test_marker_dict_ofs_replace():
-    d = MarkerDict()
-    d.insert(DecompMarker(MarkerType.FUNCTION, "TEST", 0x1234))
-    d.insert(DecompMarker(MarkerType.FUNCTION, "TEST", 0x555))
-    markers = list(d.iter())
-    assert len(markers) == 1
-    assert markers[0].offset == 0x1234
-
-
-def test_marker_dict_type_replace():
-    d = MarkerDict()
-    d.insert(DecompMarker(MarkerType.FUNCTION, "TEST", 0x1234))
-    d.insert(DecompMarker(MarkerType.STUB, "TEST", 0x1234))
-    markers = list(d.iter())
-    assert len(markers) == 1
-    assert markers[0].type == MarkerType.FUNCTION
 
 
 class_name_match_cases = [

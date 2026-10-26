@@ -2,13 +2,7 @@
 import re
 from typing import NamedTuple
 
-# The goal here is to just read whatever is on the next line, so some
-# flexibility in the formatting seems OK
-templateCommentRegex = re.compile(r"\s*//\s*(.*)")
-
-# To remove any comment (//) or block comment (/*) and its leading spaces
-# from the end of a code line
-trailingCommentRegex = re.compile(r"(\s*(?://|/\*).*)$")
+lineCommentRegex = re.compile(r"//+(.*)")
 
 # Get string contents, ignore escape characters that might interfere
 doubleQuoteRegex = re.compile(r'(L)?"((?:[^"\\]|\\.)*)"')
@@ -29,39 +23,20 @@ escape_sequences = {
 }
 
 
-def get_synthetic_name(line: str) -> str | None:
-    """Synthetic names appear on a single line comment on the line after the marker.
-    If that's not what we have, return None"""
-    template_match = templateCommentRegex.match(line)
+def unwrap_line_comment(text: str) -> str:
+    """Remove frontslash prefix from line comment string and return the text."""
+    match = lineCommentRegex.match(text)
 
-    if template_match is not None:
-        return template_match.group(1).strip()
-
-    return None
-
-
-def remove_trailing_comment(line: str) -> str:
-    return trailingCommentRegex.sub("", line)
-
-
-def is_blank_or_comment(line: str) -> bool:
-    """Helper to read ahead after the offset comment is matched.
-    There could be blank lines or other comments before the
-    function signature, and we want to skip those."""
-    line_strip = line.strip()
-    return (
-        len(line_strip) == 0
-        or line_strip.startswith("//")
-        or line_strip.startswith("/*")
-        or line_strip.endswith("*/")
-    )
+    # Should be guaranteed by the tokenizer
+    assert match is not None
+    return match.group(1).strip()
 
 
 template_regex = re.compile(r"<(?P<type>[\w]+)\s*(?P<asterisks>\*+)?\s*>")
 
 
 class_decl_regex = re.compile(
-    r"\s*(?:\/\/)?\s*(?:class|struct) ((?:\w+(?:<.+>)?(?:::)?)+)"
+    r"\s*(?://+)?\s*(?:class|struct) ((?:\w+(?:<.+>)?(?:::)?)+)"
 )
 
 
@@ -101,8 +76,9 @@ global_regex = re.compile(
         \(\w|                     # - Open paren: call constructor
         \)\(|                     # - Close paren, open paren: function pointer variable
         \[.*|                     # - Open bracket: array with or without size
-        \s*=.*|                   # - Direct assignment
-        ;                         # - Not initialized
+        \s*=|
+        \s*;|
+        \s*$                      # - End of string
     )
 """,
     flags=re.X,

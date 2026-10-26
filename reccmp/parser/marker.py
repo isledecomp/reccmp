@@ -1,5 +1,5 @@
 import re
-from typing import NamedTuple
+from typing import NamedTuple, TypedDict
 from enum import Enum
 
 TargetAliases = dict[str, str]
@@ -12,6 +12,7 @@ class MarkerCategory(Enum):
     It's really only the function types that have to get folded down, but
     we'll do that in a structured way to permit future expansion."""
 
+    UNKNOWN = -100
     FUNCTION = 1
     VARIABLE = 2
     STRING = 3
@@ -34,13 +35,13 @@ class MarkerType(Enum):
 
 
 markerRegex = re.compile(
-    r"\s*//\s*(?P<type>\w+):\s*(?P<module>\w+)\s+(?P<offset>0x[a-f0-9]+) *(?P<extra>\S.+\S)?",
+    r"//+\s*(?P<type>\w+):\s*(?P<module>\w+)\s+(?P<offset>0x[a-f0-9]+) *(?P<extra>\S.+\S)?",
     flags=re.I,
 )
 
 
 markerExactRegex = re.compile(
-    r"\s*// (?P<type>[A-Z]+): (?P<module>[A-Z0-9]+) (?P<offset>0x[a-f0-9]+)(?: (?P<extra>\S.+\S))?\n?$"
+    r"//+ (?P<type>[A-Z]+): (?P<module>[A-Z0-9]+) (?P<offset>0x[a-f0-9]+)(?: (?P<extra>\S.+\S))?(?:\n|$)"
 )
 
 
@@ -53,21 +54,61 @@ MARKER_CATEGORY_MAP = {
     MarkerType.VTABLE: MarkerCategory.VTABLE,
     MarkerType.GLOBAL: MarkerCategory.VARIABLE,
     MarkerType.STRING: MarkerCategory.STRING,
-    MarkerType.LINE: MarkerCategory.ADDRESS,
-    MarkerType.UNKNOWN: MarkerCategory.ADDRESS,
+    MarkerType.LINE: MarkerCategory.LINE,
+    MarkerType.UNKNOWN: MarkerCategory.UNKNOWN,
 }
 
 
 class DecompMarker(NamedTuple):
+    pos: int
+    endpos: int
     type: MarkerType
     module: str
     offset: int
     extra: str | None = None
 
-    @property
-    def key(self) -> tuple[MarkerCategory, str, str | None]:
-        """For use with the MarkerDict. To detect/avoid marker collision."""
-        return (MARKER_CATEGORY_MAP[self.type], self.module, self.extra)
+
+class MarkerOptions(TypedDict):
+    FOLDED: bool
+    SYMBOL: bool
+    BASE_CLASS: str | None
+
+
+def marker_options(marker: DecompMarker) -> MarkerOptions:
+    extra = (marker.extra or "").lower()
+    is_folded = extra == "folded"
+
+    return {
+        "FOLDED": is_folded,
+        "SYMBOL": extra == "symbol",
+        "BASE_CLASS": None if is_folded else marker.extra,
+    }
+
+
+def split_duplicates(
+    category: MarkerCategory, markers: list[DecompMarker]
+) -> tuple[list[DecompMarker], list[DecompMarker]]:
+    """Decide which markers would overwrite markers earlier in the list."""
+    if category == MarkerCategory.LINE:
+        return markers, []
+
+    # The majority of cases will not have duplicates.
+    if len({marker.module for marker in markers}) == len(markers):
+        return markers, []
+
+    seen: set[tuple[str, str | None]] = set()
+    valid = []
+    duplicates = []
+
+    for marker in markers:
+        key = (marker.module, marker.extra)
+        if key in seen:
+            duplicates.append(marker)
+        else:
+            seen.add(key)
+            valid.append(marker)
+
+    return valid, duplicates
 
 
 def normalize_target_aliases(aliases: TargetAliases) -> TargetAliases:
@@ -114,16 +155,15 @@ def resolve_alias(marker_type: str, target_name: str, aliases: ProjectAliases) -
 
 
 def match_marker(
-    line: str, aliases: ProjectAliases | None = None
-) -> DecompMarker | None:
-    if aliases is None:
+    pos: int,
+    endpos: int,
+    groups: tuple[str, ...],
+    aliases: ProjectAliases | None = None,
+) -> DecompMarker:
+    if not aliases:
         aliases = {}
 
-    match = markerRegex.match(line)
-    if match is None:
-        return None
-
-    marker_type, target_name, offset_str, extra = match.groups()
+    marker_type, target_name, offset_str, extra = groups
     marker_type = resolve_alias(marker_type, target_name, aliases)
 
     try:
@@ -132,6 +172,8 @@ def match_marker(
         enum_type = MarkerType.UNKNOWN
 
     return DecompMarker(
+        pos=pos,
+        endpos=endpos,
         type=enum_type,
         # Convert to upper here. A lot of other analysis depends on this name
         # being consistent and predictable. If the name is _not_ capitalized
@@ -142,5 +184,5 @@ def match_marker(
     )
 
 
-def is_marker_exact(line: str) -> bool:
-    return markerExactRegex.match(line) is not None
+def is_marker_exact(text: str, pos: int = 0) -> bool:
+    return markerExactRegex.match(text, pos) is not None

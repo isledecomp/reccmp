@@ -213,6 +213,7 @@ class DiffDisplay extends window.HTMLElement {
     this.setAttribute('data-option', value);
   }
 }
+
 // reccmp-pack-end
 
 export { DiffDisplay, DiffDisplayOptions };
