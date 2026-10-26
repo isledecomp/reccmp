@@ -170,7 +170,6 @@ def parse_file(file: TextFile, aliases: ProjectAliases | None) -> ReccmpParserRe
     parser = DecompParser(aliases)
     parser.reset_and_set_filename(file.path)
     parser.read(file.text)
-    parser.finish()
     return parser.to_result()
 
 

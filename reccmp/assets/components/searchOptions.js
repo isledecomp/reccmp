@@ -26,7 +26,7 @@ class SearchOptions extends window.HTMLElement {
     this.querySelectorAll('input[name=filterType]').forEach((element) => {
       const radio = /** @type {HTMLInputElement} */ (element);
       const value = /** @type {string} */ (radio.getAttribute('value'));
-      radio.checked = filterType === parseInt(value);
+      radio.checked = filterType === parseInt(value, 10);
     });
   }
 }
