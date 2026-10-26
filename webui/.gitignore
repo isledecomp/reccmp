@@ -1,5 +1,5 @@
-# Generated HTML test subject
-index.html
+# Generated HTML test subjects
+testdata/
 
 # Playwright
 node_modules/
