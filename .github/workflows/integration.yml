@@ -82,7 +82,7 @@ jobs:
         sudo apt-get install -y --no-install-recommends wine wine32:i386
 
     - name: Restore isle
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@v8
       with:
         name: isle
         path: isle
