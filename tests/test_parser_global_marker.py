@@ -64,6 +64,30 @@ def test_static_keyword_outside_function(parser: DecompParser):
     assert not parser.alerts
 
 
+@pytest.mark.parametrize(
+    "code",
+    (
+        "extern int count = 0;",
+        'extern "C" int count = 0;',
+        'extern "C" void *count = 0;',
+        'extern "C++" int count;',
+        'extern "C" { int count; }',
+        'extern "C" { int count; int other; }',
+    ),
+)
+def test_extern_variable(parser: DecompParser, code: str):
+    """Should read the name past the extern keyword and its linkage string,
+    and from the first declaration of a linkage block."""
+    parser.read(dedent(f"""\
+        // GLOBAL: TEST 0x1234
+        {code}
+        """))
+
+    assert symbol_tuples(parser) == [(MarkerType.GLOBAL, "TEST", 0x1234)]
+    assert parser.variables[0].name == "count"
+    assert not parser.alerts
+
+
 def test_static_variable(parser: DecompParser):
     """Should mark a static variable if its function is also annotated for the same target."""
     parser.read(dedent("""\

@@ -459,6 +459,18 @@ class DecompParser:
         variable_name = None
         failure_code = AlertCode.NO_SUITABLE_NAME
 
+        # The string of a linkage specification (`extern "C" int x;`) is its own
+        # token, so it leaves `extern` alone in the first one. A linkage block
+        # (`extern "C" { int x; }`) yields its first declaration.
+        if (
+            len(candidates) > 2
+            and candidates[0][2] == TokenType.CODE
+            and text[candidates[0][0] : candidates[0][1]] == "extern"
+            and candidates[1][2] == TokenType.STRING
+        ):
+            skip = 3 if candidates[2][2] == TokenType.CURLY_OPEN else 2
+            candidates = candidates[skip:]
+
         for start, stop, token in candidates:
             excerpt = text[start:stop]
 
