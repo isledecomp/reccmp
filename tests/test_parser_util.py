@@ -139,6 +139,11 @@ variable_name_cases = [
     ("const FloatConstant g_floatConst4096(4096.0f);", "g_floatConst4096"),
     ("int really::really::qualified::variable hello;", "hello"),
     ("fully::qualified::type test = 5;", "test"),
+    # __declspec looks like a constructor call
+    ("__declspec(dllexport) int g_test;", "g_test"),
+    ("int __declspec(thread) g_test = 0;", "g_test"),
+    ("__declspec(align(16)) float g_test[4];", "g_test"),
+    ("__declspec(dllexport) const FloatConstant g_test(4096.0f);", "g_test"),
 ]
 
 

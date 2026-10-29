@@ -85,9 +85,15 @@ global_regex = re.compile(
 )
 
 
+# `__declspec(dllexport)` would pass for a constructor call. Allows one level of
+# nested parentheses, as in `__declspec(align(16))`.
+declspec_regex = re.compile(r"__declspec\s*\((?:[^()]|\([^()]*\))*\)")
+
+
 def get_variable_name(line: str) -> str | None:
     """Grab the name of the variable annotated with the GLOBAL marker."""
 
+    line = declspec_regex.sub("", line)
     if (match := global_regex.search(line)) is not None:
         return match.group("name")
 
