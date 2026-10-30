@@ -32,6 +32,84 @@ def test_code_variable(parser: DecompParser):
     assert not parser.alerts
 
 
+CODE_VARIABLE_SAMPLES = [
+    ("char* hello;", "hello"),
+    ("hello;", "hello"),
+    ("void (*hello)(int);", "hello"),
+    ("void (*hello)(char*, int);", "hello"),
+    ("char hello[];", "hello"),
+    ("char hello[][];", "hello"),
+    ("char hello[50];", "hello"),
+    ("char hello[10][50];", "hello"),
+    ("char hello[50] = { 1234 }", "hello"),
+    ("int hello = 500;", "hello"),
+    ("static int hello = 500;", "hello"),
+    ("char* gBoring_material_names[2];", "gBoring_material_names"),
+    ("const FloatConstant g_floatConst4096(4096.0f);", "g_floatConst4096"),
+    ("int really::really::qualified::variable hello;", "hello"),
+    ("fully::qualified::type test = 5;", "test"),
+    ("__declspec(dllexport) int g_test;", "g_test"),
+    ('__declspec(deprecated("reason")) int g_test;', "g_test"),
+    ("int __declspec(thread) g_test = 0;", "g_test"),
+    ("__declspec(align(16)) float g_test[4];", "g_test"),
+    ("__declspec(dllexport) const FloatConstant g_test(4096.0f);", "g_test"),
+    ('extern "C" { int x; }', "x"),
+    ('extern "C" int x;', "x"),
+]
+
+
+def test_code_variable_with_line_comments(parser: DecompParser):
+    """Should read the variable name and ignore line comments."""
+    parser.read(dedent("""\
+        // GLOBAL: TEST 0x1234
+        int
+        // comment
+        count
+        // comment
+        =
+        // comment
+        0;
+        """))
+
+    # Captured the marker.
+    assert symbol_tuples(parser) == [(MarkerType.GLOBAL, "TEST", 0x1234)]
+    assert parser.variables[0].name == "count"
+
+    # No warnings.
+    assert not parser.alerts
+
+
+def test_code_variable_with_block_comments(parser: DecompParser):
+    """Should read the variable name and ignore block comments."""
+    parser.read(dedent("""\
+        // GLOBAL: TEST 0x1234
+        int /* comment */ count /* comment */ = /* comment */ 0;
+        """))
+
+    # Captured the marker.
+    assert symbol_tuples(parser) == [(MarkerType.GLOBAL, "TEST", 0x1234)]
+    assert parser.variables[0].name == "count"
+
+    # No warnings.
+    assert not parser.alerts
+
+
+@pytest.mark.parametrize("line, name", CODE_VARIABLE_SAMPLES)
+def test_code_variable_samples(parser: DecompParser, line: str, name: str):
+    """Should extract the appropriate variable name from the code line."""
+    parser.read(dedent(f"""\
+        // GLOBAL: TEST 0x1234
+        {line}
+        """))
+
+    # Captured the marker.
+    assert symbol_tuples(parser) == [(MarkerType.GLOBAL, "TEST", 0x1234)]
+    assert parser.variables[0].name == name
+
+    # No warnings.
+    assert not parser.alerts
+
+
 def test_comment_variable(parser: DecompParser):
     """Should read the name from a comment."""
     parser.read(dedent("""\

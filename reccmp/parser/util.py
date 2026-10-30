@@ -88,8 +88,12 @@ global_regex = re.compile(
 def get_variable_name(line: str) -> str | None:
     """Grab the name of the variable annotated with the GLOBAL marker."""
 
-    if (match := global_regex.search(line)) is not None:
-        return match.group("name")
+    last_match = None
+    for match in global_regex.finditer(line):
+        last_match = match
+
+    if last_match:
+        return last_match.group("name")
 
     return None
 
