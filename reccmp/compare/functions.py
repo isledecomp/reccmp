@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from functools import cache
+from functools import cache, partial
 import struct
 from itertools import pairwise
 from typing import Callable, Iterator
@@ -13,6 +13,7 @@ from reccmp.compare.asm.replacement import (
 from reccmp.compare.db import EntityDb, ReccmpMatch
 from reccmp.compare.diff import EntityCompareResult, RawDiffOutput
 from reccmp.compare.event import ReccmpEvent, ReccmpReportProtocol
+from reccmp.compare.type_layout import get_name_for_offset
 from reccmp.cvdump.types import CvdumpTypesParser
 from reccmp.formats.exceptions import (
     InvalidVirtualAddressError,
@@ -82,7 +83,7 @@ class FunctionComparator:
                 self.db,
                 ImageId.ORIG,
                 create_bin_lookup(self.orig_bin),
-                self.types.get_name_for_offset,
+                partial(get_name_for_offset, self.types),
             ),
             is_32bit=self.is_32bit,
         )
@@ -94,7 +95,7 @@ class FunctionComparator:
                 self.db,
                 ImageId.RECOMP,
                 create_bin_lookup(self.recomp_bin),
-                self.types.get_name_for_offset,
+                partial(get_name_for_offset, self.types),
             ),
             is_32bit=self.is_32bit,
         )
@@ -121,6 +122,14 @@ class FunctionComparator:
                 orig_size = min(orig_max, recomp_size)
             else:
                 orig_size = recomp_size
+
+        if recomp_size is None:
+            assert orig_size is not None
+            recomp_max = match.max_size(ImageId.RECOMP)
+            if recomp_max is not None:
+                recomp_size = min(recomp_max, orig_size)
+            else:
+                recomp_size = orig_size
 
         assert orig_size is not None and recomp_size is not None
 

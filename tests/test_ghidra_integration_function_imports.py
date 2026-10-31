@@ -6,8 +6,6 @@
 
 from typing import TYPE_CHECKING
 
-import pytest
-
 from reccmp.cvdump.analysis import CvdumpNode
 from reccmp.cvdump.cvinfo import CVInfoTypeEnum, CvdumpTypeKey
 from reccmp.compare.db import ReccmpMatch
@@ -372,7 +370,6 @@ char * LegoCharacterManager::GetActorName(int p_index)
 """)
 
 
-@pytest.mark.xfail(reason="See GH #384")
 def test_global_pointer_access(
     ghidra: "FlatProgramAPI",
     function_helper: GhidraFunctionTestHelper,
@@ -470,6 +467,66 @@ char * LegoCharacterManager::GetActorName(int p_index)
 
 {
   return g_actorInfo->m_name;
+}
+
+""")
+
+
+def test_return_forward_ref_without_target(
+    ghidra: "FlatProgramAPI",
+    function_helper: GhidraFunctionTestHelper,
+    type_helper: GhidraTypeTestHelper,
+):
+    """Regression test for #583"""
+    from reccmp.ghidra.importer.function_importer import (
+        PdbFunctionImporter,
+        PdbFunction,
+    )
+
+    # Inspired by MxPalette in ISLE. Note the `FORWARD REF` and the missing `UDT` entry.
+    cvdump_types = """
+0x1212 : Length = 30, Leaf = 0x1504 LF_CLASS
+	# members = 0,  field list type 0x0000, FORWARD REF,
+	Derivation list type 0x0000, VT shape type 0x0000
+	Size = 0, class name = MxPalette
+
+0x1213 : Length = 10, Leaf = 0x1002 LF_POINTER
+	Pointer (NEAR32), Size: 0
+	Element type : 0x1212
+
+    """
+    mx_palette_pointer_key = CvdumpTypeKey(0x1213)
+    type_helper.set_up_cvdump_types(cvdump_types)
+
+    function_helper.overwrite_example_function(
+        b"\x33\xc0"  # XOR EAX, EAX
+        b"\xc3"  # RET
+    )
+
+    func_signature = FunctionSignature(
+        call_type="__stdcall",
+        arglist=[],
+        return_type=mx_palette_pointer_key,
+        class_type=None,
+        symbols=[],
+        this_adjust=0,
+    )
+    pdb_function = PdbFunction(
+        ReccmpMatch(function_helper.orig_address, 1234, {"name": "MyTestFn"}),
+        func_signature,
+        is_stub=False,
+    )
+    importer = PdbFunctionImporter.build(
+        ghidra, pdb_function, type_helper.type_importer, []
+    )
+    importer.overwrite_ghidra_function(function_helper.ghidra_function)
+
+    assert importer.matches_ghidra_function(function_helper.ghidra_function) is True
+    function_helper.assert_c_code("""
+MxPalette * MyTestFn(void)
+
+{
+  return (MxPalette *)0x0;
 }
 
 """)

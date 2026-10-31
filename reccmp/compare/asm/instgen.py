@@ -25,6 +25,8 @@ The fields are:
     - op_str (all operands, comma-delimited)
 """
 
+switch_displacement_regex = re.compile(r"\w+ ptr (?:cs\:)?\[.+\+ (0x[0-9a-f]+)\]")
+
 displacement_regex = re.compile(r".*\+ (0x[0-9a-f]+)\]")
 
 
@@ -179,8 +181,13 @@ class InstructGen:
             self._insert_confirmed_addr(value, SectionType.CODE)
 
         # If this is jumping into a table of addresses, save the destination
-        elif (match := displacement_regex.match(op_str)) is not None:
+        elif (match := switch_displacement_regex.match(op_str)) is not None:
             value = int(match.group(1), 16)
+
+            if not self.is_32bit:
+                code_seg_mask = self.start & 0xFFFF0000
+                value += code_seg_mask
+
             self._insert_confirmed_addr(value, SectionType.ADDR_TAB)
 
     def analysis(self):
@@ -236,21 +243,27 @@ class InstructGen:
                 self._finish_code_section(instruction_slice)
 
             elif sect_type == SectionType.ADDR_TAB:
-                # Clamp to multiple of 4 (dwords)
-                read_size = ((self.section_end - self.cur_addr) // 4) * 4
-                offsets = range(self.section_start, self.section_start + read_size, 4)
-                dwords = self.blob[
-                    self.cur_addr - self.start : self.cur_addr - self.start + read_size
-                ]
-                addrs: list[int] = [addr for addr, in struct.iter_unpack("<L", dwords)]
-                for addr in addrs:
+                pointer_size = 4 if self.is_32bit else 2
+                code_seg_mask = 0 if self.is_32bit else self.start & 0xFFFF0000
+                jump_table: list[tuple[int, int]] = []
+
+                # We are not guaranteed to have a confirmed addr for the CODE section
+                # that follows the jump table. The address may be _in_ the jump table.
+                # To make sure we don't miss it, read the jump table one pointer at a time.
+                table_addr = self.cur_addr
+                while table_addr + pointer_size <= self.section_end:
+                    offset = table_addr - self.start
+                    if self.is_32bit:
+                        (addr,) = struct.unpack_from("<L", self.blob, offset)
+                    else:
+                        (addr,) = struct.unpack_from("<H", self.blob, offset)
+
+                    addr += code_seg_mask
                     # Todo: the fact that these are jump table destinations
                     # should factor into the label name.
                     self._insert_confirmed_addr(addr, SectionType.CODE)
-
-                jump_table = list(zip(offsets, addrs))
-                # for (t0,t1) in jump_table:
-                #     print(f"{t0:x} : --> {t1:x}")
+                    jump_table.append((table_addr, addr))
+                    table_addr += pointer_size
 
                 self._finish_tab_section(SectionType.ADDR_TAB, jump_table)
                 self.cur_addr = self.section_end

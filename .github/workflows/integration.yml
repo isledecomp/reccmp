@@ -1,0 +1,185 @@
+name: Integration
+
+on: [push, pull_request]
+
+env:
+  WINEDEBUG: -all
+
+jobs:
+  lego:
+    name: Download LEGO
+    uses: ./.github/workflows/binfile-lego.yml
+
+  prepare:
+    name: Prepare isle
+    runs-on: ubuntu-latest
+    needs: lego
+    steps:
+
+    - name: Restore original binaries
+      uses: actions/cache/restore@v6
+      with:
+        path: binfiles
+        key: legobin
+        fail-on-cache-miss: true
+
+    - name: Download recompiled binaries
+      shell: bash
+      run: |
+        wget https://github.com/isledecomp/isle/releases/download/continuous/ReproBit-Debug-Companion.zip
+        unzip -q ReproBit-Debug-Companion.zip -d companion
+        mv companion/source isle
+        mv companion isle/build
+        mv binfiles isle/binfiles
+        mv isle/build/LEGO1.PDB isle/build/LEGO1.pdb
+        mv isle/build/ISLE.PDB isle/build/ISLE.pdb
+        mv isle/build/CONFIG.PDB isle/build/CONFIG.pdb
+
+    - name: Download saved reports
+      shell: bash
+      run: |
+        wget https://github.com/isledecomp/isle/releases/download/continuous/ISLEPROGRESS.json --directory-prefix=isle
+        wget https://github.com/isledecomp/isle/releases/download/continuous/LEGO1PROGRESS.json --directory-prefix=isle
+        wget https://github.com/isledecomp/isle/releases/download/continuous/CONFIGPROGRESS.json --directory-prefix=isle
+
+    - name: Upload isle
+      uses: actions/upload-artifact@v7
+      with:
+        name: isle
+        path: isle
+
+  integration:
+    name: ${{ matrix.platform.name }} ${{ matrix.target }}
+    runs-on: ${{ matrix.platform.os }}
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - { name: 'Windows', os: 'windows-latest' }
+          - { name: 'Linux',   os: 'ubuntu-latest' }
+        target: [LEGO1, ISLE, CONFIG]
+
+    steps:
+
+    - uses: actions/checkout@v7
+
+    - uses: actions/setup-python@v7
+      with:
+        python-version: '3.15'
+
+    - name: Install reccmp
+      shell: bash
+      run: |
+        pip install .
+
+    - name: Install wine
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo dpkg --add-architecture i386
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends wine wine32:i386
+
+    - name: Restore isle
+      uses: actions/download-artifact@v8
+      with:
+        name: isle
+        path: isle
+
+    - name: Detect binaries
+      shell: bash
+      working-directory: ./isle
+      run: |
+        reccmp-project detect --search-path binfiles
+        reccmp-project detect --what recompiled --search-path build
+
+    - name: Run reccmp
+      shell: bash
+      working-directory: ./isle
+      run: |
+        reccmp-reccmp --target ${{ matrix.target }} | tee result.txt
+
+        # Assert that at least one function was implemented.
+        grep -qE '^Implemented: +[0-9.]+% +\([1-9][0-9]*' result.txt
+
+        # Assert that we have greater than 0% accuracy.
+        # i.e. entity data was read successfully.
+        grep -qE '^Accuracy: +[1-9][0-9.]+%' result.txt
+
+        # Show just the progress lines in the step summary.
+        grep -E '^(Implemented|Accuracy|Progress):' result.txt >> "$GITHUB_STEP_SUMMARY"
+
+        # Capture the first address seen in the summary to use in future steps.
+        addr=$(grep -m1 -oP '\(\K0x[0-9a-f]+(?=\) is )' result.txt)
+        test -n "$addr"
+        echo "FUNC_ADDR=$addr" >> "$GITHUB_ENV"
+
+    - name: Diff against saved report
+      shell: bash
+      working-directory: ./isle
+      run: |
+        reccmp-reccmp --target ${{ matrix.target }} --diff ${{ matrix.target }}PROGRESS.json 2>&1 | tee diff.txt
+        ! grep -q 'Traceback (most recent call last)' diff.txt
+        ! grep -q 'Could not open JSON report file' diff.txt
+
+    - name: Run reccmp on one function
+      shell: bash
+      working-directory: ./isle
+      run: |
+        reccmp-reccmp --target ${{ matrix.target }} --verbose $FUNC_ADDR
+
+    - name: Run aggregate
+      shell: bash
+      working-directory: ./isle
+      run: |
+        reccmp-aggregate --diff ${{ matrix.target }}PROGRESS.json ${{ matrix.target }}PROGRESS.json
+        reccmp-aggregate --samples ${{ matrix.target }}PROGRESS.json ${{ matrix.target }}PROGRESS.json --output output.json
+
+    - name: Run datacmp
+      shell: bash
+      working-directory: ./isle
+      run: |
+        reccmp-datacmp --target ${{ matrix.target }} 2>&1 | tee output.txt || true
+        ! grep -q 'Traceback (most recent call last)' output.txt
+
+    - name: Run decomplint
+      shell: bash
+      working-directory: ./isle
+      run: |
+        reccmp-decomplint --target ${{ matrix.target }} 2>&1 | tee output.txt || true
+        ! grep -q 'Traceback (most recent call last)' output.txt
+
+    - name: Run roadmap
+      shell: bash
+      working-directory: ./isle
+      run: |
+        reccmp-roadmap --target ${{ matrix.target }}
+
+    - name: Run stackcmp
+      shell: bash
+      working-directory: ./isle
+      run: |
+        reccmp-stackcmp --target ${{ matrix.target }} $FUNC_ADDR
+
+    - name: Run verexp
+      shell: bash
+      working-directory: ./isle
+      run: |
+        reccmp-verexp --target ${{ matrix.target }} 2>&1 | tee output.txt || true
+        ! grep -q 'Traceback (most recent call last)' output.txt
+
+    - name: Run vtable
+      shell: bash
+      working-directory: ./isle
+      run: |
+        reccmp-vtable --target ${{ matrix.target }} 2>&1 | tee output.txt || true
+        ! grep -q 'Traceback (most recent call last)' output.txt
+
+    - name: Read PUBLICS section
+      shell: bash
+      working-directory: ./isle
+      run: |
+        reccmp-cvdump -p build/${{ matrix.target }}.pdb -o publics.txt
+        grep -q '^\*\*\* PUBLICS' publics.txt
+        test "$(grep -c '^S_PUB32: \[' publics.txt)" -gt 0

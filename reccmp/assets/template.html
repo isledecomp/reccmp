@@ -233,6 +233,17 @@
         text-align: right;
       }
 
+      header {
+        align-items: center;
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 0.5em;
+      }
+
+      header > h2, header > p {
+        margin: 0;
+      }
+
       click-to-copy {
         position: relative;
         cursor: pointer;
@@ -265,15 +276,15 @@
         content: 'Copied!';
       }
     </style>
-    <script>
-      window.global_reccmp_report = {{{report}}};
-    </script>
     <script>{{{reccmp_js}}}</script>
   </head>
   <body>
     <div class="main">
-      <h1>Decompilation Status</h1>
       <reccmp-provider>
+        <header>
+          <h2><report-filename></report-filename></h2>
+          <p class="progress"><b title="yes">Progress: </b><progress-percent></progress-percent>%</p>
+        </header>
         <search-bar></search-bar>
         <div class="filters">
           <fieldset>

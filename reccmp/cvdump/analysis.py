@@ -1,5 +1,6 @@
 """For collating the results from parsing cvdump.exe into a more directly useful format."""
 
+import re
 import string
 from dataclasses import dataclass
 from pathlib import PureWindowsPath
@@ -9,10 +10,17 @@ from .parser import CvdumpParser, LineValue, NodeKey
 from .symbols import SymbolsEntry
 from .types import (
     CvdumpKeyError,
-    CvdumpIntegrityError,
     CvdumpTypesParser,
     TypeInfo,
 )
+
+# C function names decorated for __stdcall (_Name@N), __fastcall (@Name@N),
+# or __vectorcall (Name@@N), where N is the parameter list size in bytes.
+# __cdecl names are ambiguous without knowing the section, so they are not matched.
+# Exception-handling records also end in @N (e.g. __CT??_R0H@84),
+# but their names contain a question mark, which none of these allow.
+# See: https://learn.microsoft.com/en-us/cpp/build/reference/decorated-names?view=msvc-170#FormatC
+_c_decorated_function_regex = re.compile(r"[_@][^@?]+@\d+|[^@?]+@@\d+")
 
 
 def get_size_from_float_symbol(symbol: str) -> int | None:
@@ -109,11 +117,7 @@ class CvdumpNode:
                 self.node_type = EntityType.FLOAT
                 self.confirmed_size = size
 
-        elif not self.decorated_name.startswith("?") and "@" in self.decorated_name:
-            # C mangled symbol. The trailing at-sign with number tells the number of bytes
-            # in the parameter list for __stdcall, __fastcall, or __vectorcall
-            # For __cdecl it is more ambiguous and we would have to know which section we are in.
-            # https://learn.microsoft.com/en-us/cpp/build/reference/decorated-names?view=msvc-170#FormatC
+        elif _c_decorated_function_regex.fullmatch(self.decorated_name):
             self.node_type = EntityType.FUNCTION
 
     def name(self) -> str | None:
@@ -212,7 +216,7 @@ class CvdumpAnalysis:
                     node_dict[key].confirmed_size = g_info.size
                     node_dict[key].data_type = g_info
 
-            except (CvdumpKeyError, CvdumpIntegrityError):
+            except CvdumpKeyError:
                 # We can still create the variable entity without type information.
                 pass
 
@@ -246,7 +250,7 @@ class CvdumpAnalysis:
                         v_info = parser.types.get(v.type)
                         node_dict[key].confirmed_size = v_info.size
                         node_dict[key].data_type = v_info
-                    except (CvdumpKeyError, CvdumpIntegrityError):
+                    except CvdumpKeyError:
                         # No big deal if we don't have complete type information.
                         pass
 

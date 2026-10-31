@@ -76,9 +76,10 @@ def gen_svg(
     raw_accuracy: float,
 ):
     """Render the progress SVG badge from the bundled template."""
-    icon_data = None
     if icon:
         icon_data = get_base64_icon(icon)
+    else:
+        icon_data = get_base64_icon(get_asset_file("../assets/icon.png"))
 
     total_statistic = raw_accuracy / total_funcs
     full_percentbar_width = 127.18422
@@ -117,6 +118,8 @@ def write_html_report(
         "components/pageNumberOf.js",
         "components/pageSelect.js",
         "components/prevPageButton.js",
+        "components/progressPercent.js",
+        "components/reportFilename.js",
         "components/resultCount.js",
         "components/showRecomp.js",
         "components/searchbar.js",
@@ -129,6 +132,7 @@ def write_html_report(
 
     # Convert the report to a JSON string to insert in the HTML template.
     report_str = serialize_reccmp_report(report, diff_included=True)
+    reccmp_js = reccmp_js.replace("/* RECCMP_REPORT_JSON */", report_str)
 
     favicon = ""
     if icon:
@@ -136,14 +140,14 @@ def write_html_report(
 
     output_data = Renderer().render_path(
         get_asset_file("template.html"),
-        {"report": report_str, "reccmp_js": reccmp_js, "favicon": favicon},
+        {"reccmp_js": reccmp_js, "favicon": favicon},
     )
 
     with open(html_file, "w", encoding="utf-8") as htmlfile:
         htmlfile.write(output_data)
 
 
-def print_combined_diff(udiff, plain: bool = False, show_both: bool = False):
+def print_combined_diff(udiff, *, show_both: bool = False):
     if udiff is None:
         return
 
@@ -152,15 +156,10 @@ def print_combined_diff(udiff, plain: bool = False, show_both: bool = False):
     padding_size = 0
 
     for slug, subgroups in udiff:
-        if plain:
-            print("---")
-            print("+++")
-            print(slug)
-        else:
-            print(f"{reccmp.color.Fore.RED}---")
-            print(f"{reccmp.color.Fore.GREEN}+++")
-            print(f"{reccmp.color.Fore.BLUE}{slug}")
-            print(reccmp.color.Style.RESET_ALL, end="")
+        print(f"{reccmp.color.Fore.RED}---")
+        print(f"{reccmp.color.Fore.GREEN}+++")
+        print(f"{reccmp.color.Fore.BLUE}{slug}")
+        print(reccmp.color.Style.RESET_ALL, end="")
 
         for subgroup in subgroups:
             equal = subgroup.get("both") is not None
@@ -179,12 +178,9 @@ def print_combined_diff(udiff, plain: bool = False, show_both: bool = False):
                         f"{orig_addr} / {'':{padding_size}}" if show_both else orig_addr
                     )
 
-                    if plain:
-                        print(f"{addr_prefix} : -{line}")
-                    else:
-                        print(
-                            f"{addr_prefix} : {reccmp.color.Fore.RED}-{line}{reccmp.color.Style.RESET_ALL}"
-                        )
+                    print(
+                        f"{addr_prefix} : {reccmp.color.Fore.RED}-{line}{reccmp.color.Style.RESET_ALL}"
+                    )
 
                 for recomp_addr, line in subgroup["recomp"]:
                     padding_size = max(padding_size, len(recomp_addr))
@@ -194,12 +190,9 @@ def print_combined_diff(udiff, plain: bool = False, show_both: bool = False):
                         else " " * padding_size
                     )
 
-                    if plain:
-                        print(f"{addr_prefix} : +{line}")
-                    else:
-                        print(
-                            f"{addr_prefix} : {reccmp.color.Fore.GREEN}+{line}{reccmp.color.Style.RESET_ALL}"
-                        )
+                    print(
+                        f"{addr_prefix} : {reccmp.color.Fore.GREEN}+{line}{reccmp.color.Style.RESET_ALL}"
+                    )
 
         # Newline between each diff subgroup.
         print()

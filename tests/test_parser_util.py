@@ -1,36 +1,29 @@
 import pytest
-from reccmp.parser.parser import MarkerDict
 from reccmp.parser.marker import (
     DecompMarker,
     MarkerType,
-    match_marker,
+    ProjectAliases,
+    markerRegex,
+    match_marker as _match_marker,
     is_marker_exact,
     normalize_project_aliases,
 )
 from reccmp.parser.util import (
-    is_blank_or_comment,
     get_class_name,
-    get_variable_name,
     get_string_contents,
 )
 
-blank_or_comment_param = [
-    (True, ""),
-    (True, "\t"),
-    (True, "    "),
-    (False, "\tint abc=123;"),
-    (True, "// OFFSET: LEGO1 0xdeadbeef"),
-    (True, "   /* Block comment beginning"),
-    (True, "Block comment ending */   "),
-    # TODO: does clang-format have anything to say about these cases?
-    (False, "x++; // Comment follows"),
-    (False, "x++; /* Block comment begins"),
-]
 
+def match_marker(
+    text: str, aliases: ProjectAliases | None = None
+) -> DecompMarker | None:
+    """Bridge to the new shape for `match_marker` in `marker.py`.
+    It was intended to limit the size of the diff in this file."""
+    match = markerRegex.search(text)
+    if match:
+        return _match_marker(match.start(), match.end(), match.groups(), aliases)
 
-@pytest.mark.parametrize("expected, line", blank_or_comment_param)
-def test_is_blank_or_comment(line: str, expected: bool):
-    assert is_blank_or_comment(line) is expected
+    return None
 
 
 marker_samples = [
@@ -87,31 +80,6 @@ def test_marker_exact(line: str, exact: bool, _):
     assert is_marker_exact(line) is exact
 
 
-def test_marker_dict_simple():
-    d = MarkerDict()
-    d.insert(DecompMarker(MarkerType.FUNCTION, "TEST", 0x1234))
-    markers = list(d.iter())
-    assert len(markers) == 1
-
-
-def test_marker_dict_ofs_replace():
-    d = MarkerDict()
-    d.insert(DecompMarker(MarkerType.FUNCTION, "TEST", 0x1234))
-    d.insert(DecompMarker(MarkerType.FUNCTION, "TEST", 0x555))
-    markers = list(d.iter())
-    assert len(markers) == 1
-    assert markers[0].offset == 0x1234
-
-
-def test_marker_dict_type_replace():
-    d = MarkerDict()
-    d.insert(DecompMarker(MarkerType.FUNCTION, "TEST", 0x1234))
-    d.insert(DecompMarker(MarkerType.STUB, "TEST", 0x1234))
-    markers = list(d.iter())
-    assert len(markers) == 1
-    assert markers[0].type == MarkerType.FUNCTION
-
-
 class_name_match_cases = [
     ("struct MxString {", "MxString"),
     ("class MxString {", "MxString"),
@@ -147,53 +115,62 @@ def test_get_class_name_none(line: str):
     assert get_class_name(line) is None
 
 
-variable_name_cases = [
-    # With "g_" prefix, formerly a requirement for variables in reccmp-enabled code.
-    ("char* g_test;", "g_test"),
-    ("g_test;", "g_test"),
-    ("void (*g_test)(int);", "g_test"),
-    ("void (*g_test)(char*, int);", "g_test"),
-    ("char g_test[50];", "g_test"),
-    ("char g_test[50] = {1234,", "g_test"),
-    ("int g_test = 500;", "g_test"),
-    # no prefix
-    ("char* hello;", "hello"),
-    ("hello;", "hello"),
-    ("void (*hello)(int);", "hello"),
-    ("char hello[];", "hello"),
-    ("char hello[][];", "hello"),
-    ("char hello[50];", "hello"),
-    ("char hello[10][50];", "hello"),
-    ("char hello[50] = {1234,", "hello"),
-    ("int hello = 500;", "hello"),
-    ("char* gBoring_material_names[2];", "gBoring_material_names"),
-    ("const FloatConstant g_floatConst4096(4096.0f);", "g_floatConst4096"),
-    ("int really::really::qualified::variable hello;", "hello"),
-    ("fully::qualified::type test = 5;", "test"),
+# TODO: Drop after #509. The string will be in its own token.
+string_match_cases_vestigial = [
+    pytest.param('return "hello world";', "hello world", id="Return string"),
+    # Only match first string if there are multiple options
+    pytest.param('Method("hello", "world");', "hello", id="Multiple string tokens"),
 ]
-
-
-@pytest.mark.parametrize("line,name", variable_name_cases)
-def test_get_variable_name(line: str, name: str):
-    assert get_variable_name(line) == name
 
 
 string_match_cases = [
-    ('return "hello world";', "hello world"),
-    ('"hello\\\\"', "hello\\"),
-    ('"hello \\"world\\""', 'hello "world"'),
-    ('"hello\\nworld"', "hello\nworld"),
-    # Only match first string if there are multiple options
-    ('Method("hello", "world");', "hello"),
+    pytest.param('""', "", id="Empty string"),
+    pytest.param('"hello\\\\"', "hello\\", id="Escaped slash"),
+    pytest.param(r'"\\n"', "\\n", id="Not a newline"),
+    pytest.param('"hello \\"world\\""', 'hello "world"', id="Escaped double quote"),
+    pytest.param('"hello\\nworld"', "hello\nworld", id="Escaped newline"),
+    pytest.param('"\\N{BULLET}"', "N{BULLET}", id="Named universal character escape"),
+    pytest.param('"\\a\\b\\f\\n\\r\\t\\v"', "\a\b\f\n\r\t\v", id="Escape sequences"),
+    pytest.param('"\\\'\\"\\\\"', "'\"\\", id="Escaped chars"),
+    pytest.param('"hello\\?"', "hello?", id="Escaped trigraph"),
+    pytest.param('"\\e"', "e", id="Escaped escape char"),
+    pytest.param('"\\8"', "8", id="(Invalid) Escaped digit"),
+    pytest.param('"\\08"', "\0" + "8", id="NUL (one digit octal)"),
+    pytest.param('"\\008"', "\0" + "8", id="NUL (two digit octal)"),
+    pytest.param('"\\1"', "\x01", id="One digit octal"),
+    pytest.param('"\\01"', "\x01", id="Two digit octal"),
+    pytest.param('"\\007"', "\x07", id="Octal"),
+    pytest.param('"\\\\007"', "\\007", id="Not an octal"),
+    pytest.param('"\\1234"', "S4", id="Octal with extra digit"),
+    pytest.param('"\\377"', "\xff", id="Octal 255"),
+    pytest.param('"\\777"', "ǿ", id="Widechar octal"),
+    pytest.param('"\\x41"', "A", id="Hex"),
+    pytest.param('"\\x00041"', "A", id="Hex with leading zeroes"),
+    # Python chr() accepts values up to 0x10FFFF.
+    pytest.param('"\\x12345"', "\\x12345", id="Too big for wchar_t"),
+    pytest.param('"\\x12345678"', "\\x12345678", id="Too big for Python"),
+    # Our targeted compilers don't support these:
+    pytest.param('"\\u0041"', "u0041", id="16-bit Unicode code point"),
+    pytest.param('"\\U00000041"', "U00000041", id="32-bit Unicode code point"),
 ]
 
 
-@pytest.mark.parametrize("line, expected", string_match_cases)
+@pytest.mark.parametrize(
+    "line, expected", [*string_match_cases_vestigial, *string_match_cases]
+)
 def test_get_string_contents(line: str, expected: str):
     string = get_string_contents(line)
     assert string is not None
     assert string.text == expected
     assert string.is_widechar is False
+
+
+@pytest.mark.parametrize("line, expected", string_match_cases)
+def test_get_string_contents_widechar(line: str, expected: str):
+    string = get_string_contents("L" + line)
+    assert string is not None
+    assert string.text == expected
+    assert string.is_widechar is True
 
 
 def test_marker_extra_spaces():

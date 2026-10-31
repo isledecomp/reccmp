@@ -412,6 +412,9 @@ def _is_relocatable(instr: str) -> bool:
     if instr.startswith("0x"):
         # Do not relocate data table entries (this most likely influences the behaviour)
         return False
+    if instr.startswith("call"):
+        # GH #601.
+        return False
     return True
 
 

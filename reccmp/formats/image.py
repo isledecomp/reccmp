@@ -114,6 +114,9 @@ class Image:
         except InvalidVirtualAddressError:
             return False
 
+    def get_abs_addr(self, section: int, offset: int) -> int:
+        raise NotImplementedError
+
     def get_relative_addr(self, addr: int) -> tuple[int, int]:
         raise NotImplementedError
 

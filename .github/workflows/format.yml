@@ -12,7 +12,7 @@ jobs:
 
     - uses: actions/setup-python@v7
       with:
-        python-version: '3.14'
+        python-version: '3.15'
 
     - name: Install python libraries
       shell: bash
@@ -28,12 +28,12 @@ jobs:
     - name: Run pylint
       if: ${{ always() && steps.install.outcome == 'success' }}
       shell: bash
-      run: pylint reccmp tests
+      run: pylint reccmp tests webui
 
     - name: Run mypy
       if: ${{ always() && steps.install.outcome == 'success' }}
       shell: bash
-      run: mypy ./reccmp ./tests
+      run: mypy ./reccmp ./tests ./webui
 
     - name: Run codespell
       if: ${{ always() && steps.install.outcome == 'success' }}
@@ -44,8 +44,8 @@ jobs:
             '# codespell:ignore-begin.*?codespell:ignore-end *\n' \
           --ignore-regex remote-checkin-comment \
           -L SEH \
-          -S ./tests/cvdump_sample/*.txt \
-          ./reccmp ./tests
+          -S "./tests/cvdump_sample/*.txt","package-lock.json" \
+          ./reccmp ./tests ./webui
 
   js-format:
     name: 'Javascript Format'

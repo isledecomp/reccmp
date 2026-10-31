@@ -16,6 +16,8 @@ export interface ReccmpComparedEntity {
   recomp: string;
   effective?: boolean;
   stub?: boolean;
+  // EntityType as int. Older reports do not include this field.
+  type?: number;
   diff?: UnifiedDiffGroup[];
   /* dynamic property access */
   key?: Record<ColumnNames, string | number | boolean>;
@@ -29,6 +31,17 @@ export interface ReccmpSerializedReport {
   file: string;
   format: string;
   timestamp: number;
+  // Not present in reports created before July 2026.
+  function_count?: number;
+}
+
+export interface ReccmpProgressCounters {
+  implementedCount: number;
+  functionCount: number;
+  // Percentages in the range [0, 100].
+  implemented: number;
+  accuracy: number;
+  progress: number;
 }
 
 export interface ReccmpInternalState {
