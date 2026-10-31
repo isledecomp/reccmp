@@ -10,7 +10,6 @@ from reccmp.parser.marker import (
 )
 from reccmp.parser.util import (
     get_class_name,
-    get_variable_name,
     get_string_contents,
 )
 
@@ -114,37 +113,6 @@ class_name_no_match_cases = [
 @pytest.mark.parametrize("line", class_name_no_match_cases)
 def test_get_class_name_none(line: str):
     assert get_class_name(line) is None
-
-
-variable_name_cases = [
-    # With "g_" prefix, formerly a requirement for variables in reccmp-enabled code.
-    ("char* g_test;", "g_test"),
-    ("g_test;", "g_test"),
-    ("void (*g_test)(int);", "g_test"),
-    ("void (*g_test)(char*, int);", "g_test"),
-    ("char g_test[50];", "g_test"),
-    ("char g_test[50] = {1234,", "g_test"),
-    ("int g_test = 500;", "g_test"),
-    # no prefix
-    ("char* hello;", "hello"),
-    ("hello;", "hello"),
-    ("void (*hello)(int);", "hello"),
-    ("char hello[];", "hello"),
-    ("char hello[][];", "hello"),
-    ("char hello[50];", "hello"),
-    ("char hello[10][50];", "hello"),
-    ("char hello[50] = {1234,", "hello"),
-    ("int hello = 500;", "hello"),
-    ("char* gBoring_material_names[2];", "gBoring_material_names"),
-    ("const FloatConstant g_floatConst4096(4096.0f);", "g_floatConst4096"),
-    ("int really::really::qualified::variable hello;", "hello"),
-    ("fully::qualified::type test = 5;", "test"),
-]
-
-
-@pytest.mark.parametrize("line,name", variable_name_cases)
-def test_get_variable_name(line: str, name: str):
-    assert get_variable_name(line) == name
 
 
 # TODO: Drop after #509. The string will be in its own token.

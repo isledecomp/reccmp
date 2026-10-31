@@ -458,32 +458,36 @@ class DecompParser:
     ):
         variable_name = None
         failure_code = AlertCode.NO_SUITABLE_NAME
+        code_token: CodeToken | None = None
 
         for start, stop, token in candidates:
-            excerpt = text[start:stop]
-
             if token == TokenType.CODE:
-                variable_name = get_variable_name(excerpt)
-                if variable_name:
-                    if excerpt.startswith("return"):
-                        # TODO: New alert code? (GH #598)
-                        failure_code = AlertCode.GLOBAL_NOT_VARIABLE
-                        break
+                # Use the last code token
+                code_token = (start, stop, token)
 
-                    self._finish_variable(markers, variable_name, start)
-                    return
-
-                failure_code = AlertCode.GLOBAL_NOT_VARIABLE
-                break
-
-            if token == TokenType.LINE_COMMENT:
+            if code_token is None and token == TokenType.LINE_COMMENT:
+                excerpt = text[start:stop]
                 variable_name = unwrap_line_comment(excerpt)
                 if variable_name:
                     self._finish_variable(markers, variable_name, start)
                     return
 
-            # It must be one of those two token types.
-            break
+            if token in (TokenType.EQUAL, TokenType.SEMICOLON):
+                break
+
+        if code_token:
+            start, stop, _ = code_token
+            excerpt = text[start:stop]
+            variable_name = get_variable_name(excerpt)
+            if variable_name:
+                if excerpt.startswith("return"):
+                    # TODO: New alert code? (GH #598)
+                    failure_code = AlertCode.GLOBAL_NOT_VARIABLE
+                else:
+                    self._finish_variable(markers, variable_name, start)
+                    return
+
+            failure_code = AlertCode.GLOBAL_NOT_VARIABLE
 
         # Did not find the completion token.
         for marker in markers:
