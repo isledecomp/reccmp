@@ -454,12 +454,6 @@ def test_docs_example_comments_and_blanks():
     assert (0x100DB614, {"type": EntityType.STRING}) in list(csv_parse(text))
 
 
-def test_ignore_skip():
-    """Should ignore 'skip' field until we reinstate it."""
-    text = "address|skip\n1234|1"
-    assert (0x1234, {}) in list(csv_parse(text))
-
-
 def test_non_function_entity_types():
     """Should parse all entity types not covered in previous tests."""
 

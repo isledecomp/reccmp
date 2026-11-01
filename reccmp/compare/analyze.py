@@ -166,7 +166,6 @@ def create_import_thunks(db: EntityDb, image_id: ImageId, binfile: Image):
                 image_id,
                 thunk.addr,
                 type=EntityType.IMPORT_THUNK,
-                skip=True,
                 size=thunk.size,
             )
             batch.set_ref(image_id, thunk.addr, ref=thunk.import_addr)
@@ -183,13 +182,12 @@ def create_thunks(db: EntityDb, img_id: ImageId, binfile: PEImage):
                     thunk_addr,
                     type=EntityType.THUNK,
                     size=5,
-                    skip=True,
                 )
                 batch.set_ref(img_id, thunk_addr, ref=func_addr)
 
             # We can only match two thunks if we have already matched both
             # their parent entities. There is nothing to compare because
-            # they will either be equal or left unmatched. Set skip=True.
+            # they will either be equal or left unmatched.
 
 
 def match_exports(db: EntityDb, orig_bin: PEImage, recomp_bin: PEImage):

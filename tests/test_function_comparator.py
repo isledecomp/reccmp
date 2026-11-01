@@ -71,7 +71,7 @@ def compare_functions(
             ORIG_GLOBAL_OFFSET,
             RECOMP_GLOBAL_OFFSET,
             {
-                "type": 1,
+                "type": EntityType.FUNCTION,
                 "stub": False,
                 "name": "unittest",
                 "symbol": "?Unittest",
