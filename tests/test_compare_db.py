@@ -26,14 +26,14 @@ def test_ignore_recomp_collision(db):
 def test_dynamic_metadata(db):
     """Using the API we have now"""
     with db.batch() as batch:
-        batch.set(ImageId.RECOMP, 1234, hello="abcdef", option=True)
+        batch.set(ImageId.RECOMP, 1234, symbol="abcdef", stub=True)
 
     obj = db.get(ImageId.RECOMP, 1234)
-    assert obj.get("hello") == "abcdef"
+    assert obj.get("symbol") == "abcdef"
 
     # Should preserve boolean type
-    assert isinstance(obj.get("option"), bool)
-    assert obj.get("option") is True
+    assert isinstance(obj.get("stub"), bool)
+    assert obj.get("stub") is True
 
 
 def test_db_count(db):
@@ -201,21 +201,21 @@ def test_batch_match_combine_except_null(db):
     The exception is when the recomp entity has a NULL. We should use the orig attribute in this case.
     """
     with db.batch() as batch:
-        batch.set(ImageId.ORIG, 100, name="Test", test=123)
-        batch.set(ImageId.RECOMP, 200, name="Hello", test=None)
+        batch.set(ImageId.ORIG, 100, name="Test", symbol="Test")
+        batch.set(ImageId.RECOMP, 200, name="Hello", symbol=None)
         batch.match(100, 200)
 
-    assert db.get(ImageId.RECOMP, 200).get("test") == 123
+    assert db.get(ImageId.RECOMP, 200).get("symbol") == "Test"
 
 
 def test_batch_match_combine_replace_null(db):
     """Confirm that we will replace a NULL on the orig side with a recomp value."""
     with db.batch() as batch:
-        batch.set(ImageId.ORIG, 100, name="Test", test=None)
-        batch.set(ImageId.RECOMP, 200, name="Hello", test=123)
+        batch.set(ImageId.ORIG, 100, name="Test", symbol=None)
+        batch.set(ImageId.RECOMP, 200, name="Hello", symbol="Test")
         batch.match(100, 200)
 
-    assert db.get(ImageId.RECOMP, 200).get("test") == 123
+    assert db.get(ImageId.RECOMP, 200).get("symbol") == "Test"
 
 
 def test_batch_match_create(db: EntityDb):
@@ -298,7 +298,7 @@ def test_batch_exception_uncaught(db):
     try:
         with db.batch() as batch:
             batch.set(ImageId.ORIG, 100, name="Test")
-            batch.set(ImageId.RECOMP, 200, test=123)
+            batch.set(ImageId.RECOMP, 200, line=123)
             batch.match(100, 200)
             _ = 1 / 0
     except ZeroDivisionError:
@@ -312,7 +312,7 @@ def test_batch_exception_caught(db):
     """If the exception is caught, allow the batch to go through."""
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 100, name="Test")
-        batch.set(ImageId.RECOMP, 200, test=123)
+        batch.set(ImageId.RECOMP, 200, line=123)
         batch.match(100, 200)
         try:
             _ = 1 / 0
