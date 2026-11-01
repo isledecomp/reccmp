@@ -1,11 +1,18 @@
 """Tests related to the ReccmpEntity ORM object"""
 
+from typing_extensions import Unpack
 from reccmp.types import EntityType
-from reccmp.compare.db import ReccmpEntity, entity_name_from_string
+from reccmp.compare.db import (
+    EntityKeyValueStore,
+    ReccmpEntity,
+    entity_name_from_string,
+)
 
 
 def create_entity(
-    orig_addr: int | None, recomp_addr: int | None, **kwargs
+    orig_addr: int | None,
+    recomp_addr: int | None,
+    **kwargs: Unpack[EntityKeyValueStore],
 ) -> ReccmpEntity:
     """Helper to create the JSON string representation of the key/value args."""
     return ReccmpEntity(orig_addr, recomp_addr, kwargs)

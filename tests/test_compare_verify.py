@@ -36,7 +36,7 @@ def set_vtable_match(
         batch.match(0, 0)
 
 
-def test_size_difference_not_warned(db, caplog):
+def test_size_difference_not_warned(db: EntityDb, caplog):
     """Size differences are reported by the vtable comparison, not here."""
     set_vtable_match(db, orig_size=8, recomp_size=12)
 
@@ -46,7 +46,7 @@ def test_size_difference_not_warned(db, caplog):
     assert not caplog.text
 
 
-def test_known_orig_size_conflicts_with_upper_bound(db, caplog):
+def test_known_orig_size_conflicts_with_upper_bound(db: EntityDb, caplog):
     """Warn if the orig vtable size from the data source extends past the
     next entity. A size like that can't be right."""
     set_vtable_match(db, orig_size=12, recomp_size=12, orig_max_size=8)
@@ -57,7 +57,7 @@ def test_known_orig_size_conflicts_with_upper_bound(db, caplog):
     assert "overruns the next entity" in caplog.text
 
 
-def test_unknown_orig_size_no_warning(db, caplog):
+def test_unknown_orig_size_no_warning(db: EntityDb, caplog):
     """No orig size means there is nothing to check."""
     set_vtable_match(db, recomp_size=16)
 
