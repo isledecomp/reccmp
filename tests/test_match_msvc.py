@@ -3,7 +3,7 @@
 from unittest.mock import Mock, ANY, patch
 import pytest
 from reccmp.types import EntityType, ImageId
-from reccmp.compare.db import EntityDb
+from reccmp.compare.db import EntityDb, ReccmpEntity
 from reccmp.compare.match_msvc import (
     match_functions,
     match_static_variables,
@@ -27,10 +27,16 @@ def fixture_report_mock() -> ReccmpReportProtocol:
     return Mock(spec=ReccmpReportProtocol)
 
 
+def get_entity(db: EntityDb, image_id: ImageId, addr: int) -> ReccmpEntity:
+    ent = db.get(image_id, addr)
+    assert ent is not None
+    return ent
+
+
 #### match_symbols ####
 
 
-def test_match_symbols(db):
+def test_match_symbols(db: EntityDb):
     """Should combine entities with the same symbol"""
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 123, symbol="hello")
@@ -38,14 +44,14 @@ def test_match_symbols(db):
 
     match_symbols(db)
 
-    assert db.get(ImageId.ORIG, 123).recomp_addr == 555
-    assert db.get(ImageId.RECOMP, 555).orig_addr == 123
+    assert get_entity(db, ImageId.ORIG, 123).recomp_addr == 555
+    assert get_entity(db, ImageId.RECOMP, 555).orig_addr == 123
 
     # Should combine entities
     assert db.count() == 1
 
 
-def test_match_symbols_no_match(db):
+def test_match_symbols_no_match(db: EntityDb):
     """Should not affect entities with no symbol or no matching symbol."""
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 123)
@@ -53,12 +59,12 @@ def test_match_symbols_no_match(db):
 
     match_symbols(db)
 
-    assert db.get(ImageId.ORIG, 123).recomp_addr is None
-    assert db.get(ImageId.RECOMP, 555).orig_addr is None
+    assert get_entity(db, ImageId.ORIG, 123).recomp_addr is None
+    assert get_entity(db, ImageId.RECOMP, 555).orig_addr is None
     assert db.count() == 2
 
 
-def test_match_symbols_no_match_report(db, report):
+def test_match_symbols_no_match_report(db: EntityDb, report):
     """Should report if we cannot match a symbol on the orig side."""
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 123, symbol="test")
@@ -68,7 +74,7 @@ def test_match_symbols_no_match_report(db, report):
     report.assert_called_with(ReccmpEvent.NO_MATCH, 123, msg=ANY)
 
 
-def test_match_symbols_stable_match_order(db):
+def test_match_symbols_stable_match_order(db: EntityDb):
     """Match in ascending address order on both sides for duplicate symbols."""
     with db.batch() as batch:
         # Descending order
@@ -79,11 +85,11 @@ def test_match_symbols_stable_match_order(db):
 
     match_symbols(db)
 
-    assert db.get(ImageId.ORIG, 100).recomp_addr == 333
-    assert db.get(ImageId.ORIG, 200).recomp_addr == 555
+    assert get_entity(db, ImageId.ORIG, 100).recomp_addr == 333
+    assert get_entity(db, ImageId.ORIG, 200).recomp_addr == 555
 
 
-def test_match_symbols_recomp_not_unique(db, report):
+def test_match_symbols_recomp_not_unique(db: EntityDb, report):
     """Alert when symbol match is non-unique on the recomp side."""
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 123, symbol="hello")
@@ -93,13 +99,13 @@ def test_match_symbols_recomp_not_unique(db, report):
     match_symbols(db, report)
 
     # Should match first occurrence.
-    assert db.get(ImageId.ORIG, 123).recomp_addr == 222
+    assert get_entity(db, ImageId.ORIG, 123).recomp_addr == 222
 
     # Report non-unique match for orig_addr 123
     report.assert_called_with(ReccmpEvent.NON_UNIQUE_SYMBOL, 123, msg=ANY)
 
 
-def test_match_symbols_truncate_255(db):
+def test_match_symbols_truncate_255(db: EntityDb):
     """MSVC 4.2 truncates symbols to 255 characters in the PDB.
     Match entities where the symbols are equal up to the 255th character."""
     long_name = "x" * 255
@@ -109,11 +115,11 @@ def test_match_symbols_truncate_255(db):
 
     match_symbols(db, truncate=True)
 
-    assert db.get(ImageId.ORIG, 123).recomp_addr == 555
-    assert db.get(ImageId.RECOMP, 555).orig_addr == 123
+    assert get_entity(db, ImageId.ORIG, 123).recomp_addr == 555
+    assert get_entity(db, ImageId.RECOMP, 555).orig_addr == 123
 
 
-def test_match_symbols_no_truncate(db):
+def test_match_symbols_no_truncate(db: EntityDb):
     """Should recognize these as distinct symbols if truncate=False"""
     long_name = "x" * 255
     with db.batch() as batch:
@@ -122,14 +128,14 @@ def test_match_symbols_no_truncate(db):
 
     match_symbols(db, truncate=False)
 
-    assert db.get(ImageId.ORIG, 123).recomp_addr is None
-    assert db.get(ImageId.RECOMP, 555).orig_addr is None
+    assert get_entity(db, ImageId.ORIG, 123).recomp_addr is None
+    assert get_entity(db, ImageId.RECOMP, 555).orig_addr is None
 
 
 #### match_functions ####
 
 
-def test_match_functions(db):
+def test_match_functions(db: EntityDb):
     """Simple match by name and type"""
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 123, name="hello", type=EntityType.FUNCTION)
@@ -137,14 +143,14 @@ def test_match_functions(db):
 
     match_functions(db)
 
-    assert db.get(ImageId.ORIG, 123).recomp_addr == 555
-    assert db.get(ImageId.RECOMP, 555).orig_addr == 123
+    assert get_entity(db, ImageId.ORIG, 123).recomp_addr == 555
+    assert get_entity(db, ImageId.RECOMP, 555).orig_addr == 123
 
     # Should combine entities
     assert db.count() == 1
 
 
-def test_match_functions_no_match(db):
+def test_match_functions_no_match(db: EntityDb):
     """Skip entities with no match"""
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 123, name="hello", type=EntityType.FUNCTION)
@@ -152,12 +158,12 @@ def test_match_functions_no_match(db):
 
     match_functions(db)
 
-    assert db.get(ImageId.ORIG, 123).recomp_addr is None
-    assert db.get(ImageId.RECOMP, 555).orig_addr is None
+    assert get_entity(db, ImageId.ORIG, 123).recomp_addr is None
+    assert get_entity(db, ImageId.RECOMP, 555).orig_addr is None
     assert db.count() == 2
 
 
-def test_match_functions_no_match_report(db, report):
+def test_match_functions_no_match_report(db: EntityDb, report):
     """Should report if we cannot match a name on the orig side."""
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 123, name="test", type=EntityType.FUNCTION)
@@ -167,7 +173,7 @@ def test_match_functions_no_match_report(db, report):
     report.assert_called_with(ReccmpEvent.NO_MATCH, 123, msg=ANY)
 
 
-def test_match_function_stable_order(db):
+def test_match_function_stable_order(db: EntityDb):
     """If name is not unique, match according to orig and recomp address order.
     i.e. insertion order does not matter"""
     with db.batch() as batch:
@@ -179,11 +185,11 @@ def test_match_function_stable_order(db):
 
     match_functions(db)
 
-    assert db.get(ImageId.ORIG, 100).recomp_addr == 500
-    assert db.get(ImageId.ORIG, 101).recomp_addr == 501
+    assert get_entity(db, ImageId.ORIG, 100).recomp_addr == 500
+    assert get_entity(db, ImageId.ORIG, 101).recomp_addr == 501
 
 
-def test_match_functions_type_null(db):
+def test_match_functions_type_null(db: EntityDb):
     """Will allow a function match if the recomp side has type=null"""
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 123, name="hello", type=EntityType.FUNCTION)
@@ -191,12 +197,12 @@ def test_match_functions_type_null(db):
 
     match_functions(db)
 
-    assert db.get(ImageId.ORIG, 123).recomp_addr == 555
-    assert db.get(ImageId.RECOMP, 555).orig_addr == 123
+    assert get_entity(db, ImageId.ORIG, 123).recomp_addr == 555
+    assert get_entity(db, ImageId.RECOMP, 555).orig_addr == 123
     assert db.count() == 1
 
 
-def test_match_functions_ambiguous(db, report):
+def test_match_functions_ambiguous(db: EntityDb, report):
     """Report if a name match had multiple options.
     If there is only one option left, but previous matches were ambiguous, report it anyway.
     """
@@ -216,7 +222,7 @@ def test_match_functions_ambiguous(db, report):
     assert db.count() == 2
 
 
-def test_match_functions_ignore_already_matched(db, report):
+def test_match_functions_ignore_already_matched(db: EntityDb, report):
     """If the name is non-unique but there is only one option available to match
     (i.e. if previous entities were matched by line number)
     do not report an ambiguous match."""
@@ -236,11 +242,11 @@ def test_match_functions_ignore_already_matched(db, report):
     report.assert_not_called()
 
     # Should combine the two unmatched entities
-    assert db.get(ImageId.RECOMP, 501).orig_addr == 101
+    assert get_entity(db, ImageId.RECOMP, 501).orig_addr == 101
     assert db.count() == 2
 
 
-def test_match_function_names_truncate_255(db):
+def test_match_function_names_truncate_255(db: EntityDb):
     """MSVC 4.2 truncates names to 255 characters in the PDB.
     Match function entities where the names are are equal up to the 255th character."""
     long_name = "x" * 255
@@ -250,11 +256,11 @@ def test_match_function_names_truncate_255(db):
 
     match_functions(db, truncate=True)
 
-    assert db.get(ImageId.ORIG, 123).recomp_addr == 555
-    assert db.get(ImageId.RECOMP, 555).orig_addr == 123
+    assert get_entity(db, ImageId.ORIG, 123).recomp_addr == 555
+    assert get_entity(db, ImageId.RECOMP, 555).orig_addr == 123
 
 
-def test_match_function_names_no_truncate(db):
+def test_match_function_names_no_truncate(db: EntityDb):
     """Should recognize these as distinct names if truncate=False"""
     long_name = "x" * 255
     with db.batch() as batch:
@@ -263,14 +269,14 @@ def test_match_function_names_no_truncate(db):
 
     match_functions(db, truncate=False)
 
-    assert db.get(ImageId.ORIG, 123).recomp_addr is None
-    assert db.get(ImageId.RECOMP, 555).orig_addr is None
+    assert get_entity(db, ImageId.ORIG, 123).recomp_addr is None
+    assert get_entity(db, ImageId.RECOMP, 555).orig_addr is None
 
 
 #### match_vtables ####
 
 
-def test_match_vtables(db):
+def test_match_vtables(db: EntityDb):
     """Matching with the specific requirements on attributes for orig and recomp entities"""
     with db.batch() as batch:
         # Orig has class name and type
@@ -280,11 +286,11 @@ def test_match_vtables(db):
 
     match_vtables(db)
 
-    assert db.get(ImageId.ORIG, 100).recomp_addr == 200
+    assert get_entity(db, ImageId.ORIG, 100).recomp_addr == 200
     assert db.count() == 1
 
 
-def test_match_vtables_no_match_recomp_name(db):
+def test_match_vtables_no_match_recomp_name(db: EntityDb):
     """Recomp entity name must be in a specific format"""
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 100, name="Pizza", type=EntityType.VTABLE)
@@ -292,10 +298,10 @@ def test_match_vtables_no_match_recomp_name(db):
 
     match_vtables(db)
 
-    assert db.get(ImageId.ORIG, 100).recomp_addr is None
+    assert get_entity(db, ImageId.ORIG, 100).recomp_addr is None
 
 
-def test_match_vtables_no_match_recomp_type(db):
+def test_match_vtables_no_match_recomp_type(db: EntityDb):
     """Recomp entity must have type=EntityType.VTABLE"""
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 100, name="Pizza", type=EntityType.VTABLE)
@@ -303,10 +309,10 @@ def test_match_vtables_no_match_recomp_type(db):
 
     match_vtables(db)
 
-    assert db.get(ImageId.ORIG, 100).recomp_addr is None
+    assert get_entity(db, ImageId.ORIG, 100).recomp_addr is None
 
 
-def test_match_vtables_no_match_orig_type(db):
+def test_match_vtables_no_match_orig_type(db: EntityDb):
     """Orig entity must have type=EntityType.VTABLE"""
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 100, name="Pizza")
@@ -314,10 +320,10 @@ def test_match_vtables_no_match_orig_type(db):
 
     match_vtables(db)
 
-    assert db.get(ImageId.ORIG, 100).recomp_addr is None
+    assert get_entity(db, ImageId.ORIG, 100).recomp_addr is None
 
 
-def test_match_vtables_no_match_report(db, report):
+def test_match_vtables_no_match_report(db: EntityDb, report):
     """Report a failure to match a vtable from the orig side."""
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 100, name="Pizza", type=EntityType.VTABLE)
@@ -327,7 +333,7 @@ def test_match_vtables_no_match_report(db, report):
     report.assert_called_with(ReccmpEvent.NO_MATCH, 100, msg=ANY)
 
 
-def test_match_vtables_base_class(db):
+def test_match_vtables_base_class(db: EntityDb):
     """Match a vtable with a base class"""
     with db.batch() as batch:
         batch.set(
@@ -342,10 +348,10 @@ def test_match_vtables_base_class(db):
 
     match_vtables(db)
 
-    assert db.get(ImageId.ORIG, 100).recomp_addr == 200
+    assert get_entity(db, ImageId.ORIG, 100).recomp_addr == 200
 
 
-def test_match_vtables_base_class_orig_none(db):
+def test_match_vtables_base_class_orig_none(db: EntityDb):
     """Do not match a multiple-inheritance vtable if the base class is not specified on the orig entity."""
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 100, name="Pizza", type=EntityType.VTABLE)
@@ -358,10 +364,10 @@ def test_match_vtables_base_class_orig_none(db):
 
     match_vtables(db)
 
-    assert db.get(ImageId.ORIG, 100).recomp_addr is None
+    assert get_entity(db, ImageId.ORIG, 100).recomp_addr is None
 
 
-def test_match_vtables_base_class_same_as_derived(db):
+def test_match_vtables_base_class_same_as_derived(db: EntityDb):
     """Matching a vtable with the same base class and derived class.
     The base_class attribute is set on the orig entity."""
     with db.batch() as batch:
@@ -377,10 +383,10 @@ def test_match_vtables_base_class_same_as_derived(db):
 
     match_vtables(db)
 
-    assert db.get(ImageId.ORIG, 100).recomp_addr == 200
+    assert get_entity(db, ImageId.ORIG, 100).recomp_addr == 200
 
 
-def test_match_vtables_base_class_same_as_derived_orig_none(db):
+def test_match_vtables_base_class_same_as_derived_orig_none(db: EntityDb):
     """If orig does not have the base_class attribute set, we can still match if
     the recomp vtable has the same base and derived class."""
     with db.batch() as batch:
@@ -394,10 +400,10 @@ def test_match_vtables_base_class_same_as_derived_orig_none(db):
 
     match_vtables(db)
 
-    assert db.get(ImageId.ORIG, 100).recomp_addr == 200
+    assert get_entity(db, ImageId.ORIG, 100).recomp_addr == 200
 
 
-def test_match_vtables_incompatible_base_class(db):
+def test_match_vtables_incompatible_base_class(db: EntityDb):
     """If the orig entity has a base_class, do not match with a recomp vtable that does not use multiple-inheritance."""
     with db.batch() as batch:
         batch.set(
@@ -407,10 +413,10 @@ def test_match_vtables_incompatible_base_class(db):
 
     match_vtables(db)
 
-    assert db.get(ImageId.ORIG, 100).recomp_addr is None
+    assert get_entity(db, ImageId.ORIG, 100).recomp_addr is None
 
 
-def test_match_vtables_folded(db):
+def test_match_vtables_folded(db: EntityDb):
     """Match a folded vtable by trying each candidate name"""
     with db.batch() as batch:
         batch.set(
@@ -424,10 +430,10 @@ def test_match_vtables_folded(db):
 
     match_vtables(db)
 
-    assert db.get(ImageId.ORIG, 100).recomp_addr == 200
+    assert get_entity(db, ImageId.ORIG, 100).recomp_addr == 200
 
 
-def test_match_vtables_folded_first_candidate(db):
+def test_match_vtables_folded_first_candidate(db: EntityDb):
     """The first folded candidate can match too, not just the last"""
     with db.batch() as batch:
         batch.set(
@@ -441,10 +447,10 @@ def test_match_vtables_folded_first_candidate(db):
 
     match_vtables(db)
 
-    assert db.get(ImageId.ORIG, 100).recomp_addr == 200
+    assert get_entity(db, ImageId.ORIG, 100).recomp_addr == 200
 
 
-def test_match_vtables_folded_no_match(db, report):
+def test_match_vtables_folded_no_match(db: EntityDb, report):
     """Report a single failure if none of the folded candidates match."""
     with db.batch() as batch:
         batch.set(
@@ -458,13 +464,13 @@ def test_match_vtables_folded_no_match(db, report):
     match_vtables(db, report)
 
     report.assert_called_once_with(ReccmpEvent.NO_MATCH, 100, msg=ANY)
-    assert db.get(ImageId.ORIG, 100).recomp_addr is None
+    assert get_entity(db, ImageId.ORIG, 100).recomp_addr is None
 
 
 #### match_static_variables ####
 
 
-def test_match_static_var(db):
+def test_match_static_var(db: EntityDb):
     """Match a static variable with all requirements satisfied."""
     with db.batch() as batch:
         # Orig entity function with symbol
@@ -487,10 +493,10 @@ def test_match_static_var(db):
 
     match_static_variables(db)
 
-    assert db.get(ImageId.ORIG, 600).recomp_addr == 500
+    assert get_entity(db, ImageId.ORIG, 600).recomp_addr == 500
 
 
-def test_match_static_var_no_parent_function(db):
+def test_match_static_var_no_parent_function(db: EntityDb):
     """Cannot match static variable without a reference to its parent function"""
     with db.batch() as batch:
         batch.set(
@@ -510,10 +516,10 @@ def test_match_static_var_no_parent_function(db):
 
     match_static_variables(db)
 
-    assert db.get(ImageId.ORIG, 600).recomp_addr is None
+    assert get_entity(db, ImageId.ORIG, 600).recomp_addr is None
 
 
-def test_match_static_var_static_false(db):
+def test_match_static_var_static_false(db: EntityDb):
     """Cannot match static variable unless the static_var attribute is True"""
     with db.batch() as batch:
         batch.set(
@@ -533,10 +539,10 @@ def test_match_static_var_static_false(db):
 
     match_static_variables(db)
 
-    assert db.get(ImageId.ORIG, 600).recomp_addr is None
+    assert get_entity(db, ImageId.ORIG, 600).recomp_addr is None
 
 
-def test_match_static_var_no_symbol_function(db):
+def test_match_static_var_no_symbol_function(db: EntityDb):
     """Cannot match static variable if the parent function has no symbol"""
     with db.batch() as batch:
         # No symbol on parent function
@@ -555,10 +561,10 @@ def test_match_static_var_no_symbol_function(db):
 
     match_static_variables(db)
 
-    assert db.get(ImageId.ORIG, 600).recomp_addr is None
+    assert get_entity(db, ImageId.ORIG, 600).recomp_addr is None
 
 
-def test_match_static_var_no_symbol_variable(db):
+def test_match_static_var_no_symbol_variable(db: EntityDb):
     """Cannot match static variable without a symbol."""
     with db.batch() as batch:
         batch.set(
@@ -577,10 +583,10 @@ def test_match_static_var_no_symbol_variable(db):
 
     match_static_variables(db)
 
-    assert db.get(ImageId.ORIG, 600).recomp_addr is None
+    assert get_entity(db, ImageId.ORIG, 600).recomp_addr is None
 
 
-def test_match_static_var_no_match_report(db, report):
+def test_match_static_var_no_match_report(db: EntityDb, report):
     """Report match failure for any orig entities with static_var=True"""
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 600, name="test", static_var=True, type=EntityType.DATA)
@@ -593,7 +599,7 @@ def test_match_static_var_no_match_report(db, report):
 #### match_variables ####
 
 
-def test_match_variables(db):
+def test_match_variables(db: EntityDb):
     """Simple match by name and type"""
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 123, name="hello", type=EntityType.DATA)
@@ -601,14 +607,14 @@ def test_match_variables(db):
 
     match_variables(db)
 
-    assert db.get(ImageId.ORIG, 123).recomp_addr == 555
-    assert db.get(ImageId.RECOMP, 555).orig_addr == 123
+    assert get_entity(db, ImageId.ORIG, 123).recomp_addr == 555
+    assert get_entity(db, ImageId.RECOMP, 555).orig_addr == 123
 
     # Should combine entities
     assert db.count() == 1
 
 
-def test_match_variables_no_match(db):
+def test_match_variables_no_match(db: EntityDb):
     """Skip entities with no match"""
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 123, name="hello", type=EntityType.DATA)
@@ -616,12 +622,12 @@ def test_match_variables_no_match(db):
 
     match_variables(db)
 
-    assert db.get(ImageId.ORIG, 123).recomp_addr is None
-    assert db.get(ImageId.RECOMP, 555).orig_addr is None
+    assert get_entity(db, ImageId.ORIG, 123).recomp_addr is None
+    assert get_entity(db, ImageId.RECOMP, 555).orig_addr is None
     assert db.count() == 2
 
 
-def test_match_variables_no_match_report(db, report):
+def test_match_variables_no_match_report(db: EntityDb, report):
     """Should report if we cannot match a name on the orig side."""
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 123, name="test", type=EntityType.DATA)
@@ -631,7 +637,7 @@ def test_match_variables_no_match_report(db, report):
     report.assert_called_with(ReccmpEvent.NO_MATCH, 123, msg=ANY)
 
 
-def test_match_variables_type_null(db):
+def test_match_variables_type_null(db: EntityDb):
     """Will allow a variable match if the recomp side has type=null"""
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 123, name="hello", type=EntityType.DATA)
@@ -639,29 +645,29 @@ def test_match_variables_type_null(db):
 
     match_variables(db)
 
-    assert db.get(ImageId.ORIG, 123).recomp_addr == 555
-    assert db.get(ImageId.RECOMP, 555).orig_addr == 123
+    assert get_entity(db, ImageId.ORIG, 123).recomp_addr == 555
+    assert get_entity(db, ImageId.RECOMP, 555).orig_addr == 123
     assert db.count() == 1
 
 
 #### match_strings ####
 
 
-def test_match_strings(db):
+def test_match_strings(db: EntityDb):
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 123, name="hello", type=EntityType.STRING)
         batch.set(ImageId.RECOMP, 555, name="hello", type=EntityType.STRING)
 
     match_strings(db)
 
-    assert db.get(ImageId.ORIG, 123).recomp_addr == 555
-    assert db.get(ImageId.RECOMP, 555).orig_addr == 123
+    assert get_entity(db, ImageId.ORIG, 123).recomp_addr == 555
+    assert get_entity(db, ImageId.RECOMP, 555).orig_addr == 123
 
     # Should combine entities
     assert db.count() == 1
 
 
-def test_match_strings_no_match(db):
+def test_match_strings_no_match(db: EntityDb):
     """Skip strings with no match"""
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 123, name="hello", type=EntityType.STRING)
@@ -669,12 +675,12 @@ def test_match_strings_no_match(db):
 
     match_strings(db)
 
-    assert db.get(ImageId.ORIG, 123).recomp_addr is None
-    assert db.get(ImageId.RECOMP, 555).orig_addr is None
+    assert get_entity(db, ImageId.ORIG, 123).recomp_addr is None
+    assert get_entity(db, ImageId.RECOMP, 555).orig_addr is None
     assert db.count() == 2
 
 
-def test_match_strings_type_required(db):
+def test_match_strings_type_required(db: EntityDb):
     """Do not match if one side is missing the type.
     This is a concern because we use the name attribute for the string's text."""
     with db.batch() as batch:
@@ -685,11 +691,11 @@ def test_match_strings_type_required(db):
 
     match_strings(db)
 
-    assert db.get(ImageId.ORIG, 100).recomp_addr is None
-    assert db.get(ImageId.ORIG, 200).recomp_addr is None
+    assert get_entity(db, ImageId.ORIG, 100).recomp_addr is None
+    assert get_entity(db, ImageId.ORIG, 200).recomp_addr is None
 
 
-def test_match_strings_no_match_report(db, report):
+def test_match_strings_no_match_report(db: EntityDb, report):
     """Should report if we cannot match a string on the orig side.
     However: only alert if the string is 'verified' by user input,
     a symbol in the PDB, or some (future) heuristic."""
@@ -709,7 +715,7 @@ def test_match_strings_no_match_report(db, report):
     report.assert_called_with(ReccmpEvent.NO_MATCH, 123, msg=ANY)
 
 
-def test_match_strings_duplicates(db, report):
+def test_match_strings_duplicates(db: EntityDb, report):
     """Binaries that do not de-dupe string should match duplicates by address order."""
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 100, name="hello", type=EntityType.STRING)
@@ -721,16 +727,16 @@ def test_match_strings_duplicates(db, report):
 
     match_strings(db, report)
 
-    assert db.get(ImageId.ORIG, 100).recomp_addr == 500
-    assert db.get(ImageId.ORIG, 200).recomp_addr == 600
-    assert db.get(ImageId.ORIG, 300).recomp_addr == 700
+    assert get_entity(db, ImageId.ORIG, 100).recomp_addr == 500
+    assert get_entity(db, ImageId.ORIG, 200).recomp_addr == 600
+    assert get_entity(db, ImageId.ORIG, 300).recomp_addr == 700
     assert db.count() == 3
 
     # Do not alert for duplicate string matches.
     report.assert_not_called()
 
 
-def test_match_strings_stable_order(db):
+def test_match_strings_stable_order(db: EntityDb):
     """Duplicates are matched by address order, not db insertion order."""
     with db.batch() as batch:
         # Descending order
@@ -743,12 +749,12 @@ def test_match_strings_stable_order(db):
 
     match_strings(db)
 
-    assert db.get(ImageId.ORIG, 100).recomp_addr == 500
-    assert db.get(ImageId.ORIG, 200).recomp_addr == 600
-    assert db.get(ImageId.ORIG, 300).recomp_addr == 700
+    assert get_entity(db, ImageId.ORIG, 100).recomp_addr == 500
+    assert get_entity(db, ImageId.ORIG, 200).recomp_addr == 600
+    assert get_entity(db, ImageId.ORIG, 300).recomp_addr == 700
 
 
-def test_match_ref(db):
+def test_match_ref(db: EntityDb):
     """Match child entities that refer to the same matched parent entity, regardless of type."""
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 100)
@@ -763,11 +769,11 @@ def test_match_ref(db):
 
     match_ref(db)
 
-    assert db.get(ImageId.ORIG, 200).recomp_addr == 600
-    assert db.get(ImageId.RECOMP, 600).orig_addr == 200
+    assert get_entity(db, ImageId.ORIG, 200).recomp_addr == 600
+    assert get_entity(db, ImageId.RECOMP, 600).orig_addr == 200
 
 
-def test_match_ref_chained(db):
+def test_match_ref_chained(db: EntityDb):
     """Match any child entities that refer to other child entities,
     provided we have a matched parent at the end of the chain."""
     with db.batch() as batch:
@@ -791,14 +797,14 @@ def test_match_ref_chained(db):
 
     match_ref(db)
 
-    assert db.get(ImageId.ORIG, 200).recomp_addr == 600
-    assert db.get(ImageId.RECOMP, 600).orig_addr == 200
+    assert get_entity(db, ImageId.ORIG, 200).recomp_addr == 600
+    assert get_entity(db, ImageId.RECOMP, 600).orig_addr == 200
 
-    assert db.get(ImageId.ORIG, 300).recomp_addr == 700
-    assert db.get(ImageId.RECOMP, 700).orig_addr == 300
+    assert get_entity(db, ImageId.ORIG, 300).recomp_addr == 700
+    assert get_entity(db, ImageId.RECOMP, 700).orig_addr == 300
 
 
-def test_match_ref_parent_not_matched(db):
+def test_match_ref_parent_not_matched(db: EntityDb):
     """Don't match child entities if the parent is not matched."""
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 100)
@@ -814,11 +820,11 @@ def test_match_ref_parent_not_matched(db):
     match_ref(db)
 
     # Child entities unchanged.
-    assert db.get(ImageId.ORIG, 200).recomp_addr is None
-    assert db.get(ImageId.RECOMP, 600).orig_addr is None
+    assert get_entity(db, ImageId.ORIG, 200).recomp_addr is None
+    assert get_entity(db, ImageId.RECOMP, 600).orig_addr is None
 
 
-def test_match_ref_expected_order(db):
+def test_match_ref_expected_order(db: EntityDb):
     """If there is more than one child entity that points to the same matched parent,
     match according to child address order."""
     with db.batch() as batch:
@@ -838,12 +844,12 @@ def test_match_ref_expected_order(db):
 
     match_ref(db)
 
-    assert db.get(ImageId.ORIG, 200).recomp_addr == 600
-    assert db.get(ImageId.ORIG, 201).recomp_addr == 601
-    assert db.get(ImageId.ORIG, 202).recomp_addr == 602
+    assert get_entity(db, ImageId.ORIG, 200).recomp_addr == 600
+    assert get_entity(db, ImageId.ORIG, 201).recomp_addr == 601
+    assert get_entity(db, ImageId.ORIG, 202).recomp_addr == 602
 
 
-def test_match_ref_include_vtordisp(db):
+def test_match_ref_include_vtordisp(db: EntityDb):
     """If a displacement value is specified for the child entity (vtordisp)
     use it when matching the parent."""
     with db.batch() as batch:
@@ -864,11 +870,11 @@ def test_match_ref_include_vtordisp(db):
     match_ref(db)
 
     # Match thunks and vtordisp separately.
-    assert db.get(ImageId.ORIG, 200).recomp_addr == 600
-    assert db.get(ImageId.ORIG, 201).recomp_addr == 601
+    assert get_entity(db, ImageId.ORIG, 200).recomp_addr == 600
+    assert get_entity(db, ImageId.ORIG, 201).recomp_addr == 601
 
 
-def test_match_ref_include_vtordisp_order(db):
+def test_match_ref_include_vtordisp_order(db: EntityDb):
     """For child entities with duplicate parent and displacement values, match
     by child address order.
     NOTE: It may not be possible for MSVC to duplicate vtordisps in this way."""
@@ -889,12 +895,12 @@ def test_match_ref_include_vtordisp_order(db):
 
     match_ref(db)
 
-    assert db.get(ImageId.ORIG, 200).recomp_addr == 600
-    assert db.get(ImageId.ORIG, 201).recomp_addr == 601
-    assert db.get(ImageId.ORIG, 202).recomp_addr == 602
+    assert get_entity(db, ImageId.ORIG, 200).recomp_addr == 600
+    assert get_entity(db, ImageId.ORIG, 201).recomp_addr == 601
+    assert get_entity(db, ImageId.ORIG, 202).recomp_addr == 602
 
 
-def test_match_ref_maximum_depth(db, report):
+def test_match_ref_maximum_depth(db: EntityDb, report):
     """If we cannot match all referencing entities in 10 iterations, report a warning."""
 
     # No entities to match: should not report.
@@ -933,10 +939,10 @@ def test_match_imports(db: EntityDb):
 
     match_imports(db)
 
-    e = db.get(ImageId.ORIG, 100)
+    e = get_entity(db, ImageId.ORIG, 100)
     assert e is not None
     assert e.recomp_addr == 100
 
-    e = db.get(ImageId.ORIG, 200)
+    e = get_entity(db, ImageId.ORIG, 200)
     assert e is not None
     assert e.recomp_addr == 200

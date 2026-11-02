@@ -10,11 +10,10 @@ from reccmp.parser.marker import MarkerType
 class AnnotationType(enum.Enum):
     LINE = enum.auto()
     NAME = enum.auto()
+    FREE = enum.auto()
 
 
 # fmt: off
-# Every marker type that can be completed by a code token.
-# Invalid patterns are commented.
 LINE_ANNOTATIONS = (
     (MarkerType.FUNCTION,  AnnotationType.LINE),
     (MarkerType.STUB,      AnnotationType.LINE),
@@ -25,14 +24,14 @@ LINE_ANNOTATIONS = (
     # (MarkerType.TEMPLATE,  AnnotationType.LINE),
     # (MarkerType.LIBRARY,   AnnotationType.LINE),
 )
+"""Every marker type that can be completed by a code token.
+Invalid patterns are commented."""
 # fmt: on
 
 # fmt: off
-# Every marker type that can be completed by a comment token.
-# Invalid patterns are commented.
 NAME_ANNOTATIONS = (
     (MarkerType.FUNCTION,  AnnotationType.NAME),
-    # (MarkerType.STUB,      AnnotationType.NAME),
+    (MarkerType.STUB,      AnnotationType.NAME),
     (MarkerType.GLOBAL,    AnnotationType.NAME),
     (MarkerType.STRING,    AnnotationType.NAME),
     (MarkerType.VTABLE,    AnnotationType.NAME),
@@ -40,13 +39,51 @@ NAME_ANNOTATIONS = (
     (MarkerType.TEMPLATE,  AnnotationType.NAME),
     (MarkerType.LIBRARY,   AnnotationType.NAME),
 )
+"""Every marker type that can be completed by a comment token.
+Invalid patterns are commented."""
 # fmt: on
 
-# All accepted marker type and completion token patterns.
+FREE_ANNOTATIONS = ((MarkerType.LINE, AnnotationType.FREE),)
+
 VALID_ANNOTATIONS = (
     *LINE_ANNOTATIONS,
     *NAME_ANNOTATIONS,
+    *FREE_ANNOTATIONS,
 )
+"""All accepted marker type and completion token patterns."""
+
+PARTIAL_ANNOTATIONS = (
+    *LINE_ANNOTATIONS,
+    *NAME_ANNOTATIONS,
+)
+"""Annotation types that require a completion token."""
+
+LINE_FUNCTION_TYPES = (MarkerType.FUNCTION, MarkerType.STUB)
+"""Function marker types that can be completed by a function implementation."""
+
+NAMEREF_FUNCTION_TYPES = (
+    MarkerType.FUNCTION,
+    MarkerType.STUB,
+    MarkerType.SYNTHETIC,
+    MarkerType.TEMPLATE,
+    MarkerType.LIBRARY,
+)
+"""Function marker types that can be completed by a name comment."""
+
+NAME_ONLY_FUNCTION_TYPES = tuple(
+    marker_type
+    for marker_type in NAMEREF_FUNCTION_TYPES
+    if marker_type not in LINE_FUNCTION_TYPES
+)
+"""Function marker types that can only be completed by a name comment."""
+
+FUNCTION_ANNOTATIONS = tuple(
+    [
+        *[(marker_type, AnnotationType.LINE) for marker_type in LINE_FUNCTION_TYPES],
+        *[(marker_type, AnnotationType.NAME) for marker_type in NAMEREF_FUNCTION_TYPES],
+    ]
+)
+"""Every function marker type and completion token pattern."""
 
 
 _FUNCTION_TOKEN = "void function_one() {}"
@@ -74,7 +111,7 @@ _VTABLE_NAME = "class Test"
 
 _COMMENT_COMPLETION_TEXT = {
     MarkerType.FUNCTION: _FUNCTION_NAME,
-    # MarkerType.STUB: _FUNCTION_NAME,
+    MarkerType.STUB: _FUNCTION_NAME,
     MarkerType.GLOBAL: _VARIABLE_NAME,
     MarkerType.STRING: _STRING_NAME,
     MarkerType.VTABLE: _VTABLE_NAME,
@@ -96,6 +133,9 @@ def completion_token(
     compatible with the given marker type.
     NAME annotations can use an alternate slash prefix and
     alternate whitespace on either side of the name."""
+    if annotation_type == AnnotationType.FREE:
+        return ""
+
     if annotation_type == AnnotationType.NAME:
         name = _COMMENT_COMPLETION_TEXT[marker_type]
         return f"{slashes}{name_prefix}{name}{name_suffix}"

@@ -450,6 +450,58 @@ def test_and_swap_not_allowed():
     assert is_effective is False
 
 
+def test_call_relocation_not_allowed():
+    """Cannot relocate a `call` instruction for an effective match. (GH #601)"""
+
+    orig_asm = [
+        "call InitializePalettes (FUNCTION)",
+        'mov edx, "SHADETAB" (STRING)',
+        "lea ecx, [esp + 4]",
+        "push DRLoadShadeTable (FUNCTION)",
+        "call LoadInFiles (FUNCTION)",
+    ]
+
+    recomp_asm = [
+        'mov edx, "SHADETAB" (STRING)',
+        "lea ecx, [esp + 4]",
+        "push DRLoadShadeTable (FUNCTION)",
+        "call LoadInFiles (FUNCTION)",
+        "call InitializePalettes (FUNCTION)",
+    ]
+
+    diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
+    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+
+    assert is_effective is False
+
+
+def test_relocation_across_call_is_allowed():
+    """Can move an instruction across a call for an effective match. (GH #601)"""
+
+    orig_asm = [
+        "push 1",
+        "push eax (resource.c:127)",
+        "call BrSimpleRemove (FUNCTION)",
+        "add esp, 4",
+        "push eax",
+        "call BrResInternalFree (FUNCTION)",
+    ]
+
+    recomp_asm = [
+        "push eax (resource.c:127)",
+        "call BrSimpleRemove (FUNCTION)",
+        "add esp, 4",
+        "push 1 (resource.c:128)",
+        "push eax",
+        "call BrResInternalFree (FUNCTION)",
+    ]
+
+    diff = difflib.SequenceMatcher(None, orig_asm, recomp_asm)
+    is_effective = find_effective_match(diff.get_opcodes(), orig_asm, recomp_asm)
+
+    assert is_effective is False
+
+
 def test_patch_compare_jmp_cmp_recomp_shorter_than_orig():
     """Regression: cmp_index found in orig must be bounds-checked against recomp
     before indexing recomp[cmp_index]. Previously raised IndexError."""

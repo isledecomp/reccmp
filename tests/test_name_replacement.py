@@ -14,7 +14,7 @@ def fixture_db() -> EntityDb:
 
 
 def create_lookup(
-    db, addrs: dict[int, int] | None = None, is_orig: bool = True
+    db: EntityDb, addrs: dict[int, int] | None = None, is_orig: bool = True
 ) -> NameReplacementProtocol:
     if addrs is None:
         addrs = {}
@@ -34,7 +34,7 @@ def create_lookup(
 ####
 
 
-def test_name_replacement(db):
+def test_name_replacement(db: EntityDb):
     """Should return a name for an entity that has one.
     Return None if there are no name attributes set or the entity does not exist."""
     with db.batch() as batch:
@@ -57,7 +57,7 @@ def test_name_replacement(db):
     assert lookup(300) is None
 
 
-def test_name_hierarchy(db):
+def test_name_hierarchy(db: EntityDb):
     """Use the "best" entity name. Currently there are only two.
     'computed_name' is preferred over just 'name'."""
     with db.batch() as batch:
@@ -90,7 +90,7 @@ def test_offset_name(db: EntityDb, entity_type: EntityType):
     assert lookup(110) is None
 
 
-def test_offset_name_non_variables(db):
+def test_offset_name_non_variables(db: EntityDb):
     """Do not return an offset name for non-variable entities. (e.g. functions)."""
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 100, name="Hello", type=EntityType.FUNCTION, size=10)
@@ -105,7 +105,7 @@ def test_offset_name_non_variables(db):
     assert lookup(201) is None
 
 
-def test_offset_name_no_size(db):
+def test_offset_name_no_size(db: EntityDb):
     """An entity with no size attribute is considered to have size=0.
     Meaning: match only against the address value."""
     with db.batch() as batch:
@@ -117,7 +117,7 @@ def test_offset_name_no_size(db):
     assert lookup(101) is None
 
 
-def test_exact_restriction(db):
+def test_exact_restriction(db: EntityDb):
     """If exact=True, return a name only if the entity's address matches the search address.
     Otherwise we might return a name if the entity contains the search address."""
     with db.batch() as batch:
@@ -132,7 +132,7 @@ def test_exact_restriction(db):
     assert lookup(101, exact=False) is not None
 
 
-def test_indirect_function(db):
+def test_indirect_function(db: EntityDb):
     """An instruction like `call dword ptr [0x1234]` means that we call the function
     whose address is at address 0x1234. This is an indirect lookup."""
     with db.batch() as batch:
@@ -150,7 +150,7 @@ def test_indirect_function(db):
     assert "->" in entity
 
 
-def test_indirect_function_variable(db):
+def test_indirect_function_variable(db: EntityDb):
     """If the indirect call instruction has the address of a variable in our database,
     prefer the variable name rather than reading the pointer."""
     with db.batch() as batch:
@@ -167,7 +167,7 @@ def test_indirect_function_variable(db):
     assert "->" not in name
 
 
-def test_indirect_import(db):
+def test_indirect_import(db: EntityDb):
     """If we are indirectly calling an imported function, we should see the import_name
     attribute used in the result. This will probably contain the DLL and function name.
     """
@@ -190,7 +190,7 @@ def test_indirect_import(db):
     assert "->" not in name
 
 
-def test_import_without_name(db):
+def test_import_without_name(db: EntityDb):
     """If the import entity doesn't have a name, the lookup should return None."""
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 100, type=EntityType.IMPORT)  # No name
@@ -202,7 +202,7 @@ def test_import_without_name(db):
     assert lookup(100, indirect=False) is None
 
 
-def test_indirect_failed_lookup(db):
+def test_indirect_failed_lookup(db: EntityDb):
     """In the general case (i.e. we do not use the base entity to get the name)
     if there is no entity at the pointer location, return None."""
     with db.batch() as batch:

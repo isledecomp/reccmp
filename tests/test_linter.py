@@ -16,7 +16,6 @@ def create_parser_result(code: str, path: PurePath) -> ReccmpParserResult:
     parser = DecompParser()
     parser.reset_and_set_filename(path)
     parser.read(code)
-    parser.finish()
     return parser.to_result()
 
 

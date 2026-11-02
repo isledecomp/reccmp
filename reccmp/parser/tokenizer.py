@@ -141,6 +141,20 @@ def tokenize_code_file(text: str) -> list[CodeToken]:
     return tokens
 
 
+def get_string_from_ppc(text: str, start: int, stop: int) -> CodeToken | None:
+    """For PPC tokens like `#define MESSAGE "Test"`, extract the inner string.
+    The boundaries of the PPC token are given in [start, stop)."""
+    # Skip the first character so we do not match the PPC token again.
+    offset = start + 1
+
+    for i, j, token_type in tokenize_code_file(text[offset:stop]):
+        if token_type == TokenType.STRING:
+            # Correct the returned offsets so they match the ones from `text`.
+            return (offset + i, offset + j, token_type)
+
+    return None
+
+
 def get_newlines_from_text(text: str) -> list[int]:
     return [-1] + [m.start() for m in re.finditer(r"\n", text)]
 
@@ -156,6 +170,21 @@ def get_line_column_pos(newlines: list[int], offset: int) -> tuple[int, int]:
 
     pos = newlines[i - 1]
     return (i, offset - pos)
+
+
+def get_blank_lines_in_range(
+    newlines: list[int], text: str, start: int, end: int
+) -> list[int]:
+    """Return the position of any blank lines in `text` between `start` and `end`.
+    The preprocessed `newlines` list is required for performance."""
+    i = bisect.bisect_left(newlines, start)
+    j = bisect.bisect_left(newlines, end)
+
+    return [
+        newlines[x] + 1  # First column of the blank line
+        for x, y in pairwise(range(i, j))
+        if not text[newlines[x] : newlines[y]].strip()
+    ]
 
 
 def get_token_index(tokens: list[CodeToken], pos: int) -> int:
@@ -465,6 +494,7 @@ def check_naive_pairing(
     # Start by collecting the position of each preprocessor token in a block.
     stack: list[list[int]] = []
     blocks: list[list[int]] = []
+
     for start, _, token in tokens:
         if token == TokenType.PPC_IF:
             stack.append([start])

@@ -4,7 +4,8 @@ addresses/symbols that we want to compare between the original and recompiled bi
 
 import bisect
 import logging
-from typing import Any, Iterable, Iterator
+from typing import Any, Iterable, Iterator, TypedDict, cast
+from typing_extensions import NotRequired, Unpack
 from reccmp.types import EntityType, ImageId
 
 
@@ -20,18 +21,86 @@ EntityTypeLookup: dict[int, str] = {
 }
 
 
+class EntityKeyValueStore(TypedDict):
+    """All possible attributes for a ReccmpEntity."""
+
+    name: NotRequired[str | None]
+    """The user-facing name of the entity."""
+
+    computed_name: NotRequired[str]
+    """An altered version of `name` with the intent of being unique in both orig and recomp namespaces."""
+
+    symbol: NotRequired[str | None]
+    """The unique mangled/linker name for this entity."""
+
+    type: NotRequired[EntityType | None]
+    """What kind of entity this is."""
+
+    ref_orig: NotRequired[int]
+    """The orig addr referenced by a THUNK or VTORDISP entity."""
+
+    orig_size: NotRequired[int]
+    """Size (in bytes) of this entity in the orig address space."""
+
+    orig_max_size: NotRequired[int]
+    """Upper-bound of the actual size (in bytes) of this entity in the orig address space."""
+
+    ref_recomp: NotRequired[int]
+    """The recomp addr referenced by a THUNK or VTORDISP entity."""
+
+    recomp_size: NotRequired[int]
+    """Size (in bytes) of this entity in the recomp address space."""
+
+    recomp_max_size: NotRequired[int]
+    """Upper-bound of the actual size (in bytes) of this entity in the recomp address space."""
+
+    displacement: NotRequired[tuple[int, int]]
+    """For VTORDISP entities, the alterations of the pointer for `this`."""
+
+    stub: NotRequired[bool]
+    """Is this a partially implemented function?"""
+
+    static_var: NotRequired[bool]
+    """Is this a static variable owned by a function?"""
+
+    library: NotRequired[bool]
+    """Is this a library function? (i.e. A function not implemented in the decomp.)"""
+
+    data_type: NotRequired[int]
+    """The data type key for this variable or constant value."""
+
+    verified: NotRequired[bool]
+    """For STRING/WIDECHAR entities, was this string detected by reading source code?
+    (As opposed to one autodetected by a heuristic.)"""
+
+    parent_function: NotRequired[int]
+    """The orig address of the function that owns this static variable."""
+
+    filename: NotRequired[str]
+    """The code filename for a LINE entity."""
+
+    line: NotRequired[int]
+    """The line number for a LINE entity."""
+
+    folded_vtables: NotRequired[list[tuple[str, str | None]]]
+    """For a VTABLE entity, the pairs of class name and base class that occupy the same address. (COMDAT folding.)"""
+
+    base_class: NotRequired[str | None]
+    """The base class for this multiple/virtual inheritance VTABLE entity."""
+
+
 class ReccmpEntity:
     """ORM object for Reccmp database entries."""
 
     _orig_addr: int | None
     _recomp_addr: int | None
-    _kvstore: dict[str, Any]
+    _kvstore: EntityKeyValueStore
 
     def __init__(
         self,
         orig: int | None,
         recomp: int | None,
-        kvstore: dict[str, Any] | None = None,
+        kvstore: EntityKeyValueStore | None = None,
     ) -> None:
         """Requires one or both of the addresses to be defined"""
         assert orig is not None or recomp is not None
@@ -60,7 +129,7 @@ class ReccmpEntity:
         return self._recomp_addr
 
     @property
-    def entity_type(self) -> int | None:
+    def entity_type(self) -> EntityType | None:
         return self._kvstore.get("type")
 
     @property
@@ -139,7 +208,7 @@ class ReccmpMatch(ReccmpEntity):
     required or expected. Meaning: both orig and recomp addresses are set."""
 
     def __init__(
-        self, orig: int, recomp: int, kvstore: dict[str, Any] | None = None
+        self, orig: int, recomp: int, kvstore: EntityKeyValueStore | None = None
     ) -> None:
         assert orig is not None and recomp is not None
         super().__init__(orig, recomp, kvstore)
@@ -161,8 +230,8 @@ logger = logging.getLogger(__name__)
 class EntityBatch:
     base: "EntityDb"
 
-    _orig: dict[int, dict[str, Any]]
-    _recomp: dict[int, dict[str, Any]]
+    _orig: dict[int, EntityKeyValueStore]
+    _recomp: dict[int, EntityKeyValueStore]
     _matches: list[tuple[int, int]]
 
     def __init__(self, backref: "EntityDb") -> None:
@@ -185,7 +254,7 @@ class EntityBatch:
         ref: int | None = None,
         size: int | None = None,
         max_size: int | None = None,
-        **kwargs,
+        **kwargs: Unpack[EntityKeyValueStore],
     ):
         assert img in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
 
@@ -294,7 +363,9 @@ class EntityDb:
         order.sort()
         extent |= addrs
 
-    def bulk_insert(self, image: ImageId, rows: Iterable[tuple[int, dict[str, Any]]]):
+    def bulk_insert(
+        self, image: ImageId, rows: Iterable[tuple[int, EntityKeyValueStore]]
+    ):
         assert image in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
         new_addrs = set()
         entities = self._entities[image]
@@ -318,6 +389,8 @@ class EntityDb:
 
         orig_entities = self._entities[ImageId.ORIG]
         recomp_entities = self._entities[ImageId.RECOMP]
+        orig_data: EntityKeyValueStore
+        recomp_data: EntityKeyValueStore
 
         new_x = set()
         new_y = set()
@@ -343,11 +416,14 @@ class EntityDb:
                 # Remove null values from recomp. If we don't, the merge
                 # will overwrite a value at the same key in orig.
                 # pylint: disable=protected-access
-                recomp_data = {
-                    k: v
-                    for k, v in recomp_entities[y]._kvstore.items()
-                    if v is not None
-                }
+                recomp_data = cast(
+                    EntityKeyValueStore,
+                    {
+                        k: v
+                        for k, v in recomp_entities[y]._kvstore.items()
+                        if v is not None
+                    },
+                )
 
             match = ReccmpMatch(x, y, orig_data | recomp_data)
 

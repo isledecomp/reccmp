@@ -14,6 +14,7 @@ from reccmp.parser.error import AlertCode
 from reccmp.parser.marker import MarkerType
 from .parser_helpers import (
     AnnotationType,
+    PARTIAL_ANNOTATIONS,
     VALID_ANNOTATIONS,
     completion_token,
     sorted_alerts,
@@ -47,7 +48,7 @@ def test_same_type_different_target(
     assert not parser.alerts
 
 
-@pytest.mark.parametrize("marker_type, annotation_type", VALID_ANNOTATIONS)
+@pytest.mark.parametrize("marker_type, annotation_type", PARTIAL_ANNOTATIONS)
 def test_same_type_same_target(
     parser: DecompParser, marker_type: MarkerType, annotation_type: AnnotationType
 ):
@@ -67,7 +68,7 @@ def test_same_type_same_target(
     assert sorted_alerts(parser) == [(AlertCode.DUPLICATE_MODULE, 2)]
 
 
-@pytest.mark.parametrize("marker_type, annotation_type", VALID_ANNOTATIONS)
+@pytest.mark.parametrize("marker_type, annotation_type", PARTIAL_ANNOTATIONS)
 def test_same_type_same_target_repeated(
     parser: DecompParser, marker_type: MarkerType, annotation_type: AnnotationType
 ):
@@ -92,7 +93,30 @@ def test_same_type_same_target_repeated(
     ]
 
 
-@pytest.mark.parametrize("marker_type, annotation_type", VALID_ANNOTATIONS)
+@pytest.mark.parametrize("marker_type, _", PARTIAL_ANNOTATIONS)
+def test_same_type_same_target_incomplete(
+    parser: DecompParser, marker_type: MarkerType, _: AnnotationType
+):
+    """Reject markers that repeat the type and target of a marker
+    earlier in the group, even if the other marker is not completed."""
+    parser.read(dedent(f"""\
+        // {marker_type.name}: TEST 0x1234
+        // {marker_type.name}: TEST 0x5555
+        ;
+        """))
+
+    # Captured nothing.
+    assert not symbol_tuples(parser)
+
+    alerts = sorted_alerts(parser)
+
+    # One alert for the incomplete marker, one for the duplicate.
+    # The alert code varies for the incomplete marker.
+    assert len(alerts) == 2
+    assert (AlertCode.DUPLICATE_MODULE, 2) in alerts
+
+
+@pytest.mark.parametrize("marker_type, annotation_type", PARTIAL_ANNOTATIONS)
 def test_same_type_same_target_non_contiguous(
     parser: DecompParser, marker_type: MarkerType, annotation_type: AnnotationType
 ):
@@ -115,7 +139,7 @@ def test_same_type_same_target_non_contiguous(
     assert sorted_alerts(parser) == [(AlertCode.DUPLICATE_MODULE, 3)]
 
 
-@pytest.mark.parametrize("marker_type, annotation_type", VALID_ANNOTATIONS)
+@pytest.mark.parametrize("marker_type, annotation_type", PARTIAL_ANNOTATIONS)
 def test_aliased_type_same_target(
     marker_type: MarkerType, annotation_type: AnnotationType
 ):

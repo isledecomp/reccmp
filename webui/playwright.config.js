@@ -3,10 +3,10 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { defineConfig, devices } from '@playwright/test';
 
-// We want to load the report file using the file:/// protocol instead of
-// serving it through a local web server. To do that, we need an absolute path
-// to the generated index.html file in the current directory.
-const indexPath = path.resolve('./index.html');
+// We want to load the report files using the file:/// protocol instead of
+// serving them through a local web server. To do that, we need an absolute path
+// to the directory of generated reports.
+const testdataPath = path.resolve('./testdata') + path.sep;
 
 /**
  * Read environment variables from file.
@@ -36,7 +36,7 @@ export default defineConfig({
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
     // baseURL: 'http://localhost:8080',
-    baseURL: pathToFileURL(indexPath).toString(),
+    baseURL: pathToFileURL(testdataPath).toString(),
 
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',

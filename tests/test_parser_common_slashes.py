@@ -17,7 +17,6 @@ from .parser_helpers import (
     completion_token,
     sorted_alerts,
     symbol_tuples,
-    xfail_param,
 )
 
 
@@ -28,8 +27,8 @@ def fixture_parser() -> DecompParser:
 
 SLASH_VARIANTS = [
     "//",
-    xfail_param("///", reason="Not identified as marker."),
-    xfail_param("////", reason="Not identified as marker."),
+    "///",
+    "////",
 ]
 
 

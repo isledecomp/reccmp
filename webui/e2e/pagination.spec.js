@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('');
+  await page.goto('pagination.html');
 });
 
 test.describe('Pagination', () => {
@@ -11,14 +11,14 @@ test.describe('Pagination', () => {
   const getResultCount = async (page) => {
     const resultsText = await page.getByText(/Results: \d+/).textContent();
     const [count] = resultsText.match(/\d+/);
-    return parseInt(count);
+    return parseInt(count, 10);
   };
 
   // Returns integers from 'Page x of y' display.
   const getPageNumbers = async (page) => {
     const pageText = await page.getByText(/Page \d+ of \d+/).textContent();
     const [start, end] = pageText.match(/\d+/g);
-    return [parseInt(start), parseInt(end)];
+    return [parseInt(start, 10), parseInt(end, 10)];
   };
 
   test('Accurate page count', async ({ page }) => {

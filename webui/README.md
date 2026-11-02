@@ -18,9 +18,9 @@ Biome has additional command line options that will auto-correct some syntax iss
 ## End-to-end tests
 [Playwright](https://playwright.dev/) runs the end-to-end tests on the HTML output file.
 
-The first step is to create the test subject. The included file `testdata.json` is the basis for the HTML output used in the tests. To create the `index.html` file, use the `reccmp-aggregate` command from the `webui` directory as follows:
+The first step is to create the test subjects. Run the `generate_testdata.py` script from the `webui` directory to create the HTML reports.
 ```
-reccmp-aggregate --samples ./testdata.json ./testdata.json --html ./index.html
+python generate_testdata.py
 ```
 The next step is to install the browser binaries used to run the tests. This is a one-time requirement. The command is: `npx playwright install --with-deps`
 

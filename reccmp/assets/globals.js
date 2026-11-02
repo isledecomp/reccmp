@@ -1,16 +1,11 @@
 /** @import {ReccmpSerializedReport, ReccmpComparedEntity, ReccmpProgressCounters} from './types' */
 
-/**
- * @typedef {object} ReccmpWindowProps
- * @property {ReccmpSerializedReport} global_reccmp_report
- */
-
 // reccmp-pack-begin
 
-/** @type {Window & ReccmpWindowProps} */
-const reccmpWindow = /** @type {?} */ (window);
-
-const { data: global_reccmp_data, ...global_reccmp_metadata } = reccmpWindow.global_reccmp_report;
+/** @type {ReccmpSerializedReport[]} */
+const [{ data: global_reccmp_data, ...global_reccmp_metadata }] = [
+  /* RECCMP_REPORT_JSON */
+];
 
 // Unwrap array of functions into a dictionary with address as the key.
 const dataDict = Object.fromEntries(
@@ -79,4 +74,4 @@ const global_reccmp_progress = getProgressCounters();
 
 // reccmp-pack-end
 
-export { global_reccmp_data, global_reccmp_metadata, global_reccmp_progress, getDataByAddr };
+export { getDataByAddr, global_reccmp_data, global_reccmp_metadata, global_reccmp_progress };

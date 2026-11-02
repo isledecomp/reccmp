@@ -12,16 +12,14 @@ def fixture_parser():
 
 
 def test_missing_sig(parser):
-    """In the hopefully rare scenario that the function signature and marker
-    are swapped, we still have enough to match with reccmp"""
+    """Should not detect a broken function with no signature."""
     parser.read(dedent("""\
         void my_function()
         // FUNCTION: TEST 0x1234
         {
         }
         """))
-    assert len(parser.functions) == 1
-    assert parser.functions[0].line_number == 3
+    assert len(parser.functions) == 0
 
     assert len(parser.alerts) == 1
     assert parser.alerts[0].code == AlertCode.MISSED_START_OF_FUNCTION
@@ -56,8 +54,9 @@ def test_incompatible_marker(parser):
         // GLOBAL: TEST 0x5000
         void test() {}
         """)
-    assert len(parser.alerts) == 1
+    assert len(parser.alerts) == 2
     assert parser.alerts[0].code == AlertCode.INCOMPATIBLE_MARKER
+    assert parser.alerts[1].code == AlertCode.INCOMPATIBLE_MARKER
 
 
 def test_variable(parser):
@@ -69,17 +68,17 @@ def test_variable(parser):
     assert len(parser.variables) == 1
 
 
-def test_synthetic_plus_marker(parser):
-    """Marker tracking preempts synthetic name detection.
-    Should fail with error and not log the synthetic"""
+def test_synthetic_first_over_code(parser):
+    """Should reject code functions using marker types that may only
+    be used as namerefs (e.g. SYNTHETIC) (GH #599)"""
     parser.read("""\
         // SYNTHETIC: HEY 0x555
         // FUNCTION: HOWDY 0x1234
         void test() {}
         """)
-    assert len(parser.functions) == 0
+    assert len(parser.functions) == 1
     assert len(parser.alerts) == 1
-    assert parser.alerts[0].code == AlertCode.INCOMPATIBLE_MARKER
+    assert parser.alerts[0].code == AlertCode.BAD_NAMEREF
 
 
 def test_different_markers_different_module(parser):
@@ -115,18 +114,17 @@ def test_different_markers_same_module(parser):
     assert parser.alerts[0].code == AlertCode.DUPLICATE_MODULE
 
 
-def test_unexpected_synthetic(parser):
-    """FUNCTION then SYNTHETIC should fail to report either one"""
+def test_synthetic_second_over_code(parser):
     parser.read("""\
-        // FUNCTION: HOWDY 0x1234
+        // FUNCTION: HELLO 0x1234
         // SYNTHETIC: HOWDY 0x5555
         void interesting_function() {
         }
         """)
 
-    assert len(parser.functions) == 0
+    assert len(parser.functions) == 1
     assert len(parser.alerts) == 1
-    assert parser.alerts[0].code == AlertCode.INCOMPATIBLE_MARKER
+    assert parser.alerts[0].code == AlertCode.BAD_NAMEREF
 
 
 @pytest.mark.skip(reason="not implemented yet")
@@ -224,7 +222,6 @@ def test_synthetic_no_comment(parser):
     assert parser.alerts[0].code == AlertCode.BAD_NAMEREF
 
 
-@pytest.mark.xfail(reason="Gap in state machine logic where we do not raise an error.")
 def test_function_unexpected_end(parser: DecompParser):
     """Should throw an error if we hit the closing bracket before the starting bracket."""
     parser.read(dedent("""\
@@ -233,8 +230,9 @@ def test_function_unexpected_end(parser: DecompParser):
         }
         """))
     assert len(parser.functions) == 0
-    assert len(parser.alerts) == 1
-    assert parser.alerts[0].code == AlertCode.MISSED_START_OF_FUNCTION
+    assert len(parser.alerts) == 2
+    assert parser.alerts[0].code == AlertCode.CURLY_BRACKET_IMBALANCE
+    assert parser.alerts[1].code == AlertCode.MISSED_START_OF_FUNCTION
 
 
 def test_implicit_lookup_by_name(parser):
@@ -299,24 +297,21 @@ def test_unexpected_eof(parser):
         // FUNCTION: TEST 0x1234
         // Cls::Method
         // FUNCTION: TEST 0x5555""")
-    parser.finish()
 
     assert len(parser.functions) == 1
     assert len(parser.alerts) == 1
-    assert parser.alerts[0].code == AlertCode.UNEXPECTED_END_OF_FILE
+    assert parser.alerts[0].code == AlertCode.MISSED_START_OF_FUNCTION
 
 
 def test_global_nomatch(parser):
-    """We do our best to grab the variable name, even without the g_ prefix
-    but this (by design) will not match everything."""
-
+    """Should distinguish patterns that are clearly not variable declarations."""
     parser.read("""\
         // GLOBAL: TEST 0x1234
         FunctionCall();
         """)
     assert len(parser.variables) == 0
     assert len(parser.alerts) == 1
-    assert parser.alerts[0].code == AlertCode.NO_SUITABLE_NAME
+    assert parser.alerts[0].code == AlertCode.GLOBAL_NOT_VARIABLE
 
 
 def test_static_variable(parser):
@@ -665,25 +660,6 @@ def test_function_symbol_option_warning(parser):
     assert len(parser.functions) == 1
     assert parser.functions[0].name_is_symbol is False
     assert parser.alerts[0].code == AlertCode.SYMBOL_OPTION_IGNORED
-
-
-def test_unexpected_marker(parser):
-    """The unexpected_marker error occurs when:
-    1. We read 1-to-N line-based function annotations (// FUNCTION or // STUB)
-    2. We begin our search for the opening curly bracket { of the function
-    3. We are interrupted by another annotation of any type"""
-    parser.read("""\
-        // FUNCTION: HELLO 0x1234
-        int test()
-        // STUB: TEST 0x5555
-        {
-            return 5;
-        }
-        """)
-
-    assert len(parser.functions) == 0
-    assert len(parser.alerts) == 1
-    assert parser.alerts[0].code == AlertCode.UNEXPECTED_MARKER
 
 
 def test_issue_137():

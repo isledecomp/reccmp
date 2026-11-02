@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('');
+  await page.goto('diffDisplay.html');
 });
 
 async function fillSearchbox(page, query) {
@@ -29,8 +29,8 @@ async function getDiffRow(page, name) {
 test('Starting values', async ({ page }) => {
   const diffRow = await getDiffRow(page, 'IsleApp::SetupVideoFlags');
 
-  const origOnlyAddr = '0x401561';
-  const recompOnlyAddr = '0x40156b';
+  const origOnlyAddr = '0x401003';
+  const recompOnlyAddr = '0x501003';
 
   // Verify that we are seeing instructions from each diff category:
   // insert/replace/delete and equal
@@ -48,8 +48,8 @@ test('Starting values', async ({ page }) => {
 test('Addr display radio button', async ({ page }) => {
   const diffRow = await getDiffRow(page, 'IsleApp::SetupVideoFlags');
 
-  const origOnlyAddr = '0x401561';
-  const recompOnlyAddr = '0x40156b';
+  const origOnlyAddr = '0x401003';
+  const recompOnlyAddr = '0x501003';
 
   await diffRow.getByRole('radio', { name: 'None' }).click();
   await expect(diffRow.getByText(origOnlyAddr)).not.toBeVisible();

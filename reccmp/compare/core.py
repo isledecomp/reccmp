@@ -423,9 +423,6 @@ class Compare:
     def _compare_non_match(self, ent: ReccmpEntity) -> ReccmpComparedEntity | None:
         assert ent.orig_addr is not None
 
-        if ent.get("skip", False):
-            return None
-
         assert ent.entity_type is not None
 
         if ent.entity_type in (EntityType.FUNCTION, EntityType.VTORDISP):
@@ -455,9 +452,6 @@ class Compare:
         """Router for comparison type"""
 
         if match.size is None or match.any_size() == 0:
-            return None
-
-        if match.get("skip", False):
             return None
 
         assert match.entity_type is not None

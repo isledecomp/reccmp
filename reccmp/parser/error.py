@@ -108,6 +108,13 @@ class AlertCode(Enum):
     # ERROR: An alias matches a built-in marker type string, and was dropped.
     ALIAS_REDEFINES_BUILTIN = 209
 
+    # ERROR: Could not pair all curly brackets in the file.
+    # Scopes may be incorrectly reported. Functions may be missed.
+    CURLY_BRACKET_IMBALANCE = 210
+
+    # ERROR: Could not complete the STRING marker.
+    STRING_NOT_FOUND = 211
+
     # This code or higher is a critical error
     DECOMP_CRITICAL_START = 300
 
