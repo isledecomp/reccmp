@@ -199,6 +199,10 @@ const char* g_strACTION = "ACTION";
 
 In this example, there is an `A` at address `0x10102040` and a 32-bit pointer to `0x10102040` at address `0x10102048`.
 
+### Builds without string pooling
+
+The `STRING` marker is required if the recompiled binary is built without string pooling (`/GF`, which `/O1` and `/O2` imply). Such a build has no symbols for its string literals: each object file keeps its own copy of a literal in its data, and may even keep one copy for each use. `reccmp` finds the copy for an annotation by searching for the text in the data of the object file compiled from the file that has the annotation. Put the annotation in each file that uses the string, even if the address is the same: only the first annotation for an address is matched, but the copies in the other files are still recognized as the same string in the comparison.
+
 ## Lines
 
 Individual code lines can be annotated using the `LINE` marker:

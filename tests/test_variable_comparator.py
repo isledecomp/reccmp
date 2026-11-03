@@ -364,6 +364,37 @@ def test_compare_string_effective_match(db: EntityDb, types: CvdumpTypesParser):
     assert c.result == CompareResult.MATCH
 
 
+def test_compare_pointer_to_copy_of_string(db: EntityDb, types: CvdumpTypesParser):
+    """Pointers to string entities with the same text match,
+    even if the entities are not matched with each other."""
+    create_matched_variable(db, 0, data_type=CVInfoTypeEnum.T_32PVOID)
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 4, type=EntityType.STRING, name='"test"')
+        batch.set(ImageId.RECOMP, 8, type=EntityType.STRING, name='"test"')
+        batch.set(ImageId.RECOMP, 16, type=EntityType.STRING, name='"test"')
+        batch.set(ImageId.RECOMP, 24, type=EntityType.STRING, name='"other"')
+        batch.set(ImageId.RECOMP, 32, type=EntityType.DATA, name='"test"')
+        batch.match(4, 8)
+
+    orig = RawImage.from_memory(b"\x04\x00\x00\x00")
+    comparator = VariableComparator(
+        db, types, orig, RawImage.from_memory(b"\x10\x00\x00\x00")
+    )
+    assert comparator.compare_variable(get_match(db, 0)).result == CompareResult.MATCH
+
+    # Different text
+    comparator = VariableComparator(
+        db, types, orig, RawImage.from_memory(b"\x18\x00\x00\x00")
+    )
+    assert comparator.compare_variable(get_match(db, 0)).result == CompareResult.DIFF
+
+    # Not a string
+    comparator = VariableComparator(
+        db, types, orig, RawImage.from_memory(b"\x20\x00\x00\x00")
+    )
+    assert comparator.compare_variable(get_match(db, 0)).result == CompareResult.DIFF
+
+
 def test_compare_other_pointers_no_effective_match(
     db: EntityDb, types: CvdumpTypesParser
 ):

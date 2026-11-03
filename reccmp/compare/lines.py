@@ -81,6 +81,15 @@ class LinesDb:
 
         return True
 
+    def addresses_for_path(self, local_path: PurePath) -> Iterator[int]:
+        """All addresses with a line number in the given file."""
+        for _, addr in self._path_to_lines_and_addresses.get(local_path, []):
+            yield addr
+
+    def addresses_with_lines(self) -> Iterator[int]:
+        """All addresses with a line number in any local file."""
+        return iter(self._address_to_path_and_line)
+
     def search_line(
         self,
         local_path: str | Path | PurePath,

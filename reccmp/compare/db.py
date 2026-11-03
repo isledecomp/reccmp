@@ -77,7 +77,14 @@ class EntityKeyValueStore(TypedDict):
     """The orig address of the function that owns this static variable."""
 
     filename: NotRequired[str]
-    """The code filename for a LINE entity."""
+    """The code filename for a LINE entity, or the annotating file for a STRING or WIDECHAR entity."""
+
+    other_filenames: NotRequired[list[str]]
+    """For a STRING or WIDECHAR entity, the other files that annotate the same address."""
+
+    unpooled_copy: NotRequired[bool]
+    """A recomp STRING or WIDECHAR entity that is a copy of a matched literal
+    in an object file without string pooling. It is not matched by text."""
 
     line: NotRequired[int]
     """The line number for a LINE entity."""

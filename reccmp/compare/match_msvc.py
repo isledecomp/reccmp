@@ -1,5 +1,11 @@
+from typing import Callable, Iterable
+from reccmp.formats import Image
+from reccmp.formats.exceptions import (
+    InvalidVirtualAddressError,
+    InvalidVirtualReadError,
+)
 from reccmp.types import EntityType
-from reccmp.compare.db import EntityDb
+from reccmp.compare.db import EntityDb, ReccmpEntity
 from reccmp.compare.lines import LinesDb
 from reccmp.compare.event import (
     ReccmpEvent,
@@ -379,6 +385,11 @@ def match_strings(db: EntityDb, report: ReccmpReportProtocol = reccmp_report_nop
         if not text:
             continue
 
+        # This copy belongs to an object file where each annotation of
+        # the text has its match. Do not give it to another file.
+        if ent.get("unpooled_copy"):
+            continue
+
         assert ent.recomp_addr is not None
         string_index.add(text, ent.recomp_addr)
 
@@ -403,6 +414,156 @@ def match_strings(db: EntityDb, report: ReccmpReportProtocol = reccmp_report_nop
                     ent.orig_addr,
                     msg=f"Failed to match string {text} at 0x{ent.orig_addr:x}",
                 )
+
+
+def match_unpooled_strings(
+    db: EntityDb,
+    orig_bin: Image,
+    recomp_bin: Image,
+    regions_for_file: Callable[[str], Iterable[range]],
+):
+    """Match annotated strings to string literals that have no symbol in the recomp.
+    Without string pooling (/GF), MSVC emits each literal into the data of its
+    object file without a ??_C@ symbol, so identical text in two object files
+    is two copies. To pair each copy with the right annotation, search for the
+    bytes of the orig string only in the recomp address ranges that
+    `regions_for_file` returns for the file that has the annotation.
+
+    If the object has more copies than annotations, the first copies are
+    matched and the others become unmatched string entities with the same text.
+    So do the copies in the files named by the `other_filenames` attribute,
+    unless the annotating file has no copy: then the first of these is the match.
+    The unmatched copies have the `unpooled_copy` attribute.
+
+    Recomp addresses at or inside an existing entity are not candidates.
+    A string that has a symbol is left for match_strings."""
+
+    # Annotations in the same file for the same bytes compete for the same literals.
+    groups: dict[tuple[str, bytes, EntityType], list[ReccmpEntity]] = {}
+    other_files: list[tuple[ReccmpEntity, bytes, EntityType, str]] = []
+
+    for ent in db.unmatched(ImageId.ORIG):
+        if ent.get("type") not in (EntityType.STRING, EntityType.WIDECHAR):
+            continue
+
+        filename = ent.get("filename")
+        size = ent.size(ImageId.ORIG)
+        if not filename or not ent.name or not size:
+            continue
+
+        assert ent.orig_addr is not None
+        raw = orig_bin.read(ent.orig_addr, size)
+
+        # The empty string is found at every null byte.
+        if not any(raw):
+            continue
+
+        entity_type = ent.get("type")
+        groups.setdefault((filename, raw, entity_type), []).append(ent)
+        for other_filename in ent.get("other_filenames", []):
+            other_files.append((ent, raw, entity_type, other_filename))
+
+    # Every address inside a string from this function. The entities are
+    # not in the database until the batch is done.
+    used_addrs: set[int] = set()
+    region_data: dict[range, bytes] = {}
+
+    def find_literals(filename: str, raw: bytes, entity_type: EntityType) -> list[int]:
+        """Returns the recomp addresses, in order, where the bytes are a
+        literal of its own. The search can also hit the tail of a longer
+        string or the middle of other data. MSVC pads each literal to a
+        4-byte boundary, so a literal is aligned and starts where the
+        previous item ends: after a null byte (the terminator or padding
+        of the previous literal), after a literal found in this pass, or
+        after an entity, such as a float constant."""
+        literals: list[int] = []
+
+        # In a wide string, the high byte of most characters is null,
+        # so check the whole character.
+        char_size = 2 if entity_type == EntityType.WIDECHAR else 1
+
+        for region in regions_for_file(filename):
+            if region not in region_data:
+                try:
+                    region_data[region] = recomp_bin.read(region.start, len(region))
+                except (InvalidVirtualAddressError, InvalidVirtualReadError):
+                    region_data[region] = b""
+
+            data = region_data[region]
+
+            pos = data.find(raw)
+            while pos != -1:
+                addr = region.start + pos
+                if (
+                    addr % 4 == 0
+                    and addr not in used_addrs
+                    and not db.intersects(ImageId.RECOMP, addr)
+                ):
+                    follows_item = (
+                        pos == 0
+                        or (pos >= char_size and not any(data[pos - char_size : pos]))
+                        or addr - 1 in used_addrs
+                        or db.intersects(ImageId.RECOMP, addr - 1)
+                    )
+                    if follows_item:
+                        literals.append(addr)
+
+                pos = data.find(raw, pos + 1)
+
+        literals.sort()
+        return literals
+
+    matched_orig_addrs: set[int] = set()
+
+    with db.batch() as batch:
+
+        def add_string(
+            recomp_addr: int,
+            ent: ReccmpEntity,
+            raw: bytes,
+            entity_type: EntityType,
+            matched: bool,
+        ):
+            assert ent.orig_addr is not None
+            used_addrs.update(range(recomp_addr, recomp_addr + len(raw)))
+            batch.set(
+                ImageId.RECOMP,
+                recomp_addr,
+                type=entity_type,
+                name=ent.name,
+                size=len(raw),
+                unpooled_copy=not matched,
+            )
+            if matched:
+                batch.match(ent.orig_addr, recomp_addr)
+                matched_orig_addrs.add(ent.orig_addr)
+
+        # Longest first, so that no shorter string can take the tail of a longer one.
+        for (filename, raw, entity_type), ents in sorted(
+            groups.items(), key=lambda group: -len(group[0][1])
+        ):
+            ents.sort(key=lambda ent: ent.orig_addr or 0)
+            literals = find_literals(filename, raw, entity_type)
+
+            # With more literals than annotations, the address order decides
+            # which of them we match.
+            for ent, recomp_addr in zip(ents, literals):
+                add_string(recomp_addr, ent, raw, entity_type, matched=True)
+
+            # Without string pooling, the compiler can emit one copy of a
+            # literal for each use. An address can match only once, so name
+            # the other copies: code that refers to them then compares equal
+            # to code that refers to the orig string.
+            for recomp_addr in literals[len(ents) :]:
+                add_string(recomp_addr, ents[0], raw, entity_type, matched=False)
+
+        # The same goes for the copies in the other files that annotate the
+        # string. If the annotating file has no copy (its object file may be
+        # unknown), the first copy from another file is the match.
+        for ent, raw, entity_type, filename in other_files:
+            for recomp_addr in find_literals(filename, raw, entity_type):
+                matched = ent.orig_addr not in matched_orig_addrs
+                add_string(recomp_addr, ent, raw, entity_type, matched=matched)
 
 
 def match_lines(
