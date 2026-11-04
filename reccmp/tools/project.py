@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 import argparse
 import logging
 import enum
@@ -17,6 +17,7 @@ from reccmp.project.detect import (
     find_filename_recursively,
     DetectWhat,
 )
+from reccmp.project.update import update_project
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,7 @@ logger = logging.getLogger(__name__)
 class ProjectSubcommand(enum.Enum):
     CREATE = enum.auto()
     DETECT = enum.auto()
+    UPDATE = enum.auto()
 
 
 def main() -> int:
@@ -96,6 +98,9 @@ def main() -> int:
         help="Detect original or recompiled binaries (default is original)",
     )
 
+    update_parser = subparsers.add_parser("update")
+    update_parser.set_defaults(subcommand=ProjectSubcommand.UPDATE)
+
     argparse_add_logging_args(parser=parser)
 
     args = parser.parse_args()
@@ -133,6 +138,22 @@ def main() -> int:
             return 0
         except RecCmpProjectException as e:
             logger.error("Project detection failed: %s", e.args[0])
+
+    elif args.subcommand == ProjectSubcommand.UPDATE:
+        project_path = find_filename_recursively(
+            directory=Path.cwd(), filename=RECCMP_PROJECT_CONFIG
+        )
+        if project_path is None:
+            parser.error(
+                f"Cannot find reccmp project. Run '{parser.prog} create' first."
+            )
+        try:
+            update_project(
+                project_directory=project_path,
+            )
+            return 0
+        except RecCmpProjectException as e:
+            logger.error("Project update failed: %s", e.args[0])
 
     return 1
 
