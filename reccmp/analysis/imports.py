@@ -40,8 +40,5 @@ def find_import_thunks(image: PEImage) -> Iterator[ImportThunk]:
 
     for region in image.get_code_regions():
         for addr, jmp_dest in find_absolute_jumps_in_bytes(region.data, region.addr):
-            if addr + 2 not in image.relocations:
-                continue
-
             if jmp_dest in import_addrs:
                 yield ImportThunk(addr, jmp_dest, 6)
