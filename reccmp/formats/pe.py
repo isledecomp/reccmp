@@ -802,22 +802,6 @@ class PEImage(Image):
             for (func_addr, name_addr) in combined
         ]
 
-    def iter_string(self, encoding: str = "ascii") -> Iterator[tuple[int, str]]:
-        """Search for possible strings at each verified address in .data."""
-        for section in self.get_data_regions():
-            for addr in self._relocated_addrs:
-                if addr in section.range:
-                    raw = self.read_string(addr)
-                    if raw is None:
-                        continue
-
-                    try:
-                        string = raw.decode(encoding)
-                    except UnicodeDecodeError:
-                        continue
-
-                    yield addr, string
-
     def get_section_by_name(self, name: str) -> ImageSection:
         try:
             return self.section_map[name]
