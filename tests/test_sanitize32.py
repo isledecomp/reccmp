@@ -6,6 +6,7 @@ from reccmp.compare.asm.parse import ParseAsm
 from reccmp.compare.asm.replacement import (
     AddrTestProtocol,
     NameReplacementProtocol,
+    OperandType,
 )
 from reccmp.compare.asm.instgen import DisasmLiteTuple
 
@@ -113,7 +114,7 @@ def test_displacement_with_addr_verify(inst: DisasmLiteTuple):
     p = ParseAsm(addr_test=addr_test)
     _, op_str = p.sanitize(inst)
 
-    addr_test.assert_called_with(0x1234)
+    addr_test.assert_called_with(0x1234, OperandType.DISPLACEMENT)
     assert "0x1234]" not in op_str
     assert "<OFFSET1>]" in op_str
 
@@ -156,7 +157,7 @@ def test_immediate_with_addr_verify(inst: DisasmLiteTuple):
     p = ParseAsm(addr_test=addr_test)
     _, op_str = p.sanitize(inst)
 
-    addr_test.assert_called_with(0x1234)
+    addr_test.assert_called_with(0x1234, OperandType.IMMEDIATE)
     assert "0x1234" not in op_str
     assert "<OFFSET1>" in op_str
 
@@ -172,7 +173,7 @@ def test_pointer_and_immediate_is_not_addr():
 
     # We only verify the immediate address
     addr_test.assert_called_once()
-    addr_test.assert_called_with(0x5555)
+    addr_test.assert_called_with(0x5555, OperandType.IMMEDIATE)
 
     # Assumes 0x5555 is not an address. Don't replace it.
     assert op_str == "dword ptr [<OFFSET1>], 0x5555"

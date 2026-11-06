@@ -4,6 +4,7 @@ These functions update the entity database based on analysis of the binary files
 
 import logging
 import struct
+from typing import Container, Iterable
 from reccmp.formats import Image, PEImage
 from reccmp.formats.exceptions import (
     InvalidVirtualAddressError,
@@ -13,6 +14,7 @@ from reccmp.formats.exceptions import (
 from reccmp.types import EntityType, ImageId
 from reccmp.analysis import (
     find_float_consts,
+    find_string_consts,
     find_import_thunks,
     find_vtordisp,
     find_eh_handlers,
@@ -69,7 +71,11 @@ def create_crt_functions(db: EntityDb, image_id: ImageId, binfile: PEImage):
 
 
 def create_analysis_strings(
-    db: EntityDb, img_id: ImageId, binfile: PEImage, encoding: str = "latin1"
+    db: EntityDb,
+    img_id: ImageId,
+    binfile: PEImage,
+    search_addrs: Iterable[int],
+    encoding: str = "latin1",
 ):
     """Search both binaries for Latin1 strings.
     We use the insert_() method so that these strings will not overwrite
@@ -77,7 +83,7 @@ def create_analysis_strings(
     will be mistakenly identified as short strings."""
     with db.batch() as batch:
         last_range = range(0)
-        for addr, string in binfile.iter_string(encoding):
+        for addr, string in find_string_consts(binfile, search_addrs, encoding):
             # If the address is the site of a relocation, this is a pointer, not a string.
             if addr in binfile.relocations:
                 continue
@@ -98,12 +104,14 @@ def create_analysis_strings(
                 last_range = range(addr, addr + len(string) + 1)
 
 
-def create_analysis_floats(db: EntityDb, img_id: ImageId, binfile: PEImage):
+def create_analysis_floats(
+    db: EntityDb, img_id: ImageId, binfile: PEImage, search_addrs: Container[int]
+):
     """Add floating point constants in each binary to the database.
     We are not matching anything right now because these values are not
     deduped like strings."""
     with db.batch() as batch:
-        for addr, size, float_value in find_float_consts(binfile):
+        for addr, size, float_value in find_float_consts(binfile, search_addrs):
             if not db.intersects(img_id, addr):
                 batch.set(
                     img_id,

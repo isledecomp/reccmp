@@ -55,10 +55,13 @@ def get_ref_displacement(
 def test_create_analysis_strings(db: EntityDb):
     """Should add this ordinary string to the database."""
     binfile = Mock(spec=[])
-    binfile.iter_string = Mock(return_value=[(100, "Hello")])
     binfile.relocations = set()
 
-    create_analysis_strings(db, ImageId.ORIG, binfile)
+    with patch(
+        "reccmp.compare.analyze.find_string_consts",
+        return_value=[(100, "Hello")],
+    ):
+        create_analysis_strings(db, ImageId.ORIG, binfile, [])
 
     e = db.get(ImageId.ORIG, 100)
     assert e is not None
@@ -72,10 +75,13 @@ def test_create_analysis_strings_do_not_replace(db: EntityDb):
         batch.set(ImageId.ORIG, 100, type=EntityType.FLOAT)
 
     binfile = Mock(spec=[])
-    binfile.iter_string = Mock(return_value=[(100, "Hello")])
     binfile.relocations = set()
 
-    create_analysis_strings(db, ImageId.ORIG, binfile)
+    with patch(
+        "reccmp.compare.analyze.find_string_consts",
+        return_value=[(100, "Hello")],
+    ):
+        create_analysis_strings(db, ImageId.ORIG, binfile, [])
 
     e = db.get(ImageId.ORIG, 100)
     assert e is not None
@@ -88,25 +94,31 @@ def test_create_analysis_strings_do_not_replace_overlap(db: EntityDb):
         batch.set(ImageId.ORIG, 100, type=EntityType.FUNCTION, size=10)
 
     binfile = Mock(spec=[])
-    binfile.iter_string = Mock(return_value=[(105, "Hello")])
     binfile.relocations = set()
 
-    create_analysis_strings(db, ImageId.ORIG, binfile)
+    with patch(
+        "reccmp.compare.analyze.find_string_consts",
+        return_value=[(105, "Hello")],
+    ):
+        create_analysis_strings(db, ImageId.ORIG, binfile, [])
 
     e = db.get(ImageId.ORIG, 105)
     assert e is None
 
 
 def test_create_analysis_strings_do_not_create_substrings(db: EntityDb):
-    """iter_string() uses the relocation table to search for strings.
+    """find_string_consts() uses the relocation table to search for strings.
     Bounds checking in a loop may point to an offset of the string,
     and so those address will end up in the relocation table too.
     We don't want to create redundant substring entities."""
     binfile = Mock(spec=[])
-    binfile.iter_string = Mock(return_value=[(100, "Test"), (101, "est"), (102, "st")])
     binfile.relocations = set()
 
-    create_analysis_strings(db, ImageId.ORIG, binfile)
+    with patch(
+        "reccmp.compare.analyze.find_string_consts",
+        return_value=[(100, "Test"), (101, "est"), (102, "st")],
+    ):
+        create_analysis_strings(db, ImageId.ORIG, binfile, [])
 
     ent = db.get(ImageId.ORIG, 100)
     assert ent is not None
@@ -120,13 +132,14 @@ def test_create_analysis_strings_abutting_strings(db: EntityDb):
     """Demonstrating that our check for substrings allows strings that are
     next to each other, separated by the null-terminator."""
     binfile = Mock(spec=[])
-    # iter_string() hides the null-terminator but it is assumed to be there.
-    binfile.iter_string = Mock(
-        return_value=[(100, "Test"), (105, "Test"), (109, "Test")]
-    )
     binfile.relocations = set()
 
-    create_analysis_strings(db, ImageId.ORIG, binfile)
+    # find_string_consts() hides the null-terminator but it is assumed to be there.
+    with patch(
+        "reccmp.compare.analyze.find_string_consts",
+        return_value=[(100, "Test"), (105, "Test"), (109, "Test")],
+    ):
+        create_analysis_strings(db, ImageId.ORIG, binfile, [])
 
     ent = db.get(ImageId.ORIG, 100)
     assert ent is not None
@@ -144,10 +157,13 @@ def test_create_analysis_strings_not_relocated(db: EntityDb):
     """Should not add the string if its address is the site of a relocation.
     i.e. We know this is a pointer, despite how it appears."""
     binfile = Mock(spec=[])
-    binfile.iter_string = Mock(return_value=[(100, "Hello")])
     binfile.relocations = {100}
 
-    create_analysis_strings(db, ImageId.ORIG, binfile)
+    with patch(
+        "reccmp.compare.analyze.find_string_consts",
+        return_value=[(100, "Hello")],
+    ):
+        create_analysis_strings(db, ImageId.ORIG, binfile, [])
 
     assert db.get(ImageId.ORIG, 100) is None
 
@@ -156,10 +172,13 @@ def test_create_analysis_strings_not_latin1(db: EntityDb):
     """Should not add the string if our heuristic check for Latin1 (ANSI) fails."""
     binfile = Mock(spec=[])
     # Starts with BEL character to play the Windows chord sound
-    binfile.iter_string = Mock(return_value=[(100, "\x07Alert!")])
     binfile.relocations = set()
 
-    create_analysis_strings(db, ImageId.ORIG, binfile)
+    with patch(
+        "reccmp.compare.analyze.find_string_consts",
+        return_value=[(100, "\x07Alert!")],
+    ):
+        create_analysis_strings(db, ImageId.ORIG, binfile, [])
 
     assert db.get(ImageId.ORIG, 100) is None
 
@@ -201,7 +220,7 @@ def test_create_analysis_floats(db: EntityDb):
         "reccmp.compare.analyze.find_float_consts",
         return_value=[(100, 4, 0.5)],
     ):
-        create_analysis_floats(db, ImageId.ORIG, binfile)
+        create_analysis_floats(db, ImageId.ORIG, binfile, set())
 
     e = db.get(ImageId.ORIG, 100)
     assert e is not None
@@ -221,7 +240,7 @@ def test_create_analysis_floats_do_not_replace(db: EntityDb):
         "reccmp.compare.analyze.find_float_consts",
         return_value=[(100, 4, 0.5)],
     ):
-        create_analysis_floats(db, ImageId.ORIG, binfile)
+        create_analysis_floats(db, ImageId.ORIG, binfile, set())
 
     e = db.get(ImageId.ORIG, 100)
     assert e is not None
@@ -239,7 +258,7 @@ def test_create_analysis_floats_do_not_replace_overlap(db: EntityDb):
         "reccmp.compare.analyze.find_float_consts",
         return_value=[(105, 4, 0.5)],
     ):
-        create_analysis_floats(db, ImageId.ORIG, binfile)
+        create_analysis_floats(db, ImageId.ORIG, binfile, set())
 
     e = db.get(ImageId.ORIG, 105)
     assert e is None

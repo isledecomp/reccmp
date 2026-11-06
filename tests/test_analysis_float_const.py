@@ -18,7 +18,7 @@ def test_float_detect_overlap():
 
 def test_basic_float_detection(binfile: PEImage):
     """Make sure we detect some known floats in our sample PE image"""
-    floats = list(find_float_consts(binfile))
+    floats = list(find_float_consts(binfile, binfile.relocations))
 
     # Single and double precision, same value
     assert (0x100DBD38, 4, 0.5) in floats
@@ -38,6 +38,6 @@ def test_basic_float_detection(binfile: PEImage):
 def test_floats_appear_once(binfile: PEImage):
     """Multiple instructions may point at the same constant.
     Our list should only return each constant once."""
-    floats = list(find_float_consts(binfile))
+    floats = list(find_float_consts(binfile, binfile.relocations))
 
     assert len(floats) == len(set(floats))
