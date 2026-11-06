@@ -8,6 +8,8 @@ from reccmp.compare.pinned_sequences import SequenceMatcherWithPins
 from reccmp.compare.asm.fixes import assert_fixup, find_effective_match
 from reccmp.compare.asm.parse import AsmExcerpt, ParseAsm
 from reccmp.compare.asm.replacement import (
+    AddrTestProtocol,
+    OperandType,
     create_name_lookup,
 )
 from reccmp.compare.db import EntityDb, ReccmpMatch
@@ -34,17 +36,30 @@ def create_valid_addr_lookup(
     db: EntityDb,
     image_id: ImageId,
     bin_file: Image,
-) -> Callable[[int], bool]:
+) -> AddrTestProtocol:
     """
     Function generator for a lookup whether an address from a call is valid
     (either a relocation or pointing to something else we know, like a global variable)
     """
     assert image_id in (ImageId.ORIG, ImageId.RECOMP), "Invalid image id"
 
+    image_end = max(
+        (section.virtual_range.stop for section in bin_file.sections),
+        default=0,
+    )
+
     @cache
-    def lookup(addr: int) -> bool:
-        # Check if in relocation table
-        if addr > bin_file.imagebase and bin_file.is_relocated_addr(addr):
+    def lookup(addr: int, operand: OperandType) -> bool:
+        # Membership in the reloc set implies the other conditions are true.
+        if bin_file.is_relocated_addr(addr):
+            return True
+
+        if addr < bin_file.imagebase or addr >= image_end:
+            return False
+
+        # For a displacement, we only need to eliminate small values
+        # and very large ones (from junk instructions)
+        if operand == OperandType.DISPLACEMENT:
             return True
 
         return db.intersects(image_id, addr)

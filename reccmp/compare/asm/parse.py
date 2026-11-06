@@ -11,7 +11,7 @@ from functools import cache
 from typing_extensions import Buffer
 from .const import JUMP_MNEMONICS, SINGLE_OPERAND_INSTS
 from .instgen import DisasmLiteTuple, InstructGen, SectionType
-from .replacement import AddrTestProtocol, NameReplacementProtocol
+from .replacement import AddrTestProtocol, NameReplacementProtocol, OperandType
 
 AsmExcerpt = list[tuple[int | None, str]]
 
@@ -54,10 +54,10 @@ class ParseAsm:
         self.replacements = {}
         self.indirect_replacements = {}
 
-    def is_addr(self, value: int) -> bool:
+    def is_addr(self, value: int, operand: OperandType) -> bool:
         """Wrapper for user-provided address test"""
         if callable(self.addr_test):
-            return self.addr_test(value)
+            return self.addr_test(value, operand)
 
         return False
 
@@ -117,7 +117,14 @@ class ParseAsm:
         use the placeholder if we are certain that this is a valid address.
         We can check the relocation table to find out."""
         value = int(match.group(1), 16)
-        if self.is_addr(value):
+        if self.is_addr(value, OperandType.IMMEDIATE):
+            return self.replace(value)
+
+        return match.group(0)
+
+    def hex_replace_displacement(self, match: re.Match) -> str:
+        value = int(match.group(1), 16)
+        if self.is_addr(value, OperandType.DISPLACEMENT):
             return self.replace(value)
 
         return match.group(0)
@@ -166,7 +173,7 @@ class ParseAsm:
                 return (inst_mnemonic, self.replace(op_str_address, exact=True))
 
             if inst_mnemonic == "push":
-                if self.is_addr(op_str_address):
+                if self.is_addr(op_str_address, OperandType.IMMEDIATE):
                     return (inst_mnemonic, self.replace(op_str_address))
 
                 # To avoid falling into jump handling
@@ -196,7 +203,7 @@ class ParseAsm:
         # i.e. ptr [register + something]
         # Otherwise we would use a placeholder for every stack variable,
         # vtable call, or this->member access.
-        op_str = displace_replace_regex.sub(self.hex_replace_relocated, op_str)
+        op_str = displace_replace_regex.sub(self.hex_replace_displacement, op_str)
 
         # In the event of pointer comparison, only replace the immediate value
         # if it is a known address.
