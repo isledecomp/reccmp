@@ -255,8 +255,14 @@ class Compare:
             # Some float consts may appear to be strings.
             # Detect floats first because we can identify them with more confidence
             # and this eliminates them from consideration as strings.
-            create_analysis_floats(self._db, img_id, binfile)
-            create_analysis_strings(self._db, img_id, binfile, self.bin_encoding)
+            create_analysis_floats(self._db, img_id, binfile, binfile.relocations)
+            create_analysis_strings(
+                self._db,
+                img_id,
+                binfile,
+                binfile.get_relocated_addresses(),
+                self.bin_encoding,
+            )
             complete_partial_floats(self._db, img_id, binfile)
             complete_partial_strings(self._db, img_id, binfile, self.bin_encoding)
 
