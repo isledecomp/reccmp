@@ -17,6 +17,7 @@ from reccmp.formats import (
     detect_image,
 )
 from reccmp.cvdump import Cvdump, CvdumpTypesParser, CvdumpAnalysis
+from reccmp.analysis import find_pointers
 from reccmp.types import EntityType, ImageId
 from reccmp.compare.event import (
     ReccmpReportProtocol,
@@ -252,19 +253,18 @@ class Compare:
             (ImageId.ORIG, self.orig_bin),
             (ImageId.RECOMP, self.recomp_bin),
         ):
+            # Complete partial entities first so they get assigned a size.
+            # This will help prevent us from creating junk entities for substring addresses.
+            complete_partial_floats(self._db, img_id, binfile)
+            complete_partial_strings(self._db, img_id, binfile, self.bin_encoding)
             # Some float consts may appear to be strings.
             # Detect floats first because we can identify them with more confidence
             # and this eliminates them from consideration as strings.
-            create_analysis_floats(self._db, img_id, binfile, binfile.relocations)
+            pointers = find_pointers(binfile)
+            create_analysis_floats(self._db, img_id, binfile, pointers.keys())
             create_analysis_strings(
-                self._db,
-                img_id,
-                binfile,
-                binfile.get_relocated_addresses(),
-                self.bin_encoding,
+                self._db, img_id, binfile, set(pointers.values()), self.bin_encoding
             )
-            complete_partial_floats(self._db, img_id, binfile)
-            complete_partial_strings(self._db, img_id, binfile, self.bin_encoding)
 
         match_strings(self._db, self.report)
 
