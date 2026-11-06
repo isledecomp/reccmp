@@ -1,3 +1,4 @@
+from enum import Enum, auto
 from functools import cache
 from typing import Callable, Protocol
 from reccmp.compare.db import EntityDb, ReccmpEntity
@@ -5,8 +6,13 @@ from reccmp.cvdump.types import CvdumpTypeKey
 from reccmp.types import EntityType, ImageId
 
 
+class OperandType(Enum):
+    IMMEDIATE = auto()
+    DISPLACEMENT = auto()
+
+
 class AddrTestProtocol(Protocol):
-    def __call__(self, addr: int, /) -> bool: ...
+    def __call__(self, addr: int, operand: OperandType, /) -> bool: ...
 
 
 class NameReplacementProtocol(Protocol):

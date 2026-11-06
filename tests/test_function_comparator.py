@@ -10,6 +10,7 @@ from reccmp.compare.functions import (
     EntityCompareResult,
     create_valid_addr_lookup,
 )
+from reccmp.compare.asm.replacement import OperandType
 from reccmp.compare.lines import LinesDb
 from reccmp.types import EntityType, ImageId
 from .raw_image import RawImage
@@ -51,14 +52,16 @@ def compare_functions(
     # (like functions that always return `True`).
     orig_bin = Mock(spec=[])
     orig_bin.read = Mock(return_value=orig)
-    orig_bin.imagebase = 0
+    orig_bin.imagebase = 0x200
     orig_bin.is_relocated_addr = is_relocated_addr or Mock(return_value=False)
+    orig_bin.sections = (Mock(virtual_range=range(0x200, 0x5000)),)
     orig_bin.is_debug = Mock(return_value=False)
 
     recomp_bin = Mock(spec=[])
     recomp_bin.read = Mock(return_value=recomp)
-    recomp_bin.imagebase = 0
+    recomp_bin.imagebase = 0x400
     recomp_bin.is_relocated_addr = is_relocated_addr or Mock(return_value=False)
+    recomp_bin.sections = (Mock(virtual_range=range(0x400, 0x5000)),)
     recomp_bin.is_debug = Mock(return_value=False)
 
     # TODO: Refactor dependencies. GH #461
@@ -379,9 +382,11 @@ def test_no_assembly_generated(db: EntityDb, lines_db: LinesDb, report):
     assert diffreport.match_ratio == 1.0
 
 
-def test_displacement_without_match(
+def test_displacement_out_of_range(
     db: EntityDb, lines_db: LinesDb, report: ReccmpReportProtocol
 ):
+    """The displacement value is not replaced with <OFFSET1>
+    because it is outside the address space in both images."""
     orig = b"\x89\x3c\x85\xa8\x15\xc8\x00"
     recm = b"\x89\x3c\x85\xa8\x15\xd0\x00"
 
@@ -400,15 +405,36 @@ def test_displacement_without_match(
     ]
 
 
+def test_displacement_in_range(
+    db: EntityDb, lines_db: LinesDb, report: ReccmpReportProtocol
+):
+    orig = b"\x89\x3c\x85\xa8\x15\x00\x00"
+    recm = b"\x89\x3c\x85\xa8\x16\x00\x00"
+
+    diffreport = compare_functions(db, lines_db, orig, recm, report)
+
+    assert diffreport.match_ratio == 1.0
+
+    assert diffreport.diff.codes == [("equal", 0, 1, 0, 1)]
+
+    assert diffreport.diff.orig_inst == [
+        ("0x200", "mov dword ptr [eax*4 + <OFFSET1>], edi"),
+    ]
+
+    assert diffreport.diff.recomp_inst == [
+        ("0x400", "mov dword ptr [eax*4 + <OFFSET1>], edi"),
+    ]
+
+
 def test_displacement_with_match(
     db: EntityDb, lines_db: LinesDb, report: ReccmpReportProtocol
 ):
-    # mov dword ptr [eax*4 + 0xc815a8], edi
-    orig = b"\x89\x3c\x85\xa8\x15\xc8\x00"
-    recm = b"\x89\x3c\x85\xa8\x15\xd0\x00"
+    # mov dword ptr [eax*4 + 0x15a8], edi
+    orig = b"\x89\x3c\x85\xa8\x15\x00\x00"
+    recm = b"\x89\x3c\x85\xa8\x16\x00\x00"
 
-    orig_addr = 0xC815A8
-    recomp_addr = 0xD015A8
+    orig_addr = 0x15A8
+    recomp_addr = 0x16A8
     with db.batch() as batch:
         batch.set(ImageId.RECOMP, recomp_addr, name="some_global", type=EntityType.DATA)
         batch.match(orig_addr, recomp_addr)
@@ -416,6 +442,36 @@ def test_displacement_with_match(
     diffreport = compare_functions(db, lines_db, orig, recm, report)
 
     assert diffreport.match_ratio == 1.0
+
+    assert diffreport.diff.orig_inst == [
+        ("0x200", "mov dword ptr [eax*4 + some_global (DATA)], edi"),
+    ]
+
+    assert diffreport.diff.recomp_inst == [
+        ("0x400", "mov dword ptr [eax*4 + some_global (DATA)], edi"),
+    ]
+
+
+def test_immediate_out_of_range(
+    db: EntityDb, lines_db: LinesDb, report: ReccmpReportProtocol
+):
+    """The immediate value is not replaced with <OFFSET1>
+    because it is outside the address space in both images."""
+    # push 0x3f000000 (float 0.5)
+    orig = b"\x68\x00\x00\x00\x3f"
+    recm = b"\x68\x00\x00\x00\x3f"
+
+    diffreport = compare_functions(db, lines_db, orig, recm, report)
+
+    assert diffreport.match_ratio == 1.0
+
+    assert diffreport.diff.orig_inst == [
+        ("0x200", "push 0x3f000000"),
+    ]
+
+    assert diffreport.diff.recomp_inst == [
+        ("0x400", "push 0x3f000000"),
+    ]
 
 
 def test_matching_jump_table(
@@ -425,10 +481,7 @@ def test_matching_jump_table(
     orig = b"\xff\x24\x85\x07\x02\x00\x00\x33\x04\x00\x00\x43\x04\x00\x00"
     recm = b"\xff\x24\x85\x07\x04\x00\x00\x33\x06\x00\x00\x43\x06\x00\x00"
 
-    is_relocated_addr = Mock(return_value=True)
-    # is_relocated_addr = None
-    diffreport = compare_functions(db, lines_db, orig, recm, report, is_relocated_addr)
-
+    diffreport = compare_functions(db, lines_db, orig, recm, report)
     assert diffreport.match_ratio == 1.0
     assert diffreport.is_effective_match is False
 
@@ -667,14 +720,33 @@ def test_addr_test_entity_range_check_exclusive(db: EntityDb):
     This check should be inclusive at the entity's base address and exclusive
     at its base address plus the size. GH #464"""
     orig_bin = Mock(spec=[])
-    orig_bin.imagebase = 0
+    orig_bin.imagebase = 0x1000
     orig_bin.is_relocated_addr = Mock(return_value=False)
+    orig_bin.sections = (Mock(virtual_range=range(0x1000, 0x3000)),)
 
     with db.batch() as batch:
         batch.set(ImageId.ORIG, 0x1000, type=EntityType.DATA, name="test", size=2)
 
     addr_test = create_valid_addr_lookup(db, ImageId.ORIG, orig_bin)
 
-    assert addr_test(0x1000) is True
-    assert addr_test(0x1001) is True
-    assert addr_test(0x1002) is False
+    assert addr_test(0x1000, OperandType.IMMEDIATE) is True
+    assert addr_test(0x1001, OperandType.IMMEDIATE) is True
+    assert addr_test(0x1002, OperandType.IMMEDIATE) is False
+
+
+def test_addr_test_displacement_in_image_range(db: EntityDb):
+    """A displacement value inside the image virtual address space is identified
+    as an address even if it is not in the entity database or relocation table.
+    Immediate values are still"""
+    orig_bin = Mock(spec=[])
+    orig_bin.imagebase = 0x1000
+    orig_bin.is_relocated_addr = Mock(return_value=False)
+    orig_bin.sections = (Mock(virtual_range=range(0x1000, 0x3000)),)
+
+    addr_test = create_valid_addr_lookup(db, ImageId.ORIG, orig_bin)
+
+    assert addr_test(0x0FFF, OperandType.DISPLACEMENT) is False
+    assert addr_test(0x1000, OperandType.DISPLACEMENT) is True
+    assert addr_test(0x2800, OperandType.DISPLACEMENT) is True
+    assert addr_test(0x2800, OperandType.IMMEDIATE) is False
+    assert addr_test(0x3000, OperandType.DISPLACEMENT) is False
