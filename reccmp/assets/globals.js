@@ -26,13 +26,32 @@ function getDataByAddr(addr) {
   return dataDict[addr];
 }
 
+// Must match the EntityType enum in reccmp/types.py.
+/** @enum {number} */
+const EntityType = {
+  FUNCTION: 1,
+  DATA: 2,
+  POINTER: 3,
+  STRING: 4,
+  VTABLE: 5,
+  FLOAT: 6,
+  IMPORT: 7,
+  LINE: 8,
+  THUNK: 9,
+  VTORDISP: 10,
+  WIDECHAR: 11,
+  IMPORT_THUNK: 12,
+  LABEL: 13,
+  OFFSET: 14,
+};
+
 /**
  * Entities without a type (from older reports) are considered functions.
  * @param {ReccmpComparedEntity} row
  * @returns {boolean}
  */
 function isFunction(row) {
-  return row.type === undefined || row.type === 1;
+  return row.type === undefined || row.type === EntityType.FUNCTION || row.type === EntityType.VTORDISP;
 }
 
 /**

@@ -28,8 +28,7 @@ class ReccmpComparedEntity:
     orig_addr: int
     name: str
     accuracy: float
-    # Version 1 files have no type, so it is optional.
-    type: EntityType | None = None
+    type: EntityType
     recomp_addr: int | None = None
     """The meaning of `None` depends on `recomp_addr_varies`:
     recomp_addr_varies is False: This entity is unmatched.
@@ -51,9 +50,7 @@ class ReccmpComparedEntity:
         return self.recomp_addr is not None or self.recomp_addr_varies
 
     def is_function(self) -> bool:
-        """Entities without a type (derived from older reports that did not
-        serialize this field) are considered functions to maintain compatibility."""
-        return self.type is None or self.type == EntityType.FUNCTION
+        return self.type in (EntityType.FUNCTION, EntityType.VTORDISP)
 
     @property
     def effective_accuracy(self) -> float:
@@ -308,6 +305,25 @@ MAGIC_STRING_VARIOUS = "various"
 """reccmp-aggregate uses this to indicate an entity whose recomp addr varied between the sample reports."""
 
 
+def _deserialize_version_1_type(entity_type: int | None, name: str) -> EntityType:
+    try:
+        # Try to use the given type.
+        output = EntityType(entity_type or EntityType.FUNCTION)
+    except ValueError:
+        output = EntityType.FUNCTION
+
+    if output != EntityType.FUNCTION:
+        return output
+
+    if "`vftable" in name:
+        return EntityType.VTABLE
+
+    if "`vtordisp" in name:
+        return EntityType.VTORDISP
+
+    return output
+
+
 def _serialize_version_1(
     report: ReccmpStatusReport,
     diff_included: bool = False,
@@ -335,7 +351,7 @@ def _serialize_version_1(
             library=e.is_library,
             effective=e.is_effective_match,
             diff=get_udiff_for_entity(e) if diff_included else None,
-            type=int(e.type) if e.type is not None else None,
+            type=int(e.type),
         )
 
         entities.append(report_ent)
@@ -361,11 +377,6 @@ def _deserialize_version_1(obj: JSONReportVersion1) -> ReccmpStatusReport:
     report.function_count = obj.function_count or 0
 
     for e in obj.data:
-        try:
-            entity_type = EntityType(e.type) if e.type is not None else None
-        except ValueError:
-            entity_type = None
-
         orig_addr = int(e.address, 16)
 
         if e.recomp == MAGIC_STRING_VARIOUS:
@@ -379,7 +390,7 @@ def _deserialize_version_1(obj: JSONReportVersion1) -> ReccmpStatusReport:
             orig_addr=orig_addr,
             name=e.name,
             accuracy=e.matching,
-            type=entity_type,
+            type=_deserialize_version_1_type(e.type, e.name),
             recomp_addr=recomp_addr,
             is_stub=bool(e.stub),
             is_library=bool(e.library),
