@@ -53,6 +53,10 @@ class ReccmpComparedEntity:
         return self.type in (EntityType.FUNCTION, EntityType.VTORDISP)
 
     @property
+    def display_name(self) -> str:
+        return self.name or f"Unnamed {self.type.name.lower()}"
+
+    @property
     def effective_accuracy(self) -> float:
         return 1.0 if self.is_effective_match else self.accuracy
 
