@@ -472,7 +472,6 @@ def test_create_import_thunks(db: EntityDb):
     binfile.get_code_regions = Mock(
         return_value=(ImageRegion(0x2000, b"\xff\x25\x00\x10\x00\x00"),),
     )
-    binfile.relocations = set([0x2002])
 
     create_import_thunks(db, ImageId.ORIG, binfile)
 
