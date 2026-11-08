@@ -94,7 +94,9 @@ def get_scalars(
 
         case TypeKind.ARRAY:
             element = types.get(types.element_type(t.key))
-            assert element.size, "Encountered an array whose type has no size"
+            if not element.size:
+                raise CvdumpKeyError(f"Array {t.key:x} element type has no size")
+
             assert t.size is not None
 
             for i in range(t.size // element.size):
@@ -192,7 +194,9 @@ def get_name_for_offset(
 
         if t.kind == TypeKind.ARRAY:
             element = types.get(types.element_type(t.key))
-            assert element.size
+            if not element.size:
+                # Unresolved forward ref.
+                break
 
             array_idx = offset // element.size
             type_key = element.key
@@ -201,6 +205,10 @@ def get_name_for_offset(
             depth += 1
 
         elif t.kind in (TypeKind.STRUCT, TypeKind.CLASS, TypeKind.UNION):
+            if not t.size:
+                # Unresolved forward ref.
+                break
+
             item = _item_at_offset(types, t.key, offset)
             if item is None:
                 # Negative offset?
