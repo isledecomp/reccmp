@@ -100,9 +100,7 @@ def _do_execute_import(
 
         _do_with_error_handling(
             glob.name or hex(glob.orig_addr),
-            partial(
-                import_global_into_ghidra, api, extraction.compare, type_importer, glob
-            ),
+            partial(import_global_into_ghidra, api, type_importer, glob),
         )
 
     logger.info("Importing functions...")
