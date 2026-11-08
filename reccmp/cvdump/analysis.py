@@ -163,6 +163,7 @@ class CvdumpAnalysis:
         self.parser = parser
         addrs: dict[tuple[int, int], int | None] = {}
         node_dict: dict[int, CvdumpNode] = {}
+        self._function_symbols: dict[int, SymbolsEntry] = {}
 
         def get_addr(section: int, offset: int) -> int | None:
             key = (section, offset)
@@ -253,6 +254,7 @@ class CvdumpAnalysis:
             if sym.type in ("S_GPROC32", "S_LPROC32"):
                 if sym.type == "S_LPROC32" and node_dict[key].symbol_entry is not None:
                     continue
+                self._function_symbols[key] = sym
                 node_dict[key].friendly_name = sym.name
                 node_dict[key].confirmed_size = sym.size
                 node_dict[key].node_type = EntityType.FUNCTION
@@ -288,6 +290,10 @@ class CvdumpAnalysis:
     @property
     def types(self) -> CvdumpTypesParser:
         return self.parser.types
+
+    def get_function_symbol(self, addr: int) -> SymbolsEntry | None:
+        """The S_GPROC32 or S_LPROC32 entry for the function at this address."""
+        return self._function_symbols.get(addr)
 
     def _estimate_size(self):
         """Get the distance between one section:offset value and the next one
