@@ -1,4 +1,5 @@
 import pytest
+from reccmp.formats import PEImage
 from reccmp.types import EntityType
 from reccmp.cvdump.parser import CvdumpParser
 from reccmp.cvdump.symbols import SymbolsEntry
@@ -28,16 +29,17 @@ TEST_SYMBOLS = [
 ]
 
 
-def test_cvdump_analysis_functions():
+def test_cvdump_analysis_functions(binfile: PEImage):
     parser = CvdumpParser()
     parser.symbols_parser.symbols = TEST_SYMBOLS
-    analysis = CvdumpAnalysis(parser)
+    analysis = CvdumpAnalysis(parser, binfile)
 
     expected = [
         CvdumpNode(
             node_type=EntityType.FUNCTION,
             section=1,
             offset=0xCC3,
+            addr=0x10001CC3,
             confirmed_size=0xA9,
             symbol_entry=TEST_SYMBOLS[0],
             friendly_name="__setargv",
@@ -47,6 +49,7 @@ def test_cvdump_analysis_functions():
             node_type=EntityType.FUNCTION,
             section=1,
             offset=0x12EC,
+            addr=0x100022EC,
             confirmed_size=0x56,
             symbol_entry=TEST_SYMBOLS[1],
             friendly_name="check_managed_app",
@@ -75,7 +78,7 @@ def test_eh_records_are_not_functions(name: str):
     """The compiler's C++ exception-handling records carry a C-looking name,
     some even ending in what looks like a parameter byte count. Leaving them
     untyped lets match_variables pair them with a GLOBAL annotation."""
-    node = CvdumpNode(section=2, offset=0)
+    node = CvdumpNode(section=2, offset=0, addr=0)
     node.set_decorated(name)
     assert node.node_type is None
 
@@ -89,6 +92,6 @@ def test_eh_records_are_not_functions(name: str):
     ),
 )
 def test_c_mangled_name_is_function(name: str):
-    node = CvdumpNode(section=1, offset=0)
+    node = CvdumpNode(section=1, offset=0, addr=0)
     node.set_decorated(name)
     assert node.node_type == EntityType.FUNCTION

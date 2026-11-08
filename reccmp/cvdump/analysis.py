@@ -4,9 +4,11 @@ import re
 import string
 from dataclasses import dataclass
 from pathlib import PureWindowsPath
+from reccmp.formats import Image
+from reccmp.formats.exceptions import InvalidVirtualAddressError, SectionNotFoundError
 from reccmp.types import EntityType
 from .demangler import demangle_vtable
-from .parser import CvdumpParser, LineValue, NodeKey
+from .parser import CvdumpParser, LineValue
 from .symbols import SymbolsEntry
 from .types import (
     CvdumpKeyError,
@@ -61,6 +63,7 @@ class CvdumpNode:
     # These two are required and allow us to identify the symbol
     section: int
     offset: int
+    addr: int
     # aka the mangled name from the PUBLICS section
     decorated_name: str | None = None
     # optional "nicer" name (e.g. of a function from SYMBOLS section)
@@ -79,14 +82,9 @@ class CvdumpNode:
     # Size as reported by SECTION CONTRIBUTIONS section. Not guaranteed to be
     # accurate.
     section_contribution: int | None = None
-    addr: int | None = None
     symbol_entry: SymbolsEntry | None = None
     # Preliminary - only used for non-static variables at the moment
     data_type: TypeInfo | None = None
-
-    @classmethod
-    def from_node_key(cls, key: NodeKey):
-        return cls(section=key.section, offset=key.offset)
 
     def set_decorated(self, name: str):
         self.decorated_name = name
@@ -159,29 +157,51 @@ class CvdumpAnalysis:
         truncation, which matches the old behavior."""
         return self.parser.is_16bit_type_pool is not False
 
-    def __init__(self, parser: CvdumpParser):
+    def __init__(self, parser: CvdumpParser, image: Image):
         """Read in as much information as we have from the parser.
         The more sections we have, the better our information will be."""
         self.parser = parser
-        node_dict: dict[NodeKey, CvdumpNode] = {}
+        addrs: dict[tuple[int, int], int | None] = {}
+        node_dict: dict[int, CvdumpNode] = {}
+
+        def get_addr(section: int, offset: int) -> int | None:
+            key = (section, offset)
+            if key not in addrs:
+                try:
+                    addrs[key] = image.get_abs_addr(section, offset)
+                except (SectionNotFoundError, InvalidVirtualAddressError):
+                    # The PDB might contain sections that do not line up with the
+                    # actual binary. The symbol "__except_list" is one example.
+                    addrs[key] = None
+
+            return addrs[key]
 
         # PUBLICS is our roadmap for everything that follows.
         for pub in parser.publics:
-            key = NodeKey(pub.section, pub.offset)
+            key = get_addr(pub.section, pub.offset)
+            if key is None:
+                continue
+
             if key not in node_dict:
-                node_dict[key] = CvdumpNode.from_node_key(key)
+                node_dict[key] = CvdumpNode(pub.section, pub.offset, key)
 
             node_dict[key].set_decorated(pub.name)
 
         for sizeref in parser.sizerefs:
-            key = NodeKey(sizeref.section, sizeref.offset)
+            key = get_addr(sizeref.section, sizeref.offset)
+            if key is None:
+                continue
+
             if key not in node_dict:
-                node_dict[key] = CvdumpNode.from_node_key(key)
+                node_dict[key] = CvdumpNode(sizeref.section, sizeref.offset, key)
 
             node_dict[key].section_contribution = sizeref.size
 
         for glo in parser.globals:
-            key = NodeKey(glo.section, glo.offset)
+            key = get_addr(glo.section, glo.offset)
+            if key is None:
+                continue
+
             if key not in node_dict:
                 # S_GDATA32 leaves from GLOBALS should have a corresponding leaf
                 # at the same [section:offset] in PUBLICS. If we are here, there is
@@ -191,7 +211,7 @@ class CvdumpAnalysis:
                 if glo.is_global:
                     continue
 
-                node_dict[key] = CvdumpNode.from_node_key(key)
+                node_dict[key] = CvdumpNode(glo.section, glo.offset, key)
 
             # If the variable does not have a name yet, add this one.
             # Replace an existing name only if the data type size is larger.
@@ -223,9 +243,12 @@ class CvdumpAnalysis:
         self.lines = parser.lines
 
         for sym in parser.symbols:
-            key = NodeKey(sym.section, sym.offset)
+            key = get_addr(sym.section, sym.offset)
+            if key is None:
+                continue
+
             if key not in node_dict:
-                node_dict[key] = CvdumpNode.from_node_key(key)
+                node_dict[key] = CvdumpNode(sym.section, sym.offset, key)
 
             if sym.type in ("S_GPROC32", "S_LPROC32"):
                 if sym.type == "S_LPROC32" and node_dict[key].symbol_entry is not None:
@@ -238,9 +261,12 @@ class CvdumpAnalysis:
                 # Iterate through static variables defined in this function
                 # generate decorated name "<variable name>___<func name>"
                 for v in sym.static_variables:
-                    key = NodeKey(v.section, v.offset)
+                    key = get_addr(v.section, v.offset)
+                    if key is None:
+                        continue
+
                     if key not in node_dict:
-                        node_dict[key] = CvdumpNode.from_node_key(key)
+                        node_dict[key] = CvdumpNode(v.section, v.offset, key)
                     node_dict[key].node_type = EntityType.DATA
                     # TODO this format is required for `match_msvc::match_static_variables` to find the variable
                     # Look at either documenting this dependency or reworking the query
