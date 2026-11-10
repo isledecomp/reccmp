@@ -37,7 +37,7 @@ def test_size_estimate(binfile: PEImage):
         """),
     )
 
-    cvdump_analysis = CvdumpAnalysis(parser)
+    cvdump_analysis = CvdumpAnalysis(parser, binfile)
     load_cvdump(cvdump_analysis, db, binfile)
 
     # There are 32 bytes between this and __OP_LOGjmptab
@@ -65,7 +65,7 @@ def test_size_estimate_different_sections(binfile: PEImage):
         """),
     )
 
-    cvdump_analysis = CvdumpAnalysis(parser)
+    cvdump_analysis = CvdumpAnalysis(parser, binfile)
     load_cvdump(cvdump_analysis, db, binfile)
 
     # Calculate the distance to the end of the .rdata section.
@@ -103,7 +103,7 @@ def test_size_estimate_section_contrib(binfile: PEImage):
         """),
     )
 
-    cvdump_analysis = CvdumpAnalysis(parser)
+    cvdump_analysis = CvdumpAnalysis(parser, binfile)
     load_cvdump(cvdump_analysis, db, binfile)
 
     # Distance to next entity is smaller than section contribution.
@@ -134,7 +134,7 @@ def test_no_entity_for_section_contributions_only(binfile: PEImage):
         "  0032  0003:0001292A  00000100  40303040",
     )
 
-    cvdump_analysis = CvdumpAnalysis(parser)
+    cvdump_analysis = CvdumpAnalysis(parser, binfile)
     load_cvdump(cvdump_analysis, db, binfile)
 
     assert db.get(ImageId.RECOMP, 0x1010292A) is None
@@ -154,7 +154,7 @@ def test_symbol_overwrite(binfile: PEImage):
             """),
     )
 
-    cvdump_analysis = CvdumpAnalysis(parser)
+    cvdump_analysis = CvdumpAnalysis(parser, binfile)
     load_cvdump(cvdump_analysis, db, binfile)
 
     entity = db.get(ImageId.RECOMP, 0x1008C410)
@@ -172,7 +172,7 @@ def test_string_without_section_contrib(binfile: PEImage):
         "S_PUB32: [0002:0000757C], Flags: 00000000, ??_C@_08LIDF@December?$AA@",
     )
 
-    cvdump_analysis = CvdumpAnalysis(parser)
+    cvdump_analysis = CvdumpAnalysis(parser, binfile)
     load_cvdump(cvdump_analysis, db, binfile)
 
     entity = db.get(ImageId.RECOMP, 0x100DB57C)
@@ -202,7 +202,7 @@ def test_string_with_section_contrib(binfile: PEImage):
         "  0032  0002:0000757C  00000009  40303040",
     )
 
-    cvdump_analysis = CvdumpAnalysis(parser)
+    cvdump_analysis = CvdumpAnalysis(parser, binfile)
     load_cvdump(cvdump_analysis, db, binfile)
 
     entity = db.get(ImageId.RECOMP, 0x100DB57C)
@@ -227,7 +227,7 @@ def test_utf16_without_section_contrib(binfile: PEImage):
         "S_PUB32: [0002:00006AA0], Flags: 00000000, ??_C@_1O@POHA@?$AA?$CI?$AAn?$AAu?$AAl?$AAl?$AA?$CJ?$AA?$AA?$AA?$AA?$AA?$AH?$AA?$AA?$AA?$AA?$AA?$AA?$AA?$9A?$AE?$;I@",
     )
 
-    cvdump_analysis = CvdumpAnalysis(parser)
+    cvdump_analysis = CvdumpAnalysis(parser, binfile)
     load_cvdump(cvdump_analysis, db, binfile)
 
     entity = db.get(ImageId.RECOMP, 0x100DAAA0)
@@ -258,7 +258,7 @@ def test_utf16_with_section_contrib(binfile: PEImage):
         "  00FA  0002:00006AA0  0000000E  40303040",
     )
 
-    cvdump_analysis = CvdumpAnalysis(parser)
+    cvdump_analysis = CvdumpAnalysis(parser, binfile)
     load_cvdump(cvdump_analysis, db, binfile)
 
     entity = db.get(ImageId.RECOMP, 0x100DAAA0)
@@ -285,7 +285,7 @@ def test_vtable(binfile: PEImage):
         "S_PUB32: [0002:00000018], Flags: 00000000, ??_7Score@@6B@",
     )
 
-    cvdump_analysis = CvdumpAnalysis(parser)
+    cvdump_analysis = CvdumpAnalysis(parser, binfile)
     load_cvdump(cvdump_analysis, db, binfile)
 
     entity = db.get(ImageId.RECOMP, 0x100D4018)
@@ -304,7 +304,7 @@ def test_vtable_with_vbclass(binfile: PEImage):
         "S_PUB32: [0002:00002860], Flags: 00000000, ??_7BumpBouy@@6BOgelAnimActor@@@",
     )
 
-    cvdump_analysis = CvdumpAnalysis(parser)
+    cvdump_analysis = CvdumpAnalysis(parser, binfile)
     load_cvdump(cvdump_analysis, db, binfile)
 
     entity = db.get(ImageId.RECOMP, 0x100D6860)
@@ -323,7 +323,7 @@ def test_vbtable(binfile: PEImage):
         "S_PUB32: [0002:00002788], Flags: 00000000, ??_8BumpBouy@@7B@",
     )
 
-    cvdump_analysis = CvdumpAnalysis(parser)
+    cvdump_analysis = CvdumpAnalysis(parser, binfile)
     load_cvdump(cvdump_analysis, db, binfile)
 
     entity = db.get(ImageId.RECOMP, 0x100D6788)
@@ -347,7 +347,7 @@ def test_gdata32(binfile: PEImage):
         "S_GDATA32: [0002:000054F8], Type:             0x5BB7, g_pizzaHitSounds",
     )
 
-    cvdump_analysis = CvdumpAnalysis(parser)
+    cvdump_analysis = CvdumpAnalysis(parser, binfile)
     load_cvdump(cvdump_analysis, db, binfile)
 
     entity = db.get(ImageId.RECOMP, 0x100D94F8)
@@ -365,7 +365,7 @@ def test_ldata32(binfile: PEImage):
         "S_LDATA32: [0002:00000000], Type:             0x5D8C, Pi",
     )
 
-    cvdump_analysis = CvdumpAnalysis(parser)
+    cvdump_analysis = CvdumpAnalysis(parser, binfile)
     load_cvdump(cvdump_analysis, db, binfile)
 
     entity = db.get(ImageId.RECOMP, 0x100D4000)
@@ -389,7 +389,7 @@ def test_variable_size_scalar_type(binfile: PEImage):
         "S_GDATA32: [0003:00012B24], Type:      T_UINT4(0075), g_nextInterruptWavIndex",
     )
 
-    cvdump_analysis = CvdumpAnalysis(parser)
+    cvdump_analysis = CvdumpAnalysis(parser, binfile)
     load_cvdump(cvdump_analysis, db, binfile)
 
     entity = db.get(ImageId.RECOMP, 0x10102B24)
@@ -410,7 +410,7 @@ def test_variable_size_without_type_info(binfile: PEImage):
         "GLOBALS",
         "S_GDATA32: [0003:000115B8], Type:             0x1424, g_hdPath",
     )
-    cvdump_analysis = CvdumpAnalysis(parser)
+    cvdump_analysis = CvdumpAnalysis(parser, binfile)
     load_cvdump(cvdump_analysis, db, binfile)
 
     entity = db.get(ImageId.RECOMP, 0x101015B8)
@@ -444,7 +444,7 @@ def test_variable_size_with_type_info(binfile: PEImage):
                 Name = 
         """),
     )
-    cvdump_analysis = CvdumpAnalysis(parser)
+    cvdump_analysis = CvdumpAnalysis(parser, binfile)
     load_cvdump(cvdump_analysis, db, binfile)
 
     entity = db.get(ImageId.RECOMP, 0x101015B8)
@@ -471,7 +471,7 @@ def test_gproc32(binfile: PEImage):
         """),
     )
 
-    cvdump_analysis = CvdumpAnalysis(parser)
+    cvdump_analysis = CvdumpAnalysis(parser, binfile)
     load_cvdump(cvdump_analysis, db, binfile)
 
     entity = db.get(ImageId.RECOMP, 0x10038220)
@@ -494,7 +494,7 @@ def test_lproc32(binfile: PEImage):
         """),
     )
 
-    cvdump_analysis = CvdumpAnalysis(parser)
+    cvdump_analysis = CvdumpAnalysis(parser, binfile)
     load_cvdump(cvdump_analysis, db, binfile)
 
     # This is one of the ___xc_a functions.
@@ -514,10 +514,8 @@ def test_invalid_seg_ofs(binfile: PEImage):
         "S_PUB32: [0008:00000000], Flags: 00000000, __except_list",
     )
 
-    cvdump_analysis = CvdumpAnalysis(parser)
-
-    # Make sure we read it
-    assert cvdump_analysis.nodes
+    cvdump_analysis = CvdumpAnalysis(parser, binfile)
+    assert not cvdump_analysis.nodes
 
     # No exception raised
     load_cvdump(cvdump_analysis, db, binfile)
@@ -545,7 +543,7 @@ def test_gproc_with_static_var(binfile: PEImage):
         """),
     )
 
-    cvdump_analysis = CvdumpAnalysis(parser)
+    cvdump_analysis = CvdumpAnalysis(parser, binfile)
     load_cvdump(cvdump_analysis, db, binfile)
 
     entity = db.get(ImageId.RECOMP, 0x10109594)
@@ -575,7 +573,7 @@ def test_float_symbols_with_size(binfile: PEImage):
         """),
     )
 
-    cvdump_analysis = CvdumpAnalysis(parser)
+    cvdump_analysis = CvdumpAnalysis(parser, binfile)
     load_cvdump(cvdump_analysis, db, binfile)
 
     # Zero in single precision
@@ -608,7 +606,7 @@ def test_float_symbols_without_size(binfile: PEImage):
         """),
     )
 
-    cvdump_analysis = CvdumpAnalysis(parser)
+    cvdump_analysis = CvdumpAnalysis(parser, binfile)
     load_cvdump(cvdump_analysis, db, binfile)
 
     entity = db.get(ImageId.RECOMP, 0x100D5740)
@@ -645,7 +643,7 @@ def test_skip_global_without_matching_public(binfile: PEImage):
         """),
     )
 
-    cvdump_analysis = CvdumpAnalysis(parser)
+    cvdump_analysis = CvdumpAnalysis(parser, binfile)
     load_cvdump(cvdump_analysis, db, binfile)
 
     # Should skip the entry at 0004:0000C718
@@ -683,7 +681,7 @@ def test_variable_type_of_zero_size(binfile: PEImage):
         """),
     )
 
-    cvdump_analysis = CvdumpAnalysis(parser)
+    cvdump_analysis = CvdumpAnalysis(parser, binfile)
     load_cvdump(cvdump_analysis, db, binfile)
 
     entity = db.get(ImageId.RECOMP, 0x100FC8F0)
@@ -728,7 +726,7 @@ def test_prefer_type_with_nonzero_size(binfile: PEImage):
         """),
     )
 
-    cvdump_analysis = CvdumpAnalysis(parser)
+    cvdump_analysis = CvdumpAnalysis(parser, binfile)
     load_cvdump(cvdump_analysis, db, binfile)
 
     entity = db.get(ImageId.RECOMP, 0x100FC8F0)
@@ -773,7 +771,7 @@ def test_variable_types_of_equal_size(binfile: PEImage):
         """),
     )
 
-    cvdump_analysis = CvdumpAnalysis(parser)
+    cvdump_analysis = CvdumpAnalysis(parser, binfile)
     load_cvdump(cvdump_analysis, db, binfile)
 
     entity = db.get(ImageId.RECOMP, 0x100FC8F0)
@@ -808,7 +806,7 @@ def test_lproc32_gproc32_collision(binfile: PEImage):
         """),
     )
 
-    cvdump_analysis = CvdumpAnalysis(parser)
+    cvdump_analysis = CvdumpAnalysis(parser, binfile)
     load_cvdump(cvdump_analysis, db, binfile)
 
     entity = db.get(ImageId.RECOMP, 0x10001000)

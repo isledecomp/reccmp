@@ -284,7 +284,7 @@ class Compare:
             .types()
             .run()
         )
-        pdb_file = CvdumpAnalysis(cvdump)
+        pdb_file = CvdumpAnalysis(cvdump, recompfile)
 
         code_paths = source_code_search(target.source_paths)
         code_files = list(

@@ -37,30 +37,12 @@ def load_cvdump_types(cvdump_analysis: CvdumpAnalysis, types: CvdumpTypesParser)
 
 def load_cvdump(cvdump_analysis: CvdumpAnalysis, db: EntityDb, recomp_bin: PEImage):
     # Build the list of entries to insert to the DB.
-    # In the rare case we have duplicate symbols for an address, ignore them.
-    seen_addrs = set()
-
     with db.batch() as batch:
         for sym in cvdump_analysis.nodes:
             # Skip nodes where we have almost no information.
             # These probably came from SECTION CONTRIBUTIONS.
             if sym.name() is None and sym.node_type is None:
                 continue
-
-            # The PDB might contain sections that do not line up with the
-            # actual binary. The symbol "__except_list" is one example.
-            # In these cases, just skip this symbol and move on because
-            # we can't do much with it.
-            if not recomp_bin.is_valid_section(sym.section):
-                continue
-
-            addr = recomp_bin.get_abs_addr(sym.section, sym.offset)
-            sym.addr = addr
-
-            if addr in seen_addrs:
-                continue
-
-            seen_addrs.add(addr)
 
             # If this symbol is the final one in its section, we were not able to
             # estimate its size because we didn't have the total size of that section.
@@ -89,7 +71,7 @@ def load_cvdump(cvdump_analysis: CvdumpAnalysis, db: EntityDb, recomp_bin: PEIma
 
                 batch.set(
                     ImageId.RECOMP,
-                    addr,
+                    sym.addr,
                     type=sym.node_type,
                     symbol=sym.decorated_name,
                     size=sym.section_contribution,
@@ -100,7 +82,7 @@ def load_cvdump(cvdump_analysis: CvdumpAnalysis, db: EntityDb, recomp_bin: PEIma
                 # We will read the float's value from the binary.
                 batch.set(
                     ImageId.RECOMP,
-                    addr,
+                    sym.addr,
                     type=sym.node_type,
                     symbol=sym.decorated_name,
                     size=sym.size(),
@@ -109,7 +91,7 @@ def load_cvdump(cvdump_analysis: CvdumpAnalysis, db: EntityDb, recomp_bin: PEIma
                 # Non-string entities.
                 batch.set(
                     ImageId.RECOMP,
-                    addr,
+                    sym.addr,
                     type=sym.node_type,
                     name=sym.name(),
                     symbol=sym.decorated_name,
@@ -119,7 +101,7 @@ def load_cvdump(cvdump_analysis: CvdumpAnalysis, db: EntityDb, recomp_bin: PEIma
                 # Set the cvdump type key so it can be referenced later.
                 if sym.node_type == EntityType.DATA and sym.data_type is not None:
                     assert isinstance(sym.data_type.key, int)
-                    batch.set(ImageId.RECOMP, addr, data_type=sym.data_type.key)
+                    batch.set(ImageId.RECOMP, sym.addr, data_type=sym.data_type.key)
 
 
 def load_cvdump_lines(
@@ -134,12 +116,7 @@ def load_cvdump_lines(
 
     # The seen_addrs set has more than functions, but the intersection of
     # these addrs and the code lines should be just the functions.
-    seen_addrs = set(
-        # TODO: Ideally this conversion and filtering would happen inside CvdumpAnalysis.
-        recomp_bin.get_abs_addr(node.section, node.offset)
-        for node in cvdump_analysis.nodes
-        if recomp_bin.is_valid_section(node.section)
-    )
+    seen_addrs = set(node.addr for node in cvdump_analysis.nodes)
 
     lines_db.mark_function_starts(tuple(seen_addrs))
 
