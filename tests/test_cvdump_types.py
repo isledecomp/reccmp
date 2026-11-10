@@ -1411,3 +1411,34 @@ def test_bitfields(empty_parser: CvdumpTypesParser):
     assert empty_parser.from_key(TK(0x1003))["bit_start"] == 6
     assert empty_parser.from_key(TK(0x1003))["bit_count"] == 3
     assert empty_parser.from_key(TK(0x1003))["bit_type"] == CVInfoTypeEnum.T_UINT4
+
+
+CLASS_NAME_ENDS_WITH_COMMA = """
+0x3faf : Length = 278, Leaf = 0x1505 LF_STRUCTURE
+	# members = 0,  field list type 0x0000, FORWARD REF, 
+	Derivation list type 0x0000, VT shape type 0x0000
+	Size = 0, class name = pair<_Tree<char const *,pair<char const * const,LegoTextureInfo *>,map<char const *,LegoTextureInfo *,LegoContainerInfoComparator,allocator<LegoTextureInfo *> >::_Kfn,LegoContainerInfoComparator,allocator<LegoTextureInfo *> >::iterator,_Tree<char const *,, UDT(0x000084b1)
+
+0x84b1 : Length = 278, Leaf = 0x1505 LF_STRUCTURE
+	# members = 6,  field list type 0x84b0, CONSTRUCTOR, 
+	Derivation list type 0x0000, VT shape type 0x0000
+	Size = 8, class name = pair<_Tree<char const *,pair<char const * const,LegoTextureInfo *>,map<char const *,LegoTextureInfo *,LegoContainerInfoComparator,allocator<LegoTextureInfo *> >::_Kfn,LegoContainerInfoComparator,allocator<LegoTextureInfo *> >::iterator,_Tree<char const *,, UDT(0x000084b1)
+"""
+
+
+def test_class_name_truncated_at_comma(empty_parser: CvdumpTypesParser):
+    """Make sure we can parse a long class name that is truncated to 255 characters at a comma.
+    e.g. `...const *,, UDT(0x000084b1)`
+    This should not interfere with extracting the name or UDT."""
+    empty_parser.read_all(CLASS_NAME_ENDS_WITH_COMMA)
+    name = (
+        "pair<_Tree<char const *,pair<char const * const,LegoTextureInfo *>,"
+        "map<char const *,LegoTextureInfo *,LegoContainerInfoComparator,"
+        "allocator<LegoTextureInfo *> >::_Kfn,LegoContainerInfoComparator,"
+        "allocator<LegoTextureInfo *> >::iterator,_Tree<char const *,"
+    )
+
+    assert empty_parser.from_key(TK(0x3FAF))["name"] == name
+    assert empty_parser.from_key(TK(0x3FAF))["udt"] == TK(0x84B1)
+    assert empty_parser.from_key(TK(0x84B1))["name"] == name
+    assert empty_parser.get(TK(0x3FAF)).size == 8
