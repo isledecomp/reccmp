@@ -108,7 +108,7 @@ class TypeLeafString(str, Enum):
 
 # LF_FIELDLIST class/struct member
 LIST_RE = re.compile(
-    r"list\[\d+\] = LF_MEMBER, (?P<scope>\w+), type = (?P<type>[^,]*), offset = (?P<offset>\d+)\s+member name = '(?P<name>[^']*)'"
+    r"list\[\d+\] = LF_MEMBER, (?P<scope>\w+), type = (?P<type>[^,]*), offset = (?P<offset>[^,\n]+)\s+member name = '(?P<name>[^']*)'"
 )
 
 # LF_FIELDLIST vtable indicator
@@ -116,20 +116,20 @@ VTABLE_RE = re.compile(r"list\[\d+\] = LF_VFUNCTAB")
 
 # LF_FIELDLIST superclass indicator
 SUPERCLASS_RE = re.compile(
-    r"list\[\d+\] = LF_BCLASS, (?P<scope>\w+), type = (?P<type>[^,]*), offset = (?P<offset>\d+)"
+    r"list\[\d+\] = LF_BCLASS, (?P<scope>\w+), type = (?P<type>[^,]*), offset = (?P<offset>[^,\n]+)"
 )
 
 # LF_FIELDLIST virtual direct/indirect base pointer
 VBCLASS_RE = re.compile(
-    r"list\[\d+\] = LF_(?P<indirect>I?)VBCLASS, .* base type = (?P<type>[^,]*)\n\s+virtual base ptr = [^,]+, vbpoff = (?P<vboffset>\d+), vbind = (?P<vbindex>\d+)"
+    r"list\[\d+\] = LF_(?P<indirect>I?)VBCLASS, .* base type = (?P<type>[^,]*)\n\s+virtual base ptr = [^,]+, vbpoff = (?P<vboffset>[^,\n]+), vbind = (?P<vbindex>[^,\n]+)"
 )
 
 LF_FIELDLIST_ENUMERATE = re.compile(
-    r"list\[\d+\] = LF_ENUMERATE,.*value = (?:\([\w_]*\)\s)?(?P<value>-?\d+)(?:\([\w_]*\))?, name = '(?P<name>[^']+)'"
+    r"list\[\d+\] = LF_ENUMERATE,.*value = (?P<value>[^,\n]+), name = '(?P<name>[^']+)'"
 )
 
 LF_ARRAY_RE = re.compile(
-    r"\s+Element type = (?P<type>[^\n,]+)\n\s+Index type = [^\n]+\n\s+length = (?:[\w()]+ )?(?P<length>\d+)\n"
+    r"\s+Element type = (?P<type>[^\n,]+)\n\s+Index type = [^\n]+\n\s+length = (?P<length>[^,\n]+)\n"
 )
 
 # LF_CLASS/LF_STRUCTURE field list reference
@@ -138,9 +138,7 @@ CLASS_FIELD_RE = re.compile(
 )
 
 # LF_CLASS/LF_STRUCTURE name and other info
-CLASS_NAME_RE = re.compile(
-    r"\s+Size = (?P<number_type>\([\w_]+\) )?(?P<size>\d+), class name = "
-)
+CLASS_NAME_RE = re.compile(r"\s+Size = (?P<size>[^,\n]+), class name = ")
 
 # LF_MODIFIER, type being modified
 MODIFIES_RE = re.compile(r"\n\s+(?P<modification>.+?), modifies type (?P<type>[^\n,]*)")
@@ -182,12 +180,28 @@ LF_ENUM_RE = re.compile(
 )
 
 LF_UNION_LINE = re.compile(
-    r"\s+field list type (?P<field_type>0x\w+),.*Size = (?P<size>\d+)\s*,class name = "
+    r"\s+field list type (?P<field_type>0x\w+),.*Size = (?P<size>[^,\n]+),class name = "
 )
 
 LF_BITFIELD_LINE = re.compile(
     r"bits = (?P<bitcount>[1-9][0-9]*), starting position = (?P<start>[0-9]*), Type = (?P<type_str>[^(]+)\((?P<type>[0-9a-fA-F]+)\)"
 )
+
+
+def read_numeric(text: str) -> int:
+    """Convert the text of a numeric value to int.
+    Some values (negative or larger than 0x7FFF) have an LF_ prefix representing a packed value.
+    e.g. "(LF_ULONG) 100000" or "(LF_CHAR) -1(0xFF)".
+    See also: PrintNumeric() in dumpsym7.cpp."""
+    text = text.strip()
+    if text.startswith("("):
+        text = text[text.index(" ") + 1 :]
+
+    # Remove hex suffix if present.
+    if (suffix := text.find("(")) != -1:
+        text = text[:suffix]
+
+    return int(text)
 
 
 def read_udt_name(leaf: str) -> tuple[str, str | None]:
@@ -231,7 +245,7 @@ def read_array(leaf: str, leaf_type: str) -> CvdumpParsedType:
     return {
         "type": leaf_type,
         "array_type": CvdumpTypeKey.from_str(match.group("type")),
-        "size": int(match.group("length")),
+        "size": read_numeric(match.group("length")),
     }
 
 
@@ -245,7 +259,7 @@ def read_fieldlist(leaf: str, leaf_type: str) -> CvdumpParsedType:
     # Superclass is set here in the fieldlist rather than in LF_CLASS
     for match in SUPERCLASS_RE.finditer(leaf):
         superclass_list: dict[CvdumpTypeKey, int] = obj.setdefault("super", {})
-        superclass_list[CvdumpTypeKey.from_str(match.group("type"))] = int(
+        superclass_list[CvdumpTypeKey.from_str(match.group("type"))] = read_numeric(
             match.group("offset")
         )
 
@@ -268,7 +282,7 @@ def read_fieldlist(leaf: str, leaf_type: str) -> CvdumpParsedType:
             )
         )
 
-        vboffset = int(match.group("vboffset"))
+        vboffset = read_numeric(match.group("vboffset"))
 
         if virtual_base_pointer.vboffset == -1:
             # default value
@@ -283,13 +297,13 @@ def read_fieldlist(leaf: str, leaf_type: str) -> CvdumpParsedType:
                 vboffset,
             )
 
-        virtual_base_pointer.bases[-1].index = int(match.group("vbindex"))
+        virtual_base_pointer.bases[-1].index = read_numeric(match.group("vbindex"))
         # these come out of order, and the lists are so short that it's fine to sort them every time
         virtual_base_pointer.bases.sort(key=lambda x: x.index)
 
     members += [
         FieldListItem(
-            offset=int(offset),
+            offset=read_numeric(offset),
             type=CvdumpTypeKey.from_str(type_),
             name=name,
         )
@@ -300,7 +314,7 @@ def read_fieldlist(leaf: str, leaf_type: str) -> CvdumpParsedType:
         obj["members"] = members
 
     variants = [
-        EnumItem(name=name, value=int(value))
+        EnumItem(name=name, value=read_numeric(value))
         for value, name in LF_FIELDLIST_ENUMERATE.findall(leaf)
     ]
     if variants:
@@ -332,7 +346,7 @@ def read_class_or_struct(leaf: str, leaf_type: str) -> CvdumpParsedType:
     if udt is not None:
         obj["udt"] = CvdumpTypeKey.from_str(udt)
 
-    obj["size"] = int(match.group("size"))
+    obj["size"] = read_numeric(match.group("size"))
 
     return obj
 
@@ -455,7 +469,7 @@ def read_union(leaf: str, leaf_type: str) -> CvdumpParsedType:
     if udt is not None:
         obj["udt"] = CvdumpTypeKey.from_str(udt)
 
-    obj["size"] = int(match.group("size"))
+    obj["size"] = read_numeric(match.group("size"))
 
     return obj
 
