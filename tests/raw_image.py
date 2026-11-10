@@ -5,7 +5,10 @@ but until then it will live under the tests/ directory."""
 import dataclasses
 from pathlib import Path
 from reccmp.formats import Image
-from reccmp.formats.exceptions import InvalidVirtualAddressError
+from reccmp.formats.exceptions import (
+    InvalidVirtualAddressError,
+    SectionNotFoundError,
+)
 
 
 # pylint: disable=abstract-method
@@ -40,6 +43,19 @@ class RawImage(Image):
         return cls(
             data=data, view=view, filepath=Path(""), size=size, base_addr=base_addr
         )
+
+    def get_abs_addr(self, section: int, offset: int) -> int:
+        if section != 1:
+            raise SectionNotFoundError(section)
+
+        return offset + self.base_addr
+
+    def get_relative_addr(self, addr: int) -> tuple[int, int]:
+        offset = addr - self.base_addr
+        if 0 <= offset < self.size:
+            return (1, offset)
+
+        raise InvalidVirtualAddressError
 
     def seek(self, vaddr: int) -> tuple[memoryview, int]:
         offset = vaddr - self.base_addr
