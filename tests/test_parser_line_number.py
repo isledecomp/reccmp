@@ -78,6 +78,18 @@ def test_function_indent_allman_second_bracket_indented(parser: DecompParser):
     assert parser.functions[0].end_line == 4
 
 
+def test_function_indent_brackets_on_same_line(parser: DecompParser):
+    """Both brackets on the line after the signature."""
+    parser.read(dedent("""\
+        // FUNCTION: TEST 0x1234
+        void test()
+        {}
+        """))
+    assert len(parser.alerts) == 0
+    assert parser.functions[0].line_number == 2
+    assert parser.functions[0].end_line == 3
+
+
 def test_function_indent_knr(parser: DecompParser):
     """Declaration and opening bracket on same line. Closing bracket on its own line."""
     parser.read(dedent("""\
