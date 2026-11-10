@@ -1,5 +1,6 @@
 from reccmp.utils import entity_diff_change, ReccmpDiffJudgement
 from reccmp.compare.report import ReccmpComparedEntity
+from reccmp.types import EntityType
 
 
 def entity(
@@ -11,6 +12,7 @@ def entity(
         orig_addr=0x400000,
         name="Test",
         accuracy=accuracy,
+        type=EntityType.FUNCTION,
         is_stub=is_stub,
         is_effective_match=is_effective_match,
     )

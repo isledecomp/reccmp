@@ -91,7 +91,7 @@ def test_deserialize_defaults_for_optional_fields():
     report = deserialize_reccmp_report(create_json([create_entity()]))
     e = report.entities[0x100]
 
-    assert e.type is None
+    assert e.type == EntityType.FUNCTION
     assert e.recomp_addr is None
     assert e.is_stub is False
     assert e.is_library is False
@@ -111,7 +111,7 @@ def test_deserialize_explicit_null_fields():
         report = deserialize_reccmp_report(create_json([entity]))
         e = report.entities[0x100]
 
-        assert e.type is None
+        assert e.type == EntityType.FUNCTION
         assert e.recomp_addr is None
         assert e.is_stub is False
         assert e.is_library is False
@@ -126,19 +126,18 @@ def test_deserialize_null_type_presumed_function():
     report = deserialize_reccmp_report(create_json([entity]))
     e = report.entities[0x100]
 
-    assert e.type is None
+    assert e.type == EntityType.FUNCTION
     assert e.is_function() is True
     assert report.function_count == 1
 
 
-@pytest.mark.xfail(reason="Potential improvement.")
 def test_deserialize_guess_vtable_type():
     """Reasonable assumption about entity type (if it is None) using the entity's name"""
     entity = create_entity(name="Pizza::`vftable'", recomp="0x100", matching=0.5)
     report = deserialize_reccmp_report(create_json([entity]))
     e = report.entities[0x100]
 
-    assert e.type is None
+    assert e.type == EntityType.VTABLE
     assert e.is_function() is False
     assert report.function_count == 0
 
@@ -152,9 +151,30 @@ def test_deserialize_valid_type():
 
 def test_deserialize_invalid_type():
     """If the type number for an entity is not part of the
-    EntityType enum, set the entity type to None."""
+    EntityType enum, assume the entity is a function."""
     report = deserialize_reccmp_report(create_json([create_entity(type=999)]))
-    assert report.entities[0x100].type is None
+    assert report.entities[0x100].type == EntityType.FUNCTION
+
+
+@pytest.mark.parametrize("entity_type", [None, int(EntityType.FUNCTION)])
+def test_deserialize_vtordisp_from_name(entity_type: int | None):
+    """Should upgrade the entity type to VTORDISP if its name matches the vtordisp pattern."""
+    entity = create_entity(
+        name="Pizza::Test`vtordisp{-4, 0}'", recomp="0x100", type=entity_type
+    )
+    report = deserialize_reccmp_report(create_json([entity]))
+    e = report.entities[0x100]
+
+    assert e.type == EntityType.VTORDISP
+    assert e.is_function() is True
+    assert report.function_count == 1
+
+
+def test_deserialize_vtordisp_name_other_type():
+    """Should not replace an entity type despite a name pattern match."""
+    entity = create_entity(name="`vtordisp", type=int(EntityType.VTABLE))
+    report = deserialize_reccmp_report(create_json([entity]))
+    assert report.entities[0x100].type == EntityType.VTABLE
 
 
 @pytest.mark.parametrize("address", ["", "0x", "hello", "1.5", "0x1zz", "-"])
@@ -246,7 +266,11 @@ def test_serialize_address():
     addr = 0x40A000
     report = ReccmpStatusReport(filename="test.exe")
     report.entities[addr] = ReccmpComparedEntity(
-        orig_addr=addr, name="test", accuracy=1.0, recomp_addr=addr
+        orig_addr=addr,
+        name="test",
+        accuracy=1.0,
+        type=EntityType.FUNCTION,
+        recomp_addr=addr,
     )
 
     obj = json.loads(serialize_reccmp_report(report))
@@ -262,7 +286,11 @@ def test_serialize_address_and_dict_key_out_of_sync():
     could disagree, but it should never happen in normal operation."""
     report = ReccmpStatusReport(filename="test.exe")
     report.entities[0x100] = ReccmpComparedEntity(
-        orig_addr=0x200, name="test", accuracy=1.0, recomp_addr=0x100
+        orig_addr=0x200,
+        name="test",
+        accuracy=1.0,
+        type=EntityType.FUNCTION,
+        recomp_addr=0x100,
     )
 
     with pytest.raises(AssertionError):
@@ -276,6 +304,7 @@ def test_serialize_prefer_existing_udiff():
         orig_addr=0x100,
         name="test",
         accuracy=1.0,
+        type=EntityType.FUNCTION,
         recomp_addr=0x100,
         rdiff=sample_rdiff(),
         udiff=sample_udiff(),
@@ -294,7 +323,11 @@ def test_serialize_excludes_defaults():
     """Any fields set to a default value are omitted. This is to save space."""
     report = ReccmpStatusReport(filename="test.exe")
     report.entities[0x100] = ReccmpComparedEntity(
-        orig_addr=0x100, name="test", accuracy=1.0, recomp_addr=0x100
+        orig_addr=0x100,
+        name="test",
+        accuracy=1.0,
+        type=EntityType.FUNCTION,
+        recomp_addr=0x100,
     )
 
     obj = json.loads(serialize_reccmp_report(report))
@@ -308,7 +341,6 @@ def test_serialize_excludes_defaults():
     assert "library" not in entity
     assert "effective" not in entity
     assert "diff" not in entity
-    assert "type" not in entity
 
 
 def test_serialize_existing_timestamp():
@@ -328,7 +360,11 @@ def test_serialize_updates_function_count():
     """Recalculate the function count before serializing."""
     report = ReccmpStatusReport(filename="test.exe")
     report.entities[0x100] = ReccmpComparedEntity(
-        orig_addr=0x100, name="test", accuracy=1.0, recomp_addr=0x100
+        orig_addr=0x100,
+        name="test",
+        accuracy=1.0,
+        type=EntityType.FUNCTION,
+        recomp_addr=0x100,
     )
     assert report.function_count == 0
 
@@ -343,7 +379,11 @@ def test_serialize_recomp_addr_varies():
     a fixed recomp addr should use the magic string `various`."""
     report = ReccmpStatusReport(filename="test.exe")
     report.entities[0x100] = ReccmpComparedEntity(
-        orig_addr=0x100, name="test", accuracy=1.0, recomp_addr_varies=True
+        orig_addr=0x100,
+        name="test",
+        accuracy=1.0,
+        type=EntityType.FUNCTION,
+        recomp_addr_varies=True,
     )
 
     obj = json.loads(serialize_reccmp_report(report))
@@ -355,7 +395,10 @@ def test_serialize_omits_unmatched_entities():
     """Version 1 reports contain only matched entities."""
     report = ReccmpStatusReport(filename="test.exe")
     report.entities[0x100] = ReccmpComparedEntity(
-        orig_addr=0x100, name="test", accuracy=1.0
+        orig_addr=0x100,
+        name="test",
+        accuracy=1.0,
+        type=EntityType.FUNCTION,
     )
 
     obj = json.loads(serialize_reccmp_report(report))

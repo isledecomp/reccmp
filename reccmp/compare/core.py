@@ -426,69 +426,39 @@ class Compare:
             match_ratio=ratio,
         )
 
-    def _compare_non_match(self, ent: ReccmpEntity) -> ReccmpComparedEntity | None:
+    def _compare_entity(self, ent: ReccmpEntity) -> ReccmpComparedEntity | None:
+        """Router for comparison type"""
         assert ent.orig_addr is not None
 
-        assert ent.entity_type is not None
-
-        if ent.entity_type in (EntityType.FUNCTION, EntityType.VTORDISP):
-            output_type = EntityType.FUNCTION
-
-        elif ent.entity_type == EntityType.VTABLE:
-            output_type = EntityType.VTABLE
-
-        else:
+        if isinstance(ent, ReccmpMatch) and ent.any_size() == 0:
             return None
 
-        name = ent.best_name()
-        if name is None:
-            name = f"Unknown {output_type.name}"
+        if ent.entity_type is None:
+            return None
+
+        if isinstance(ent, ReccmpMatch):
+            match ent.entity_type:
+                case EntityType.FUNCTION | EntityType.VTORDISP:
+                    result = self.function_comparator.compare_function(ent)
+                case EntityType.VTABLE:
+                    result = self._compare_vtable(ent)
+                case _:
+                    result = EntityCompareResult()
+        else:
+            result = EntityCompareResult()
+
+        # Consumers should add a placeholder name
+        name = ent.best_name() or ""
 
         return ReccmpComparedEntity(
             orig_addr=ent.orig_addr,
             name=name,
-            accuracy=0.0,
-            type=output_type,
-            recomp_addr=None,
-            is_stub=True,
-            is_library=ent.get("library", False),
-        )
-
-    def _compare_match(self, match: ReccmpMatch) -> ReccmpComparedEntity | None:
-        """Router for comparison type"""
-
-        if match.size is None or match.any_size() == 0:
-            return None
-
-        assert match.entity_type is not None
-        assert match.name is not None
-
-        # We only compare certain entity types in reccmp-asmcmp:
-        if match.entity_type in (EntityType.FUNCTION, EntityType.VTORDISP):
-            # Thunks are excluded from comparison. They always match 100% because
-            # they are paired up using the destination of their JMP instruction.
-            result = self.function_comparator.compare_function(match)
-            output_type = EntityType.FUNCTION
-
-        elif match.entity_type == EntityType.VTABLE:
-            result = self._compare_vtable(match)
-            output_type = EntityType.VTABLE
-
-        else:
-            return None
-
-        best_name = match.best_name()
-        assert best_name is not None
-
-        return ReccmpComparedEntity(
-            orig_addr=match.orig_addr,
-            name=best_name,
             accuracy=result.match_ratio,
-            type=output_type,
-            recomp_addr=match.recomp_addr,
+            type=ent.entity_type,
+            recomp_addr=ent.recomp_addr,
             is_effective_match=result.is_effective_match,
-            is_stub=match.get("stub", False),
-            is_library=match.get("library", False),
+            is_stub=ent.get("stub", False) if ent.matched else False,
+            is_library=ent.get("library", False),
             rdiff=result.diff,
         )
 
@@ -511,12 +481,14 @@ class Compare:
         if match is None:
             return None
 
-        return self._compare_match(match)
+        return self._compare_entity(match)
 
     def compare_all(
         self, filter_fn: Callable[[ReccmpEntity], bool] | None = None
     ) -> Iterator[ReccmpComparedEntity]:
         for ent in self._db.all(ImageId.ORIG):
+            # Thunks are excluded from the report. They always match 100% because
+            # they are paired up using the destination of their JMP instruction.
             if ent.entity_type not in (
                 EntityType.FUNCTION,
                 EntityType.VTORDISP,
@@ -529,19 +501,13 @@ class Compare:
             if filter_fn and not filter_fn(ent):
                 continue
 
-            if ent.recomp_addr is not None:
-                # mypy coercion.
-                assert isinstance(ent, ReccmpMatch)
-                diff = self._compare_match(ent)
-            else:
-                diff = self._compare_non_match(ent)
-
+            diff = self._compare_entity(ent)
             if diff is not None:
                 yield diff
 
     def compare_vtables(self) -> Iterator[ReccmpComparedEntity]:
         for match in self.get_vtables():
-            diff = self._compare_match(match)
+            diff = self._compare_entity(match)
             if diff is not None:
                 yield diff
 
