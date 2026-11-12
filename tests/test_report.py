@@ -17,7 +17,9 @@ def create_report(
     report = ReccmpStatusReport(filename="test.exe")
     if entities is not None:
         for addr, accuracy in entities:
-            report.entities[addr] = ReccmpComparedEntity(addr, "test", accuracy)
+            report.entities[addr] = ReccmpComparedEntity(
+                addr, "test", accuracy, EntityType.FUNCTION
+            )
 
     return report
 
@@ -169,7 +171,7 @@ def add_entity(
     *,
     name: str = "test",
     accuracy: float = 1.0,
-    entity_type: EntityType | None = EntityType.FUNCTION,
+    entity_type: EntityType = EntityType.FUNCTION,
     library: bool = False,
 ) -> ReccmpComparedEntity:
     """Helper to add an entity with the attributes used by the filter tests."""
@@ -229,19 +231,6 @@ def test_filter_entities_function_name_exclude_list():
         lambda e: not (e.type == EntityType.FUNCTION and e.name in exclude)
     )
     assert set(report.entities) == {100, 300}
-
-
-def test_filter_entities_untyped_is_not_function_type():
-    """Potential gap: filtering on entity type instead of calling `entity.is_function()`
-    will miss functions that have type=None (version 1 compatibility)."""
-    report = ReccmpStatusReport(filename="test.exe")
-    add_entity(report, 100, name="hello", entity_type=None)
-
-    report.filter_entities(lambda e: e.type != EntityType.FUNCTION)
-    assert set(report.entities) == {100}
-
-    report.filter_entities(lambda e: not e.is_function())
-    assert not report.entities
 
 
 def test_filter_entities_sets_function_count():
@@ -348,13 +337,3 @@ def test_asmcmp_filtering_ignore_functions():
     report.asmcmp_filtering(nolib=False, ignore_functions=["Pizza"])
     assert set(report.entities) == {100, 300}
     assert report.function_count == 1
-
-
-def test_asmcmp_filtering_untyped_entity():
-    """An entity with no type is treated as a function,
-    so the ignore list applies to it. (Version 1 report compatibility.)"""
-    report = ReccmpStatusReport(filename="test.exe")
-    add_entity(report, 100, name="Pizza", entity_type=None)
-
-    report.asmcmp_filtering(nolib=False, ignore_functions=["Pizza"])
-    assert not report.entities

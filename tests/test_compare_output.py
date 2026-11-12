@@ -1,7 +1,6 @@
 """Testing the output from the compare core: entity vital information and the diff report."""
 
 from unittest.mock import Mock
-import pytest
 from reccmp.compare import Compare
 from reccmp.compare.db import EntityDb
 from reccmp.compare.diff import (
@@ -103,19 +102,21 @@ def test_matched_entity_no_type():
 
 
 def test_matched_function_missing_name():
-    """We will not compare a function entity without a name."""
-    orig_bin = RawImage.from_memory()
-    recomp_bin = RawImage.from_memory()
+    """We _will_ compare a function entity without a name."""
+    addr = 0x1000
+    orig_bin = RawImage.from_memory(b"\xc3", base_addr=addr)
+    recomp_bin = RawImage.from_memory(b"\xc3", base_addr=addr)
     pdb = Mock(spec=CvdumpAnalysis)
     compare = Compare(orig_bin, recomp_bin, pdb, "HELLO")
 
     with get_db(compare).batch() as batch:
-        batch.set(ImageId.RECOMP, 0, type=EntityType.FUNCTION, size=1)
-        batch.match(0, 0)
+        batch.set(ImageId.RECOMP, addr, type=EntityType.FUNCTION, size=1)
+        batch.match(addr, addr)
 
-    with pytest.raises(AssertionError):
-        # TODO: We could skip the entity instead of blowing up. GH #252
-        to_report(compare)
+    # GH #252
+    report = to_report(compare)
+    assert addr in report.entities
+    assert not report.entities[addr].name
 
 
 def test_matched_function_missing_size():
@@ -162,6 +163,30 @@ def test_compare_function():
     # No diff generated for a match
     udiff = get_udiff(e)
     assert udiff is None
+
+
+def test_compare_vtordisp():
+    orig_bin = RawImage.from_memory(b"\x90")  # nop
+    recomp_bin = RawImage.from_memory(b"\xc3")  # ret
+
+    pdb = Mock(spec=CvdumpAnalysis)
+    compare = Compare(orig_bin, recomp_bin, pdb, "HELLO")
+
+    with get_db(compare).batch() as batch:
+        batch.set(
+            ImageId.RECOMP,
+            0,
+            type=EntityType.VTORDISP,
+            name="Pizza::Test`vtordisp{-4, 0}'",
+            size=1,
+        )
+        batch.match(0, 0)
+
+    e = compare.to_report(filename=compare.target_id).entities[0]
+    assert e.type == EntityType.VTORDISP
+    assert e.accuracy == 0.0
+
+    assert to_report(compare).entities[0].type == EntityType.VTORDISP
 
 
 def test_compare_function_stub():
@@ -489,7 +514,7 @@ def test_report_function_alignment():
 def test_report_function_accuracy():
     def test_entity(
         addr: int,
-        entity_type: EntityType | None,
+        entity_type: EntityType,
         accuracy: float,
         *,
         effective: bool = False,
@@ -557,16 +582,6 @@ def test_report_function_accuracy():
         ]
     )
     assert report_function_accuracy(report) == (0, 0, 0)
-
-    # Assumes type=None is a function.
-    # This is to preserve compatibility with files that existed before #392.
-    report.entities = dict(
-        [
-            test_entity(0, EntityType.FUNCTION, 1.0),
-            test_entity(1, None, 0.5),
-        ]
-    )
-    assert report_function_accuracy(report) == (2, 1.5, 1.5)
 
 
 def test_compare_vtable_recomp_longer():

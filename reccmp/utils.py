@@ -297,7 +297,7 @@ def diff_json_display(
             )
 
             if name == "":
-                name = saved.name
+                name = saved.display_name
 
         orig_addr_str = format_address(orig_addr)
 

@@ -164,7 +164,7 @@ class GhidraTypeTestHelper:
     def set_up_cvdump_types(self, cvdump_types: str):
         parser = CvdumpParser()
         parser.read_section("TYPES", cvdump_types)
-        analysis = CvdumpAnalysis(parser)
+        analysis = CvdumpAnalysis(parser, RawImage.from_memory())
         load_cvdump_types(analysis, self.compare.types)
 
 

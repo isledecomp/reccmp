@@ -6,7 +6,6 @@
 
 from typing import TYPE_CHECKING
 
-from reccmp.cvdump.analysis import CvdumpNode
 from reccmp.cvdump.cvinfo import CVInfoTypeEnum, CvdumpTypeKey
 from reccmp.compare.db import ReccmpMatch
 from reccmp.ghidra.importer.pdb_extraction import (
@@ -307,21 +306,14 @@ def test_global_array_access(
 
     type_helper.set_up_cvdump_types(cvdump_types)
 
-    type_helper.compare.cvdump_analysis.nodes = [
-        CvdumpNode(
-            addr=recomp_address_of_global,
-            section=0,
-            offset=0,
-            decorated_name="g_actorInfo",
-            data_type=type_helper.compare.types.get(lego_actor_info_array_key),
-        )
-    ]
-
     import_global_into_ghidra(
         ghidra,
-        type_helper.compare,
         type_helper.type_importer,
-        ReccmpMatch(function_helper.ORIG_DATA_TO_OVERWRITE, recomp_address_of_global),
+        ReccmpMatch(
+            function_helper.ORIG_DATA_TO_OVERWRITE,
+            recomp_address_of_global,
+            {"name": "g_actorInfo", "data_type": lego_actor_info_array_key},
+        ),
     )
 
     # based on BETA10 0x100742eb
@@ -406,21 +398,14 @@ def test_global_pointer_access(
 
     type_helper.set_up_cvdump_types(cvdump_types)
 
-    type_helper.compare.cvdump_analysis.nodes = [
-        CvdumpNode(
-            addr=recomp_address_of_global,
-            section=0,
-            offset=0,
-            decorated_name="g_actorInfo",
-            data_type=type_helper.compare.types.get(lego_actor_info_pointer_key),
-        )
-    ]
-
     import_global_into_ghidra(
         ghidra,
-        type_helper.compare,
         type_helper.type_importer,
-        ReccmpMatch(function_helper.ORIG_DATA_TO_OVERWRITE, recomp_address_of_global),
+        ReccmpMatch(
+            function_helper.ORIG_DATA_TO_OVERWRITE,
+            recomp_address_of_global,
+            {"name": "g_actorInfo", "data_type": lego_actor_info_pointer_key},
+        ),
     )
 
     ghidra_addr = ghidra.getAddressFactory().getAddress(

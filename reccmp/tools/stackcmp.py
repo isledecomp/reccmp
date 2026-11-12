@@ -351,14 +351,11 @@ def main() -> int:
     # https://github.com/isledecomp/reccmp/pull/307#issuecomment-3796146436
     udiff = raw_diff_to_udiff(match.rdiff, grouped=False)
 
-    function_data = next(
-        (y for y in compare.cvdump_analysis.nodes if y.addr == match.recomp_addr),
-        None,
-    )
-    assert function_data is not None
-    assert function_data.symbol_entry is not None
+    assert match.recomp_addr is not None
+    function_symbol = compare.cvdump_analysis.get_function_symbol(match.recomp_addr)
+    assert function_symbol is not None
 
-    compare_function_stacks(udiff, function_data.symbol_entry)
+    compare_function_stacks(udiff, function_symbol)
     return 0
 
 

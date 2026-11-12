@@ -77,7 +77,7 @@ def main():
                 continue
 
             print(
-                tbl_match.name,
+                tbl_match.display_name,
                 f": orig {format_address(tbl_match.orig_addr)}, recomp {format_address(tbl_match.recomp_addr)}",
             )
             print_combined_diff(udiff)
@@ -99,7 +99,7 @@ def main():
         if diff.accuracy < 1.0:
             problem_count += 1
             print(
-                f"Problem with adjuster thunk {fun_match.name} ({format_address(fun_match.orig_addr)} / {format_address(fun_match.recomp_addr)})"
+                f"Problem with adjuster thunk {diff.display_name} ({format_address(fun_match.orig_addr)} / {format_address(fun_match.recomp_addr)})"
             )
 
     return 1 if problem_count > 0 else 0

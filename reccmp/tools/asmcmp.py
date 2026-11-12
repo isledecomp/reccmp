@@ -68,19 +68,19 @@ def print_match_verbose(match: ReccmpComparedEntity, show_both_addrs: bool = Fal
     if match.effective_accuracy == 1.0:
         ok_text = reccmp.color.Fore.GREEN + "✨ OK! ✨" + reccmp.color.Style.RESET_ALL
         if match.accuracy == 1.0:
-            print(f"{addrs}: {match.name} 100% match.\n\n{ok_text}\n\n")
+            print(f"{addrs}: {match.display_name} 100% match.\n\n{ok_text}\n\n")
         else:
             print_combined_diff(udiff, show_both=show_both_addrs)
 
             print(
-                f"\n{addrs}: {match.name} 100% effective match (differs, but only in ways that don't affect behavior).\n\n{ok_text}\n\n"
+                f"\n{addrs}: {match.display_name} 100% effective match (differs, but only in ways that don't affect behavior).\n\n{ok_text}\n\n"
             )
 
     else:
         print_combined_diff(udiff, show_both=show_both_addrs)
 
         print(
-            f"\n{match.name} is only {percenttext} similar to the original, diff above"
+            f"\n{match.display_name} is only {percenttext} similar to the original, diff above"
         )
 
 
@@ -95,9 +95,11 @@ def print_match_oneline(match: ReccmpComparedEntity, show_both_addrs: bool = Fal
         addrs = format_address(match.orig_addr)
 
     if match.is_stub:
-        print(f"  {match.name} ({addrs}) is a stub.")
+        print(f"  {match.display_name} ({addrs}) is a stub.")
     else:
-        print(f"  {match.name} ({addrs}) is {percenttext} similar to the original")
+        print(
+            f"  {match.display_name} ({addrs}) is {percenttext} similar to the original"
+        )
 
 
 def parse_args() -> argparse.Namespace:
@@ -191,14 +193,14 @@ def dump_all_matched_functions(report: ReccmpStatusReport):
 
     # Extract instructions from each compared entity in both address spaces.
     orig_items = [
-        (entity.orig_addr, entity.name, entity.rdiff.orig_inst)
+        (entity.orig_addr, entity.display_name, entity.rdiff.orig_inst)
         for entity in report.entities.values()
         if entity.recomp_addr is not None and entity.rdiff is not None
     ]
 
     # mypy: recomp_addr can be None, but not for the matched entities we are reviewing.
     recomp_items = [
-        (entity.recomp_addr, entity.name, entity.rdiff.recomp_inst)
+        (entity.recomp_addr, entity.display_name, entity.rdiff.recomp_inst)
         for entity in report.entities.values()
         if entity.recomp_addr is not None and entity.rdiff is not None
     ]

@@ -4,6 +4,7 @@ type pool marker that controls symbol truncation."""
 from reccmp.cvdump.parser import CvdumpParser
 from reccmp.cvdump.analysis import CvdumpAnalysis
 from reccmp.cvdump.runner import iter_cvdump_sections
+from .raw_image import RawImage
 
 # The first lines of the TYPES section for an MSVC 4.x-era PDB.
 TYPES_16BIT = """
@@ -25,7 +26,7 @@ def test_16bit_type_pool_truncates():
     parser.read_section("TYPES", TYPES_16BIT)
 
     assert parser.is_16bit_type_pool is True
-    assert CvdumpAnalysis(parser).truncate_symbols is True
+    assert CvdumpAnalysis(parser, RawImage.from_memory()).truncate_symbols is True
 
 
 def test_32bit_type_pool_does_not_truncate():
@@ -36,7 +37,7 @@ def test_32bit_type_pool_does_not_truncate():
     parser.read_section("TYPES", TYPES_32BIT)
 
     assert parser.is_16bit_type_pool is False
-    assert CvdumpAnalysis(parser).truncate_symbols is False
+    assert CvdumpAnalysis(parser, RawImage.from_memory()).truncate_symbols is False
 
 
 def test_no_types_section_assumes_truncation():
@@ -46,7 +47,7 @@ def test_no_types_section_assumes_truncation():
     parser = CvdumpParser()
 
     assert parser.is_16bit_type_pool is None
-    assert CvdumpAnalysis(parser).truncate_symbols is True
+    assert CvdumpAnalysis(parser, RawImage.from_memory()).truncate_symbols is True
 
 
 def test_converting_message_does_not_split_a_new_section():

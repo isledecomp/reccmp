@@ -9,10 +9,9 @@ from typing import cast
 from ghidra.program.flatapi import FlatProgramAPI
 from ghidra.program.model.mem import MemBuffer
 
-from reccmp.compare.core import Compare
 from reccmp.compare.db import ReccmpMatch
+from reccmp.cvdump.cvinfo import CvdumpTypeKey
 
-from .exceptions import ReccmpGhidraException
 from .type_importer import PdbTypeImporter
 from .ghidra_helper import set_ghidra_label
 
@@ -21,26 +20,18 @@ logger = logging.getLogger(__name__)
 
 def import_global_into_ghidra(
     api: FlatProgramAPI,
-    compare: Compare,
     type_importer: PdbTypeImporter,
     glob: ReccmpMatch,
 ):
-    node = next(
-        (y for y in compare.cvdump_analysis.nodes if y.addr == glob.recomp_addr),
-        None,
-    )
-    if node is None:
-        # should never happen
-        raise ReccmpGhidraException(
-            f"Failed to find node for {glob.name} at address 0x{glob.orig_addr:x}"
-        )
-
-    name = node.friendly_name or node.decorated_name
-    assert name is not None, "node.decorated_name must not be None"
+    name = glob.name
+    assert name is not None, "Variable entity must have a name"
 
     logger.info("Handling global at %s: '%s'", hex(glob.orig_addr), name)
-    if node.data_type is not None:
-        data_type = type_importer.import_pdb_type_into_ghidra(node.data_type.key)
+    data_type_key = glob.get("data_type")
+    if data_type_key is not None:
+        data_type = type_importer.import_pdb_type_into_ghidra(
+            CvdumpTypeKey(data_type_key)
+        )
         address_ghidra = api.getAddressFactory().getAddress(hex(glob.orig_addr))
 
         existing_data = api.getDataAt(address_ghidra)

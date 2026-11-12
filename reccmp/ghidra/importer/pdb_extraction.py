@@ -121,19 +121,18 @@ class PdbFunctionExtractor:
         return [signature for signature in handled if signature is not None]
 
     def _handle_matched_function(self, match_info: ReccmpMatch) -> PdbFunction | None:
-        function_data = next(
-            (
-                y
-                for y in self.compare.cvdump_analysis.nodes
-                if y.addr == match_info.recomp_addr
-            ),
-            None,
+        function_symbol = self.compare.cvdump_analysis.get_function_symbol(
+            match_info.recomp_addr
         )
-        if function_data is None:
+        if function_symbol is None:
             try:
                 # this can be either a thunk (which we want) or an external function
                 # (which we don't want), so we tell them apart based on the validity of their address.
                 self.compare.orig_bin.get_relative_addr(match_info.orig_addr)
+                logger.debug(
+                    "Could not find function symbol '%s' (likely a PUBLICS entry), importing by name only",
+                    match_info.name,
+                )
                 return PdbFunction(match_info, None, is_stub=False)
             except InvalidVirtualAddressError:
                 logger.debug(
@@ -142,14 +141,6 @@ class PdbFunctionExtractor:
                     match_info.orig_addr,
                 )
                 return None
-
-        function_symbol = function_data.symbol_entry
-        if function_symbol is None:
-            logger.debug(
-                "Could not find function symbol '%s' (likely a PUBLICS entry), importing by name only",
-                match_info.name,
-            )
-            return PdbFunction(match_info, None, is_stub=False)
 
         function_signature = self._get_func_signature(function_symbol)
 
