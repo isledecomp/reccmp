@@ -5,7 +5,9 @@ from reccmp.analysis.crt_startup import (
     read_crt_functions,
     collect_crt_xrefs,
     CrtStartupArray,
+    match_destructors,
     match_function_sets,
+    read_atexit_destructor,
     read_function_set,
 )
 from reccmp.analysis.xref import RefType
@@ -273,3 +275,116 @@ def test_read_function_set_jmp_must_be_ahead():
 
     binfile = RawImage.from_memory(bytes(memory))
     assert not read_function_set(binfile, 0x40)
+
+
+# PUSH 0x400030; CALL 0x400100; POP ECX; RET
+ATEXIT_SETTER = b"\x68\x30\x00\x40\x00\xe8\xd6\x00\x00\x00\x59\xc3"
+
+
+def test_read_atexit_destructor_setter():
+    """Should read the destructor address from an atexit setter function."""
+    memory = bytearray(0x200)
+    memory[0x20 : 0x20 + len(ATEXIT_SETTER)] = ATEXIT_SETTER
+    binfile = RawImage.from_memory(bytes(memory), base_addr=0x400000)
+    assert read_atexit_destructor(binfile, 0x400020) == 0x400030
+
+
+def test_read_atexit_destructor_end_of_initializer():
+    """Should read the destructor address if the initializer constructs the object
+    and registers the destructor itself."""
+    code = (
+        b"\xb9\x00\x00\x41\x00"  # mov ecx, 0x410000
+        b"\xe8\xf6\x00\x00\x00"  # call 0x400100
+        b"\x68\x30\x00\x40\x00"  # push 0x400030
+        b"\xe8\xec\x00\x00\x00"  # call 0x400100
+        b"\x59"  # pop ecx
+        b"\xc3"  # ret
+    )
+    memory = bytearray(0x200)
+    memory[0 : len(code)] = code
+    binfile = RawImage.from_memory(bytes(memory), base_addr=0x400000)
+    assert read_atexit_destructor(binfile, 0x400000) == 0x400030
+
+
+ATEXIT_NOT_SETTER_PATTERNS = (
+    pytest.param(b"\xc3", id="ret only"),
+    pytest.param(b"\xb9\x00\x00\x41\x00\xe9\xf6\x00\x00\x00", id="jmp without ret"),
+    pytest.param(
+        b"\x68\x30\x00\x40\x00\xe8\xe6\x00\x00\x00\x83\xc4\x04\xc3",
+        id="add esp instead of pop ecx",
+    ),
+    pytest.param(
+        b"\x68\x30\x00\x40\x00\xe8\xe6\x00\x00\x00\x59\x90\xc3",
+        id="instruction between pop and ret",
+    ),
+    pytest.param(
+        b"\x68\x00\x00\x00\x10\xe8\xe6\x00\x00\x00\x59\xc3",
+        id="destructor outside of the image",
+    ),
+)
+
+
+@pytest.mark.parametrize("code", ATEXIT_NOT_SETTER_PATTERNS)
+def test_read_atexit_destructor_no_match(code: bytes):
+    """Should not report a destructor unless the function ends with the exact
+    atexit registration sequence and the destructor is in the image."""
+    memory = bytearray(0x200)
+    memory[0x20 : 0x20 + len(code)] = code
+    binfile = RawImage.from_memory(bytes(memory), base_addr=0x400000)
+    assert read_atexit_destructor(binfile, 0x400020) is None
+
+
+def test_read_atexit_destructor_invalid_addr():
+    """Should not raise an exception for an address outside of the image."""
+    binfile = RawImage.from_memory(bytes(0x20), base_addr=0x400000)
+    assert read_atexit_destructor(binfile, 0x500000) is None
+
+
+def test_read_crt_functions_destructor_call_jmp():
+    """Should map the array entry to the destructor registered by the atexit setter
+    of a CALL + JMP thunk."""
+    memory = bytearray(0x200)
+    memory[0x100:0x108] = struct.pack("<II", 0, 0x400000)  # CRT array: 0, thunk
+    memory[0:10] = b"\xe8\x0b\x00\x00\x00\xe9\x16\x00\x00\x00"  # call 0x10, jmp 0x20
+    memory[0x10] = 0xC3  # initializer: ret
+    memory[0x20 : 0x20 + len(ATEXIT_SETTER)] = ATEXIT_SETTER
+    binfile = RawImage.from_memory(bytes(memory), base_addr=0x400000)
+
+    array = read_crt_functions(binfile, range(0x400100, 0x400108))
+    assert array.function_set == {0x400000: (0x400010, 0x400020)}
+    assert array.destructors == {0x400000: 0x400030}
+
+
+def test_read_crt_functions_destructor_no_thunk():
+    """Should map the array entry to the destructor registered at the end of an
+    initializer that is not reached through a thunk."""
+    code = (
+        b"\xb9\x00\x00\x41\x00"  # mov ecx, 0x410000
+        b"\xe8\xf6\x00\x00\x00"  # call 0x400100
+        b"\x68\x30\x00\x40\x00"  # push 0x400030
+        b"\xe8\xec\x00\x00\x00"  # call 0x400100
+        b"\x59"  # pop ecx
+        b"\xc3"  # ret
+    )
+    memory = bytearray(0x200)
+    memory[0x180:0x188] = struct.pack("<II", 0, 0x400000)  # CRT array: 0, initializer
+    memory[0 : len(code)] = code
+    binfile = RawImage.from_memory(bytes(memory), base_addr=0x400000)
+
+    array = read_crt_functions(binfile, range(0x400180, 0x400188))
+    assert not array.function_set
+    assert array.destructors == {0x400000: 0x400030}
+
+
+def test_match_destructors():
+    """Should match the destructors of matched entries if both entries register one."""
+    x_array = CrtStartupArray(entries=[500, 501], destructors={500: 100, 501: 101})
+    y_array = CrtStartupArray(entries=[600, 601], destructors={600: 200})
+    assert match_destructors(x_array, y_array, [(500, 600), (501, 601)]) == [(100, 200)]
+
+
+def test_match_destructors_none():
+    """Should not match anything if no entry registers a destructor."""
+    x_array = CrtStartupArray(entries=[500])
+    y_array = CrtStartupArray(entries=[600])
+    assert not match_destructors(x_array, y_array, [(500, 600)])
