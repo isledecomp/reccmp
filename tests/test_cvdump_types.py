@@ -1442,3 +1442,52 @@ def test_class_name_truncated_at_comma(empty_parser: CvdumpTypesParser):
     assert empty_parser.from_key(TK(0x3FAF))["udt"] == TK(0x84B1)
     assert empty_parser.from_key(TK(0x84B1))["name"] == name
     assert empty_parser.get(TK(0x3FAF)).size == 8
+
+
+NO_UDT_SAMPLE = """
+0x1a06 : Length = 34, Leaf = 0x1505 LF_STRUCTURE
+        # members = 0,  field list type 0x0000, FORWARD REF, 
+        Derivation list type 0x0000, VT shape type 0x0000
+        Size = 0, class name = KeyCommand
+
+0x1a0b : Length = 78, Leaf = 0x1203 LF_FIELDLIST
+        list[0] = LF_MEMBER, public, type = T_INT4(0074), offset = 0
+                member name = 'pTest'
+        list[1] = LF_MEMBER, public, type = T_32PUCHAR(0420), offset = 4
+                member name = 'pFlag'
+        list[2] = LF_MEMBER, public, type = T_32PRCHAR(0470), offset = 8
+                member name = 'pSequence'
+        list[3] = LF_MEMBER, public, type = T_INT4(0074), offset = 12
+                member name = 'nOffset'
+
+0x1a0c : Length = 34, Leaf = 0x1505 LF_STRUCTURE
+        # members = 4,  field list type 0x1a0b, 
+        Derivation list type 0x0000, VT shape type 0x0000
+        Size = 16, class name = KeyCommand
+
+0x1a0d : Length = 14, Leaf = 0x1503 LF_ARRAY
+        Element type = 0x1A06
+        Index type = T_SHORT(0011)
+        length = 128
+        Name = 
+"""
+
+
+def test_no_udt(empty_parser: CvdumpTypesParser):
+    """Layout functions should not crash if we cannot resolve an intermediate type. GH #591"""
+    empty_parser.read_all(NO_UDT_SAMPLE)
+
+    # TODO: #462.
+    # assert get_name_for_offset(empty_parser, TK(0x1A0C), 0) == ".pTest"
+
+    # TODO: #462. Broken forward ref.
+    # assert get_name_for_offset(empty_parser, TK(0x1A06), 0) == ""
+    # assert get_name_for_offset(empty_parser, TK(0x1A06), 4) == "+4"
+
+    # Array of broken forward ref.
+    assert get_name_for_offset(empty_parser, TK(0x1A0D), 0) == ""
+    assert get_name_for_offset(empty_parser, TK(0x1A0D), 4) == "+4"
+
+    # Caught by datacmp.
+    with pytest.raises(CvdumpKeyError):
+        list(get_scalars(empty_parser, TK(0x1A0D)))
