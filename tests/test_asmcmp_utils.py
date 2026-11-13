@@ -1,14 +1,14 @@
 from reccmp.utils import entity_diff_change, ReccmpDiffJudgement
-from reccmp.compare.report import ReccmpComparedEntity
+from reccmp.report import ReccmpReportEntity
 from reccmp.types import EntityType
 
 
 def entity(
     *, accuracy: float, is_stub: bool = False, is_effective_match: bool = False
-) -> ReccmpComparedEntity:
+) -> ReccmpReportEntity:
     """Helper to create entities with dummy values for required fields: address, name.
     The only relevant fields are: accuracy, is_stub, is_effective_match"""
-    return ReccmpComparedEntity(
+    return ReccmpReportEntity(
         orig_addr=0x400000,
         name="Test",
         accuracy=accuracy,

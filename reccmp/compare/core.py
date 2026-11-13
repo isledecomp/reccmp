@@ -5,7 +5,8 @@ from itertools import zip_longest
 from typing import Callable, Iterator
 from typing_extensions import Self
 from reccmp.project.detect import RecCmpTarget
-from reccmp.compare.diff import EntityCompareResult, RawDiffOutput
+from reccmp.report import ReccmpReportEntity, ReccmpStatusReport
+from reccmp.report.diff import EntityCompareResult, RawDiffOutput
 from reccmp.parser.marker import ProjectAliases, normalize_project_aliases
 from reccmp.dir import source_code_search
 from reccmp.compare.functions import FunctionComparator
@@ -36,7 +37,6 @@ from .match_msvc import (
 )
 from .db import EntityDb, ReccmpEntity, ReccmpMatch
 from .lines import LinesDb
-from .report import ReccmpComparedEntity, ReccmpStatusReport
 from .analyze import (
     create_imports,
     create_import_thunks,
@@ -426,7 +426,7 @@ class Compare:
             match_ratio=ratio,
         )
 
-    def _compare_entity(self, ent: ReccmpEntity) -> ReccmpComparedEntity | None:
+    def _compare_entity(self, ent: ReccmpEntity) -> ReccmpReportEntity | None:
         """Router for comparison type"""
         assert ent.orig_addr is not None
 
@@ -450,7 +450,7 @@ class Compare:
         # Consumers should add a placeholder name
         name = ent.best_name() or ""
 
-        return ReccmpComparedEntity(
+        return ReccmpReportEntity(
             orig_addr=ent.orig_addr,
             name=name,
             accuracy=result.match_ratio,
@@ -476,7 +476,7 @@ class Compare:
     def get_variables(self) -> Iterator[ReccmpMatch]:
         return self._db.get_matches_by_type(EntityType.DATA)
 
-    def compare_address(self, addr: int) -> ReccmpComparedEntity | None:
+    def compare_address(self, addr: int) -> ReccmpReportEntity | None:
         match = self._db.get_one_match(addr)
         if match is None:
             return None
@@ -485,7 +485,7 @@ class Compare:
 
     def compare_all(
         self, filter_fn: Callable[[ReccmpEntity], bool] | None = None
-    ) -> Iterator[ReccmpComparedEntity]:
+    ) -> Iterator[ReccmpReportEntity]:
         for ent in self._db.all(ImageId.ORIG):
             # Thunks are excluded from the report. They always match 100% because
             # they are paired up using the destination of their JMP instruction.
@@ -505,7 +505,7 @@ class Compare:
             if diff is not None:
                 yield diff
 
-    def compare_vtables(self) -> Iterator[ReccmpComparedEntity]:
+    def compare_vtables(self) -> Iterator[ReccmpReportEntity]:
         for match in self.get_vtables():
             diff = self._compare_entity(match)
             if diff is not None:

@@ -1,6 +1,6 @@
 from pathlib import Path
-from reccmp.compare.diff import RawDiffOutput
-from reccmp.compare.report import ReccmpComparedEntity, ReccmpStatusReport
+from reccmp.report.diff import RawDiffOutput
+from reccmp.report import ReccmpReportEntity, ReccmpStatusReport
 from reccmp.difflib import SequenceMatcher
 from reccmp.types import EntityType
 from reccmp.utils import write_html_report
@@ -29,9 +29,9 @@ def function(
     *,
     recomp_addr: int | None = None,
     **kwargs,
-) -> ReccmpComparedEntity:
+) -> ReccmpReportEntity:
     _recomp_addr = recomp_addr if recomp_addr is not None else orig_addr + 0x100000
-    return ReccmpComparedEntity(
+    return ReccmpReportEntity(
         orig_addr=orig_addr,
         name=name,
         accuracy=accuracy,
@@ -41,7 +41,7 @@ def function(
     )
 
 
-def diff_rows() -> list[ReccmpComparedEntity]:
+def diff_rows() -> list[ReccmpReportEntity]:
     return [
         function("IsleApp::IsleApp", 0x401000, 1.0),
         function("IsleApp::Close", 0x401100, 1.0, is_stub=True),
@@ -91,7 +91,7 @@ def diff_rows() -> list[ReccmpComparedEntity]:
     ]
 
 
-def diff_display() -> list[ReccmpComparedEntity]:
+def diff_display() -> list[ReccmpReportEntity]:
     return [
         function(
             "IsleApp::SetupVideoFlags",
@@ -133,7 +133,7 @@ def diff_display() -> list[ReccmpComparedEntity]:
     ]
 
 
-def column_header() -> list[ReccmpComparedEntity]:
+def column_header() -> list[ReccmpReportEntity]:
     """Should create entities that sort differently by address or by name."""
     return [
         function("list<ROI *,allocator<ROI *> >::_Buynode", 0x401000, 1.0),
@@ -142,12 +142,12 @@ def column_header() -> list[ReccmpComparedEntity]:
     ]
 
 
-def single_function() -> list[ReccmpComparedEntity]:
+def single_function() -> list[ReccmpReportEntity]:
     """Intended for tests that do not exercise searching or filtering behavior."""
     return [function("Function", 0x401000, 1.0)]
 
 
-def entity_table() -> list[ReccmpComparedEntity]:
+def entity_table() -> list[ReccmpReportEntity]:
     return [
         function("Vector2::MulImpl(float const &)", 0x401000, 1.0),
         function("list<ROI *,allocator<ROI *> >::_Buynode", 0x401100, 1.0),
@@ -171,7 +171,7 @@ def entity_table() -> list[ReccmpComparedEntity]:
     ]
 
 
-def search_bar() -> list[ReccmpComparedEntity]:
+def search_bar() -> list[ReccmpReportEntity]:
     """The test expects only one entity to contain `mov eax` instructions."""
     return [
         function(
@@ -188,7 +188,7 @@ def search_bar() -> list[ReccmpComparedEntity]:
     ]
 
 
-def table_option() -> list[ReccmpComparedEntity]:
+def table_option() -> list[ReccmpReportEntity]:
     return [
         function("Matching", 0x401000, 1.0),
         function("Stub", 0x401100, 0.0, is_stub=True),
@@ -196,7 +196,7 @@ def table_option() -> list[ReccmpComparedEntity]:
     ]
 
 
-def pagination() -> list[ReccmpComparedEntity]:
+def pagination() -> list[ReccmpReportEntity]:
     """Should create enough entities to cover multiple pages. Default page size is 200."""
     return [
         function("IsleApp::IsleApp", 0x401000, 1.0),

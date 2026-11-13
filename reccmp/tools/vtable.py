@@ -15,8 +15,8 @@ from reccmp.project.detect import (
     argparse_parse_project_target,
     RecCmpProjectException,
 )
-from reccmp.compare.diff import raw_diff_to_udiff
-from reccmp.compare.report import format_address
+from reccmp.report.diff import raw_diff_to_udiff
+from reccmp.report import format_address
 
 logger = logging.getLogger(__name__)
 

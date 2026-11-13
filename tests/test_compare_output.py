@@ -3,12 +3,12 @@
 from unittest.mock import Mock
 from reccmp.compare import Compare
 from reccmp.compare.db import EntityDb
-from reccmp.compare.diff import (
+from reccmp.report.diff import (
     CombinedDiffOutput,
 )
-from reccmp.compare.report import (
+from reccmp.report import (
     ReccmpStatusReport,
-    ReccmpComparedEntity,
+    ReccmpReportEntity,
     deserialize_reccmp_report,
     serialize_reccmp_report,
     report_function_alignment,
@@ -36,7 +36,7 @@ def to_report(compare: Compare) -> ReccmpStatusReport:
     return deserialize_reccmp_report(json_text)
 
 
-def get_udiff(entity: ReccmpComparedEntity) -> CombinedDiffOutput | None:
+def get_udiff(entity: ReccmpReportEntity) -> CombinedDiffOutput | None:
     """This is here for mypy type coercion and to protect against
     changes to the ReccmpStatusReport structure."""
     return entity.udiff
@@ -473,10 +473,10 @@ def test_aggregate_workflow():
 def test_report_function_alignment():
     def test_entity(
         orig_addr: int, recomp_addr: int, entity_type: EntityType
-    ) -> tuple[int, ReccmpComparedEntity]:
+    ) -> tuple[int, ReccmpReportEntity]:
         return (
             orig_addr,
-            ReccmpComparedEntity(
+            ReccmpReportEntity(
                 orig_addr=orig_addr,
                 recomp_addr=recomp_addr,
                 name="hello",
@@ -519,10 +519,10 @@ def test_report_function_accuracy():
         *,
         effective: bool = False,
         stub: bool = False,
-    ) -> tuple[int, ReccmpComparedEntity]:
+    ) -> tuple[int, ReccmpReportEntity]:
         return (
             addr,
-            ReccmpComparedEntity(
+            ReccmpReportEntity(
                 orig_addr=addr,
                 recomp_addr=addr,
                 name="hello",
