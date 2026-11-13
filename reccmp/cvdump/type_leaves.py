@@ -37,16 +37,6 @@ class VirtualBasePointer:
     bases: list[VirtualBaseClass]
 
 
-class LfEnumAttrs(TypedDict):
-    field_list_type: NotRequired[CvdumpTypeKey]
-    is_forward_ref: NotRequired[bool]
-    is_nested: NotRequired[bool]
-    name: NotRequired[str]
-    num_members: NotRequired[int]
-    udt: NotRequired[CvdumpTypeKey]
-    underlying_type: NotRequired[CvdumpTypeKey]
-
-
 class CvdumpParsedType(TypedDict):
     type: str  # leaf type
 
@@ -118,7 +108,7 @@ class TypeLeafString(str, Enum):
 
 # LF_FIELDLIST class/struct member
 LIST_RE = re.compile(
-    r"list\[\d+\] = LF_MEMBER, (?P<scope>\w+), type = (?P<type>[^,]*), offset = (?P<offset>\d+)\s+member name = '(?P<name>[^']*)'"
+    r"list\[\d+\] = LF_MEMBER, (?P<scope>\w+), type = (?P<type>[^,]*), offset = (?P<offset>[^,\n]+)\s+member name = '(?P<name>[^']*)'"
 )
 
 # LF_FIELDLIST vtable indicator
@@ -126,20 +116,20 @@ VTABLE_RE = re.compile(r"list\[\d+\] = LF_VFUNCTAB")
 
 # LF_FIELDLIST superclass indicator
 SUPERCLASS_RE = re.compile(
-    r"list\[\d+\] = LF_BCLASS, (?P<scope>\w+), type = (?P<type>[^,]*), offset = (?P<offset>\d+)"
+    r"list\[\d+\] = LF_BCLASS, (?P<scope>\w+), type = (?P<type>[^,]*), offset = (?P<offset>[^,\n]+)"
 )
 
 # LF_FIELDLIST virtual direct/indirect base pointer
 VBCLASS_RE = re.compile(
-    r"list\[\d+\] = LF_(?P<indirect>I?)VBCLASS, .* base type = (?P<type>[^,]*)\n\s+virtual base ptr = [^,]+, vbpoff = (?P<vboffset>\d+), vbind = (?P<vbindex>\d+)"
+    r"list\[\d+\] = LF_(?P<indirect>I?)VBCLASS, .* base type = (?P<type>[^,]*)\n\s+virtual base ptr = [^,]+, vbpoff = (?P<vboffset>[^,\n]+), vbind = (?P<vbindex>[^,\n]+)"
 )
 
 LF_FIELDLIST_ENUMERATE = re.compile(
-    r"list\[\d+\] = LF_ENUMERATE,.*value = (?:\([\w_]*\)\s)?(?P<value>-?\d+)(?:\([\w_]*\))?, name = '(?P<name>[^']+)'"
+    r"list\[\d+\] = LF_ENUMERATE,.*value = (?P<value>[^,\n]+), name = '(?P<name>[^']+)'"
 )
 
 LF_ARRAY_RE = re.compile(
-    r"\s+Element type = (?P<type>[^\n,]+)\n\s+Index type = [^\n]+\n\s+length = (?:[\w()]+ )?(?P<length>\d+)\n"
+    r"\s+Element type = (?P<type>[^\n,]+)\n\s+Index type = [^\n]+\n\s+length = (?P<length>[^,\n]+)\n"
 )
 
 # LF_CLASS/LF_STRUCTURE field list reference
@@ -148,9 +138,7 @@ CLASS_FIELD_RE = re.compile(
 )
 
 # LF_CLASS/LF_STRUCTURE name and other info
-CLASS_NAME_RE = re.compile(
-    r"\s+Size = (?P<number_type>\([\w_]+\) )?(?P<size>\d+), class name = (?P<name>(?:[^\n,]|,\S)+)(?:, unique name = [^\n,]+)?(?:, UDT\((?P<udt>0x\w+)\))?"
-)
+CLASS_NAME_RE = re.compile(r"\s+Size = (?P<size>[^,\n]+), class name = ")
 
 # LF_MODIFIER, type being modified
 MODIFIES_RE = re.compile(r"\n\s+(?P<modification>.+?), modifies type (?P<type>[^\n,]*)")
@@ -186,21 +174,54 @@ LF_MFUNCTION_RE = re.compile(
     )
 )
 
-LF_ENUM_MEMBER_RE = re.compile(r"^\s*# members = (?P<num_members>\d+)$")
-# the enum name can have both commas and whitespace, so '.+' is okay
-LF_ENUM_NAME_RE = re.compile(r"^\s*enum name = (?P<name>.+)$")
-
-LF_ENUM_TYPES = re.compile(
-    r"^\s*type = (?P<underlying_type>\S+) field list type (?P<field_type>0x\w+)$"
+LF_ENUM_RE = re.compile(
+    r"\s+# members = (?P<num_members>\d+),  type = (?P<underlying_type>\S+) field list type (?P<field_type>0x\w+)\n"
+    r"(?P<flags>.*?)\s*enum name = "
 )
-LF_ENUM_UDT = re.compile(r"^\s*UDT\((?P<udt>0x\w+)\)$")
+
 LF_UNION_LINE = re.compile(
-    r"\s+field list type (?P<field_type>0x\w+),.*Size = (?P<size>\d+)\s*,class name = (?P<name>(?:[^\n,]|,\S)+)(?:, unique name = [^\n,]+)?(?:,\s.*UDT\((?P<udt>0x\w+)\))?"
+    r"\s+field list type (?P<field_type>0x\w+),.*Size = (?P<size>[^,\n]+),class name = "
 )
 
 LF_BITFIELD_LINE = re.compile(
     r"bits = (?P<bitcount>[1-9][0-9]*), starting position = (?P<start>[0-9]*), Type = (?P<type_str>[^(]+)\((?P<type>[0-9a-fA-F]+)\)"
 )
+
+
+def read_numeric(text: str) -> int:
+    """Convert the text of a numeric value to int.
+    Some values (negative or larger than 0x7FFF) have an LF_ prefix representing a packed value.
+    e.g. "(LF_ULONG) 100000" or "(LF_CHAR) -1(0xFF)".
+    See also: PrintNumeric() in dumpsym7.cpp."""
+    text = text.strip()
+    if text.startswith("("):
+        text = text[text.index(" ") + 1 :]
+
+    # Remove hex suffix if present.
+    if (suffix := text.find("(")) != -1:
+        text = text[:suffix]
+
+    return int(text)
+
+
+def read_udt_name(leaf: str) -> tuple[str, str | None]:
+    """Extract the name and UDT (User-Defined Type) id from the
+    LF_CLASS, LF_STRUCTURE, LF_UNION, or LF_ENUM leaf."""
+    start = leaf.index(" name = ") + 8
+    end = leaf.find("\n", start)
+    text = leaf[start:end] if end != -1 else leaf[start:]
+
+    udt = None
+    # If the UDT appears, it is the last element in the leaf text: ", UDT(0x%08x)".
+    if text[-17:-9] == ", UDT(0x":
+        udt = text[-11:-1]
+        text = text[:-17]
+
+    # If a unique (mangled) name also appears, crop it out.
+    if (unique := text.find(", unique name = ")) != -1:
+        text = text[:unique]
+
+    return text, udt
 
 
 def read_modifier(leaf: str, leaf_type: str) -> CvdumpParsedType:
@@ -224,7 +245,7 @@ def read_array(leaf: str, leaf_type: str) -> CvdumpParsedType:
     return {
         "type": leaf_type,
         "array_type": CvdumpTypeKey.from_str(match.group("type")),
-        "size": int(match.group("length")),
+        "size": read_numeric(match.group("length")),
     }
 
 
@@ -238,7 +259,7 @@ def read_fieldlist(leaf: str, leaf_type: str) -> CvdumpParsedType:
     # Superclass is set here in the fieldlist rather than in LF_CLASS
     for match in SUPERCLASS_RE.finditer(leaf):
         superclass_list: dict[CvdumpTypeKey, int] = obj.setdefault("super", {})
-        superclass_list[CvdumpTypeKey.from_str(match.group("type"))] = int(
+        superclass_list[CvdumpTypeKey.from_str(match.group("type"))] = read_numeric(
             match.group("offset")
         )
 
@@ -261,7 +282,7 @@ def read_fieldlist(leaf: str, leaf_type: str) -> CvdumpParsedType:
             )
         )
 
-        vboffset = int(match.group("vboffset"))
+        vboffset = read_numeric(match.group("vboffset"))
 
         if virtual_base_pointer.vboffset == -1:
             # default value
@@ -276,13 +297,13 @@ def read_fieldlist(leaf: str, leaf_type: str) -> CvdumpParsedType:
                 vboffset,
             )
 
-        virtual_base_pointer.bases[-1].index = int(match.group("vbindex"))
+        virtual_base_pointer.bases[-1].index = read_numeric(match.group("vbindex"))
         # these come out of order, and the lists are so short that it's fine to sort them every time
         virtual_base_pointer.bases.sort(key=lambda x: x.index)
 
     members += [
         FieldListItem(
-            offset=int(offset),
+            offset=read_numeric(offset),
             type=CvdumpTypeKey.from_str(type_),
             name=name,
         )
@@ -293,7 +314,7 @@ def read_fieldlist(leaf: str, leaf_type: str) -> CvdumpParsedType:
         obj["members"] = members
 
     variants = [
-        EnumItem(name=name, value=int(value))
+        EnumItem(name=name, value=read_numeric(value))
         for value, name in LF_FIELDLIST_ENUMERATE.findall(leaf)
     ]
     if variants:
@@ -320,12 +341,12 @@ def read_class_or_struct(leaf: str, leaf_type: str) -> CvdumpParsedType:
     # Last line has the vital information.
     # If this is a FORWARD REF, we need to follow the UDT pointer
     # to get the actual class details.
-    obj["name"] = match.group("name")
-    udt = match.group("udt")
+    name, udt = read_udt_name(leaf)
+    obj["name"] = name
     if udt is not None:
         obj["udt"] = CvdumpTypeKey.from_str(udt)
 
-    obj["size"] = int(match.group("size"))
+    obj["size"] = read_numeric(match.group("size"))
 
     return obj
 
@@ -402,59 +423,42 @@ def read_procedure(leaf: str, leaf_type: str) -> CvdumpParsedType:
 
 
 def read_enum(leaf: str, leaf_type: str) -> CvdumpParsedType:
-    obj: CvdumpParsedType = {"type": leaf_type}
+    match = LF_ENUM_RE.search(leaf)
+    assert match is not None
 
-    # TODO: still parsing each line for now
-    for line in leaf.splitlines()[1:]:
-        if not line:
-            continue
-        # We need special comma handling because commas may appear in the name.
-        # Splitting by "," yields the wrong result.
-        enum_attributes = line.split(", ")
-        for pair in enum_attributes:
-            if pair.endswith(","):
-                pair = pair[:-1]
-            if pair.isspace():
-                continue
-            obj |= parse_enum_attribute(pair)
+    name, udt = read_udt_name(leaf)
+    obj: CvdumpParsedType = {
+        "type": leaf_type,
+        "num_members": int(match.group("num_members")),
+        "underlying_type": CvdumpTypeKey.from_str(match.group("underlying_type")),
+        "field_list_type": CvdumpTypeKey.from_str(match.group("field_type")),
+        "name": name,
+    }
+    if udt is not None:
+        obj["udt"] = CvdumpTypeKey.from_str(udt)
+
+    # Flags before the name, e.g. "NESTED, FORWARD REF, \tenum name = ..."
+    for flag in match.group("flags").split(","):
+        flag = flag.strip()
+        if flag == "NESTED":
+            obj["is_nested"] = True
+        elif flag == "FORWARD REF":
+            obj["is_forward_ref"] = True
+        elif flag == "LOCAL":
+            # Present as early as MSVC 7.00; not sure what is significance is and/or if we need it for anything
+            pass
+        elif flag:
+            logger.error("Unknown attribute in enum: %s", flag)
 
     return obj
-
-
-# pylint: disable=too-many-return-statements
-def parse_enum_attribute(attribute: str) -> LfEnumAttrs:
-    if (match := LF_ENUM_MEMBER_RE.match(attribute)) is not None:
-        return {"num_members": int(match.group("num_members"))}
-
-    if (match := LF_ENUM_NAME_RE.match(attribute)) is not None:
-        return {"name": match.group("name")}
-
-    if attribute == "NESTED":
-        return {"is_nested": True}
-    if attribute == "FORWARD REF":
-        return {"is_forward_ref": True}
-    if attribute == "LOCAL":
-        # Present as early as MSVC 7.00; not sure what is significance is and/or if we need it for anything
-        return {}
-    if attribute.startswith("UDT"):
-        match = LF_ENUM_UDT.match(attribute)
-        assert match is not None
-        return {"udt": CvdumpTypeKey.from_str(match.group("udt"))}
-    if (match := LF_ENUM_TYPES.match(attribute)) is not None:
-        return {
-            "underlying_type": CvdumpTypeKey.from_str(match.group("underlying_type")),
-            "field_list_type": CvdumpTypeKey.from_str(match.group("field_type")),
-        }
-
-    logger.error("Unknown attribute in enum: %s", attribute)
-    return {}
 
 
 def read_union(leaf: str, leaf_type: str) -> CvdumpParsedType:
     match = LF_UNION_LINE.search(leaf)
     assert match is not None
 
-    obj: CvdumpParsedType = {"type": leaf_type, "name": match.group("name")}
+    name, udt = read_udt_name(leaf)
+    obj: CvdumpParsedType = {"type": leaf_type, "name": name}
 
     if match.group("field_type") == "0x0000":
         obj["is_forward_ref"] = True
@@ -462,11 +466,10 @@ def read_union(leaf: str, leaf_type: str) -> CvdumpParsedType:
         field_list_type = CvdumpTypeKey.from_str(match.group("field_type"))
         obj["field_list_type"] = field_list_type
 
-    udt = match.group("udt")
     if udt is not None:
         obj["udt"] = CvdumpTypeKey.from_str(udt)
 
-    obj["size"] = int(match.group("size"))
+    obj["size"] = read_numeric(match.group("size"))
 
     return obj
 
