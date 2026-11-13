@@ -63,6 +63,11 @@ All scripts will become available to use in your terminal with the `reccmp-` pre
   * Aggregate using highest accuracy score: `reccmp-aggregate --samples ./sample0.json ./sample1.json ./sample2.json --output ./combined.json`
   * Diff two saved reports: `reccmp-aggregate --diff ./before.json ./after.json`
   * Diff against the aggregate: `reccmp-aggregate --samples ./sample0.json ./sample1.json ./sample2.json --diff ./before.json`
+* [`daemon`](/reccmp/tools/daemon.py): Improves performance of `reccmp-reccmp` by keeping an up-to-date copy of the `reccmp` database running in the background.
+  * `reccmp-daemon start --target LEGO1` will start the daemon. Subsequent runs of `reccmp-reccmp --target LEGO1` will use the daemon's data.
+  * `reccmp-daemon list` shows running daemons for targets in the current project.
+  * `reccmp-daemon stop --target LEGO1` will stop the daemon running for the `LEGO1` target.
+  * Disable daemon interaction with the `--no-daemon` option: `reccmp-reccmp --target LEGO1 --no-daemon`.
 * [`decomplint`](/reccmp/tools/decomplint.py): Checks the decompilation annotations (see above)
   * e.g. `reccmp-decomplint --target LEGO1`
 * [`reccmp`](/reccmp/tools/asmcmp.py): Compares an original binary with a recompiled binary, provided a PDB file. For example:

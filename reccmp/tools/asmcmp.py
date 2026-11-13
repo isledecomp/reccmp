@@ -35,10 +35,13 @@ from reccmp.project.logging import (
     argparse_parse_logging,
 )
 from reccmp.project.detect import (
+    RecCmpProject,
     RecCmpProjectException,
+    RecCmpTarget,
     argparse_add_project_target_args,
     argparse_parse_project_target,
 )
+from reccmp.remote import DaemonClient, DaemonError, find_daemon
 
 logger = logging.getLogger()
 colorama.just_fix_windows_console()
@@ -179,12 +182,48 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Exclude LIBRARY annotations from the analysis",
     )
+    parser.add_argument(
+        "--daemon",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Connect to a reccmp-daemon process for this target",
+    )
     argparse_add_logging_args(parser)
 
     args = parser.parse_args()
     argparse_parse_logging(args)
 
     return args
+
+
+def remote_main(
+    args: argparse.Namespace, target: RecCmpTarget, client: DaemonClient
+) -> int:
+    print()
+
+    try:
+        if args.verbose is not None:
+            match = client.get_match(args.verbose)
+            if match is None:
+                logger.error("Failed to find a match at address 0x%x", args.verbose)
+                return 1
+
+            print_match_verbose(match, show_both_addrs=args.print_rec_addr)
+            return 0
+
+        # Report-with-diffs is not required for most operations.
+        get_diffs = (
+            args.dump
+            or args.html is not None
+            or (args.json is not None and not args.json_diet)
+        )
+        report = client.get_report(diffs=get_diffs, library=not args.nolib)
+    except DaemonError as e:
+        logger.error("%s", e)
+        return 1
+
+    report.asmcmp_filtering(args.nolib, target.report_config.ignore_functions)
+    return print_report_summary(args, target, report)
 
 
 def dump_all_matched_functions(report: ReccmpStatusReport):
@@ -237,6 +276,12 @@ def main() -> int:
 
     logging.basicConfig(level=args.loglevel, format="[%(levelname)s] %(message)s")
 
+    # Daemon option requires --target.
+    if args.target is not None and args.daemon:
+        client = find_daemon(RecCmpProject.from_directory(Path.cwd()), target)
+        if client is not None:
+            return remote_main(args, target, client)
+
     compare = Compare.from_target(target)
 
     print()
@@ -270,6 +315,12 @@ def main() -> int:
         filename=target.original_path.name, filter_fn=entity_filter
     )
 
+    return print_report_summary(args, target, report)
+
+
+def print_report_summary(
+    args: argparse.Namespace, target: RecCmpTarget, report: ReccmpStatusReport
+) -> int:
     if args.dump:
         dump_all_matched_functions(report)
 
