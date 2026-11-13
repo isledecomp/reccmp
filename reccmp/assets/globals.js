@@ -1,4 +1,4 @@
-/** @import {ReccmpSerializedReport, ReccmpComparedEntity, ReccmpProgressCounters} from './types' */
+/** @import {ReccmpSerializedReport, ReccmpReportEntity, ReccmpProgressCounters} from './types' */
 
 // reccmp-pack-begin
 
@@ -11,8 +11,8 @@ const [{ data: global_reccmp_data, ...global_reccmp_metadata }] = [
 const dataDict = Object.fromEntries(
   global_reccmp_data.map(
     /**
-     * @param {ReccmpComparedEntity} row
-     * @returns {[string, ReccmpComparedEntity]}
+     * @param {ReccmpReportEntity} row
+     * @returns {[string, ReccmpReportEntity]}
      */
     (row) => [row.address, row],
   ),
@@ -20,7 +20,7 @@ const dataDict = Object.fromEntries(
 
 /**
  * @param {string} addr
- * @returns {ReccmpComparedEntity}
+ * @returns {ReccmpReportEntity}
  */
 function getDataByAddr(addr) {
   return dataDict[addr];
@@ -47,7 +47,7 @@ const EntityType = {
 
 /**
  * Entities without a type (from older reports) are considered functions.
- * @param {ReccmpComparedEntity} row
+ * @param {ReccmpReportEntity} row
  * @returns {boolean}
  */
 function isFunction(row) {

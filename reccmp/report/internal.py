@@ -21,7 +21,7 @@ class ReccmpReportSameSourceError(Exception):
 
 
 @dataclass
-class ReccmpComparedEntity:
+class ReccmpReportEntity:
     # pylint:disable=too-many-instance-attributes
     orig_addr: int
     name: str
@@ -68,7 +68,7 @@ class ReccmpStatusReport:
     timestamp: datetime
     """Creation date of the report file."""
 
-    entities: dict[int, ReccmpComparedEntity]
+    entities: dict[int, ReccmpReportEntity]
     """Using orig addr as the key."""
 
     from_version: int | None
@@ -94,7 +94,7 @@ class ReccmpStatusReport:
 
         self.entities = {}
 
-    def add_match(self, match: ReccmpComparedEntity):
+    def add_match(self, match: ReccmpReportEntity):
         self.entities[match.orig_addr] = match
 
     def has_same_source(self, other: "ReccmpStatusReport") -> bool:
@@ -105,9 +105,7 @@ class ReccmpStatusReport:
         counted_type = sum(1 for ent in self.entities.values() if ent.is_function())
         self.function_count = max(self.function_count, counted_type)
 
-    def filter_entities(
-        self, filter_fn: Callable[[ReccmpComparedEntity], bool]
-    ) -> None:
+    def filter_entities(self, filter_fn: Callable[[ReccmpReportEntity], bool]) -> None:
         """Delete entities that return False from the provided filter function."""
         # Set the count in case it has never been set.
         self.update_function_count()
@@ -133,7 +131,7 @@ class ReccmpStatusReport:
         Compare with `entity_filter` in asmcmp.py that acts on the `ReccmpEntity` object.
         """
 
-        def entity_filter(entity: ReccmpComparedEntity) -> bool:
+        def entity_filter(entity: ReccmpReportEntity) -> bool:
             if entity.is_function() and entity.name in ignore_functions:
                 return False
 
@@ -177,14 +175,14 @@ def report_function_accuracy(report: ReccmpStatusReport) -> tuple[int, float, fl
 
 def _get_entity_for_addr(
     samples: Iterable[ReccmpStatusReport], addr: int
-) -> Iterator[ReccmpComparedEntity]:
+) -> Iterator[ReccmpReportEntity]:
     """Helper to return entities from xreports that have the given address."""
     for sample in samples:
         if addr in sample.entities:
             yield sample.entities[addr]
 
 
-def _accuracy_sort_key(entity: ReccmpComparedEntity) -> float:
+def _accuracy_sort_key(entity: ReccmpReportEntity) -> float:
     """Helper to sort entity samples by accuracy score.
     100% match is preferred over effective match.
     Effective match is preferred over any accuracy.

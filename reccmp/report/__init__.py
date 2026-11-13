@@ -1,7 +1,7 @@
 from pydantic import ValidationError
 from pydantic_core import from_json
 from .internal import (
-    ReccmpComparedEntity,
+    ReccmpReportEntity,
     ReccmpReportDeserializeError,
     ReccmpReportSameSourceError,
     ReccmpStatusReport,

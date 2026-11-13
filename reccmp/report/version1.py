@@ -4,10 +4,10 @@ from typing import Literal
 from pydantic import BaseModel
 from reccmp.types import EntityType
 from .diff import CombinedDiffOutput, raw_diff_to_udiff
-from .internal import ReccmpComparedEntity, ReccmpStatusReport, format_address
+from .internal import ReccmpReportEntity, ReccmpStatusReport, format_address
 
 
-def get_udiff_for_entity(entity: ReccmpComparedEntity) -> CombinedDiffOutput | None:
+def get_udiff_for_entity(entity: ReccmpReportEntity) -> CombinedDiffOutput | None:
     """Create a unified diff for this entity to add to a version 1 report.
 
     If the entity was imported from a version 1 report and we already have a unified diff, use it.
@@ -148,7 +148,7 @@ def _deserialize_version_1(obj: JSONReportVersion1) -> ReccmpStatusReport:
             recomp_addr = int(e.recomp, 16) if e.recomp is not None else None
             various = False
 
-        report.entities[orig_addr] = ReccmpComparedEntity(
+        report.entities[orig_addr] = ReccmpReportEntity(
             orig_addr=orig_addr,
             name=e.name,
             accuracy=e.matching,

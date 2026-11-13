@@ -22,7 +22,7 @@ from reccmp.compare.db import ReccmpEntity
 from reccmp.report.diff import raw_diff_to_udiff
 from reccmp.report import (
     ReccmpStatusReport,
-    ReccmpComparedEntity,
+    ReccmpReportEntity,
     deserialize_reccmp_report,
     serialize_reccmp_report,
     report_function_alignment,
@@ -51,7 +51,7 @@ def gen_json(json_file: str, json_str: str):
         f.write(json_str)
 
 
-def print_match_verbose(match: ReccmpComparedEntity, show_both_addrs: bool = False):
+def print_match_verbose(match: ReccmpReportEntity, show_both_addrs: bool = False):
     percenttext = percent_string(match.effective_accuracy, match.is_effective_match)
 
     if show_both_addrs and match.recomp_addr is not None:
@@ -84,7 +84,7 @@ def print_match_verbose(match: ReccmpComparedEntity, show_both_addrs: bool = Fal
         )
 
 
-def print_match_oneline(match: ReccmpComparedEntity, show_both_addrs: bool = False):
+def print_match_oneline(match: ReccmpReportEntity, show_both_addrs: bool = False):
     percenttext = percent_string(match.effective_accuracy, match.is_effective_match)
 
     if show_both_addrs and match.recomp_addr is not None:

@@ -7,7 +7,7 @@ from datetime import datetime
 import pytest
 from reccmp.report import (
     ReccmpStatusReport,
-    ReccmpComparedEntity,
+    ReccmpReportEntity,
     ReccmpReportDeserializeError,
     deserialize_reccmp_report,
     serialize_reccmp_report,
@@ -265,7 +265,7 @@ def test_serialize_address():
     """Serialized addresses are lowercase hex with the "0x" prefix and no padding digits."""
     addr = 0x40A000
     report = ReccmpStatusReport(filename="test.exe")
-    report.entities[addr] = ReccmpComparedEntity(
+    report.entities[addr] = ReccmpReportEntity(
         orig_addr=addr,
         name="test",
         accuracy=1.0,
@@ -285,7 +285,7 @@ def test_serialize_address_and_dict_key_out_of_sync():
     By nature of using a `dict` for report.entities, the key and the entity's `orig_addr`
     could disagree, but it should never happen in normal operation."""
     report = ReccmpStatusReport(filename="test.exe")
-    report.entities[0x100] = ReccmpComparedEntity(
+    report.entities[0x100] = ReccmpReportEntity(
         orig_addr=0x200,
         name="test",
         accuracy=1.0,
@@ -300,7 +300,7 @@ def test_serialize_address_and_dict_key_out_of_sync():
 def test_serialize_prefer_existing_udiff():
     """Do not recreate the unified diff if the entity already has one."""
     report = ReccmpStatusReport(filename="test.exe")
-    report.entities[0x100] = ReccmpComparedEntity(
+    report.entities[0x100] = ReccmpReportEntity(
         orig_addr=0x100,
         name="test",
         accuracy=1.0,
@@ -322,7 +322,7 @@ def test_serialize_prefer_existing_udiff():
 def test_serialize_excludes_defaults():
     """Any fields set to a default value are omitted. This is to save space."""
     report = ReccmpStatusReport(filename="test.exe")
-    report.entities[0x100] = ReccmpComparedEntity(
+    report.entities[0x100] = ReccmpReportEntity(
         orig_addr=0x100,
         name="test",
         accuracy=1.0,
@@ -359,7 +359,7 @@ def test_serialize_existing_timestamp():
 def test_serialize_updates_function_count():
     """Recalculate the function count before serializing."""
     report = ReccmpStatusReport(filename="test.exe")
-    report.entities[0x100] = ReccmpComparedEntity(
+    report.entities[0x100] = ReccmpReportEntity(
         orig_addr=0x100,
         name="test",
         accuracy=1.0,
@@ -378,7 +378,7 @@ def test_serialize_recomp_addr_varies():
     """An entity created with `reccmp-aggregate` that does not have
     a fixed recomp addr should use the magic string `various`."""
     report = ReccmpStatusReport(filename="test.exe")
-    report.entities[0x100] = ReccmpComparedEntity(
+    report.entities[0x100] = ReccmpReportEntity(
         orig_addr=0x100,
         name="test",
         accuracy=1.0,
@@ -394,7 +394,7 @@ def test_serialize_recomp_addr_varies():
 def test_serialize_omits_unmatched_entities():
     """Version 1 reports contain only matched entities."""
     report = ReccmpStatusReport(filename="test.exe")
-    report.entities[0x100] = ReccmpComparedEntity(
+    report.entities[0x100] = ReccmpReportEntity(
         orig_addr=0x100,
         name="test",
         accuracy=1.0,
