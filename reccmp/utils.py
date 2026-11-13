@@ -7,7 +7,7 @@ import logging
 from pystache import Renderer  # type: ignore[import-untyped]
 from reccmp.assets import get_asset_file
 import reccmp.color
-from reccmp.compare.report import (
+from reccmp.report import (
     ReccmpStatusReport,
     ReccmpComparedEntity,
     serialize_reccmp_report,

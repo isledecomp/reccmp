@@ -1,6 +1,6 @@
 from pathlib import Path
-from reccmp.compare.diff import RawDiffOutput
-from reccmp.compare.report import ReccmpComparedEntity, ReccmpStatusReport
+from reccmp.report.diff import RawDiffOutput
+from reccmp.report import ReccmpComparedEntity, ReccmpStatusReport
 from reccmp.difflib import SequenceMatcher
 from reccmp.types import EntityType
 from reccmp.utils import write_html_report

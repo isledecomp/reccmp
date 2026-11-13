@@ -5,14 +5,14 @@ to be compatible because missing fields get a default value."""
 import json
 from datetime import datetime
 import pytest
-from reccmp.compare.report import (
+from reccmp.report import (
     ReccmpStatusReport,
     ReccmpComparedEntity,
     ReccmpReportDeserializeError,
     deserialize_reccmp_report,
     serialize_reccmp_report,
 )
-from reccmp.compare.diff import CombinedDiffOutput, RawDiffOutput
+from reccmp.report.diff import CombinedDiffOutput, RawDiffOutput
 from reccmp.types import EntityType
 
 

@@ -13,7 +13,7 @@ from reccmp.compare.asm.replacement import (
     create_name_lookup,
 )
 from reccmp.compare.db import EntityDb, ReccmpMatch
-from reccmp.compare.diff import EntityCompareResult, RawDiffOutput
+from reccmp.report.diff import EntityCompareResult, RawDiffOutput
 from reccmp.compare.event import ReccmpEvent, ReccmpReportProtocol
 from reccmp.compare.type_layout import get_name_for_offset
 from reccmp.cvdump.types import CvdumpTypesParser

@@ -1,5 +1,5 @@
 from reccmp.utils import entity_diff_change, ReccmpDiffJudgement
-from reccmp.compare.report import ReccmpComparedEntity
+from reccmp.report import ReccmpComparedEntity
 from reccmp.types import EntityType
 
 

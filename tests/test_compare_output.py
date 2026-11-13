@@ -3,10 +3,10 @@
 from unittest.mock import Mock
 from reccmp.compare import Compare
 from reccmp.compare.db import EntityDb
-from reccmp.compare.diff import (
+from reccmp.report.diff import (
     CombinedDiffOutput,
 )
-from reccmp.compare.report import (
+from reccmp.report import (
     ReccmpStatusReport,
     ReccmpComparedEntity,
     deserialize_reccmp_report,

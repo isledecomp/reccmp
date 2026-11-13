@@ -19,8 +19,8 @@ from reccmp.utils import (
 
 from reccmp.compare import Compare
 from reccmp.compare.db import ReccmpEntity
-from reccmp.compare.diff import raw_diff_to_udiff
-from reccmp.compare.report import (
+from reccmp.report.diff import raw_diff_to_udiff
+from reccmp.report import (
     ReccmpStatusReport,
     ReccmpComparedEntity,
     deserialize_reccmp_report,

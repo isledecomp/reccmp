@@ -5,7 +5,8 @@ from itertools import zip_longest
 from typing import Callable, Iterator
 from typing_extensions import Self
 from reccmp.project.detect import RecCmpTarget
-from reccmp.compare.diff import EntityCompareResult, RawDiffOutput
+from reccmp.report import ReccmpComparedEntity, ReccmpStatusReport
+from reccmp.report.diff import EntityCompareResult, RawDiffOutput
 from reccmp.parser.marker import ProjectAliases, normalize_project_aliases
 from reccmp.dir import source_code_search
 from reccmp.compare.functions import FunctionComparator
@@ -36,7 +37,6 @@ from .match_msvc import (
 )
 from .db import EntityDb, ReccmpEntity, ReccmpMatch
 from .lines import LinesDb
-from .report import ReccmpComparedEntity, ReccmpStatusReport
 from .analyze import (
     create_imports,
     create_import_thunks,
