@@ -327,7 +327,7 @@ class RecCmpProject:
         return UserFile.from_file(self.user_config_path)
 
     @classmethod
-    def from_directory(cls, directory: Path) -> "RecCmpProject":
+    def from_directory(cls, directory: Path, alert: bool = True) -> "RecCmpProject":
         project = cls()
 
         # Searching for reccmp-build.yml
@@ -360,11 +360,12 @@ class RecCmpProject:
         user_config_directory = project_directory
         user_data = project.find_user_config(user_config_directory)
 
-        verify_target_names(
-            project_keys=set(project_data.targets) if project_data else set(),
-            user_keys=set(user_data.targets) if user_data else set(),
-            build_keys=set(build_data.targets) if build_data else set(),
-        )
+        if alert:
+            verify_target_names(
+                project_keys=set(project_data.targets) if project_data else set(),
+                user_keys=set(user_data.targets) if user_data else set(),
+                build_keys=set(build_data.targets) if build_data else set(),
+            )
 
         # Apply reccmp-project.yml
         assert project_data is not None

@@ -73,7 +73,7 @@ def list_daemons(project: RecCmpProject):
 def main():
     args = parse_args()
 
-    project = RecCmpProject.from_directory(Path.cwd())
+    project = RecCmpProject.from_directory(Path.cwd(), alert=False)
 
     if args.subcommand == DaemonSubcommand.LIST:
         list_daemons(project)

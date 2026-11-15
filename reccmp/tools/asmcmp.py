@@ -278,7 +278,9 @@ def main() -> int:
 
     # Daemon option requires --target.
     if args.target is not None and args.daemon:
-        client = find_daemon(RecCmpProject.from_directory(Path.cwd()), target)
+        client = find_daemon(
+            RecCmpProject.from_directory(Path.cwd(), alert=False), target
+        )
         if client is not None:
             return remote_main(args, target, client)
 
