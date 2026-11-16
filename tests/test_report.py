@@ -1,9 +1,9 @@
 """Reccmp reports: files that contain the comparison result from asmcmp."""
 
 import pytest
-from reccmp.compare.report import (
+from reccmp.report import (
     ReccmpStatusReport,
-    ReccmpComparedEntity,
+    ReccmpReportEntity,
     combine_reports,
     ReccmpReportSameSourceError,
 )
@@ -17,7 +17,7 @@ def create_report(
     report = ReccmpStatusReport(filename="test.exe")
     if entities is not None:
         for addr, accuracy in entities:
-            report.entities[addr] = ReccmpComparedEntity(
+            report.entities[addr] = ReccmpReportEntity(
                 addr, "test", accuracy, EntityType.FUNCTION
             )
 
@@ -173,9 +173,9 @@ def add_entity(
     accuracy: float = 1.0,
     entity_type: EntityType = EntityType.FUNCTION,
     library: bool = False,
-) -> ReccmpComparedEntity:
+) -> ReccmpReportEntity:
     """Helper to add an entity with the attributes used by the filter tests."""
-    entity = ReccmpComparedEntity(
+    entity = ReccmpReportEntity(
         orig_addr=addr,
         name=name,
         accuracy=accuracy,

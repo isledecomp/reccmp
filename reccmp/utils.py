@@ -7,9 +7,9 @@ import logging
 from pystache import Renderer  # type: ignore[import-untyped]
 from reccmp.assets import get_asset_file
 import reccmp.color
-from reccmp.compare.report import (
+from reccmp.report import (
     ReccmpStatusReport,
-    ReccmpComparedEntity,
+    ReccmpReportEntity,
     serialize_reccmp_report,
     format_address,
 )
@@ -255,14 +255,14 @@ def percent_string(
 
 def diff_json_display(
     show_both_addrs: bool = False, is_plain: bool = False
-) -> Callable[[int, ReccmpComparedEntity | None, ReccmpComparedEntity | None], str]:
+) -> Callable[[int, ReccmpReportEntity | None, ReccmpReportEntity | None], str]:
     """Generate a function that will display the diff according to
     the reccmp display preferences."""
 
     def formatter(
         orig_addr: int,
-        saved: ReccmpComparedEntity | None,
-        new: ReccmpComparedEntity | None,
+        saved: ReccmpReportEntity | None,
+        new: ReccmpReportEntity | None,
     ) -> str:
         old_pct = "new"
         new_pct = "gone"
@@ -331,7 +331,7 @@ class ReccmpDiffJudgement(enum.Enum):
 
 # pylint: disable=too-many-return-statements
 def entity_diff_change(
-    saved: ReccmpComparedEntity | None, new: ReccmpComparedEntity | None
+    saved: ReccmpReportEntity | None, new: ReccmpReportEntity | None
 ) -> ReccmpDiffJudgement:
     if saved is None and new is not None:
         return ReccmpDiffJudgement.NEW

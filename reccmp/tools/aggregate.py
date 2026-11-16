@@ -6,7 +6,7 @@ import logging
 from typing import Sequence
 from pathlib import Path
 from reccmp.utils import diff_json, gen_svg, write_html_report
-from reccmp.compare.report import (
+from reccmp.report import (
     ReccmpStatusReport,
     combine_reports,
     ReccmpReportDeserializeError,

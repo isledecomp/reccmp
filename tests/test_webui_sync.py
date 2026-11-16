@@ -2,7 +2,7 @@
 
 import re
 import pytest
-from reccmp.compare.report import ReccmpStatusReport
+from reccmp.report import ReccmpStatusReport
 from reccmp.types import EntityType
 from reccmp.utils import write_html_report
 

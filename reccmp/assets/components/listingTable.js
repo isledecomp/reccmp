@@ -1,9 +1,9 @@
 import { ReccmpRegisterEvent, ReccmpSortColEvent, ReccmpTableEvent, ReccmpToggleExpandedEvent } from '../events';
 
-/** @import { ColumnNames, ReccmpComparedEntity, ReccmpInternalState } from '../types' */
+/** @import { ColumnNames, ReccmpReportEntity, ReccmpInternalState } from '../types' */
 
 // reccmp-pack-begin
-/** @param {ReccmpComparedEntity} row */
+/** @param {ReccmpReportEntity} row */
 function countDiffs(row) {
   const { diff = '' } = row;
   if (diff === '') {
@@ -17,7 +17,7 @@ function countDiffs(row) {
 }
 
 /**
- * @param {ReccmpComparedEntity} row
+ * @param {ReccmpReportEntity} row
  * @returns {string}
  */
 function getMatchPercentText(row) {
@@ -33,7 +33,7 @@ function getMatchPercentText(row) {
 }
 
 /**
- * @param {ReccmpComparedEntity} obj
+ * @param {ReccmpReportEntity} obj
  * @param {boolean} showRecomp
  * @returns {HTMLTableRowElement}
  */
@@ -65,7 +65,7 @@ function createDiffRow(obj, showRecomp) {
 }
 
 /**
- * @param {ReccmpComparedEntity} obj
+ * @param {ReccmpReportEntity} obj
  * @param {boolean} showRecomp
  * @returns {HTMLTableRowElement}
  */

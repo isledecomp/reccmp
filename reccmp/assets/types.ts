@@ -9,7 +9,7 @@ export interface MatchingOrMismatchingBlock {
 
 export type UnifiedDiffGroup = [slug: string, groups: MatchingOrMismatchingBlock[]];
 
-export interface ReccmpComparedEntity {
+export interface ReccmpReportEntity {
   address: string;
   matching: number;
   name: string;
@@ -23,11 +23,11 @@ export interface ReccmpComparedEntity {
   key?: Record<ColumnNames, string | number | boolean>;
 }
 
-// Not using "keyof ReccmpComparedEntity" because that includes optional props.
+// Not using "keyof ReccmpReportEntity" because that includes optional props.
 export type ColumnNames = 'address' | 'matching' | 'name' | 'recomp';
 
 export interface ReccmpSerializedReport {
-  data: ReccmpComparedEntity[];
+  data: ReccmpReportEntity[];
   file: string;
   format: string;
   timestamp: number;
@@ -45,10 +45,10 @@ export interface ReccmpProgressCounters {
 }
 
 export interface ReccmpInternalState {
-  results: ReccmpComparedEntity[];
+  results: ReccmpReportEntity[];
 
   // Results split into subarrays according to the pageSize.
-  pages: ReccmpComparedEntity[][];
+  pages: ReccmpReportEntity[][];
 
   // Sort column and direction
   sortCol: ColumnNames;
@@ -69,7 +69,7 @@ export interface ReccmpInternalState {
   expanded: Record<string, boolean>;
 
   // Paging. Numbers are 0-based. Display components add 1 to both for.
-  currentPage: ReccmpComparedEntity[];
+  currentPage: ReccmpReportEntity[];
   pageNumber: number;
   maxPageNumber: number;
   pageSize: number;

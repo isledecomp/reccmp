@@ -4,7 +4,7 @@
  *   DiffFragBoth,
  *   DiffFragSingle,
  *   MatchingOrMismatchingBlock,
- *   ReccmpComparedEntity,
+ *   ReccmpReportEntity,
  *   ReccmpInternalState,
  * } from "./types"
  */
@@ -16,7 +16,7 @@
  * 2. Any match percentage [0.0, 1.0)
  * 3. Effective match
  * 4. Actual 100% match
- * @param {ReccmpComparedEntity} row
+ * @param {ReccmpReportEntity} row
  * @returns {number}
  */
 function getRowSortValue(row) {
@@ -43,12 +43,12 @@ function getRowSortValue(row) {
  * @param {Object} args
  * @param {ColumnNames} args.sortCol
  * @param {boolean} args.sortDesc
- * @returns {(x: ReccmpComparedEntity, y: ReccmpComparedEntity) => number}
+ * @returns {(x: ReccmpReportEntity, y: ReccmpReportEntity) => number}
  */
 function createSortFunction({ sortCol, sortDesc }) {
   /**
-   * @param {ReccmpComparedEntity} rowA
-   * @param {ReccmpComparedEntity} rowB
+   * @param {ReccmpReportEntity} rowA
+   * @param {ReccmpReportEntity} rowB
    * @returns {number}
    */
   return (rowA, rowB) => {
@@ -71,13 +71,13 @@ function createSortFunction({ sortCol, sortDesc }) {
  * @param {boolean} args.hideStub
  * @param {string} args.query
  * @param {number} args.filterType
- * @returns {(row: ReccmpComparedEntity) => boolean}
+ * @returns {(row: ReccmpReportEntity) => boolean}
  */
 function createFilterFunction({ hidePerfect, hideStub, query, filterType }) {
   const queryNormalized = query.toLowerCase().trim();
 
   /**
-   * @param {ReccmpComparedEntity} row
+   * @param {ReccmpReportEntity} row
    * @returns {boolean}
    */
   return (row) => {
@@ -132,9 +132,9 @@ function createFilterFunction({ hidePerfect, hideStub, query, filterType }) {
 }
 
 /**
- * @param {ReccmpComparedEntity[]} input
+ * @param {ReccmpReportEntity[]} input
  * @param {number} chunkSize
- * @returns {ReccmpComparedEntity[][]}
+ * @returns {ReccmpReportEntity[][]}
  */
 function batched(input, chunkSize) {
   /**
@@ -154,11 +154,11 @@ function batched(input, chunkSize) {
 }
 
 class ReccmpState {
-  /** @param {ReccmpComparedEntity[]} dataset */
+  /** @param {ReccmpReportEntity[]} dataset */
   constructor(dataset) {
     /**
      * @readonly
-     * @type {ReccmpComparedEntity[]}
+     * @type {ReccmpReportEntity[]}
      */
     this.dataset = dataset;
 

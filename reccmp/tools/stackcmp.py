@@ -9,7 +9,7 @@ import colorama
 import reccmp
 import reccmp.color
 from reccmp.compare import Compare
-from reccmp.compare.diff import (
+from reccmp.report.diff import (
     CombinedDiffOutput,
     MatchingOrMismatchingBlock,
     raw_diff_to_udiff,

@@ -2,7 +2,7 @@
  * @import {
  *   DiffFragBoth,
  *   DiffFragSingle,
- *   ReccmpComparedEntity,
+ *   ReccmpReportEntity,
  *   ColumnNames,
  *   MatchingOrMismatchingBlock
  * } from "../types"

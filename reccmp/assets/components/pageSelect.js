@@ -1,4 +1,4 @@
-/** @import { ColumnNames, ReccmpComparedEntity, ReccmpInternalState } from '../types' */
+/** @import { ColumnNames, ReccmpReportEntity, ReccmpInternalState } from '../types' */
 
 import { ReccmpRegisterEvent, ReccmpSetPageEvent } from '../events';
 import { getMatchPercentText } from './listingTable';
@@ -34,7 +34,7 @@ function stringTruncate(str, maxlen = 20) {
 }
 
 /**
- * @param {ReccmpComparedEntity[][]} pages
+ * @param {ReccmpReportEntity[][]} pages
  * @param {ColumnNames} sortCol
  * @returns {[number, string, string][]}
  */
