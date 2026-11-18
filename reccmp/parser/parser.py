@@ -7,6 +7,8 @@ from typing import Iterator
 from .util import (
     get_class_name,
     get_variable_name,
+    is_record_type_head,
+    is_typedef,
     unwrap_line_comment,
     get_string_contents,
 )
@@ -459,11 +461,33 @@ class DecompParser:
         variable_name = None
         failure_code = AlertCode.NO_SUITABLE_NAME
         code_token: CodeToken | None = None
+        first_code_token: CodeToken | None = None
+        # End position of an inline struct/union/class body we are skipping.
+        record_end = -1
 
         for start, stop, token in candidates:
+            if start <= record_end:
+                # Skip the members of an inline record type.
+                # e.g. `struct { int x; } g_variable;`
+                continue
+
             if token == TokenType.CODE:
                 # Use the last code token
                 code_token = (start, stop, token)
+                if first_code_token is None:
+                    first_code_token = code_token
+
+            if (
+                token == TokenType.CURLY_OPEN
+                and code_token is not None
+                and start in self.enclosures
+                and is_record_type_head(text[code_token[0] : code_token[1]])
+            ):
+                # The variable name follows the closing bracket, if there is one.
+                record_end = self.enclosures[start]
+                code_token = None
+                failure_code = AlertCode.GLOBAL_NOT_VARIABLE
+                continue
 
             if code_token is None and token == TokenType.LINE_COMMENT:
                 excerpt = text[start:stop]
@@ -474,6 +498,13 @@ class DecompParser:
 
             if token in (TokenType.EQUAL, TokenType.SEMICOLON):
                 break
+
+        if first_code_token and is_typedef(
+            text[first_code_token[0] : first_code_token[1]]
+        ):
+            # A typedef declares a type, not a variable.
+            code_token = None
+            failure_code = AlertCode.GLOBAL_NOT_VARIABLE
 
         if code_token:
             start, stop, _ = code_token

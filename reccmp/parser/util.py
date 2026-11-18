@@ -85,6 +85,24 @@ global_regex = re.compile(
 )
 
 
+# The code before the `{` of an inline record type: `struct`, `union` or `class`,
+# optionally named and with base classes. e.g. `struct { int x; } g_var;`
+record_type_head_regex = re.compile(r"\b(?:struct|union|class)\b[^;=(){}]*$")
+
+typedef_regex = re.compile(r"^\s*typedef\b")
+
+
+def is_record_type_head(code: str) -> bool:
+    """Does the code end with the head of a struct/union/class definition?
+    That is: the text before its opening curly bracket."""
+    return record_type_head_regex.search(code) is not None
+
+
+def is_typedef(code: str) -> bool:
+    """Does the code begin a typedef declaration?"""
+    return typedef_regex.match(code) is not None
+
+
 def get_variable_name(line: str) -> str | None:
     """Grab the name of the variable annotated with the GLOBAL marker."""
 
