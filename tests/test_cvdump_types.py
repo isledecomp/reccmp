@@ -1491,3 +1491,26 @@ def test_no_udt(empty_parser: CvdumpTypesParser):
     # Caught by datacmp.
     with pytest.raises(CvdumpKeyError):
         list(get_scalars(empty_parser, TK(0x1A0D)))
+
+
+BITFIELD_ENUM_SAMPLE = """
+0x2e63 : Length = 74, Leaf = 0x1203 LF_FIELDLIST
+    list[0] = LF_ENUMERATE, public, value = 0, name = 'DN_valid'
+    list[1] = LF_ENUMERATE, public, value = 1, name = 'DN_truncated'
+    list[2] = LF_ENUMERATE, public, value = 2, name = 'DN_invalid'
+    list[3] = LF_ENUMERATE, public, value = 3, name = 'DN_error'
+
+0x2e64 : Length = 46, Leaf = 0x1507 LF_ENUM
+    # members = 4,  type = T_INT4(0074) field list type 0x2e63
+    enum name = DNameStatus, UDT(0x00002e64)
+
+0x2ece : Length = 10, Leaf = 0x1205 LF_BITFIELD
+    bits = 8, starting position = 0, Type = 0x2E64
+"""
+
+
+def test_bitfield_with_enum(empty_parser: CvdumpTypesParser):
+    """Should parse a bitfield leaf with non-primitive underlying type."""
+    empty_parser.read_all(BITFIELD_ENUM_SAMPLE)
+    assert empty_parser.get(TK(0x2ECE))
+    assert empty_parser.underlying_type(TK(0x2ECE)) == TK(0x2E64)

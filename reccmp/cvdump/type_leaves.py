@@ -184,7 +184,7 @@ LF_UNION_LINE = re.compile(
 )
 
 LF_BITFIELD_LINE = re.compile(
-    r"bits = (?P<bitcount>[1-9][0-9]*), starting position = (?P<start>[0-9]*), Type = (?P<type_str>[^(]+)\((?P<type>[0-9a-fA-F]+)\)"
+    r"bits = (?P<bitcount>[1-9][0-9]*), starting position = (?P<start>[0-9]*), Type = (?P<type>[^\n,]+)"
 )
 
 
@@ -482,7 +482,7 @@ def read_bitfield(leaf: str, leaf_type: str) -> CvdumpParsedType:
         "type": leaf_type,
         "bit_start": int(match.group("start")),
         "bit_count": int(match.group("bitcount")),
-        "bit_type": CvdumpTypeKey(int(match.group("type"), 16)),
+        "bit_type": CvdumpTypeKey.from_str(match.group("type")),
     }
 
     return obj
