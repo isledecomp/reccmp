@@ -15,7 +15,7 @@ FUNCINFO_MAGIC_RE = re.compile(rb"\x20\x05\x93\x19", flags=re.S)
 
 
 # Match `mov eax, ____` instructions followed by jmp opcode. `B8 .... E9`
-MOV_EAX_RE = re.compile(rb"(?=\xb8(.{4})\xe9)", flags=re.S)
+MOV_EAX_RE = re.compile(rb"\xb8(?=(.{4})\xe9)", flags=re.S)
 
 
 class UnwindMapEntry(NamedTuple):

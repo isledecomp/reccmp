@@ -50,7 +50,7 @@ FLOAT_OPCODES = frozenset([*SINGLE_PRECISION_OPCODES, *DOUBLE_PRECISION_OPCODES]
 # Match a superset of the floating point instructions above.
 # Uses positive lookahead to support overlapping matches.
 FLOAT_INSTRUCTION_RE = re.compile(
-    rb"(?=([\xd8\xd9\xdc\xdd][\x05\x0d\x15\x1d\x25\x2d\x35\x3d].{4}))", flags=re.S
+    rb"[\xd8\xd9\xdc\xdd][\x05\x0d\x15\x1d\x25\x2d\x35\x3d](?=(.{4}))", flags=re.S
 )
 
 
@@ -71,11 +71,11 @@ def find_float_instructions_in_buffer(
     TODO: Uses `bytes` as the generic type for the Buffer protocol. See PEP 688 added in Python 3.12.
     """
     for match in FLOAT_INSTRUCTION_RE.finditer(buf):
-        inst = match.group(1)
+        inst = match.group(0)
         opcode = (inst[0], inst[1])
 
         if opcode in FLOAT_OPCODES:
-            (pointer,) = struct.unpack("<I", inst[2:6])
+            (pointer,) = struct.unpack("<I", match.group(1))
             yield FloatInstruction(base_addr + match.start(), opcode, pointer)
 
 

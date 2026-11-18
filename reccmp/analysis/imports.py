@@ -5,7 +5,7 @@ from typing_extensions import Buffer
 from reccmp.formats import PEImage
 
 # Match 6 byte absolute jump instructions.
-ABS_JUMP_RE = re.compile(rb"(?<=\xff\x25).{4}", flags=re.S)
+ABS_JUMP_RE = re.compile(rb"\xff\x25(?=(.{4}))", flags=re.S)
 
 
 class ImportThunk(NamedTuple):
@@ -24,8 +24,8 @@ def find_absolute_jumps_in_bytes(
     If the base addr is given, add it to the offset of the instruction to get an absolute address.
     """
     for match in ABS_JUMP_RE.finditer(raw):
-        (jmp_dest,) = struct.unpack("<I", match.group(0))
-        yield (base_addr + match.start() - 2, jmp_dest)
+        (jmp_dest,) = struct.unpack("<I", match.group(1))
+        yield (base_addr + match.start(), jmp_dest)
 
 
 def find_import_thunks(image: PEImage) -> Iterator[ImportThunk]:
