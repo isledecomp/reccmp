@@ -13,6 +13,11 @@ max-line-length = 120
 [tool.mypy]
 check_untyped_defs = true
 
+[[tool.mypy.overrides]]
+module = "ghidra.pcode.emu.jit.gen"
+follow_imports = "skip"
+follow_imports_for_stubs = true
+
 [tool.pytest.ini_options]
 # The default `.pytest_cache` path is rejected by Ghidra 12.1.
 cache_dir="pytest_cache"
