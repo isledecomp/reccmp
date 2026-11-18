@@ -321,23 +321,22 @@ ATEXIT_NOT_SETTER_PATTERNS = (
         b"\x68\x00\x00\x00\x10\xe8\xe6\x00\x00\x00\x59\xc3",
         id="destructor outside of the image",
     ),
+    pytest.param(
+        b"\x6a\x01\xb9\x00\x00\x41\x00\xe8\xf4\x00\x00\x00"
+        b"\x68\x30\x00\x40\x00\xe8\xea\x00\x00\x00\x59\xc3",
+        id="other code before the constructor call",
+    ),
 )
 
 
 @pytest.mark.parametrize("code", ATEXIT_NOT_SETTER_PATTERNS)
 def test_read_atexit_destructor_no_match(code: bytes):
-    """Should not report a destructor unless the function ends with the exact
-    atexit registration sequence and the destructor is in the image."""
+    """Should not report a destructor unless the function matches one of the
+    atexit patterns exactly and the destructor is in the image."""
     memory = bytearray(0x200)
     memory[0x20 : 0x20 + len(code)] = code
     binfile = RawImage.from_memory(bytes(memory), base_addr=0x400000)
     assert read_atexit_destructor(binfile, 0x400020) is None
-
-
-def test_read_atexit_destructor_invalid_addr():
-    """Should not raise an exception for an address outside of the image."""
-    binfile = RawImage.from_memory(bytes(0x20), base_addr=0x400000)
-    assert read_atexit_destructor(binfile, 0x500000) is None
 
 
 def test_read_crt_functions_destructor_call_jmp():

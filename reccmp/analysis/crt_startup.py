@@ -1,11 +1,10 @@
 import enum
+import re
 import struct
 from dataclasses import dataclass, field
 from typing import Iterator
 from reccmp.analysis.xref import FunctionXrefMap, Xref, get_function_xrefs
 from reccmp.formats import Image
-from reccmp.formats.exceptions import InvalidVirtualAddressError
-from reccmp.compare.asm.instgen import get_disassembler
 from reccmp.types import ImageId
 from reccmp.compare.db import EntityDb
 
@@ -122,52 +121,29 @@ def read_function_set(binfile: Image, addr: int) -> tuple[int, ...]:
     return ()
 
 
-ATEXIT_REGISTRATION_SIZE = 12
-"""Size of the sequence that registers a destructor with atexit:
-PUSH imm32 (5 bytes); CALL rel32 (5 bytes); POP ECX (1 byte); RET (1 byte)"""
-
-ATEXIT_SCAN_SIZE = 64
-"""Read at most this many bytes when looking for the atexit registration."""
+ATEXIT_PATTERN = re.compile(
+    rb"(?:\xb9.{4}\xe8.{4})?\x68(.{4})\xe8.{4}\x59\xc3", re.DOTALL
+)
+"""Observed patterns for registering a global object's destructor with atexit:
+1. Atexit setter:    PUSH <destructor>; CALL _atexit; POP ECX; RET
+2. Initializer:      MOV ECX, <object>; CALL <constructor>; followed by (1)
+The setter is the second function of the CALL + JMP thunk. Without a thunk,
+the initializer constructs the object and registers the destructor itself."""
 
 
 def read_atexit_destructor(binfile: Image, addr: int) -> int | None:
-    """If the function at the given address ends by registering a destructor
-    with atexit, return the address of the destructor.
-
-    For a global object with a destructor, MSVC registers the destructor at the end
-    of the object's C++ initializer:
-
-        PUSH <destructor>; CALL _atexit; POP ECX; RET
-
-    This sequence is either its own function (the second function in the
-    CALL + JMP thunk pattern) or the end of the initializer itself."""
-    try:
-        _, remaining = binfile.seek(addr)
-    except InvalidVirtualAddressError:
+    """If the function at the given address matches one of the atexit patterns,
+    return the address of the destructor that it registers."""
+    view, _ = binfile.seek(addr)
+    match = ATEXIT_PATTERN.match(view)
+    if match is None:
         return None
 
-    data = binfile.read(addr, min(ATEXIT_SCAN_SIZE, remaining))
+    (destructor,) = struct.unpack("<I", match.group(1))
+    if not binfile.is_valid_vaddr(destructor):
+        return None
 
-    # Find the end of the function: the first RET instruction.
-    for inst_addr, size, mnemonic, _ in get_disassembler().disasm_lite(data, addr):
-        if mnemonic != "ret":
-            continue
-
-        start = inst_addr + size - addr - ATEXIT_REGISTRATION_SIZE
-        if start < 0:
-            return None
-
-        seq = data[start : start + ATEXIT_REGISTRATION_SIZE]
-        if seq[0] != 0x68 or seq[5] != 0xE8 or seq[10:12] != b"\x59\xc3":
-            return None
-
-        (destructor,) = struct.unpack_from("<I", seq, 1)
-        if not binfile.is_valid_vaddr(destructor):
-            return None
-
-        return destructor
-
-    return None
+    return destructor
 
 
 def read_crt_functions(binfile: Image, span: range) -> CrtStartupArray:
