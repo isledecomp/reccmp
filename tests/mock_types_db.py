@@ -3,7 +3,7 @@ from reccmp.cvdump.types import (
     ClassInfo,
     CvdumpKeyError,
     CvdumpTypeKey,
-    CvdumpTypesParser,
+    TypesDb,
     FieldListItem,
     TypeInfo,
     TypeKind,
@@ -17,7 +17,7 @@ class MockStruct(NamedTuple):
 
 
 # pylint: disable=abstract-method
-class MockTypesDb(CvdumpTypesParser):
+class MockTypesDb(TypesDb):
     """Implements `TypesDb` with mocked structs."""
 
     structs: dict[CvdumpTypeKey, MockStruct]

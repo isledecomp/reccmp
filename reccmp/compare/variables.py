@@ -10,7 +10,7 @@ from reccmp.formats.exceptions import InvalidVirtualReadError
 from reccmp.compare.db import EntityDb, ReccmpMatch
 from reccmp.cvdump.cvinfo import CvdumpTypeKey, CvdumpTypeMap, CVInfoTypeEnum
 from reccmp.cvdump.types import (
-    CvdumpTypesParser,
+    TypesDb,
     CvdumpKeyError,
     FieldListItem,
 )
@@ -192,9 +192,7 @@ def create_comparison_item(
     )
 
 
-def pointer_display(
-    db: EntityDb, types: CvdumpTypesParser, img: ImageId, addr: int
-) -> str:
+def pointer_display(db: EntityDb, types: TypesDb, img: ImageId, addr: int) -> str:
     """Helper to streamline pointer textual display."""
     if addr == 0:
         return "nullptr"
@@ -232,7 +230,7 @@ class VariableLayout(NamedTuple):
     is_raw: bool
 
 
-def get_variable_layout(types: CvdumpTypesParser, var: ReccmpMatch) -> VariableLayout:
+def get_variable_layout(types: TypesDb, var: ReccmpMatch) -> VariableLayout:
     """Return the components of the given variable.
     For a primitive type, this is a list with one item.
     For a struct, these are the struct members, including member from base classes.
@@ -277,7 +275,7 @@ def get_variable_layout(types: CvdumpTypesParser, var: ReccmpMatch) -> VariableL
 @dataclass
 class VariableComparator:
     db: EntityDb
-    types: CvdumpTypesParser
+    types: TypesDb
     orig_bin: Image
     recomp_bin: Image
 

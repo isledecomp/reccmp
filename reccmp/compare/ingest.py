@@ -9,7 +9,7 @@ from reccmp.formats.exceptions import (
     InvalidStringError,
 )
 from reccmp.formats import Image, PEImage, TextFile
-from reccmp.cvdump import CvdumpTypesParser, CvdumpAnalysis
+from reccmp.cvdump import CvdumpAnalysis
 from reccmp.parser import DecompCodebase
 from reccmp.parser.marker import ProjectAliases
 from reccmp.parser.node import ParserVtable
@@ -24,15 +24,6 @@ from .db import EntityDb, entity_name_from_string
 from .lines import LinesDb
 
 logger = logging.getLogger(__name__)
-
-
-def load_cvdump_types(cvdump_analysis: CvdumpAnalysis, types: CvdumpTypesParser):
-    # TODO: Populate the universal type database here when this exists. (#106)
-    # For now, just copy the keys into another CvdumpTypesParser so we can use its API.
-    # pylint:disable=protected-access
-    types._raw.update(cvdump_analysis.types._raw)
-    types._keys.update(cvdump_analysis.types._keys)
-    types.alerted_types = cvdump_analysis.types.alerted_types
 
 
 def load_cvdump(cvdump_analysis: CvdumpAnalysis, db: EntityDb, recomp_bin: PEImage):

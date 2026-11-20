@@ -1,7 +1,7 @@
 import re
 from pathlib import PureWindowsPath
 from typing import NamedTuple
-from .types import CvdumpTypesParser
+from .types import CvdumpTypes, TypesDb
 from .symbols import CvdumpSymbolsParser, SymbolsEntry
 from .cvinfo import CvdumpTypeKey
 
@@ -120,7 +120,7 @@ class CvdumpParser:
         self.globals: list[GdataEntry] = []
         self.modules: list[ModuleEntry] = []
 
-        self.types = CvdumpTypesParser()
+        self.types: TypesDb = TypesDb()
         self.symbols_parser = CvdumpSymbolsParser()
 
         self.is_16bit_type_pool: bool | None = None
@@ -211,7 +211,7 @@ class CvdumpParser:
     def read_section(self, name: str, section: str):
         if name == "TYPES":
             self.is_16bit_type_pool = _CONVERT_16BIT_TYPES_MESSAGE in section
-            self.types.read_all(section)
+            self.types = TypesDb(CvdumpTypes(section))
 
         elif name == "SYMBOLS":
             for line in section.splitlines():

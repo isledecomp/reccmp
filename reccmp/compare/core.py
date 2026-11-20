@@ -17,7 +17,7 @@ from reccmp.formats import (
     TextFile,
     detect_image,
 )
-from reccmp.cvdump import Cvdump, CvdumpTypesParser, CvdumpAnalysis
+from reccmp.cvdump import Cvdump, TypesDb, CvdumpAnalysis
 from reccmp.analysis import find_pointers
 from reccmp.types import EntityType, ImageId
 from reccmp.compare.event import (
@@ -54,7 +54,6 @@ from .analyze import (
 )
 from .ingest import (
     load_cvdump,
-    load_cvdump_types,
     load_cvdump_lines,
     load_markers,
     load_data_sources,
@@ -84,7 +83,7 @@ class Compare:
     target_id: str
     src_encoding: str
     bin_encoding: str
-    types: CvdumpTypesParser
+    types: TypesDb
     function_comparator: FunctionComparator
     data_sources: list[TextFile]
     project_aliases: ProjectAliases
@@ -126,7 +125,7 @@ class Compare:
         # For now, just redirect match alerts to the logger.
         self.report = create_logging_wrapper(logger)
 
-        self.types = CvdumpTypesParser()
+        self.types = pdb_file.types
 
         self.function_comparator = FunctionComparator(
             self._db,
@@ -192,7 +191,6 @@ class Compare:
         # Each task creates new entities or overwrites existing data.
         # The tasks are ordered roughly according to the principle
         # of highest-to-lowest confidence of data validity.
-        load_cvdump_types(self.cvdump_analysis, self.types)
         load_cvdump(self.cvdump_analysis, self._db, self.recomp_bin)
         load_cvdump_lines(self.cvdump_analysis, self._lines_db, self.recomp_bin)
 

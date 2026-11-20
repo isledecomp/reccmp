@@ -16,7 +16,7 @@ from reccmp.compare.db import EntityDb, ReccmpMatch
 from reccmp.report.diff import EntityCompareResult, RawDiffOutput
 from reccmp.compare.event import ReccmpEvent, ReccmpReportProtocol
 from reccmp.compare.type_layout import get_name_for_offset
-from reccmp.cvdump.types import CvdumpTypesParser
+from reccmp.cvdump.types import TypesDb
 from reccmp.formats.exceptions import (
     InvalidVirtualAddressError,
     InvalidVirtualReadError,
@@ -88,7 +88,7 @@ class FunctionComparator:
     orig_bin: Image
     recomp_bin: Image
     report: ReccmpReportProtocol
-    types: CvdumpTypesParser
+    types: TypesDb
     is_32bit: bool = True
 
     def __post_init__(self):

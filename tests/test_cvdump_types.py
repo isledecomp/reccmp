@@ -18,7 +18,8 @@ from reccmp.cvdump.cvinfo import CVInfoTypeEnum
 from reccmp.cvdump.types import (
     ClassInfo,
     CvdumpTypeKey as TK,
-    CvdumpTypesParser,
+    CvdumpTypes,
+    TypesDb,
     CvdumpKeyError,
     CvdumpValueError,
     FunctionInfo,
@@ -417,24 +418,21 @@ def simplify_scalars(
     return [(s.offset, s.name, s.type) for s in scalars]
 
 
-def format_string(parser: CvdumpTypesParser, key: TK) -> str:
+def format_string(parser: TypesDb, key: TK) -> str:
     return get_format_string(get_scalars_gapless(parser, key))
 
 
 @pytest.fixture(name="parser")
 def types_parser_fixture():
-    parser = CvdumpTypesParser()
-    parser.read_all(TEST_LINES)
-
-    return parser
+    return TypesDb(CvdumpTypes(TEST_LINES))
 
 
 @pytest.fixture(name="empty_parser")
 def types_empty_parser_fixture():
-    return CvdumpTypesParser()
+    return TypesDb()
 
 
-def test_basic_parsing(parser: CvdumpTypesParser):
+def test_basic_parsing(parser: TypesDb):
     obj = parser.from_key(TK(0x4DB6))
     assert obj["type"] == "LF_CLASS"
     assert obj["name"] == "MxString"
@@ -443,7 +441,7 @@ def test_basic_parsing(parser: CvdumpTypesParser):
     assert len(parser.from_key(TK(0x4DB5))["members"]) == 2
 
 
-def test_scalar_types(parser: CvdumpTypesParser):
+def test_scalar_types(parser: TypesDb):
     """Full tests on the scalar_* methods are in another file.
     Here we are just testing the passthrough of the "T_" types."""
     assert parser.get(CVInfoTypeEnum.T_CHAR).name is None
@@ -453,7 +451,7 @@ def test_scalar_types(parser: CvdumpTypesParser):
     assert parser.get(CVInfoTypeEnum.T_32PVOID).size == 4
 
 
-def test_resolve_forward_ref(parser: CvdumpTypesParser):
+def test_resolve_forward_ref(parser: TypesDb):
     # Non-forward ref
     assert parser.get(TK(0x22D5)).name == "MxVariable"
     # Forward ref
@@ -461,7 +459,7 @@ def test_resolve_forward_ref(parser: CvdumpTypesParser):
     assert parser.get(TK(0x14DB)).size == 16
 
 
-def test_members(parser: CvdumpTypesParser):
+def test_members(parser: TypesDb):
     """Return the list of items to compare for a given complex type.
     If the class has a superclass, add those members too."""
     # MxCore
@@ -493,7 +491,7 @@ def test_members(parser: CvdumpTypesParser):
     assert parser.base_classes(TK(0x5594)) == {TK(0x5592): 0, TK(0x4DEF): 32}
 
 
-def test_virtual_base_classes(parser: CvdumpTypesParser):
+def test_virtual_base_classes(parser: TypesDb):
     """Make sure that virtual base classes are parsed correctly."""
 
     assert parser.class_info(TK(0x5592)) == ClassInfo(
@@ -507,7 +505,7 @@ def test_virtual_base_classes(parser: CvdumpTypesParser):
     )
 
 
-def test_members_recursive(parser: CvdumpTypesParser):
+def test_members_recursive(parser: TypesDb):
     """Make sure that we unwrap the dependency tree correctly."""
     # MxVariable
     assert simplify_scalars(get_scalars(parser, TK(0x22D5))) == [
@@ -524,7 +522,7 @@ def test_members_recursive(parser: CvdumpTypesParser):
 
 
 @pytest.mark.xfail(reason="Not enabled (yet) for entities that are not arrays.")
-def test_offset_names_for_struct(parser: CvdumpTypesParser):
+def test_offset_names_for_struct(parser: TypesDb):
     # MxVariable
     assert get_name_for_offset(parser, TK(0x22D5), 0) == "vftable"
     assert get_name_for_offset(parser, TK(0x22D5), 4) == "m_key.vftable"
@@ -541,7 +539,7 @@ def test_offset_names_for_struct(parser: CvdumpTypesParser):
     assert get_name_for_offset(parser, TK(0x22D5), 26) == "m_value.m_id+2"
 
 
-def test_offset_names_for_array(parser: CvdumpTypesParser):
+def test_offset_names_for_array(parser: TypesDb):
     assert get_name_for_offset(parser, TK(0x103B), 0) == "[0]"
     assert get_name_for_offset(parser, TK(0x103B), 4) == "[1]"
     assert get_name_for_offset(parser, TK(0x103B), 8) == "[2]"
@@ -553,7 +551,7 @@ def test_offset_names_for_array(parser: CvdumpTypesParser):
     assert get_name_for_offset(parser, TK(0x103B), 3) == "[0]+3"
 
 
-def test_offset_name_for_array_of_structs(parser: CvdumpTypesParser):
+def test_offset_name_for_array_of_structs(parser: TypesDb):
     # ROIColorAlias[22], element size 20, total size 440.
     assert get_name_for_offset(parser, TK(0x19B1), 0) == "[0].m_name"
     assert get_name_for_offset(parser, TK(0x19B1), 4) == "[0].m_red"
@@ -561,7 +559,7 @@ def test_offset_name_for_array_of_structs(parser: CvdumpTypesParser):
     assert get_name_for_offset(parser, TK(0x19B1), 436) == "[21].m_unk0x10"
 
 
-def test_struct(parser: CvdumpTypesParser):
+def test_struct(parser: TypesDb):
     """Basic test for converting type into struct.unpack format string."""
     # MxCore: vftable and uint32. The vftable pointer is read as uint32.
     assert format_string(parser, TK(0x4060)) == "<II"
@@ -573,7 +571,7 @@ def test_struct(parser: CvdumpTypesParser):
     assert format_string(parser, TK(0x1214)) == "<iiii"
 
 
-def test_struct_padding(parser: CvdumpTypesParser):
+def test_struct_padding(parser: TypesDb):
     """For data comparison purposes, make sure we have no gaps in the
     list of scalar types. Any gap is filled by an unsigned char."""
 
@@ -587,7 +585,7 @@ def test_struct_padding(parser: CvdumpTypesParser):
     assert len(get_scalars_gapless(parser, TK(0x22D5))) == 13
 
 
-def test_struct_format_string(parser: CvdumpTypesParser):
+def test_struct_format_string(parser: TypesDb):
     """Generate the struct.unpack format string using the
     list of scalars with padding filled in."""
     # MxString, padded to 16 bytes.
@@ -597,7 +595,7 @@ def test_struct_format_string(parser: CvdumpTypesParser):
     assert format_string(parser, TK(0x22D5)) == "<IIIIHBBIIIHBB"
 
 
-def test_struct_union_overlap(parser: CvdumpTypesParser):
+def test_struct_union_overlap(parser: TypesDb):
     """Members from a struct-valued union branch expand into inner
     scalars at different sub-offsets. Flattened sibling scalars from the
     other branch can fall inside those sub-offset ranges. The gapless
@@ -628,7 +626,7 @@ def test_struct_union_overlap(parser: CvdumpTypesParser):
     assert calcsize(fs) == 16
 
 
-def test_array(parser: CvdumpTypesParser):
+def test_array(parser: TypesDb):
     """LF_ARRAY members are created dynamically based on the
     total array size and the size of one element."""
     # unsigned char[8]
@@ -660,7 +658,7 @@ def test_array(parser: CvdumpTypesParser):
     assert (436, "[21].m_unk0x10", CVInfoTypeEnum.T_INT4) in color_alias
 
 
-def test_2d_array(parser: CvdumpTypesParser):
+def test_2d_array(parser: TypesDb):
     """Make sure 2d array elements are named as we expect."""
     # float[4][4]
     float_array = simplify_scalars(get_scalars(parser, TK(0x103C)))
@@ -671,7 +669,7 @@ def test_2d_array(parser: CvdumpTypesParser):
     assert float_array[-1] == (60, "[3][3]", CVInfoTypeEnum.T_REAL32)
 
 
-def test_enum(parser: CvdumpTypesParser):
+def test_enum(parser: TypesDb):
     """LF_ENUM should equal 4-byte int"""
     assert parser.get(TK(0x3CC2)).size == 4
     assert simplify_scalars(get_scalars(parser, TK(0x3CC2))) == [
@@ -684,7 +682,7 @@ def test_enum(parser: CvdumpTypesParser):
     assert enum_array[0].type == CVInfoTypeEnum.T_INT4
 
 
-def test_lf_pointer(parser: CvdumpTypesParser):
+def test_lf_pointer(parser: TypesDb):
     """LF_POINTER is just a wrapper for scalar pointer type"""
     assert parser.get(TK(0x3FAB)).size == 4
 
@@ -693,13 +691,13 @@ def test_lf_pointer(parser: CvdumpTypesParser):
     ]
 
 
-def test_lf_pointer_kind(parser: CvdumpTypesParser):
+def test_lf_pointer_kind(parser: TypesDb):
     """LF_POINTER and primitive pointers are both POINTER."""
     assert parser.get(TK(0x3FAB)).kind == TypeKind.POINTER
     assert parser.get(CVInfoTypeEnum.T_32PVOID).kind == TypeKind.POINTER
 
 
-def test_element_type(parser: CvdumpTypesParser):
+def test_element_type(parser: TypesDb):
     assert parser.element_type(TK(0x3FAB)) == TK(0x3FAA)
     assert parser.element_type(CVInfoTypeEnum.T_32PVOID) == CVInfoTypeEnum.T_VOID
     assert parser.element_type(TK(0x103B)) == CVInfoTypeEnum.T_REAL32
@@ -707,18 +705,18 @@ def test_element_type(parser: CvdumpTypesParser):
         parser.element_type(TK(0x4060))
 
 
-def test_underlying_type(parser: CvdumpTypesParser):
+def test_underlying_type(parser: TypesDb):
     assert parser.underlying_type(TK(0x3CC2)) == CVInfoTypeEnum.T_INT4
     with pytest.raises(CvdumpValueError):
         parser.underlying_type(TK(0x4060))
 
 
-def test_enum_variants_rejects_class(parser: CvdumpTypesParser):
+def test_enum_variants_rejects_class(parser: TypesDb):
     with pytest.raises(CvdumpValueError):
         parser.enum_variants(TK(0x5594))
 
 
-def test_accessor_rejects_forward_ref(parser: CvdumpTypesParser):
+def test_accessor_rejects_forward_ref(parser: TypesDb):
     """Accessors other than get() raise if given a forward ref."""
     with pytest.raises(CvdumpKeyError):
         parser.members(TK(0x14DB))
@@ -726,7 +724,7 @@ def test_accessor_rejects_forward_ref(parser: CvdumpTypesParser):
     assert parser.members(parser.get(TK(0x14DB)).key) is not None
 
 
-def test_function(parser: CvdumpTypesParser):
+def test_function(parser: TypesDb):
     assert parser.function_info(TK(0x1019)) == FunctionInfo(
         call_type="C Near",
         return_type=CVInfoTypeEnum.T_LONG,
@@ -739,13 +737,13 @@ def test_function(parser: CvdumpTypesParser):
         parser.function_info(TK(0x4060))
 
 
-def test_lf_pointer_type(parser: CvdumpTypesParser):
+def test_lf_pointer_type(parser: TypesDb):
     """Save pointer type from leaf."""
     leaf = parser.from_key(TK(0x3FAB))
     assert leaf["pointer_type"] == "Pointer"
 
 
-def test_key_not_exist(parser: CvdumpTypesParser):
+def test_key_not_exist(parser: TypesDb):
     """Accessing a non-existent type id should raise our exception"""
     with pytest.raises(CvdumpKeyError):
         parser.get(TK(0xBEEF))
@@ -754,13 +752,16 @@ def test_key_not_exist(parser: CvdumpTypesParser):
         list(get_scalars(parser, TK(0xBEEF)))
 
 
-def test_broken_forward_ref(parser: CvdumpTypesParser):
+def test_broken_forward_ref():
     """Raise an exception if we cannot follow a forward reference"""
+    source = CvdumpTypes(TEST_LINES)
+    parser = TypesDb(source)
+
     # Verify forward reference on MxCore
     parser.get(TK(0x1220))
 
     # Delete the MxCore LF_CLASS
-    del parser._raw[TK(0x4060)]
+    del source._raw[TK(0x4060)]
     del parser._keys[TK(0x4060)]
 
     # Forward ref via 0x1220 will fail
@@ -768,13 +769,13 @@ def test_broken_forward_ref(parser: CvdumpTypesParser):
         parser.get(TK(0x1220))
 
 
-def test_null_forward_ref(parser: CvdumpTypesParser):
+def test_null_forward_ref(parser: TypesDb):
     """A forward ref with no target resolves to itself, with no size."""
     # Test MxString forward reference
     parser.get(TK(0x14DB))
 
     # Delete the UDT for MxString
-    del parser._keys[TK(0x14DB)]["udt"]
+    del parser._forward_refs[TK(0x14DB)]
 
     t = parser.get(TK(0x14DB))
     assert t.key == TK(0x14DB)
@@ -782,12 +783,33 @@ def test_null_forward_ref(parser: CvdumpTypesParser):
     assert t.name == "MxString"
 
 
-def test_broken_array_element_ref(parser: CvdumpTypesParser):
+def test_get_type_by_name(parser: TypesDb):
+    # Classes/structs
+    assert parser.get_type_by_name("MxRect32") == TK(0x1214)
+    assert parser.get_type_by_name("MxCore") == TK(0x4060)
+    assert parser.get_type_by_name("MxString") == TK(0x4DB6)
+    assert parser.get_type_by_name("_D3DVECTOR") == TK(0x10E1)
+    assert parser.get_type_by_name("ROIColorAlias") == TK(0x2A76)
+
+    # Union
+    assert parser.get_type_by_name("FlagBitfield") == TK(0x2E85)
+
+    # Enum
+    assert parser.get_type_by_name("JukeBox::JukeBoxScript") == TK(0x3CC2)
+
+    # Failed lookup
+    assert parser.get_type_by_name("NotAType") is None
+
+
+def test_broken_array_element_ref():
+    source = CvdumpTypes(TEST_LINES)
+    parser = TypesDb(source)
+
     # Test LF_ARRAY of ROIColorAlias
     list(get_scalars(parser, TK(0x19B1)))
 
     # Delete ROIColorAlias
-    del parser._raw[TK(0x19B0)]
+    del source._raw[TK(0x19B0)]
     del parser._keys[TK(0x19B0)]
 
     # Type reference lookup will fail
@@ -795,7 +817,7 @@ def test_broken_array_element_ref(parser: CvdumpTypesParser):
         list(get_scalars(parser, TK(0x19B1)))
 
 
-def test_lf_modifier(parser: CvdumpTypesParser):
+def test_lf_modifier(parser: TypesDb):
     """Is this an alias for another type?"""
     # Modifies float
     assert parser.get(TK(0x1028)).size == 4
@@ -808,7 +830,7 @@ def test_lf_modifier(parser: CvdumpTypesParser):
     assert mxrect == list(get_scalars(parser, TK(0x11F2)))
 
 
-def test_lf_modifier_modified_how(parser: CvdumpTypesParser):
+def test_lf_modifier_modified_how(parser: TypesDb):
     """Store the modification type (e.g. const, volatile) from the leaf."""
     leaf = parser.from_key(TK(0x1028))
     assert leaf["modification"] == "const"
@@ -824,15 +846,15 @@ CONST_VOLATILE_MODIFIED_EXAMPLE = """
 """
 
 
-def test_lf_modifier_const_and_volatile(empty_parser: CvdumpTypesParser):
+def test_lf_modifier_const_and_volatile():
     """Store the complete modifier text from the leaf."""
-    empty_parser.read_all(CONST_VOLATILE_MODIFIED_EXAMPLE)
-    leaf = empty_parser.from_key(TK(0x40A5))
+    parser = TypesDb(CvdumpTypes(CONST_VOLATILE_MODIFIED_EXAMPLE))
+    leaf = parser.from_key(TK(0x40A5))
     assert "const" in leaf["modification"]
     assert "volatile" in leaf["modification"]
 
 
-def test_union_members(parser: CvdumpTypesParser):
+def test_union_members(parser: TypesDb):
     """If there is a union somewhere in our dependency list, we can
     expect to see duplicated member offsets and names. This is ok for
     members(), but the list of scalars should have
@@ -849,13 +871,13 @@ def test_union_members(parser: CvdumpTypesParser):
     assert len(vector_items) == 3
 
 
-def test_arglist(parser: CvdumpTypesParser):
+def test_arglist(parser: TypesDb):
     arglist = parser.from_key(TK(0x1018))
     assert arglist["argcount"] == 3
     assert arglist["args"] == [TK(0x100D), 0x1016, 0x1017]
 
 
-def test_procedure(parser: CvdumpTypesParser):
+def test_procedure(parser: TypesDb):
     procedure = parser.from_key(TK(0x1019))
     assert procedure == {
         "type": "LF_PROCEDURE",
@@ -867,7 +889,7 @@ def test_procedure(parser: CvdumpTypesParser):
     }
 
 
-def test_mfunction(parser: CvdumpTypesParser):
+def test_mfunction(parser: TypesDb):
     mfunction = parser.from_key(TK(0x101E))
     assert mfunction == {
         "type": "LF_MFUNCTION",
@@ -882,14 +904,14 @@ def test_mfunction(parser: CvdumpTypesParser):
     }
 
 
-def test_union_forward_ref(parser: CvdumpTypesParser):
+def test_union_forward_ref(parser: TypesDb):
     union = parser.from_key(TK(0x2339))
     assert union["is_forward_ref"] is True
     assert "field_list_type" not in union
     assert union["udt"] == TK(0x2E85)
 
 
-def test_union(parser: CvdumpTypesParser):
+def test_union(parser: TypesDb):
     union = parser.from_key(TK(0x2E85))
     assert union == {
         "type": "LF_UNION",
@@ -900,7 +922,7 @@ def test_union(parser: CvdumpTypesParser):
     }
 
 
-def test_fieldlist_enumerate(parser: CvdumpTypesParser):
+def test_fieldlist_enumerate(parser: TypesDb):
     fieldlist_enum = parser.from_key(TK(0x3C45))
     assert fieldlist_enum == {
         "type": "LF_FIELDLIST",
@@ -924,12 +946,12 @@ UNNAMED_UNION_DATA = """
 """
 
 
-def test_unnamed_union(empty_parser: CvdumpTypesParser):
+def test_unnamed_union():
     """Make sure we can parse anonymous union types without a UDT"""
-    empty_parser.read_all(UNNAMED_UNION_DATA)
+    parser = TypesDb(CvdumpTypes(UNNAMED_UNION_DATA))
 
     # Make sure we can parse the members line
-    union = empty_parser.from_key(TK(0x369E))
+    union = parser.from_key(TK(0x369E))
     assert union["name"] == "__unnamed"
     assert union["size"] == 4
     assert union["field_list_type"] == TK(0x369D)
@@ -947,11 +969,11 @@ ARGLIST_UNKNOWN_TYPE = """
 """
 
 
-def test_arglist_unknown_type(empty_parser: CvdumpTypesParser):
+def test_arglist_unknown_type():
     """Should parse the ??? types and not fail with an assert."""
-    empty_parser.read_all(ARGLIST_UNKNOWN_TYPE)
+    parser = TypesDb(CvdumpTypes(ARGLIST_UNKNOWN_TYPE))
 
-    t = empty_parser.from_key(TK(0x11F3))
+    t = parser.from_key(TK(0x11F3))
     assert len(t["args"]) == t["argcount"]
 
     # Make sure we correctly identify the type key.
@@ -979,14 +1001,14 @@ FUNC_ATTR_EXAMPLES = """
 # codespell:ignore-end
 
 
-def test_mfunction_func_attr(empty_parser: CvdumpTypesParser):
+def test_mfunction_func_attr():
     """Should parse "Func attr" values other than 'none'"""
-    empty_parser.read_all(FUNC_ATTR_EXAMPLES)
+    parser = TypesDb(CvdumpTypes(FUNC_ATTR_EXAMPLES))
 
-    assert empty_parser.from_key(TK(0x1216))["func_attr"] == "return UDT (C++ style)"
-    assert empty_parser.from_key(TK(0x122B))["func_attr"] == "instance constructor"
+    assert parser.from_key(TK(0x1216))["func_attr"] == "return UDT (C++ style)"
+    assert parser.from_key(TK(0x122B))["func_attr"] == "instance constructor"
     assert (
-        empty_parser.from_key(TK(0x1232))["func_attr"]
+        parser.from_key(TK(0x1232))["func_attr"]
         == "****Warning**** unused field non-zero!"
     )
 
@@ -997,12 +1019,12 @@ UNION_UNNAMED_TAG = """
 """
 
 
-def test_union_without_udt(empty_parser: CvdumpTypesParser):
+def test_union_without_udt():
     """Should parse union that is missing the UDT attribute"""
-    empty_parser.read_all(UNION_UNNAMED_TAG)
+    parser = TypesDb(CvdumpTypes(UNION_UNNAMED_TAG))
 
-    assert "udt" not in empty_parser.from_key(TK(0x3352))
-    assert empty_parser.from_key(TK(0x3352))["name"] == "<unnamed-tag>"
+    assert "udt" not in parser.from_key(TK(0x3352))
+    assert parser.from_key(TK(0x3352))["name"] == "<unnamed-tag>"
 
 
 # codespell:ignore-begin
@@ -1015,11 +1037,11 @@ MFUNCTION_UNK_RETURN_TYPE = """
 # codespell:ignore-end
 
 
-def test_mfunction_unk_return_type(empty_parser: CvdumpTypesParser):
+def test_mfunction_unk_return_type():
     """Should parse unknown return type as-is"""
-    empty_parser.read_all(MFUNCTION_UNK_RETURN_TYPE)
+    parser = TypesDb(CvdumpTypes(MFUNCTION_UNK_RETURN_TYPE))
 
-    assert empty_parser.from_key(TK(0x11D8))["return_type"] == TK(0x47C)
+    assert parser.from_key(TK(0x11D8))["return_type"] == TK(0x47C)
 
 
 CLASS_WITH_UNIQUE_NAME = """
@@ -1031,11 +1053,11 @@ CLASS_WITH_UNIQUE_NAME = """
 """
 
 
-def test_class_unique_name(empty_parser: CvdumpTypesParser):
+def test_class_unique_name():
     """Make sure we can parse the UDT when the 'unique name' attribute is present"""
-    empty_parser.read_all(CLASS_WITH_UNIQUE_NAME)
+    parser = TypesDb(CvdumpTypes(CLASS_WITH_UNIQUE_NAME))
 
-    assert empty_parser.from_key(TK(0x1CF0))["udt"] == TK(0x1CF0)
+    assert parser.from_key(TK(0x1CF0))["udt"] == TK(0x1CF0)
 
 
 TWO_FORMATS_FOR_ARRAY_LENGTH = """
@@ -1053,12 +1075,12 @@ TWO_FORMATS_FOR_ARRAY_LENGTH = """
 """
 
 
-def test_two_formats_for_array_length(empty_parser: CvdumpTypesParser):
+def test_two_formats_for_array_length():
     """Make sure we can parse the UDT when the 'unique name' attribute is present"""
-    empty_parser.read_all(TWO_FORMATS_FOR_ARRAY_LENGTH)
+    parser = TypesDb(CvdumpTypes(TWO_FORMATS_FOR_ARRAY_LENGTH))
 
-    assert empty_parser.from_key(TK(0x62C1))["size"] == 50
-    assert empty_parser.from_key(TK(0x62C5))["size"] == 131328
+    assert parser.from_key(TK(0x62C1))["size"] == 50
+    assert parser.from_key(TK(0x62C5))["size"] == 131328
 
 
 LF_POINTER_TO_MEMBER = """
@@ -1069,10 +1091,10 @@ LF_POINTER_TO_MEMBER = """
 """
 
 
-def test_pointer_to_member(empty_parser: CvdumpTypesParser):
+def test_pointer_to_member():
     """LF_POINTER with optional 'Containing class' attribute."""
-    empty_parser.read_all(LF_POINTER_TO_MEMBER)
-    assert empty_parser.from_key(TK(0x1646))["element_type"] == TK(0x1645)
+    parser = TypesDb(CvdumpTypes(LF_POINTER_TO_MEMBER))
+    assert parser.from_key(TK(0x1646))["element_type"] == TK(0x1645)
 
 
 MSVC700_ENUM_WITH_LOCAL_FLAG = """
@@ -1082,11 +1104,11 @@ LOCAL, 	enum name = SomeEnumType::SomeEnumInternalName::__l2::__unnamed
 """
 
 
-def test_enum_with_local_flag(empty_parser: CvdumpTypesParser):
+def test_enum_with_local_flag():
     """Make sure we can parse an enum with the LOCAL flag set. At the moment, the flag is ignored."""
-    empty_parser.read_all(MSVC700_ENUM_WITH_LOCAL_FLAG)
+    parser = TypesDb(CvdumpTypes(MSVC700_ENUM_WITH_LOCAL_FLAG))
 
-    assert empty_parser.from_key(TK(0x26BA)) == {
+    assert parser.from_key(TK(0x26BA)) == {
         "field_list_type": 0x26B9,
         "name": "SomeEnumType::SomeEnumInternalName::__l2::__unnamed",
         "num_members": 3,
@@ -1106,14 +1128,14 @@ FORWARD REF,    enum name = JukeboxScript::Script, UDT(0x000010b6)
 """
 
 
-def test_enum_forward_ref(empty_parser: CvdumpTypesParser):
+def test_enum_forward_ref():
     """Make sure that we resolve forward refs for LF_ENUM."""
-    empty_parser.read_all(ENUM_FORWARD_REF)
+    parser = TypesDb(CvdumpTypes(ENUM_FORWARD_REF))
 
     # Using non-standard T_CHAR(0010) base type to demonstrate the problem.
     # The main concern is to not use T_NOTYPE as the basis of the enum.
     # Previously we assumed all but a few specific types had size 4.
-    assert empty_parser.get(TK(0x11A6)).size == 1
+    assert parser.get(TK(0x11A6)).size == 1
 
 
 MSVC700_POINTER_CONTAINING_CLASS_TYPE_OF_POINTED_TO = """
@@ -1124,13 +1146,11 @@ MSVC700_POINTER_CONTAINING_CLASS_TYPE_OF_POINTED_TO = """
 """
 
 
-def test_enum_with_containing_class_and_type_of_pointed_to(
-    empty_parser: CvdumpTypesParser,
-):
+def test_enum_with_containing_class_and_type_of_pointed_to():
     """Make sure that a pointer with these attributes is parsed correctly. 'Type of pointed to' is currently ignored."""
-    empty_parser.read_all(MSVC700_POINTER_CONTAINING_CLASS_TYPE_OF_POINTED_TO)
+    parser = TypesDb(CvdumpTypes(MSVC700_POINTER_CONTAINING_CLASS_TYPE_OF_POINTED_TO))
 
-    assert empty_parser.from_key(TK(0x64CA)) == {
+    assert parser.from_key(TK(0x64CA)) == {
         "element_type": 0x2FD1,
         "type": "LF_POINTER",
         "containing_class": 0x1165,
@@ -1145,12 +1165,10 @@ POINTER_WITHOUT_CONTAINING_CLASS = """
 """
 
 
-def test_pointer_without_containing_class(
-    empty_parser: CvdumpTypesParser,
-):
-    empty_parser.read_all(POINTER_WITHOUT_CONTAINING_CLASS)
+def test_pointer_without_containing_class():
+    parser = TypesDb(CvdumpTypes(POINTER_WITHOUT_CONTAINING_CLASS))
 
-    assert empty_parser.from_key(TK(0x534E)) == {
+    assert parser.from_key(TK(0x534E)) == {
         "element_type": 0x2505,
         "type": "LF_POINTER",
         "pointer_type": "Pointer",
@@ -1190,18 +1208,18 @@ MSVC710_CV_QUALIFIED_POINTER_TO_MEMBER = """
 """
 
 
-def test_cv_qualified_pointer_to_member(empty_parser: CvdumpTypesParser):
+def test_cv_qualified_pointer_to_member():
     """Pointers to members can be const and/or volatile, e.g. `int S::* const`.
     ATL 7.1's `CVarTypeInfo<T>::pmField` is one; MFC 7.1 programs have it."""
-    empty_parser.read_all(MSVC710_CV_QUALIFIED_POINTER_TO_MEMBER)
+    parser = TypesDb(CvdumpTypes(MSVC710_CV_QUALIFIED_POINTER_TO_MEMBER))
 
-    assert empty_parser.from_key(TK(0x1007)) == {
+    assert parser.from_key(TK(0x1007)) == {
         "element_type": CVInfoTypeEnum.T_INT4,
         "type": "LF_POINTER",
         "containing_class": 0x1002,
         "pointer_type": "const Pointer to member",
     }
-    assert empty_parser.from_key(TK(0x100C)) == {
+    assert parser.from_key(TK(0x100C)) == {
         "element_type": 0x1004,
         "type": "LF_POINTER",
         "containing_class": 0x1002,
@@ -1214,7 +1232,7 @@ def test_cv_qualified_pointer_to_member(empty_parser: CvdumpTypesParser):
         (0x100A, "const Pointer to member function"),
         (0x100B, "volatile Pointer to member function"),
     ):
-        assert empty_parser.from_key(TK(key))["pointer_type"] == pointer_type
+        assert parser.from_key(TK(key))["pointer_type"] == pointer_type
 
 
 MSVC1451_RESTRICT_POINTER = """
@@ -1232,21 +1250,18 @@ MSVC1451_RESTRICT_POINTER = """
 """
 
 
-def test_pointer_restrict(empty_parser: CvdumpTypesParser):
+def test_pointer_restrict():
     """cvdump prints `__restrict` after `volatile` and `const`."""
-    empty_parser.read_all(MSVC1451_RESTRICT_POINTER)
+    parser = TypesDb(CvdumpTypes(MSVC1451_RESTRICT_POINTER))
 
-    assert empty_parser.from_key(TK(0x1004)) == {
+    assert parser.from_key(TK(0x1004)) == {
         "element_type": CVInfoTypeEnum.T_INT4,
         "type": "LF_POINTER",
         "pointer_type": "volatile const __restrict Pointer",
     }
 
-    assert (
-        empty_parser.from_key(TK(0x1002))["pointer_type"]
-        == "__restrict L-value Reference"
-    )
-    assert empty_parser.from_key(TK(0x1003))["pointer_type"] == "__restrict Pointer"
+    assert parser.from_key(TK(0x1002))["pointer_type"] == "__restrict L-value Reference"
+    assert parser.from_key(TK(0x1003))["pointer_type"] == "__restrict Pointer"
 
 
 ENUM_WITH_WHITESPACE_AND_COMMA = """
@@ -1256,12 +1271,10 @@ NESTED, 	enum name = CPool<CTask,signed char [128]>::__unnamed
 """
 
 
-def test_enum_with_whitespace_and_comma(
-    empty_parser: CvdumpTypesParser,
-):
-    empty_parser.read_all(ENUM_WITH_WHITESPACE_AND_COMMA)
+def test_enum_with_whitespace_and_comma():
+    parser = TypesDb(CvdumpTypes(ENUM_WITH_WHITESPACE_AND_COMMA))
 
-    assert empty_parser.from_key(TK(0x4DC2)) == {
+    assert parser.from_key(TK(0x4DC2)) == {
         "field_list_type": 0x2588,
         "is_nested": True,
         "name": "CPool<CTask,signed char [128]>::__unnamed",
@@ -1271,18 +1284,18 @@ def test_enum_with_whitespace_and_comma(
     }
 
 
-def test_this_adjust_hex(empty_parser: CvdumpTypesParser):
+def test_this_adjust_hex():
     """The 'this adjust' attribute is a hex number.
     Make sure we parse it correctly."""
     # codespell:ignore-begin
-    empty_parser.read_all("""\
+    parser = TypesDb(CvdumpTypes("""\
 0x657a : Length = 26, Leaf = 0x1009 LF_MFUNCTION
     Return type = T_VOID(0003), Class type = 0x15ED, This type = 0x15EE,
     Call type = ThisCall, Func attr = none
-    Parms = 3, Arg list type = 0x6579, This adjust = 24""")
+    Parms = 3, Arg list type = 0x6579, This adjust = 24"""))
     # codespell:ignore-end
 
-    assert empty_parser.from_key(TK(0x657A))["this_adjust"] == TK(0x24)
+    assert parser.from_key(TK(0x657A))["this_adjust"] == TK(0x24)
 
 
 BIG_TYPE_KEY_SAMPLE = """
@@ -1308,14 +1321,14 @@ BIG_TYPE_KEY_SAMPLE = """
 """
 
 
-def test_type_keys_over_ffff(empty_parser: CvdumpTypesParser):
+def test_type_keys_over_ffff():
     """Make sure we can read type keys larger than 0xffff.
     This checks various leaves where it could appear."""
-    empty_parser.read_all(BIG_TYPE_KEY_SAMPLE)
-    assert empty_parser.from_key(TK(0x1023))["udt"] == TK(0x11738)
-    assert empty_parser.from_key(TK(0x11736))["array_type"] == TK(0x11735)
-    assert empty_parser.from_key(TK(0x11737))["members"][0].type == TK(0x11736)
-    assert empty_parser.from_key(TK(0x11738))["field_list_type"] == TK(0x11737)
+    parser = TypesDb(CvdumpTypes(BIG_TYPE_KEY_SAMPLE))
+    assert parser.from_key(TK(0x1023))["udt"] == TK(0x11738)
+    assert parser.from_key(TK(0x11736))["array_type"] == TK(0x11735)
+    assert parser.from_key(TK(0x11737))["members"][0].type == TK(0x11736)
+    assert parser.from_key(TK(0x11738))["field_list_type"] == TK(0x11737)
 
 
 BIG_ENUM_KEY_SAMPLE = """
@@ -1325,14 +1338,12 @@ BIG_ENUM_KEY_SAMPLE = """
 """
 
 
-def test_enum_keys_over_ffff(empty_parser: CvdumpTypesParser):
+def test_enum_keys_over_ffff():
     """Make sure we can read an LF_ENUM if its field list type key is over 0xffff. (GH #318)"""
-    empty_parser.read_all(BIG_ENUM_KEY_SAMPLE)
-    assert empty_parser.from_key(TK(0x105DA))["field_list_type"] == TK(0x105D9)
-    assert (
-        empty_parser.from_key(TK(0x105DA))["underlying_type"] == CVInfoTypeEnum.T_INT4
-    )
-    assert empty_parser.from_key(TK(0x105DA))["name"] == "e_STATE_t"
+    parser = TypesDb(CvdumpTypes(BIG_ENUM_KEY_SAMPLE))
+    assert parser.from_key(TK(0x105DA))["field_list_type"] == TK(0x105D9)
+    assert parser.from_key(TK(0x105DA))["underlying_type"] == CVInfoTypeEnum.T_INT4
+    assert parser.from_key(TK(0x105DA))["name"] == "e_STATE_t"
 
 
 ENUM_WITH_DATA_TYPES_SAMPLES = """
@@ -1350,10 +1361,10 @@ ENUM_WITH_DATA_TYPES_SAMPLES = """
 """
 
 
-def test_enum_with_data_types(empty_parser: CvdumpTypesParser):
+def test_enum_with_data_types():
     """Make sure we can read an LF_FIELDLIST of an enum with a negative value (GH #380)"""
-    empty_parser.read_all(ENUM_WITH_DATA_TYPES_SAMPLES)
-    assert empty_parser.from_key(TK(0x4E63))["variants"] == [
+    parser = TypesDb(CvdumpTypes(ENUM_WITH_DATA_TYPES_SAMPLES))
+    assert parser.from_key(TK(0x4E63))["variants"] == [
         EnumItem(name="c_act1", value=1),
         EnumItem(name="c_imain", value=2),
         EnumItem(name="c_ielev", value=16),
@@ -1362,7 +1373,7 @@ def test_enum_with_data_types(empty_parser: CvdumpTypesParser):
         EnumItem(name="c_act3", value=65536),
     ]
 
-    assert empty_parser.from_key(TK(0x5695))["variants"] == [
+    assert parser.from_key(TK(0x5695))["variants"] == [
         EnumItem(name="c_unknownminusone", value=-1),
         EnumItem(name="c_unknown8", value=8),
     ]
@@ -1377,7 +1388,7 @@ ARRAY_WITH_UNKNOWN_ELEMENT = """
 """
 
 
-def test_unknown_primitive_type(empty_parser: CvdumpTypesParser):
+def test_unknown_primitive_type(empty_parser: TypesDb):
     """Make sure we raise an exception if an unknown primitive type is used.
     Our list of primitive types should be comprehensive and the caller has
     the option to catch the exception and continue on."""
@@ -1388,9 +1399,9 @@ def test_unknown_primitive_type(empty_parser: CvdumpTypesParser):
         list(get_scalars(empty_parser, TK(0x555)))
 
     # Invalid type accessed indirectly via another type
-    empty_parser.read_all(ARRAY_WITH_UNKNOWN_ELEMENT)
+    parser = TypesDb(CvdumpTypes(ARRAY_WITH_UNKNOWN_ELEMENT))
     with pytest.raises(CvdumpKeyError):
-        list(get_scalars(empty_parser, TK(0x1000)))
+        list(get_scalars(parser, TK(0x1000)))
 
 
 ARRAY_OF_STRUCT_BITFIELDS = """
@@ -1402,15 +1413,15 @@ ARRAY_OF_STRUCT_BITFIELDS = """
 """
 
 
-def test_bitfields(empty_parser: CvdumpTypesParser):
+def test_bitfields():
     """Make sure we can read a LF_BITFIELD present in LF_FIELDLIST"""
-    empty_parser.read_all(ARRAY_OF_STRUCT_BITFIELDS)
-    assert empty_parser.from_key(TK(0x1002))["bit_start"] == 0
-    assert empty_parser.from_key(TK(0x1002))["bit_count"] == 1
-    assert empty_parser.from_key(TK(0x1002))["bit_type"] == CVInfoTypeEnum.T_UCHAR
-    assert empty_parser.from_key(TK(0x1003))["bit_start"] == 6
-    assert empty_parser.from_key(TK(0x1003))["bit_count"] == 3
-    assert empty_parser.from_key(TK(0x1003))["bit_type"] == CVInfoTypeEnum.T_UINT4
+    parser = TypesDb(CvdumpTypes(ARRAY_OF_STRUCT_BITFIELDS))
+    assert parser.from_key(TK(0x1002))["bit_start"] == 0
+    assert parser.from_key(TK(0x1002))["bit_count"] == 1
+    assert parser.from_key(TK(0x1002))["bit_type"] == CVInfoTypeEnum.T_UCHAR
+    assert parser.from_key(TK(0x1003))["bit_start"] == 6
+    assert parser.from_key(TK(0x1003))["bit_count"] == 3
+    assert parser.from_key(TK(0x1003))["bit_type"] == CVInfoTypeEnum.T_UINT4
 
 
 CLASS_NAME_ENDS_WITH_COMMA = """
@@ -1426,11 +1437,11 @@ CLASS_NAME_ENDS_WITH_COMMA = """
 """
 
 
-def test_class_name_truncated_at_comma(empty_parser: CvdumpTypesParser):
+def test_class_name_truncated_at_comma():
     """Make sure we can parse a long class name that is truncated to 255 characters at a comma.
     e.g. `...const *,, UDT(0x000084b1)`
     This should not interfere with extracting the name or UDT."""
-    empty_parser.read_all(CLASS_NAME_ENDS_WITH_COMMA)
+    parser = TypesDb(CvdumpTypes(CLASS_NAME_ENDS_WITH_COMMA))
     name = (
         "pair<_Tree<char const *,pair<char const * const,LegoTextureInfo *>,"
         "map<char const *,LegoTextureInfo *,LegoContainerInfoComparator,"
@@ -1438,10 +1449,10 @@ def test_class_name_truncated_at_comma(empty_parser: CvdumpTypesParser):
         "allocator<LegoTextureInfo *> >::iterator,_Tree<char const *,"
     )
 
-    assert empty_parser.from_key(TK(0x3FAF))["name"] == name
-    assert empty_parser.from_key(TK(0x3FAF))["udt"] == TK(0x84B1)
-    assert empty_parser.from_key(TK(0x84B1))["name"] == name
-    assert empty_parser.get(TK(0x3FAF)).size == 8
+    assert parser.from_key(TK(0x3FAF))["name"] == name
+    assert parser.from_key(TK(0x3FAF))["udt"] == TK(0x84B1)
+    assert parser.from_key(TK(0x84B1))["name"] == name
+    assert parser.get(TK(0x3FAF)).size == 8
 
 
 NO_UDT_SAMPLE = """
@@ -1473,24 +1484,21 @@ NO_UDT_SAMPLE = """
 """
 
 
-def test_no_udt(empty_parser: CvdumpTypesParser):
-    """Layout functions should not crash if we cannot resolve an intermediate type. GH #591"""
-    empty_parser.read_all(NO_UDT_SAMPLE)
+def test_no_udt():
+    """Layout functions should not crash if type leaves do not contain UDT values. GH #591"""
+    parser = TypesDb(CvdumpTypes(NO_UDT_SAMPLE))
 
-    # TODO: #462.
-    # assert get_name_for_offset(empty_parser, TK(0x1A0C), 0) == ".pTest"
+    # TODO: #462. Resolved key.
+    # assert get_name_for_offset(parser, TK(0x1A0C), 0) == ".pTest"
 
-    # TODO: #462. Broken forward ref.
-    # assert get_name_for_offset(empty_parser, TK(0x1A06), 0) == ""
-    # assert get_name_for_offset(empty_parser, TK(0x1A06), 4) == "+4"
+    # TODO: #462. Forward reference key.
+    # assert get_name_for_offset(parser, TK(0x1A06), 0) == ".pTest"
+    # assert get_name_for_offset(parser, TK(0x1A06), 4) == ".pFlag"
 
-    # Array of broken forward ref.
-    assert get_name_for_offset(empty_parser, TK(0x1A0D), 0) == ""
-    assert get_name_for_offset(empty_parser, TK(0x1A0D), 4) == "+4"
-
-    # Caught by datacmp.
-    with pytest.raises(CvdumpKeyError):
-        list(get_scalars(empty_parser, TK(0x1A0D)))
+    # Array to forward reference key.
+    assert get_name_for_offset(parser, TK(0x1A0D), 0) == "[0].pTest"
+    assert get_name_for_offset(parser, TK(0x1A0D), 4) == "[0].pFlag"
+    assert list(get_scalars(parser, TK(0x1A0D)))
 
 
 BITFIELD_ENUM_SAMPLE = """
@@ -1509,8 +1517,6 @@ BITFIELD_ENUM_SAMPLE = """
 """
 
 
-def test_bitfield_with_enum(empty_parser: CvdumpTypesParser):
-    """Should parse a bitfield leaf with non-primitive underlying type."""
-    empty_parser.read_all(BITFIELD_ENUM_SAMPLE)
-    assert empty_parser.get(TK(0x2ECE))
-    assert empty_parser.underlying_type(TK(0x2ECE)) == TK(0x2E64)
+def test_bitfield_with_enum():
+    parser = TypesDb(CvdumpTypes(BITFIELD_ENUM_SAMPLE))
+    assert parser.get(TK(0x2ECE))
