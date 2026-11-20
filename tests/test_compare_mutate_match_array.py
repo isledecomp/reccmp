@@ -5,7 +5,7 @@ import pytest
 from reccmp.types import EntityType, ImageId
 from reccmp.compare.db import EntityDb
 from reccmp.compare.type_layout import get_name_for_offset
-from reccmp.cvdump.types import CvdumpTypesParser, FieldListItem
+from reccmp.cvdump.types import FieldListItem, TypesDb
 from reccmp.cvdump.cvinfo import CVInfoTypeEnum, CvdumpTypeKey as TK
 
 # pylint:disable=protected-access
@@ -18,12 +18,12 @@ def fixture_db() -> EntityDb:
 
 
 @pytest.fixture(name="types_db")
-def fixture_types() -> CvdumpTypesParser:
-    return CvdumpTypesParser()
+def fixture_types() -> TypesDb:
+    return TypesDb()
 
 
 def name_for_address(
-    db: EntityDb, types_db: CvdumpTypesParser, image_id: ImageId, addr: int
+    db: EntityDb, types_db: TypesDb, image_id: ImageId, addr: int
 ) -> str:
     """It would be better to test the real code path instead. GH #461"""
     entity = db.get(image_id, addr, exact=False)
@@ -44,7 +44,7 @@ def name_for_address(
     return ""
 
 
-def test_match_array(db: EntityDb, types_db: CvdumpTypesParser):
+def test_match_array(db: EntityDb, types_db: TypesDb):
     """Should rename the entity for the array and create a new entity for the second member."""
     types_db._keys[TK(0x1000)] = {
         "type": "LF_ARRAY",
@@ -87,7 +87,7 @@ def test_match_array_key_unset(db: EntityDb):
         batch.match(100, 100)
 
     # Empty types db so the key lookup will fail
-    get_name = partial(name_for_address, db, CvdumpTypesParser())
+    get_name = partial(name_for_address, db, TypesDb())
 
     assert get_name(ImageId.ORIG, 100) == "test"
     assert get_name(ImageId.ORIG, 104) == "test+4"
@@ -110,7 +110,7 @@ def test_match_array_type_is_scalar(db: EntityDb):
         batch.match(100, 100)
 
     # Scalars are not currently part of the type database dict, so use an empty one.
-    get_name = partial(name_for_address, db, CvdumpTypesParser())
+    get_name = partial(name_for_address, db, TypesDb())
 
     assert get_name(ImageId.ORIG, 100) == "test"
     assert get_name(ImageId.ORIG, 104) == "test+4"
@@ -118,7 +118,7 @@ def test_match_array_type_is_scalar(db: EntityDb):
     assert get_name(ImageId.RECOMP, 104) == "test+4"
 
 
-def test_match_array_type_is_struct(db: EntityDb, types_db: CvdumpTypesParser):
+def test_match_array_type_is_struct(db: EntityDb, types_db: TypesDb):
     """Should have no effect if the data_type key is not an array.
     We do not currently populate entities for struct members."""
     types_db._keys[TK(0x1000)] = {
@@ -146,7 +146,7 @@ def test_match_array_type_is_struct(db: EntityDb, types_db: CvdumpTypesParser):
         batch.match(100, 100)
 
     # Empty types db so the key lookup will fail
-    get_name = partial(name_for_address, db, CvdumpTypesParser())
+    get_name = partial(name_for_address, db, TypesDb())
 
     assert get_name(ImageId.ORIG, 100) == "test"
     assert get_name(ImageId.ORIG, 104) == "test+4"
@@ -154,7 +154,7 @@ def test_match_array_type_is_struct(db: EntityDb, types_db: CvdumpTypesParser):
     assert get_name(ImageId.RECOMP, 104) == "test+4"
 
 
-def test_match_array_type_orig_smaller(db: EntityDb, types_db: CvdumpTypesParser):
+def test_match_array_type_orig_smaller(db: EntityDb, types_db: TypesDb):
     """Should not create entities on the orig side if the array is known to be smaller.
     (i.e. if another DATA entity is in the way.)"""
     types_db._keys[TK(0x1000)] = {
@@ -186,7 +186,7 @@ def test_match_array_type_orig_smaller(db: EntityDb, types_db: CvdumpTypesParser
     assert get_name(ImageId.RECOMP, 104) == "test[1]"
 
 
-def test_match_array_array_of_structs(db: EntityDb, types_db: CvdumpTypesParser):
+def test_match_array_array_of_structs(db: EntityDb, types_db: TypesDb):
     """If the type is an array of structs, create entities for one level of struct members."""
     types_db._keys[TK(0x1000)] = {
         "type": "LF_ARRAY",
@@ -229,7 +229,7 @@ def test_match_array_array_of_structs(db: EntityDb, types_db: CvdumpTypesParser)
     assert get_name(ImageId.RECOMP, 112) == "test[1].world"
 
 
-def test_match_array_array_of_arrays(db: EntityDb, types_db: CvdumpTypesParser):
+def test_match_array_array_of_arrays(db: EntityDb, types_db: TypesDb):
     """For a multi-dimensional array, create entities for one level."""
     types_db._keys[TK(0x1000)] = {
         "type": "LF_ARRAY",
@@ -265,7 +265,7 @@ def test_match_array_array_of_arrays(db: EntityDb, types_db: CvdumpTypesParser):
     assert get_name(ImageId.RECOMP, 112) == "test[1][1]"
 
 
-def test_match_array_array_of_structs_limit(db: EntityDb, types_db: CvdumpTypesParser):
+def test_match_array_array_of_structs_limit(db: EntityDb, types_db: TypesDb):
     """Does not create entities for offsets more than one level beyond the main entity."""
     types_db._keys[TK(0x1000)] = {
         "type": "LF_ARRAY",
@@ -320,7 +320,7 @@ def test_match_array_array_of_structs_limit(db: EntityDb, types_db: CvdumpTypesP
     assert get_name(ImageId.RECOMP, 112) == "test[1].world"
 
 
-def test_match_array_array_of_union_structs(db: EntityDb, types_db: CvdumpTypesParser):
+def test_match_array_array_of_union_structs(db: EntityDb, types_db: TypesDb):
     """GH issue #289. Demonstrating the following behavior:
     - We use the name from the first option in the union
     - We create offset entities for unions, as with a struct or multidimensional array
@@ -379,7 +379,7 @@ def test_match_array_array_of_union_structs(db: EntityDb, types_db: CvdumpTypesP
     assert get_name(ImageId.RECOMP, 104) == "test[1].hello"
 
 
-def test_match_array_of_struct_bitfield(db: EntityDb, types_db: CvdumpTypesParser):
+def test_match_array_of_struct_bitfield(db: EntityDb, types_db: TypesDb):
     """Verify comparing an array of struct bitfields uses the underlying type of the bitfield"""
     types_db._keys[TK(0x1000)] = {
         "type": "LF_ARRAY",

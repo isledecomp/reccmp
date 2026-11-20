@@ -5,7 +5,7 @@ from typing import Iterator
 from reccmp.cvdump.cvinfo import CvdumpTypeKey, CvdumpTypeMap, CVInfoTypeEnum
 from reccmp.cvdump.types import (
     CvdumpKeyError,
-    CvdumpTypesParser,
+    TypesDb,
     FieldListItem,
     TypeKind,
 )
@@ -26,9 +26,7 @@ def _join_member_names(parent: str, child: str) -> str:
     return f"{parent}.{child}"
 
 
-def disjoint_members(
-    types: CvdumpTypesParser, key: CvdumpTypeKey
-) -> list[FieldListItem]:
+def disjoint_members(types: TypesDb, key: CvdumpTypeKey) -> list[FieldListItem]:
     """Returns members of a struct or union sorted by offset with overlap members removed.
     A struct that contains an anonymous (inline) union will have overlapping members, so this
     processing is needed for any situation where the caller needs a cohesive list.
@@ -49,9 +47,7 @@ def disjoint_members(
     return kept
 
 
-def _composite_layout(
-    types: CvdumpTypesParser, key: CvdumpTypeKey
-) -> list[FieldListItem]:
+def _composite_layout(types: TypesDb, key: CvdumpTypeKey) -> list[FieldListItem]:
     """Returns members of a struct with members from direct base classes inserted.
     If the class has a vftable, we add a mock member at offset 0.
     This is intended for `datacmp` comparison. The Ghidra import should use disjoint_members().
@@ -76,7 +72,7 @@ def _composite_layout(
 
 
 def get_scalars(
-    types: CvdumpTypesParser, key: CvdumpTypeKey, offset: int = 0, name: str = ""
+    types: TypesDb, key: CvdumpTypeKey, offset: int = 0, name: str = ""
 ) -> Iterator[FieldListItem]:
     """Reduce the given complex type to a list of primitive member types."""
     t = types.get(key)
@@ -122,9 +118,7 @@ def _padding(start: int, end: int) -> Iterator[FieldListItem]:
         yield FieldListItem(i, "", CVInfoTypeEnum.T_UCHAR)
 
 
-def get_scalars_gapless(
-    types: CvdumpTypesParser, key: CvdumpTypeKey
-) -> list[FieldListItem]:
+def get_scalars_gapless(types: TypesDb, key: CvdumpTypeKey) -> list[FieldListItem]:
     """Reduce the given complex type to a list of primitive member types.
     Gaps between the declared members are filled with explicit padding bytes."""
     output: list[FieldListItem] = []
@@ -160,7 +154,7 @@ def get_format_string(scalars: list[FieldListItem]) -> str:
 
 
 def _item_at_offset(
-    types: CvdumpTypesParser, key: CvdumpTypeKey, offset: int
+    types: TypesDb, key: CvdumpTypeKey, offset: int
 ) -> FieldListItem | None:
     """The base class or member at or closest before the given offset."""
     best = None
@@ -172,9 +166,7 @@ def _item_at_offset(
     return best
 
 
-def get_name_for_offset(
-    types: CvdumpTypesParser, type_key: CvdumpTypeKey, offset: int
-) -> str:
+def get_name_for_offset(types: TypesDb, type_key: CvdumpTypeKey, offset: int) -> str:
     """Limited to arrays for now. Enable to close GH #462."""
     try:
         if types.get(type_key).kind != TypeKind.ARRAY:

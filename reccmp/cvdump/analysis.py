@@ -12,7 +12,7 @@ from .parser import CvdumpParser, LineValue
 from .symbols import SymbolsEntry
 from .types import (
     CvdumpKeyError,
-    CvdumpTypesParser,
+    TypesDb,
     TypeInfo,
 )
 
@@ -288,7 +288,7 @@ class CvdumpAnalysis:
         self._estimate_size()
 
     @property
-    def types(self) -> CvdumpTypesParser:
+    def types(self) -> TypesDb:
         return self.parser.types
 
     def get_function_symbol(self, addr: int) -> SymbolsEntry | None:

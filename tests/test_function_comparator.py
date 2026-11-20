@@ -2,7 +2,7 @@ from pathlib import PureWindowsPath
 from typing import Callable
 from unittest.mock import Mock
 import pytest
-from reccmp.cvdump.types import CvdumpTypesParser
+from reccmp.cvdump.types import TypesDb
 from reccmp.compare.db import EntityDb, ReccmpMatch
 from reccmp.compare.event import ReccmpEvent, ReccmpReportProtocol
 from reccmp.compare.functions import (
@@ -65,9 +65,7 @@ def compare_functions(
     recomp_bin.is_debug = Mock(return_value=False)
 
     # TODO: Refactor dependencies. GH #461
-    comp = FunctionComparator(
-        db, lines_db, orig_bin, recomp_bin, report, CvdumpTypesParser()
-    )
+    comp = FunctionComparator(db, lines_db, orig_bin, recomp_bin, report, TypesDb())
 
     return comp.compare_function(
         ReccmpMatch(
@@ -651,9 +649,7 @@ def test_compare_without_distinct_size(
     recomp_bin = RawImage.from_memory(recomp_code)
 
     # TODO: Refactor dependencies. GH #461
-    comp = FunctionComparator(
-        db, lines_db, orig_bin, recomp_bin, report, CvdumpTypesParser()
-    )
+    comp = FunctionComparator(db, lines_db, orig_bin, recomp_bin, report, TypesDb())
     (entity,) = list(db.get_functions())
     diffreport = comp.compare_function(entity)
 
@@ -691,9 +687,7 @@ def test_compare_with_distinct_size(
     recomp_bin = RawImage.from_memory(recomp_code)
 
     # TODO: Refactor dependencies. GH #461
-    comp = FunctionComparator(
-        db, lines_db, orig_bin, recomp_bin, report, CvdumpTypesParser()
-    )
+    comp = FunctionComparator(db, lines_db, orig_bin, recomp_bin, report, TypesDb())
     (entity,) = list(db.get_functions())
     diffreport = comp.compare_function(entity)
 
