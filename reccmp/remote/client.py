@@ -1,3 +1,4 @@
+import logging
 import time
 from urllib.error import HTTPError
 from urllib.parse import urlencode
@@ -10,6 +11,8 @@ from reccmp.report import (
     deserialize_reccmp_report,
 )
 from .shared import DaemonReady
+
+logger = logging.getLogger()
 
 
 class DaemonError(Exception):
@@ -35,47 +38,27 @@ def request(
         raise DaemonUnreachable(f"Could not reach {url}") from e
 
 
-class DotsMessage:
-    """Prints a waiting message with dots when we need to wait.
-    Call tick() in each loop iteration to update the message."""
-
-    def __init__(self, message: str):
-        self.message = message
-        self.started = False
-
-    def tick(self):
-        if not self.started:
-            print(self.message, end="", flush=True)
-            self.started = True
-        else:
-            print(".", end="", flush=True)
-
-    def __enter__(self) -> "DotsMessage":
-        return self
-
-    def __exit__(self, *_):
-        if self.started:
-            print()
-
-
 def daemon_get(url: str) -> tuple[int, bytes]:
     """Wait for the daemon to be ready, then return the status and body for the URL.
     Raises DaemonUnreachable if the daemon stops responding.
     Raises DaemonError with the daemon's message if the daemon had an error."""
-    with DotsMessage("Waiting for server.") as waiting:
-        while True:
-            # No timeout: the daemon may take a long time to build a report.
-            # A daemon that is not running refuses the connection right away.
-            status, body = request(url, timeout=None)
+    waited = False
+    while True:
+        # No timeout: the daemon may take a long time to build a report.
+        # A daemon that is not running refuses the connection right away.
+        status, body = request(url, timeout=None)
 
-            if status in (200, 404):
-                return (status, body)
+        if status in (200, 404):
+            return (status, body)
 
-            if status == 500:
-                raise DaemonError(body.decode("utf-8", errors="replace"))
+        if status == 500:
+            raise DaemonError(body.decode("utf-8", errors="replace"))
 
-            waiting.tick()
-            time.sleep(1)
+        if not waited:
+            waited = True
+            logger.info("Waiting for server...")
+
+        time.sleep(1)
 
 
 class DaemonClient:
