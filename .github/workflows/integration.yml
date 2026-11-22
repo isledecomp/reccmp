@@ -120,14 +120,36 @@ jobs:
       working-directory: ./isle
       run: |
         reccmp-reccmp --target ${{ matrix.target }} --diff ${{ matrix.target }}PROGRESS.json 2>&1 | tee diff.txt
-        ! grep -q 'Traceback (most recent call last)' diff.txt
-        ! grep -q 'Could not open JSON report file' diff.txt
+        ! grep -q -e 'Traceback (most recent call last)' -e 'Could not open JSON report file' diff.txt
 
     - name: Run reccmp on one function
       shell: bash
       working-directory: ./isle
       run: |
         reccmp-reccmp --target ${{ matrix.target }} --verbose $FUNC_ADDR
+
+    - name: Run reccmp-daemon
+      shell: bash
+      working-directory: ./isle
+      run: |
+        reccmp-daemon start --target ${{ matrix.target }}
+
+        # Check that the daemon is listening on the specified port.
+        port=$(reccmp-daemon list | grep -oP '^${{ matrix.target }}: port \K[0-9]+')
+        curl -sf "http://127.0.0.1:$port/ready"
+
+        reccmp-reccmp --target ${{ matrix.target }} | tee daemon.txt
+
+        # Check that the daemon's output matches the in-process run.
+        diff <(grep -E '^(Implemented|Accuracy|Progress):' result.txt) \
+             <(grep -E '^(Implemented|Accuracy|Progress):' daemon.txt)
+
+        reccmp-reccmp --target ${{ matrix.target }} --verbose $FUNC_ADDR
+
+        reccmp-daemon stop --target ${{ matrix.target }}
+
+        # Confirm that the daemon was stopped.
+        ! reccmp-daemon list | grep -q '^${{ matrix.target }}:'
 
     - name: Run aggregate
       shell: bash
