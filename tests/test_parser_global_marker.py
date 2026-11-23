@@ -55,6 +55,12 @@ CODE_VARIABLE_SAMPLES = [
     ("__declspec(dllexport) const FloatConstant g_test(4096.0f);", "g_test"),
     ('extern "C" { int x; }', "x"),
     ('extern "C" int x;', "x"),
+    ("struct { int x; } g_variable;", "g_variable"),
+    ("union { int x; char y[4]; } g_union;", "g_union"),
+    ("struct Point { int x; int y; } g_point = { 1, 2 };", "g_point"),
+    ("static struct { int x; } g_static;", "g_static"),
+    ("struct { struct { int x; } inner; int y; } g_nested[2];", "g_nested"),
+    ("class Foo : public Bar { int x; } g_foo;", "g_foo"),
 ]
 
 
@@ -196,6 +202,9 @@ COMPLETION_NOT_FOUND = (
     pytest.param("//",                AlertCode.NO_SUITABLE_NAME, id="empty comment"),
     pytest.param('"hello";',          AlertCode.NO_SUITABLE_NAME, id="string literal"),
     pytest.param("#define MESSAGE 5", AlertCode.NO_SUITABLE_NAME, id="define"),
+    pytest.param("typedef struct { int x; } hello_t;", AlertCode.GLOBAL_NOT_VARIABLE, id="typedef struct"),
+    pytest.param("typedef int hello_t;", AlertCode.GLOBAL_NOT_VARIABLE, id="typedef"),
+    pytest.param("struct Hello { int x; };", AlertCode.GLOBAL_NOT_VARIABLE, id="struct definition"),
 )
 # fmt: on
 
@@ -213,3 +222,19 @@ def test_completion_not_found(parser: DecompParser, code: str, alert_code: Alert
 
     # Error on the line of the marker.
     assert sorted_alerts(parser) == [(alert_code, 1)]
+
+
+def test_code_variable_inline_record_type_multiline(parser: DecompParser):
+    """Should read the variable name that follows a multi-line inline
+    struct definition, not the name of its first member."""
+    parser.read(dedent("""\
+        // GLOBAL: TEST 0x1234
+        struct {
+            int x; // comment
+            char y[4];
+        } g_variable;
+        """))
+
+    assert symbol_tuples(parser) == [(MarkerType.GLOBAL, "TEST", 0x1234)]
+    assert parser.variables[0].name == "g_variable"
+    assert not parser.alerts
