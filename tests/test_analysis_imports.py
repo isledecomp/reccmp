@@ -8,8 +8,14 @@ from reccmp.analysis.imports import (
 )
 
 
-def test_absolute_jumps_overlap():
-    code = b"\xff\x25\x00\x10\xff\x25\x00\x00\x00\x10"
+@pytest.mark.parametrize(
+    "code",
+    [
+        b"\xff\x25\x00\x10\xff\x25\x00\x00\x00\x10",
+        b"\xff\x25\xff\x25\x00\x00\x00\x10",
+    ],
+)
+def test_absolute_jumps_overlap(code: bytes):
     jumps = list(find_absolute_jumps_in_bytes(code))
     assert len(jumps) == 2
 
