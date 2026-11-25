@@ -1,4 +1,5 @@
 import enum
+import re
 import struct
 from dataclasses import dataclass, field
 from typing import Iterator
@@ -54,6 +55,10 @@ class CrtStartupArray:
 
     xrefs: FunctionXrefMap = field(default_factory=dict)
     """Maps the array entry to a list of xrefs: addresses used in the function set."""
+
+    destructors: dict[int, int] = field(default_factory=dict)
+    """Maps the array entry to the address of the destructor that its initializer
+    registers with atexit, if any."""
 
 
 def read_crt_array(binfile: Image, span: range) -> Iterator[int]:
@@ -116,6 +121,31 @@ def read_function_set(binfile: Image, addr: int) -> tuple[int, ...]:
     return ()
 
 
+ATEXIT_PATTERN = re.compile(
+    rb"(?:\xb9.{4}\xe8.{4})?\x68(.{4})\xe8.{4}\x59\xc3", re.DOTALL
+)
+"""Observed patterns for registering a global object's destructor with atexit:
+1. Atexit setter:    PUSH <destructor>; CALL _atexit; POP ECX; RET
+2. Initializer:      MOV ECX, <object>; CALL <constructor>; followed by (1)
+The setter is the second function of the CALL + JMP thunk. Without a thunk,
+the initializer constructs the object and registers the destructor itself."""
+
+
+def read_atexit_destructor(binfile: Image, addr: int) -> int | None:
+    """If the function at the given address matches one of the atexit patterns,
+    return the address of the destructor that it registers."""
+    view, _ = binfile.seek(addr)
+    match = ATEXIT_PATTERN.match(view)
+    if match is None:
+        return None
+
+    (destructor,) = struct.unpack("<I", match.group(1))
+    if not binfile.is_valid_vaddr(destructor):
+        return None
+
+    return destructor
+
+
 def read_crt_functions(binfile: Image, span: range) -> CrtStartupArray:
     """Create the CRT array structure using the given range of addresses.
     For each function in the array that matches a known thunk pattern,
@@ -127,6 +157,15 @@ def read_crt_functions(binfile: Image, span: range) -> CrtStartupArray:
         function_set = read_function_set(binfile, addr)
         if function_set:
             array.function_set[addr] = function_set
+
+        # The destructor is registered by the last function in the set
+        # (the atexit setter, or the initializer if there is no setter).
+        # If the entry is not a thunk, the entry itself is the initializer.
+        destructor = read_atexit_destructor(
+            binfile, function_set[-1] if function_set else addr
+        )
+        if destructor is not None:
+            array.destructors[addr] = destructor
 
     return array
 
@@ -214,3 +253,19 @@ def match_function_sets(
             matches.append((orig_entry, recomp_entry))
 
     return matches
+
+
+def match_destructors(
+    orig_array: CrtStartupArray,
+    recomp_array: CrtStartupArray,
+    pairs: list[tuple[int, int]],
+) -> list[tuple[int, int]]:
+    """Return a list of matches between the atexit destructors registered by the
+    matched CRT array entries in `pairs`. An entry pair contributes a match only if
+    both initializers register a destructor."""
+    return [
+        (orig_array.destructors[orig_entry], recomp_array.destructors[recomp_entry])
+        for orig_entry, recomp_entry in pairs
+        if orig_entry in orig_array.destructors
+        and recomp_entry in recomp_array.destructors
+    ]
