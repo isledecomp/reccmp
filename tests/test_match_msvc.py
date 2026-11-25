@@ -1,5 +1,7 @@
 """Tests MSVC-specific match strategies"""
 
+# pylint: disable=too-many-lines
+
 from unittest.mock import Mock, ANY, patch
 import pytest
 from reccmp.types import EntityType, ImageId
@@ -471,17 +473,19 @@ def test_match_vtables_folded_no_match(db: EntityDb, report):
 
 
 def test_match_static_var(db: EntityDb):
-    """Match a static variable with all requirements satisfied."""
+    """Match a static variable by the combination of its name and the matched parent function."""
     with db.batch() as batch:
-        # Orig entity function with symbol
+        batch.set(ImageId.ORIG, 200, type=EntityType.FUNCTION)
+        batch.set(ImageId.RECOMP, 300, type=EntityType.FUNCTION)
+        batch.match(200, 300)
         batch.set(
-            ImageId.ORIG, 200, symbol="?Tick@IsleApp@@QAEXH@Z", type=EntityType.FUNCTION
+            ImageId.RECOMP,
+            500,
+            name="g_startupDelay",
+            parent_function=300,
+            static_var=True,
+            type=EntityType.DATA,
         )
-        # Static variable with symbol
-        batch.set(
-            ImageId.RECOMP, 500, symbol="?g_startupDelay@?1??Tick@IsleApp@@QAEXH@Z@4HA"
-        )
-        # Orig entity with variable name and link to orig function addr
         batch.set(
             ImageId.ORIG,
             600,
@@ -499,11 +503,16 @@ def test_match_static_var(db: EntityDb):
 def test_match_static_var_no_parent_function(db: EntityDb):
     """Cannot match static variable without a reference to its parent function"""
     with db.batch() as batch:
+        batch.set(ImageId.ORIG, 200, type=EntityType.FUNCTION)
+        batch.set(ImageId.RECOMP, 300, type=EntityType.FUNCTION)
+        batch.match(200, 300)
         batch.set(
-            ImageId.ORIG, 200, symbol="?Tick@IsleApp@@QAEXH@Z", type=EntityType.FUNCTION
-        )
-        batch.set(
-            ImageId.RECOMP, 500, symbol="?g_startupDelay@?1??Tick@IsleApp@@QAEXH@Z@4HA"
+            ImageId.RECOMP,
+            500,
+            name="g_startupDelay",
+            parent_function=300,
+            static_var=True,
+            type=EntityType.DATA,
         )
         # No parent function
         batch.set(
@@ -522,11 +531,16 @@ def test_match_static_var_no_parent_function(db: EntityDb):
 def test_match_static_var_static_false(db: EntityDb):
     """Cannot match static variable unless the static_var attribute is True"""
     with db.batch() as batch:
+        batch.set(ImageId.ORIG, 200, type=EntityType.FUNCTION)
+        batch.set(ImageId.RECOMP, 300, type=EntityType.FUNCTION)
+        batch.match(200, 300)
         batch.set(
-            ImageId.ORIG, 200, symbol="?Tick@IsleApp@@QAEXH@Z", type=EntityType.FUNCTION
-        )
-        batch.set(
-            ImageId.RECOMP, 500, symbol="?g_startupDelay@?1??Tick@IsleApp@@QAEXH@Z@4HA"
+            ImageId.RECOMP,
+            500,
+            name="g_startupDelay",
+            parent_function=300,
+            static_var=True,
+            type=EntityType.DATA,
         )
         # static_var is not set
         batch.set(
@@ -542,13 +556,19 @@ def test_match_static_var_static_false(db: EntityDb):
     assert get_entity(db, ImageId.ORIG, 600).recomp_addr is None
 
 
-def test_match_static_var_no_symbol_function(db: EntityDb):
-    """Cannot match static variable if the parent function has no symbol"""
+def test_match_static_var_recomp_static_false(db: EntityDb):
+    """Cannot match a static variable unless both entities have static_var=True."""
     with db.batch() as batch:
-        # No symbol on parent function
         batch.set(ImageId.ORIG, 200, type=EntityType.FUNCTION)
+        batch.set(ImageId.RECOMP, 300, type=EntityType.FUNCTION)
+        batch.match(200, 300)
+        # static_var is not set
         batch.set(
-            ImageId.RECOMP, 500, symbol="?g_startupDelay@?1??Tick@IsleApp@@QAEXH@Z@4HA"
+            ImageId.RECOMP,
+            500,
+            name="g_startupDelay",
+            parent_function=300,
+            type=EntityType.DATA,
         )
         batch.set(
             ImageId.ORIG,
@@ -564,14 +584,48 @@ def test_match_static_var_no_symbol_function(db: EntityDb):
     assert get_entity(db, ImageId.ORIG, 600).recomp_addr is None
 
 
-def test_match_static_var_no_symbol_variable(db: EntityDb):
-    """Cannot match static variable without a symbol."""
+def test_match_static_var_parent_not_matched(db: EntityDb):
+    """Cannot match a static variable if the parent functions are not matched."""
     with db.batch() as batch:
+        batch.set(ImageId.ORIG, 200, type=EntityType.FUNCTION)
+        batch.set(ImageId.RECOMP, 300, type=EntityType.FUNCTION)
         batch.set(
-            ImageId.ORIG, 200, symbol="?Tick@IsleApp@@QAEXH@Z", type=EntityType.FUNCTION
+            ImageId.RECOMP,
+            500,
+            name="g_startupDelay",
+            parent_function=300,
+            static_var=True,
+            type=EntityType.DATA,
         )
-        # No symbol on variable
-        batch.set(ImageId.RECOMP, 500, name="g_startupDelay")
+        batch.set(
+            ImageId.ORIG,
+            600,
+            name="g_startupDelay",
+            parent_function=200,
+            static_var=True,
+            type=EntityType.DATA,
+        )
+
+    match_static_variables(db)
+
+    assert get_entity(db, ImageId.ORIG, 600).recomp_addr is None
+
+
+def test_match_static_var_different_parent(db: EntityDb):
+    """Do not match a static variable with the same name from another function."""
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 200, type=EntityType.FUNCTION)
+        batch.set(ImageId.RECOMP, 300, type=EntityType.FUNCTION)
+        batch.match(200, 300)
+        batch.set(ImageId.RECOMP, 400, type=EntityType.FUNCTION)
+        batch.set(
+            ImageId.RECOMP,
+            500,
+            name="g_startupDelay",
+            parent_function=400,
+            static_var=True,
+            type=EntityType.DATA,
+        )
         batch.set(
             ImageId.ORIG,
             600,
@@ -625,6 +679,24 @@ def test_match_variables_no_match(db: EntityDb):
     assert get_entity(db, ImageId.ORIG, 123).recomp_addr is None
     assert get_entity(db, ImageId.RECOMP, 555).orig_addr is None
     assert db.count() == 2
+
+
+def test_match_variables_skip_recomp_static_var(db: EntityDb):
+    """Do not match a static variable to a global variable using the same name."""
+    with db.batch() as batch:
+        batch.set(ImageId.ORIG, 123, name="hello", type=EntityType.DATA)
+        batch.set(
+            ImageId.RECOMP,
+            555,
+            name="hello",
+            static_var=True,
+            parent_function=300,
+            type=EntityType.DATA,
+        )
+
+    match_variables(db)
+
+    assert get_entity(db, ImageId.ORIG, 123).recomp_addr is None
 
 
 def test_match_variables_no_match_report(db: EntityDb, report):

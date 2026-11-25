@@ -555,11 +555,8 @@ def test_gproc_with_static_var(binfile: PEImage):
     # We may need to preload the types db with MSVC-specific data later. TODO: #106
     assert entity.any_size() == 4
 
-    # TODO: #102. The parent function's address should be set instead.
-    symbol = entity.get("symbol")
-    assert symbol is not None
-    assert "g_dwStyle" in symbol
-    assert "EnableResizing" in symbol
+    assert entity.get("static_var") is True
+    assert entity.get("parent_function") == 0x1009DA20
 
 
 def test_float_symbols_with_size(binfile: PEImage):

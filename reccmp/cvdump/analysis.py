@@ -3,11 +3,12 @@
 import re
 import string
 from dataclasses import dataclass
+from typing import Iterable
 from pathlib import PureWindowsPath
 from reccmp.formats import Image
 from reccmp.formats.exceptions import InvalidVirtualAddressError, SectionNotFoundError
 from reccmp.types import EntityType
-from .demangler import demangle_vtable
+from .demangler import demangle_vtable, msvc_demangle
 from .parser import CvdumpParser, LineValue
 from .symbols import SymbolsEntry
 from .types import (
@@ -23,6 +24,12 @@ from .types import (
 # but their names contain a question mark, which none of these allow.
 # See: https://learn.microsoft.com/en-us/cpp/build/reference/decorated-names?view=msvc-170#FormatC
 _c_decorated_function_regex = re.compile(r"[_@][^@?]+@\d+|[^@?]+@@\d+")
+
+_static_variable_regex = re.compile(r"`(?P<function>.+)'::`\d+'::(?P<variable>[^:]+)$")
+"""The demangled name of a function-scoped static variable.
+e.g: int `public: void __thiscall IsleApp::Tick(int)'::`2'::g_startupDelay
+The number in the center is the scope id. The text after is the variable name.
+The text before the scope will match the demangled function name."""
 
 
 def get_size_from_float_symbol(symbol: str) -> int | None:
@@ -85,6 +92,10 @@ class CvdumpNode:
     symbol_entry: SymbolsEntry | None = None
     # Preliminary - only used for non-static variables at the moment
     data_type: TypeInfo | None = None
+    # True for static local variables with function scope.
+    static_var: bool = False
+    # The address of the function where the static variable is declared, if known.
+    parent_function: int | None = None
 
     def set_decorated(self, name: str):
         self.decorated_name = name
@@ -139,6 +150,36 @@ class CvdumpNode:
         return self.estimated_size or self.section_contribution
 
 
+def _set_static_variables_from_publics(nodes: Iterable[CvdumpNode]):
+    """Demangle all public symbols in the PDB and look for cases where the demangled
+    text follows the static variable pattern. We can find the function that declared
+    the variable because its demangled name is a substring of the variable name."""
+    demangled_publics: dict[str, int] = {}
+    static_publics: list[tuple[CvdumpNode, str, str]] = []
+
+    for node in nodes:
+        # C++ functions begin with '?'. Skip the others.
+        if node.decorated_name is None or not node.decorated_name.startswith("?"):
+            continue
+
+        demangled = msvc_demangle(node.decorated_name)
+        if not demangled:
+            continue
+
+        demangled_publics[demangled] = node.addr
+        match = _static_variable_regex.search(demangled)
+        if match is not None:
+            static_publics.append(
+                (node, match.group("function"), match.group("variable"))
+            )
+
+    for node, function_name, variable_name in static_publics:
+        node.node_type = EntityType.DATA
+        node.friendly_name = variable_name
+        node.static_var = True
+        node.parent_function = demangled_publics.get(function_name)
+
+
 class CvdumpAnalysis:
     """Collects the results from CvdumpParser into a list of nodes (i.e. symbols).
     These can then be analyzed by a downstream tool."""
@@ -187,6 +228,8 @@ class CvdumpAnalysis:
                 node_dict[key] = CvdumpNode(pub.section, pub.offset, key)
 
             node_dict[key].set_decorated(pub.name)
+
+        _set_static_variables_from_publics(node_dict.values())
 
         for sizeref in parser.sizerefs:
             key = get_addr(sizeref.section, sizeref.offset)
@@ -244,24 +287,25 @@ class CvdumpAnalysis:
         self.lines = parser.lines
 
         for sym in parser.symbols:
-            key = get_addr(sym.section, sym.offset)
-            if key is None:
+            func_key = get_addr(sym.section, sym.offset)
+            if func_key is None:
                 continue
 
-            if key not in node_dict:
-                node_dict[key] = CvdumpNode(sym.section, sym.offset, key)
+            if func_key not in node_dict:
+                node_dict[func_key] = CvdumpNode(sym.section, sym.offset, func_key)
 
             if sym.type in ("S_GPROC32", "S_LPROC32"):
-                if sym.type == "S_LPROC32" and node_dict[key].symbol_entry is not None:
+                if (
+                    sym.type == "S_LPROC32"
+                    and node_dict[func_key].symbol_entry is not None
+                ):
                     continue
-                self._function_symbols[key] = sym
-                node_dict[key].friendly_name = sym.name
-                node_dict[key].confirmed_size = sym.size
-                node_dict[key].node_type = EntityType.FUNCTION
-                node_dict[key].symbol_entry = sym
+                self._function_symbols[func_key] = sym
+                node_dict[func_key].friendly_name = sym.name
+                node_dict[func_key].confirmed_size = sym.size
+                node_dict[func_key].node_type = EntityType.FUNCTION
+                node_dict[func_key].symbol_entry = sym
 
-                # Iterate through static variables defined in this function
-                # generate decorated name "<variable name>___<func name>"
                 for v in sym.static_variables:
                     key = get_addr(v.section, v.offset)
                     if key is None:
@@ -270,10 +314,9 @@ class CvdumpAnalysis:
                     if key not in node_dict:
                         node_dict[key] = CvdumpNode(v.section, v.offset, key)
                     node_dict[key].node_type = EntityType.DATA
-                    # TODO this format is required for `match_msvc::match_static_variables` to find the variable
-                    # Look at either documenting this dependency or reworking the query
-                    node_dict[key].decorated_name = f"{v.name}___{sym.name}"
                     node_dict[key].friendly_name = v.name
+                    node_dict[key].static_var = True
+                    node_dict[key].parent_function = func_key
                     try:
                         v_info = parser.types.get(v.type)
                         node_dict[key].confirmed_size = v_info.size
