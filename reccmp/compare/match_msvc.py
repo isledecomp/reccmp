@@ -259,28 +259,26 @@ def match_vtables(db: EntityDb, report: ReccmpReportProtocol = reccmp_report_nop
 def match_static_variables(
     db: EntityDb, report: ReccmpReportProtocol = reccmp_report_nop
 ):
-    """To match a static variable, we need the following:
-    1. Orig entity function with symbol
-    2. Orig entity variable with:
-        - name = name of variable
+    """To match a static variable, we need the following set
+    in both the orig and recomp entities:
         - static_var = True
-        - parent_function = orig address of function
-    3. Recomp entity for the static variable with symbol
+        - name = name of variable
+        - parent_function = address of the function in each image
 
-    Requirement #1 is most likely to be met by matching the entity with recomp data.
-    Therefore, this function should be called after match_symbols or match_functions."""
-    symbols = {}
+    The parent functions must have been matched by a previous step."""
+    static_vars: dict[tuple[int, str], list[int]] = {}
 
     for recomp_ent in db.unmatched(ImageId.RECOMP):
-        if recomp_ent.get("type") and recomp_ent.get("type") != EntityType.DATA:
+        if not recomp_ent.get("static_var"):
             continue
 
-        recomp_sym = recomp_ent.get("symbol")
-        if not recomp_sym:
+        name = recomp_ent.get("name")
+        parent_addr = recomp_ent.get("parent_function")
+        if not name or parent_addr is None:
             continue
 
         assert recomp_ent.recomp_addr is not None
-        symbols[recomp_ent.recomp_addr] = recomp_sym
+        static_vars.setdefault((parent_addr, name), []).append(recomp_ent.recomp_addr)
 
     with db.batch() as batch:
         for variable_ent in db.unmatched(ImageId.ORIG):
@@ -295,17 +293,17 @@ def match_static_variables(
                 continue
 
             function_name = None
-            function_symbol = None
+            recomp_parent_addr = None
 
             parent_addr = variable_ent.get("parent_function")
-            if parent_addr:
+            if parent_addr is not None:
                 parent_ent = db.get(ImageId.ORIG, parent_addr)
                 if parent_ent is not None:
                     function_name = parent_ent.get("name")
-                    function_symbol = parent_ent.get("symbol")
+                    recomp_parent_addr = parent_ent.recomp_addr
 
-            # If we could not find the parent function, or if it has no symbol:
-            if function_symbol is None:
+            # If we could not find the parent function, or if it is not matched:
+            if recomp_parent_addr is None:
                 report(
                     ReccmpEvent.NO_MATCH,
                     variable_addr,
@@ -313,11 +311,9 @@ def match_static_variables(
                 )
                 continue
 
-            for recomp_addr, recomp_sym in symbols.items():
-                if function_symbol in recomp_sym and variable_name in recomp_sym:
-                    batch.match(variable_addr, recomp_addr)
-                    del symbols[recomp_addr]
-                    break
+            candidates = static_vars.get((recomp_parent_addr, variable_name))
+            if candidates:
+                batch.match(variable_addr, candidates.pop(0))
             else:
                 report(
                     ReccmpEvent.NO_MATCH,
@@ -334,6 +330,9 @@ def match_variables(db: EntityDb, report: ReccmpReportProtocol = reccmp_report_n
     # when adding from the PDB.
     for ent in db.unmatched(ImageId.RECOMP):
         if ent.get("type") and ent.get("type") != EntityType.DATA:
+            continue
+
+        if ent.get("static_var"):
             continue
 
         name = ent.get("name")
